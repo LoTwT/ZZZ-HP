@@ -5,23 +5,29 @@ import {
   setGuestbookUserBanned,
 } from '../services/adminGuestbookUserService.js'
 import { isValidAdminSession } from '../services/adminSessionService.js'
+import { extractBearerToken, getUserByToken } from '../services/userAuthService.js'
 import { fail, success } from '../utils/response.js'
 
-function readIsSiteAdmin(req) {
-  const auth = req.headers.authorization
-  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
-    const token = auth.slice(7).trim()
-    if (isValidAdminSession(token)) return true
-  }
+async function readIsSiteAdmin(req) {
   const headerToken = req.headers['x-admin-token']
   if (typeof headerToken === 'string' && isValidAdminSession(headerToken.trim())) {
     return true
+  }
+  const bearer = extractBearerToken(req)
+  if (bearer && isValidAdminSession(bearer)) return true
+  if (bearer) {
+    try {
+      const user = await getUserByToken(bearer)
+      if (user?.isSiteAdmin) return true
+    } catch {
+      /* ignore */
+    }
   }
   return false
 }
 
 export async function getGuestbookUsers(req, res) {
-  if (!readIsSiteAdmin(req)) return fail(res, '需要站点管理员权限', 403)
+  if (!(await readIsSiteAdmin(req))) return fail(res, '需要站点管理员权限', 403)
   try {
     const data = await listGuestbookUsers({
       q: typeof req.query?.q === 'string' ? req.query.q : '',
@@ -36,7 +42,7 @@ export async function getGuestbookUsers(req, res) {
 }
 
 export async function getGuestbookUser(req, res) {
-  if (!readIsSiteAdmin(req)) return fail(res, '需要站点管理员权限', 403)
+  if (!(await readIsSiteAdmin(req))) return fail(res, '需要站点管理员权限', 403)
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return fail(res, '无效用户 ID', 400)
   try {
@@ -49,7 +55,7 @@ export async function getGuestbookUser(req, res) {
 }
 
 export async function editGuestbookUser(req, res) {
-  if (!readIsSiteAdmin(req)) return fail(res, '需要站点管理员权限', 403)
+  if (!(await readIsSiteAdmin(req))) return fail(res, '需要站点管理员权限', 403)
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return fail(res, '无效用户 ID', 400)
 
@@ -80,7 +86,7 @@ export async function editGuestbookUser(req, res) {
 }
 
 export async function banGuestbookUser(req, res) {
-  if (!readIsSiteAdmin(req)) return fail(res, '需要站点管理员权限', 403)
+  if (!(await readIsSiteAdmin(req))) return fail(res, '需要站点管理员权限', 403)
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return fail(res, '无效用户 ID', 400)
 

@@ -574,6 +574,10 @@ const moderatorModeOn = ref(readModeratorMode())
 
 const isAdmin = computed(() => isAdminAuthenticated())
 
+const canManageAccounts = computed(
+  () => isAdmin.value || Boolean(userAuth.user?.isSiteAdmin),
+)
+
 const canManagePosts = computed(
   () =>
     Boolean(
@@ -1462,8 +1466,11 @@ function selectModTab(value: GuestbookManageStatus) {
 }
 
 function openModeration(section: 'posts' | 'accounts' | 'reports' = 'posts') {
-  if (!canManagePosts.value) return
-  if (section === 'accounts' && !isAdmin.value) return
+  if (section === 'accounts') {
+    if (!canManageAccounts.value) return
+  } else if (!canManagePosts.value) {
+    return
+  }
   selected.value = null
   creating.value = false
   showingProfile.value = false
@@ -1498,7 +1505,7 @@ function closeModeration() {
 }
 
 function selectManageSection(section: 'posts' | 'accounts' | 'reports') {
-  if (section === 'accounts' && !isAdmin.value) return
+  if (section === 'accounts' && !canManageAccounts.value) return
   manageSection.value = section
   modMessage.value = ''
   modError.value = ''
@@ -2315,10 +2322,10 @@ onUnmounted(() => {
               {{ moderatorModeOn ? '管理员模式' : '普通模式' }}
             </button>
             <button
-              v-if="canManagePosts && !showingModeration"
+              v-if="(canManagePosts || canManageAccounts) && !showingModeration"
               type="button"
               class="gb-post-btn ghost"
-              @click="openModeration()"
+              @click="openModeration(canManagePosts ? 'posts' : 'accounts')"
             >
               管理
             </button>
@@ -2375,7 +2382,7 @@ onUnmounted(() => {
             委托
           </button>
           <button
-            v-if="isAdmin"
+            v-if="canManageAccounts"
             type="button"
             class="gb-tab"
             :class="{ 'gb-tab--active': manageSection === 'accounts' }"
@@ -2550,7 +2557,10 @@ onUnmounted(() => {
           </ul>
         </template>
 
-        <GuestbookAccountManagePanel v-else-if="manageSection === 'accounts' && isAdmin" class="gb-acc-manage" />
+        <GuestbookAccountManagePanel
+          v-else-if="manageSection === 'accounts' && canManageAccounts"
+          class="gb-acc-manage"
+        />
 
         <template v-else-if="manageSection === 'reports'">
           <p v-if="modMessage" class="gb-hint ok">{{ modMessage }}</p>

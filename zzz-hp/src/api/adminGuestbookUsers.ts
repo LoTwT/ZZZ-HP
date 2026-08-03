@@ -49,10 +49,19 @@ interface ApiResponse<T> {
   data: T
 }
 
+const USER_TOKEN_KEY = 'zzz-hp-user-token'
+
 function withAdminHeaders(headers: Record<string, string> = {}): Record<string, string> {
-  const token = getAdminToken()
-  if (!token) return headers
-  return { ...headers, 'X-Admin-Token': token }
+  const out = { ...headers }
+  const adminToken = getAdminToken()
+  if (adminToken) out['X-Admin-Token'] = adminToken
+  try {
+    const userToken = localStorage.getItem(USER_TOKEN_KEY)
+    if (userToken) out.Authorization = `Bearer ${userToken}`
+  } catch {
+    /* ignore */
+  }
+  return out
 }
 
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
