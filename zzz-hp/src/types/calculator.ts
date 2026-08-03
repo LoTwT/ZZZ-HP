@@ -398,6 +398,8 @@ export type DamageEventModeType = 'direct' | 'anomaly'
 export interface DamageEventMode {
   id: string
   agentId: string
+  /** 队伍参与角色签名（主 C + 事件产生者/异常触发者），用于自定义模式缓存 */
+  teamKey?: string
   name: string
   modeType: DamageEventModeType
   events: DamageEvent[]

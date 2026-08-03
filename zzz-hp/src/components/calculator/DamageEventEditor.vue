@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type {
   DamageEvent,
+  DamageEventKind,
   DamageEventMultOverrides,
   SkillCategoryId,
   SkillSubcategory,
@@ -18,6 +19,7 @@ import {
   resolveEventOwnerAgentId,
   RADIANCE_SELF_TRIGGER_HINT,
 } from '@/utils/damageEventOwner'
+import { isLuminousElement } from '@/utils/remielUtils'
 
 const props = withDefaults(
   defineProps<{
@@ -120,13 +122,25 @@ function eventSummary(event: DamageEvent) {
 }
 
 function resolveRemielAgentId(): string | null {
-  return props.ownerAgentOptions?.find((item) => item.element === '流明')?.id ?? null
+  const fromOptions = props.ownerAgentOptions?.find((item) => item.element === '流明')?.id
+  if (fromOptions) return fromOptions
+  if (isLuminousElement(props.mainAgentElement)) {
+    return props.mainAgentId ?? props.agentId ?? null
+  }
+  return null
 }
 
 function addEvent() {
-  const defaultKind = props.modeType === 'anomaly' ? 'anomaly' : 'direct'
+  let defaultKind: DamageEventKind = props.modeType === 'anomaly' ? 'anomaly' : 'direct'
+  if (props.modeType === 'anomaly' && isLuminousElement(props.mainAgentElement)) {
+    defaultKind = 'radiance'
+  }
   const next = createEmptyDamageEvent(events.value.length, defaultKind)
-  next.ownerAgentId = props.mainAgentId ?? props.agentId ?? null
+  const remielId = resolveRemielAgentId()
+  next.ownerAgentId =
+    defaultKind === 'radiance' && remielId
+      ? remielId
+      : props.mainAgentId ?? props.agentId ?? null
   if (
     props.allowCalcTimeTrigger &&
     eventNeedsAnomalyProducer(defaultKind)
@@ -280,9 +294,17 @@ const needsTriggerAgent = computed(() => {
 
 const showTriggerSelect = computed(() => needsTriggerAgent.value)
 
-const kindOptions = computed(() =>
-  getDamageEventKindOptionsForMode(props.modeType ?? 'direct', props.teamHasRemiel ?? false),
-)
+const kindOptions = computed(() => {
+  const modeType = props.modeType ?? 'direct'
+  const teamHasRemiel =
+    props.teamHasRemiel ?? isLuminousElement(props.mainAgentElement)
+  const base = getDamageEventKindOptionsForMode(modeType, teamHasRemiel)
+  if (modeType !== 'anomaly') return base
+  if (isLuminousElement(props.mainAgentElement)) {
+    return base.filter((opt) => opt.id === 'radiance')
+  }
+  return base.filter((opt) => opt.id !== 'radiance')
+})
 
 const radianceHint = computed(() => {
   const event = selectedEvent.value

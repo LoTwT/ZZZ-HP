@@ -30,6 +30,28 @@ export function collectParticipantAgentIds(
   return [...ids]
 }
 
+/** 自定义伤害模式缓存键：主 C + 全部事件产生者/异常触发者（排序后拼接） */
+export function collectDamageModeTeamAgentIds(
+  events: DamageEvent[],
+  mainAgentId: string,
+): string[] {
+  const ids = new Set<string>()
+  if (mainAgentId) ids.add(mainAgentId)
+  for (const event of events) {
+    const ownerId = resolveEventOwnerAgentId(event, mainAgentId)
+    if (ownerId) ids.add(ownerId)
+    if (eventNeedsAnomalyProducer(event.kind)) {
+      const triggerId = event.triggerAgentId
+      if (triggerId && triggerId !== TRIGGER_AGENT_AT_CALC) ids.add(triggerId)
+    }
+  }
+  return [...ids].sort()
+}
+
+export function buildDamageModeTeamKey(events: DamageEvent[], mainAgentId: string): string {
+  return collectDamageModeTeamAgentIds(events, mainAgentId).join(',')
+}
+
 export function formatEventOwnerPrefix(agentName: string): string {
   const name = agentName.trim()
   return name ? `${name} · ` : ''

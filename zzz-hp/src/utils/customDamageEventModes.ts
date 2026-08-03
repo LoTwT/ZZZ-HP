@@ -1,6 +1,16 @@
 import type { DamageEvent, DamageEventMode, DamageEventModeType } from '@/types/calculator'
+import { buildDamageModeTeamKey } from '@/utils/damageEventOwner'
 
 const STORAGE_KEY = 'zzz-hp-custom-damage-event-modes'
+
+function cloneDamageEvents(events: DamageEvent[]): DamageEvent[] {
+  return events.map((event) => ({
+    ...event,
+    ownerAgentId: event.ownerAgentId ?? null,
+    triggerAgentId: event.triggerAgentId ?? null,
+    multOverrides: event.multOverrides ? { ...event.multOverrides } : null,
+  }))
+}
 
 function safeParse(raw: string | null): DamageEventMode[] {
   if (!raw) return []
@@ -22,6 +32,7 @@ function normalizeMode(item: Record<string, unknown>): DamageEventMode {
   return {
     id: String(item.id ?? ''),
     agentId: String(item.agentId ?? ''),
+    teamKey: typeof item.teamKey === 'string' ? item.teamKey : '',
     name: String(item.name ?? ''),
     modeType,
     events: events.map((raw, index) => {
@@ -40,6 +51,10 @@ function normalizeMode(item: Record<string, unknown>): DamageEventMode {
           entry.critMode === 'noCrit' || entry.critMode === 'fullCrit'
             ? entry.critMode
             : 'expected',
+        ownerAgentId:
+          entry.ownerAgentId == null || entry.ownerAgentId === ''
+            ? null
+            : String(entry.ownerAgentId),
         triggerAgentId:
           entry.triggerAgentId == null || entry.triggerAgentId === ''
             ? null
@@ -49,6 +64,15 @@ function normalizeMode(item: Record<string, unknown>): DamageEventMode {
       }
     }),
   }
+}
+
+export function resolveDamageModeTeamKey(
+  events: DamageEvent[],
+  mainAgentId: string,
+  storedTeamKey?: string,
+): string {
+  if (storedTeamKey) return storedTeamKey
+  return buildDamageModeTeamKey(events, mainAgentId)
 }
 
 export function loadCustomModes(): DamageEventMode[] {
@@ -63,9 +87,13 @@ export function saveCustomModes(modes: DamageEventMode[]) {
 
 export function upsertCustomMode(mode: DamageEventMode): DamageEventMode[] {
   const list = loadCustomModes()
-  const index = list.findIndex((item) => item.id === mode.id)
-  if (index >= 0) list[index] = mode
-  else list.push(mode)
+  const normalized: DamageEventMode = {
+    ...mode,
+    events: cloneDamageEvents(mode.events),
+  }
+  const index = list.findIndex((item) => item.id === normalized.id)
+  if (index >= 0) list[index] = normalized
+  else list.push(normalized)
   saveCustomModes(list)
   return list
 }

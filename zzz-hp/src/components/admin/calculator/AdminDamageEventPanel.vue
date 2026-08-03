@@ -42,10 +42,20 @@ const anomalyModes = computed(() =>
   sortedList.value.filter((item) => item.modeType === 'anomaly'),
 )
 
-const selectedAgentElement = computed(() => {
+const selectedAgent = computed(() => {
   if (!form.value.agentId) return null
-  return agents.value.find((item) => item.id === form.value.agentId)?.element ?? null
+  return agents.value.find((item) => item.id === form.value.agentId) ?? null
 })
+
+const selectedAgentElement = computed(() => selectedAgent.value?.element ?? null)
+
+const editorOwnerAgentOptions = computed(() => {
+  const agent = selectedAgent.value
+  if (!agent) return undefined
+  return [{ id: agent.id, name: agent.name, element: agent.element }]
+})
+
+const teamHasRemielForEditor = computed(() => isLuminousElement(selectedAgentElement.value))
 
 function agentName(id: string) {
   if (!id) return '全部角色'
@@ -225,6 +235,9 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
             v-model="form.events"
             :skill-subcategories="skillSubcategories"
             :agent-id="form.agentId || undefined"
+            :main-agent-id="form.agentId || undefined"
+            :owner-agent-options="editorOwnerAgentOptions"
+            :team-has-remiel="teamHasRemielForEditor"
             :mode-type="form.modeType"
             :main-agent-element="selectedAgentElement"
             allow-calc-time-trigger

@@ -15,8 +15,10 @@ import {
   createCustomModeId,
   loadCustomModes,
   removeCustomMode,
+  resolveDamageModeTeamKey,
   upsertCustomMode,
 } from '@/utils/customDamageEventModes'
+import { buildDamageModeTeamKey } from '@/utils/damageEventOwner'
 
 const props = withDefaults(
   defineProps<{
@@ -63,11 +65,25 @@ const agentPresets = computed(() =>
   }),
 )
 
+const mainAgentIdRef = computed(() => props.mainAgentId ?? props.agentId ?? '')
+
+const currentTeamKey = computed(() =>
+  buildDamageModeTeamKey(events.value, mainAgentIdRef.value),
+)
+
 const agentCustoms = computed(() =>
   customModes.value.filter((item) => {
-    const typeOk = item.modeType === props.modeType
-    const agentOk = !item.agentId || !props.agentId || item.agentId === props.agentId
-    return typeOk && agentOk
+    if (item.modeType !== props.modeType) return false
+    const key = currentTeamKey.value
+    if (key) {
+      const itemKey = resolveDamageModeTeamKey(
+        item.events,
+        mainAgentIdRef.value,
+        item.teamKey,
+      )
+      if (itemKey) return itemKey === key
+    }
+    return !item.agentId || !props.agentId || item.agentId === props.agentId
   }),
 )
 
@@ -122,17 +138,31 @@ function selectPreset(mode: DamageEventMode) {
   message.value = `已载入预设「${mode.name}」（可编辑；不另存为则下次打开重置）`
 }
 
-function selectCustom(mode: DamageEventMode) {
-  modeId.value = mode.id
-  modeName.value = mode.name
-  draftName.value = mode.name
-  events.value = mode.events.map((event, index) => ({
+function cloneEventsFromCustom(source: DamageEvent[]): DamageEvent[] {
+  return source.map((event, index) => ({
     ...event,
+    ownerAgentId: event.ownerAgentId ?? null,
     multOverrides: event.multOverrides ? { ...event.multOverrides } : null,
     triggerAgentId:
       event.triggerAgentId === TRIGGER_AGENT_AT_CALC ? null : (event.triggerAgentId ?? null),
     id: event.id || `evt-copy-${Date.now().toString(36)}-${index}`,
   }))
+}
+
+function cloneEventsForStorage(source: DamageEvent[]): DamageEvent[] {
+  return source.map((event) => ({
+    ...event,
+    ownerAgentId: event.ownerAgentId ?? null,
+    triggerAgentId: event.triggerAgentId ?? null,
+    multOverrides: event.multOverrides ? { ...event.multOverrides } : null,
+  }))
+}
+
+function selectCustom(mode: DamageEventMode) {
+  modeId.value = mode.id
+  modeName.value = mode.name
+  draftName.value = mode.name
+  events.value = cloneEventsFromCustom(mode.events)
   message.value = `已载入自定义模式「${mode.name}」`
 }
 
@@ -152,12 +182,14 @@ function persistCurrentCustom() {
   if (!modeId.value || isPresetMode.value) return
   const id = modeId.value === 'custom' ? createCustomModeId() : modeId.value
   if (modeId.value === 'custom') modeId.value = id
+  const mainId = mainAgentIdRef.value
   const mode: DamageEventMode = {
     id,
-    agentId: props.agentId ?? '',
+    agentId: props.agentId ?? mainId,
+    teamKey: buildDamageModeTeamKey(events.value, mainId),
     name: modeName.value || draftName.value || '自定义模式',
     modeType: props.modeType,
-    events: events.value.map((event) => ({ ...event })),
+    events: cloneEventsForStorage(events.value),
   }
   customModes.value = upsertCustomMode(mode)
 }
