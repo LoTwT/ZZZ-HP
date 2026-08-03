@@ -27,10 +27,21 @@ export interface DefenseBattleRoom {
   waves: DefenseWave[]
 }
 
+export interface DefenseZoneBuffRecord {
+  recordId: number
+  buffIndex: number
+  buffText?: string
+  buffName?: string
+}
+
 export interface DefenseBuffInfo {
   name: string
   imageUrl?: string
   lines: string[]
+  recordId?: number
+  buffIndex?: number
+  buffText?: string
+  isEmpty?: boolean
 }
 
 export interface DefenseRoom {
@@ -39,6 +50,7 @@ export interface DefenseRoom {
   level: number
   rankRequirements?: { s: string; a: string; b: string }
   zoneBuffs: string[]
+  zoneBuffRecords?: DefenseZoneBuffRecord[]
   roomBuff: DefenseBuffInfo
   battleRooms: DefenseBattleRoom[]
 }

@@ -10,10 +10,9 @@ defineProps<{
 const activePanel = defineModel<AdminPanel>('activePanel', { default: 'monster' })
 
 const panels: { id: AdminPanel; label: string }[] = [
-  { id: 'monster', label: '添加怪物' },
-  { id: 'delete-monster', label: '删除怪物' },
-  { id: 'buff', label: '添加 Buff' },
-  { id: 'delete-buff', label: '删除 Buff' },
+  { id: 'monster', label: '内容管理' },
+  { id: 'monster-form', label: '表单添加怪物' },
+  { id: 'buff-form', label: '表单添加 Buff' },
   { id: 'season-date', label: '版本日期管理' },
 ]
 </script>

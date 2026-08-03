@@ -5,6 +5,10 @@ export interface BuffInfo {
   icon: string
   lines: string[]
   imageUrl?: string
+  recordId?: number
+  buffIndex?: number
+  buffText?: string
+  isEmpty?: boolean
 }
 
 export interface EnemySlot {
@@ -31,11 +35,19 @@ export interface EnemySlot {
   hpCoeffLabel?: string | null
   /** 是否为困难房间（3.1+） */
   isHardRoom?: boolean
+  /** boss 表记录 ID（管理端编辑用） */
+  recordId?: number
+  /** 危局房间码：1 / 2 / 3 / 4（困难） */
+  room?: string
+  /** 该槽位尚无怪物数据 */
+  isEmpty?: boolean
 }
 
 export interface PhaseData {
   id: string
+  /** 版本号，如 3.1 */
   version: string
+  /** 展示用期数文案，如「第 1 期」 */
   phase: string
   dateRange: string
   tid: string

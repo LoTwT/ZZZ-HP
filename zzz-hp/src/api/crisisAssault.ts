@@ -1,7 +1,9 @@
 import type { EnemySlot, PhaseData } from '@/types/history'
 import {
+  CRISIS_HARD_ROOM_CODE,
   formatCrisisRoomLabel,
   isCrisisHardRoom,
+  normalizeCrisisRoomCode,
   supportsCrisisHardRoom,
 } from '@/utils/crisisRoom'
 import { isCrisisBossId, isCrisisBuffId } from '@/utils/defenseId'
@@ -68,13 +70,34 @@ function adminAuthHeaders(): HeadersInit {
   }
 }
 
-const emptyBuff = (index: number) => ({
-  name: `Buff ${index + 1}`,
+const emptyBuff = (index: number, buffIndex = index + 1) => ({
+  name: `Buff ${buffIndex}`,
   icon: '✦',
   lines: ['暂无 Buff 数据'],
+  buffIndex,
+  isEmpty: true,
 })
 
-function emptyEnemySlot(label: string, isHardRoom = false): EnemySlot {
+function crisisBuffSlotFromId(id: number) {
+  const text = String(id)
+  if (text.length < 3) return 0
+  return Number(text.slice(-2)) || 0
+}
+
+function mapBuffToInfo(buff: ApiBuff, buffIndex: number) {
+  return {
+    name: buff.buff_name,
+    icon: '✦',
+    imageUrl: resolveAssetUrl(buff.buff_image),
+    lines: splitBuffLines(buff.buff),
+    recordId: buff.id,
+    buffIndex,
+    buffText: buff.buff ?? '',
+    isEmpty: false,
+  }
+}
+
+function emptyEnemySlot(label: string, isHardRoom = false, room?: string): EnemySlot {
   return {
     label,
     subStats: '暂无数据',
@@ -82,6 +105,8 @@ function emptyEnemySlot(label: string, isHardRoom = false): EnemySlot {
     altHp: '—',
     elements: [],
     isHardRoom,
+    room,
+    isEmpty: true,
   }
 }
 
@@ -117,6 +142,9 @@ function mapBossToEnemy(boss: ApiBoss): EnemySlot {
     hpCoeffPercent: boss.hp_coeff_percent ?? null,
     hpCoeffLabel: boss.hp_coeff_label ?? null,
     isHardRoom: hard,
+    recordId: boss.id,
+    room: normalizeCrisisRoomCode(boss.room),
+    isEmpty: false,
   }
 }
 
@@ -126,25 +154,23 @@ function toPhaseData(phase: ApiPhase): PhaseData {
     .sort((a, b) => crisisRoomSortKey(a.room) - crisisRoomSortKey(b.room))
   const buffs = [...phase.buffs].filter((buff) => isCrisisBuffId(buff.id))
 
-  while (buffs.length < 3) {
-    buffs.push({
-      id: 0,
-      buff_name: '',
-      buff: null,
-      buff_image: null,
-    })
-  }
-
   const normalBosses = bosses.filter((boss) => !isCrisisHardRoom(boss.room))
   const hardBoss = bosses.find((boss) => isCrisisHardRoom(boss.room))
-  const enemies: EnemySlot[] = [0, 1, 2].map((index) => {
-    const boss = normalBosses[index]
-    if (!boss) return emptyEnemySlot(`房间 ${index + 1}`)
+  const enemies: EnemySlot[] = [1, 2, 3].map((roomNum) => {
+    const roomCode = String(roomNum)
+    const boss = normalBosses.find(
+      (item) => normalizeCrisisRoomCode(item.room) === roomCode,
+    )
+    if (!boss) return emptyEnemySlot(`房间 ${roomNum}`, false, roomCode)
     return mapBossToEnemy(boss)
   })
 
   if (supportsCrisisHardRoom(phase.version)) {
-    enemies.push(hardBoss ? mapBossToEnemy(hardBoss) : emptyEnemySlot('困难', true))
+    enemies.push(
+      hardBoss
+        ? mapBossToEnemy(hardBoss)
+        : emptyEnemySlot('困难', true, CRISIS_HARD_ROOM_CODE),
+    )
   }
 
   return {
@@ -162,15 +188,10 @@ function toPhaseData(phase: ApiPhase): PhaseData {
     hardTotalHp: phase.hardTotalHp ?? 0,
     rawHardHpConverted953: formatHp(phase.hardTotalHpConverted953 ?? phase.hardTotalHp ?? 0),
     hardTotalHpConverted953: phase.hardTotalHpConverted953 ?? phase.hardTotalHp ?? 0,
-    buffs: [0, 1, 2].map((index) => {
-      const buff = buffs[index]
-      if (!buff?.buff_name) return emptyBuff(index)
-      return {
-        name: buff.buff_name,
-        icon: '✦',
-        imageUrl: resolveAssetUrl(buff.buff_image),
-        lines: splitBuffLines(buff.buff),
-      }
+    buffs: [1, 2, 3].map((slotIndex) => {
+      const buff = buffs.find((item) => crisisBuffSlotFromId(item.id) === slotIndex)
+      if (!buff?.buff_name) return emptyBuff(slotIndex - 1, slotIndex)
+      return mapBuffToInfo(buff, slotIndex)
     }),
     enemies,
   }

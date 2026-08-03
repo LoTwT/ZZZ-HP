@@ -10,7 +10,7 @@ import {
   type SeasonDateMode,
 } from '@/api/admin'
 import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
-import type { AdminScope, DefenseMonsterCategory } from '@/types/admin'
+import type { AdminScope, AdminMonsterSlotContext, DefenseMonsterCategory } from '@/types/admin'
 import { adminScopeTitles, isDefenseScope, recordSchemeFromScope } from '@/types/admin'
 import { encodeDefenseBossId } from '@/utils/defenseId'
 import { calcCrisisHpCoeffPercent, getCrisisBaseHpByName } from '@/utils/crisisHpCoeff'
@@ -19,7 +19,13 @@ import { resolveAssetUrl } from '@/utils/gameData'
 
 const props = defineProps<{
   scope: AdminScope
+  slotContext?: AdminMonsterSlotContext | null
+  dialogMode?: boolean
 }>()
+
+const emit = defineEmits<{ saved: [] }>()
+
+const slotLocked = computed(() => Boolean(props.slotContext))
 
 const isDefense = computed(() => isDefenseScope(props.scope))
 const isDefenseNew = computed(() => props.scope === 'defense-new')
@@ -300,9 +306,58 @@ function applyScopeDefaults() {
   }
 }
 
+function applySlotContext(ctx: AdminMonsterSlotContext) {
+  version.value = ctx.version
+  phase.value = ctx.phase
+  customVersion.value = ''
+  customPhase.value = ''
+  if (ctx.room) room.value = ctx.room
+  if (ctx.stage != null) stage.value = String(ctx.stage)
+  if (ctx.roomInStage != null) roomInStage.value = String(ctx.roomInStage)
+  if (ctx.wave != null) wave.value = String(ctx.wave)
+  if (ctx.monsterCategory) monsterCategory.value = ctx.monsterCategory
+  if (ctx.monsterSubType != null) monsterSubType.value = String(ctx.monsterSubType)
+  if (ctx.count != null) count.value = String(ctx.count)
+  bossName.value = ctx.bossName ?? ''
+  hp.value = ctx.hp != null && ctx.hp !== '' ? String(ctx.hp) : ''
+  defense.value = ctx.defense != null && ctx.defense !== '' ? String(ctx.defense) : ''
+  level.value = ctx.level != null && ctx.level !== '' ? String(ctx.level) : isDefense.value ? '1' : '70'
+  weakness.value = ctx.weakness ?? ''
+  resistance.value = ctx.resistance ?? ''
+  crisisBaseHp.value =
+    ctx.crisisBaseHp != null && ctx.crisisBaseHp !== '' ? String(ctx.crisisBaseHp) : ''
+  hpCoeffManual.value = Boolean(ctx.hpCoeffManual)
+  hpCoeffPercent.value =
+    ctx.hpCoeffPercent != null && ctx.hpCoeffPercent !== ''
+      ? String(ctx.hpCoeffPercent)
+      : ''
+  imageFile.value = null
+  imagePickerRef.value?.reset()
+  imageUrl.value = ''
+  imagePreview.value = ''
+  if (ctx.bossImage) {
+    const preview = resolveAssetUrl(ctx.bossImage) ?? ctx.bossImage
+    imagePreview.value = preview
+    if (!String(ctx.bossImage).startsWith('http')) {
+      imageUrl.value = String(ctx.bossImage)
+    }
+  }
+  updatePreviewId()
+  syncAutoCoeff()
+}
+
+watch(
+  () => props.slotContext,
+  (ctx) => {
+    if (ctx) applySlotContext(ctx)
+  },
+  { immediate: true },
+)
+
 watch(
   () => props.scope,
   () => {
+    if (props.slotContext) return
     applyScopeDefaults()
     customVersion.value = ''
     customPhase.value = ''
@@ -444,6 +499,11 @@ async function submitForm() {
     message.value = syncMessage
       ? `怪物添加成功（ID ${result.id}）${actionHint}，${syncMessage}`
       : `怪物添加成功（ID ${result.id}）${actionHint}`
+    if (props.dialogMode) {
+      emit('saved')
+      showFeedback('message')
+      return
+    }
     showFeedback('message')
 
     const keptVersion = resolvedVersion.value
@@ -505,8 +565,8 @@ watch(
 </script>
 
 <template>
-  <div class="admin-form-panel">
-    <header class="panel-header">
+  <div class="admin-form-panel" :class="{ 'admin-form-panel--dialog': dialogMode }">
+    <header v-if="!dialogMode" class="panel-header">
       <h1 class="panel-title">添加怪物</h1>
       <p class="panel-desc">当前模式：{{ adminScopeTitles[scope] }}</p>
     </header>
@@ -514,7 +574,7 @@ watch(
     <form class="admin-form" novalidate @submit.prevent="submitForm">
       <label class="field">
         <span class="field-label">版本 *</span>
-        <select v-model="version" class="field-input">
+        <select v-model="version" class="field-input" :disabled="slotLocked">
           <option v-if="!availableVersions.length" value="" disabled>暂无可选版本</option>
           <option v-for="item in availableVersions" :key="item" :value="item">
             {{ item }}
@@ -525,12 +585,13 @@ watch(
           type="text"
           class="field-input"
           placeholder="新版本（填写后覆盖上方选择）"
+          :disabled="slotLocked"
         />
       </label>
 
       <label class="field">
         <span class="field-label">期数 *</span>
-        <select v-model="phase" class="field-input">
+        <select v-model="phase" class="field-input" :disabled="slotLocked">
           <option v-if="!availablePhases.length" value="" disabled>
             {{ resolvedVersion ? '该版本暂无期数，可在下方输入' : '请先选择版本' }}
           </option>
@@ -543,6 +604,7 @@ watch(
           type="text"
           class="field-input"
           placeholder="新期数（填写后覆盖上方选择）"
+          :disabled="slotLocked"
         />
       </label>
 
@@ -607,7 +669,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">关卡 *</span>
-          <select v-model="stage" class="field-input">
+          <select v-model="stage" class="field-input" :disabled="slotLocked">
             <option v-for="item in defenseStageOptions" :key="item" :value="String(item)">
               第 {{ item }} 关
             </option>
@@ -615,7 +677,7 @@ watch(
         </label>
         <label class="field">
           <span class="field-label">房间 *</span>
-          <select v-model="roomInStage" class="field-input">
+          <select v-model="roomInStage" class="field-input" :disabled="slotLocked">
             <option v-for="item in defenseRoomOptions" :key="item" :value="String(item)">
               房间 {{ item }}
             </option>
@@ -626,7 +688,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">波次 *</span>
-          <input v-model="wave" type="number" min="0" max="9" class="field-input" placeholder="0-9" />
+          <input v-model="wave" type="number" min="0" max="9" class="field-input" placeholder="0-9" :disabled="slotLocked" />
         </label>
         <label class="field">
           <span class="field-label">怪物数量 *</span>
@@ -637,7 +699,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">怪物类型 *</span>
-          <select v-model="monsterCategory" class="field-input">
+          <select v-model="monsterCategory" class="field-input" :disabled="slotLocked">
             <option value="minion">小怪 (0x)</option>
             <option value="elite">精英 (1x)</option>
             <option value="boss">Boss (2x)</option>
@@ -652,13 +714,14 @@ watch(
             max="9"
             class="field-input"
             placeholder="1-9"
+            :disabled="slotLocked"
           />
         </label>
       </div>
 
       <label v-else class="field">
         <span class="field-label">房间 *</span>
-        <select v-model="room" class="field-input">
+        <select v-model="room" class="field-input" :disabled="slotLocked">
           <option v-for="item in CRISIS_ROOM_OPTIONS" :key="item.value" :value="item.value">
             {{ item.label }}
           </option>

@@ -3,7 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { HpChartPoint } from '@/api/crisisAssault'
 import { fetchDefenseSeasons } from '@/api/defense'
-import type { DefenseEnemy, DefenseSeason, DefenseVariant } from '@/types/defense'
+import type { DefenseEnemy, DefenseSeason, DefenseVariant, DefenseZoneBuffRecord } from '@/types/defense'
+import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admin'
+import { decodeDefenseBossId } from '@/utils/defenseId'
 import {
   buildDefenseRoomHpOptions,
   findDefenseEnemyHpComparison,
@@ -16,12 +18,22 @@ import { formatHpDelta } from '@/utils/gameData'
 const props = defineProps<{
   embedded?: boolean
   chartPoint?: HpChartPoint | null
+  /** 管理端覆盖 old/new（不依赖路由） */
+  variantOverride?: DefenseVariant
+  adminMode?: boolean
+}>()
+
+const emit = defineEmits<{
+  'admin-monster': [context: AdminMonsterSlotContext]
+  'admin-delete-monster': [recordId: number, label: string]
+  'admin-buff': [context: AdminBuffSlotContext]
+  'admin-delete-buff': [recordId: number, label: string]
 }>()
 
 const route = useRoute()
 
 const defenseVariant = computed<DefenseVariant>(() =>
-  route.name === 'defense-new' ? 'new' : 'old',
+  props.variantOverride ?? (route.name === 'defense-new' ? 'new' : 'old'),
 )
 
 const seasons = ref<DefenseSeason[]>([])
@@ -158,6 +170,215 @@ function formatWeaknessText(items: string[]) {
 function formatResistanceTraitText(items: string[]) {
   return filterMeaningfulResistanceTraits(items).join('、')
 }
+
+function parseDefensePhaseNumber(phaseLabel: string) {
+  return (phaseLabel.match(/\d+/)?.[0] ?? phaseLabel.replace(/\D/g, '')) || '1'
+}
+
+function parseWaveNumber(waveLabel: string, fallbackIndex: number) {
+  const matched = waveLabel.match(/\d+/)?.[0]
+  return matched ?? String(fallbackIndex)
+}
+
+function resolveDefenseSlotParts(
+  frontier: { id: string },
+  room: { id: string },
+  wave: { label: string },
+  waveIndex: number,
+) {
+  const season = currentSeason.value
+  if (!season) return null
+  const seasonId = season.seasonId
+  const stageText = frontier.id.startsWith(seasonId)
+    ? frontier.id.slice(seasonId.length)
+    : frontier.id.slice(-2)
+  const stage = Number(stageText) || 0
+  const roomInStage = Number(room.id.slice(frontier.id.length)) || 0
+  const waveNum = Number(parseWaveNumber(wave.label, waveIndex + 1)) || 0
+  if (!stage || !roomInStage || Number.isNaN(waveNum)) return null
+  return { stage, roomInStage, wave: waveNum }
+}
+
+function buildDefenseMonsterContext(
+  enemy: DefenseEnemy | null,
+  slot: ReturnType<typeof resolveDefenseSlotParts>,
+  mode: 'create' | 'edit',
+): AdminMonsterSlotContext | null {
+  const season = currentSeason.value
+  if (!season || !slot) return null
+  const phaseNum = parseDefensePhaseNumber(season.phase)
+  const base: AdminMonsterSlotContext = {
+    mode,
+    version: season.version,
+    phase: phaseNum,
+    stage: slot.stage,
+    roomInStage: slot.roomInStage,
+    wave: slot.wave,
+    monsterCategory: 'boss',
+    monsterSubType: 1,
+    count: 1,
+  }
+  if (!enemy?.id) return base
+  try {
+    const decoded = decodeDefenseBossId(enemy.id)
+    return {
+      ...base,
+      mode,
+      recordId: enemy.id,
+      monsterCategory: decoded.monsterCategory,
+      monsterSubType: decoded.monsterSubType,
+      count: decoded.count,
+      bossName: enemy.name,
+      hp: enemy.hpValue ?? enemy.hp,
+      defense: enemy.defense,
+      level: '1',
+      weakness: enemy.weakness ?? '',
+      resistance: enemy.resistance ?? '',
+      bossImage: enemy.imageUrl ?? null,
+    }
+  } catch {
+    return {
+      ...base,
+      mode,
+      recordId: enemy.id,
+      bossName: enemy.name,
+      hp: enemy.hpValue ?? enemy.hp,
+      defense: enemy.defense,
+      level: '1',
+      weakness: enemy.weakness ?? '',
+      resistance: enemy.resistance ?? '',
+      bossImage: enemy.imageUrl ?? null,
+    }
+  }
+}
+
+function onAdminEditDefenseEnemy(
+  enemy: DefenseEnemy,
+  frontier: { id: string },
+  room: { id: string },
+  wave: { label: string },
+  waveIndex: number,
+) {
+  const slot = resolveDefenseSlotParts(frontier, room, wave, waveIndex)
+  const ctx = buildDefenseMonsterContext(enemy, slot, 'edit')
+  if (ctx) emit('admin-monster', ctx)
+}
+
+function onAdminAddDefenseEnemy(
+  frontier: { id: string },
+  room: { id: string },
+  wave: { label: string },
+  waveIndex: number,
+) {
+  const slot = resolveDefenseSlotParts(frontier, room, wave, waveIndex)
+  const ctx = buildDefenseMonsterContext(null, slot, 'create')
+  if (ctx) emit('admin-monster', ctx)
+}
+
+function onAdminDeleteDefenseEnemy(enemy: DefenseEnemy) {
+  if (!enemy.id) return
+  emit('admin-delete-monster', enemy.id, enemy.name)
+}
+
+function resolveDefenseRoomParts(frontier: { id: string }, room: { id: string }) {
+  const season = currentSeason.value
+  if (!season) return null
+  const seasonId = season.seasonId
+  const stageText = frontier.id.startsWith(seasonId)
+    ? frontier.id.slice(seasonId.length)
+    : frontier.id.slice(-2)
+  const stage = Number(stageText) || 0
+  const roomInStage = Number(room.id.slice(frontier.id.length)) || 0
+  if (!stage || !roomInStage) return null
+  return { stage, roomInStage }
+}
+
+function buildDefenseBuffContext(
+  slot: { stage: number; roomInStage: number },
+  buffIndex: number,
+  source: {
+    recordId?: number
+    buffName?: string
+    buffText?: string
+    imageUrl?: string
+    lines?: string[]
+  } | null,
+  mode: 'create' | 'edit',
+): AdminBuffSlotContext | null {
+  const season = currentSeason.value
+  if (!season) return null
+  return {
+    mode,
+    recordId: source?.recordId,
+    version: season.version,
+    phase: parseDefensePhaseNumber(season.phase),
+    buffIndex,
+    stage: slot.stage,
+    roomInStage: slot.roomInStage,
+    buffName: source?.buffName ?? '',
+    buffText: source?.buffText ?? source?.lines?.join('\n') ?? '',
+    buffImage: source?.imageUrl ?? null,
+  }
+}
+
+function onAdminEditRoomBuff(
+  frontier: { id: string },
+  room: { id: string; roomBuff: { recordId?: number; buffIndex?: number; name: string; buffText?: string; imageUrl?: string; lines: string[] } },
+) {
+  const slot = resolveDefenseRoomParts(frontier, room)
+  if (!slot) return
+  const buffIndex = room.roomBuff.buffIndex ?? 3
+  const ctx = buildDefenseBuffContext(
+    slot,
+    buffIndex,
+    {
+      recordId: room.roomBuff.recordId,
+      buffName: room.roomBuff.name,
+      buffText: room.roomBuff.buffText,
+      imageUrl: room.roomBuff.imageUrl,
+      lines: room.roomBuff.lines,
+    },
+    room.roomBuff.recordId ? 'edit' : 'create',
+  )
+  if (ctx) emit('admin-buff', ctx)
+}
+
+function onAdminEditZoneBuff(
+  frontier: { id: string },
+  room: { id: string },
+  record: DefenseZoneBuffRecord,
+) {
+  const slot = resolveDefenseRoomParts(frontier, room)
+  if (!slot) return
+  const ctx = buildDefenseBuffContext(
+    slot,
+    record.buffIndex,
+    {
+      recordId: record.recordId,
+      buffName: record.buffName,
+      buffText: record.buffText,
+    },
+    'edit',
+  )
+  if (ctx) emit('admin-buff', ctx)
+}
+
+function onAdminAddZoneBuff(
+  frontier: { id: string },
+  room: { id: string },
+  buffIndex: number,
+) {
+  const slot = resolveDefenseRoomParts(frontier, room)
+  if (!slot) return
+  const ctx = buildDefenseBuffContext(slot, buffIndex, null, 'create')
+  if (ctx) emit('admin-buff', ctx)
+}
+
+function onAdminDeleteBuff(recordId: number, label: string) {
+  emit('admin-delete-buff', recordId, label)
+}
+
+defineExpose({ reload: loadSeasons })
 
 function formatEnemyResistance(value?: string) {
   if (!value?.trim() || value.trim() === '无') return ''
@@ -339,16 +560,101 @@ function formatEnemyResistance(value?: string) {
               </header>
 
               <div
-                v-if="room.roomBuff.name || room.roomBuff.lines.length"
-                class="room-buff-section"
+                v-if="adminMode || room.zoneBuffs.length || (room.zoneBuffRecords?.length ?? 0)"
+                class="room-zone-buff-section"
               >
-                <p class="block-label">关卡增益</p>
-                <div class="room-buff-card">
-                  <h4 v-if="room.roomBuff.name" class="buff-name">{{ room.roomBuff.name }}</h4>
+                <div class="block-label-row">
+                  <p class="block-label">区域 Buff</p>
+                  <div v-if="adminMode" class="enemy-admin-bar enemy-admin-bar--inline">
+                    <button
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--primary"
+                      @click="onAdminAddZoneBuff(frontier, room, 1)"
+                    >
+                      + Buff 1
+                    </button>
+                    <button
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--primary"
+                      @click="onAdminAddZoneBuff(frontier, room, 2)"
+                    >
+                      + Buff 2
+                    </button>
+                  </div>
+                </div>
+                <ul v-if="room.zoneBuffs.length" class="zone-buff-lines">
+                  <li v-for="(line, index) in room.zoneBuffs" :key="index">{{ line }}</li>
+                </ul>
+                <div
+                  v-if="adminMode && room.zoneBuffRecords?.length"
+                  class="zone-buff-records"
+                >
+                  <div
+                    v-for="record in room.zoneBuffRecords"
+                    :key="record.recordId"
+                    class="zone-buff-record"
+                  >
+                    <span>序号 {{ record.buffIndex }}</span>
+                    <button
+                      type="button"
+                      class="enemy-admin-btn"
+                      @click="onAdminEditZoneBuff(frontier, room, record)"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--danger"
+                      @click="onAdminDeleteBuff(record.recordId, `区域 Buff ${record.buffIndex}`)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="room-buff-section">
+                <div class="block-label-row">
+                  <p class="block-label">关卡增益</p>
+                  <div v-if="adminMode" class="enemy-admin-bar enemy-admin-bar--inline">
+                    <button
+                      v-if="room.roomBuff.recordId || (room.roomBuff.name && room.roomBuff.name !== '—')"
+                      type="button"
+                      class="enemy-admin-btn"
+                      @click="onAdminEditRoomBuff(frontier, room)"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      v-if="room.roomBuff.recordId"
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--danger"
+                      @click="onAdminDeleteBuff(room.roomBuff.recordId!, room.roomBuff.name)"
+                    >
+                      删除
+                    </button>
+                    <button
+                      v-if="!room.roomBuff.recordId"
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--primary"
+                      @click="onAdminEditRoomBuff(frontier, room)"
+                    >
+                      添加
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-if="room.roomBuff.name || room.roomBuff.lines.length"
+                  class="room-buff-card"
+                >
+                  <h4 v-if="room.roomBuff.name && room.roomBuff.name !== '—'" class="buff-name">
+                    {{ room.roomBuff.name }}
+                  </h4>
                   <ul v-if="room.roomBuff.lines.length" class="buff-lines">
                     <li v-for="(line, index) in room.roomBuff.lines" :key="index">{{ line }}</li>
                   </ul>
                 </div>
+                <p v-else-if="adminMode" class="room-buff-empty">暂无关卡增益</p>
               </div>
 
               <section
@@ -383,7 +689,7 @@ function formatEnemyResistance(value?: string) {
                 </header>
 
                 <div
-                  v-for="wave in battleRoom.waves"
+                  v-for="(wave, waveIndex) in battleRoom.waves"
                   :key="`${battleRoom.id}-${wave.label}`"
                   class="wave-block"
                 >
@@ -393,8 +699,30 @@ function formatEnemyResistance(value?: string) {
                       v-for="(enemy, enemyIndex) in wave.enemies"
                       :key="`${battleRoom.id}-${wave.label}-${enemyIndex}`"
                       class="enemy-chip"
-                      :class="{ 'enemy-chip--boss': enemy.isBoss }"
+                      :class="{
+                        'enemy-chip--boss': enemy.isBoss,
+                        'enemy-chip--admin': adminMode,
+                      }"
                     >
+                      <div v-if="adminMode" class="enemy-admin-bar">
+                        <button
+                          type="button"
+                          class="enemy-admin-btn"
+                          @click.stop="
+                            onAdminEditDefenseEnemy(enemy, frontier, room, wave, waveIndex)
+                          "
+                        >
+                          编辑
+                        </button>
+                        <button
+                          v-if="enemy.id"
+                          type="button"
+                          class="enemy-admin-btn enemy-admin-btn--danger"
+                          @click.stop="onAdminDeleteDefenseEnemy(enemy)"
+                        >
+                          删除
+                        </button>
+                      </div>
                       <div class="enemy-chip-image">
                         <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.name" />
                         <span v-else class="image-placeholder">{{ enemy.isBoss ? 'Boss' : '怪' }}</span>
@@ -436,6 +764,14 @@ function formatEnemyResistance(value?: string) {
                       </div>
                     </article>
                   </div>
+                  <button
+                    v-if="adminMode"
+                    type="button"
+                    class="enemy-admin-add"
+                    @click="onAdminAddDefenseEnemy(frontier, room, wave, waveIndex)"
+                  >
+                    + 在此波次添加怪物
+                  </button>
                 </div>
               </section>
             </article>
@@ -1386,5 +1722,93 @@ function formatEnemyResistance(value?: string) {
     width: 100%;
     max-width: 100%;
   }
+}
+
+.enemy-chip--admin {
+  position: relative;
+}
+
+.enemy-admin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.enemy-admin-btn {
+  border: 1px solid #3a424f;
+  border-radius: 6px;
+  background: rgba(15, 18, 23, 0.85);
+  color: #d5dae4;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.enemy-admin-btn--primary {
+  border-color: hsla(160, 100%, 37%, 0.55);
+  color: #9ad0b8;
+}
+
+.enemy-admin-btn--danger {
+  border-color: #5a3434;
+  color: #e8a8a8;
+}
+
+.enemy-admin-add {
+  margin-top: 0.35rem;
+  border: 1px dashed hsla(160, 100%, 37%, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: #9ad0b8;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+.block-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.enemy-admin-bar--inline {
+  margin-bottom: 0;
+}
+
+.room-zone-buff-section {
+  margin-bottom: 0.65rem;
+}
+
+.zone-buff-lines {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+
+.zone-buff-records {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.zone-buff-record {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: #9aa3b0;
+}
+
+.room-buff-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #8f96a3;
 }
 </style>

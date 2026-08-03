@@ -3,13 +3,20 @@ import { computed, ref, toRef, watch } from 'vue'
 import { createBuff, uploadBuffImage } from '@/api/admin'
 import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
 import { useAdminVersionPhaseSelect } from '@/composables/useAdminVersionPhaseSelect'
-import type { AdminScope } from '@/types/admin'
+import type { AdminBuffSlotContext, AdminScope } from '@/types/admin'
 import { adminScopeTitles, isDefenseScope } from '@/types/admin'
 import { encodeCrisisBuffId, encodeDefenseBuffId } from '@/utils/defenseId'
+import { resolveAssetUrl } from '@/utils/gameData'
 
 const props = defineProps<{
   scope: AdminScope
+  slotContext?: AdminBuffSlotContext | null
+  dialogMode?: boolean
 }>()
+
+const emit = defineEmits<{ saved: [] }>()
+
+const slotLocked = computed(() => Boolean(props.slotContext))
 
 const isDefense = computed(() => isDefenseScope(props.scope))
 
@@ -105,7 +112,7 @@ async function submitForm() {
 
     submitting.value = true
 
-    let buffImage: string | null = null
+    let buffImage: string | null = imageUrl.value.trim() || null
     if (imageFile.value) {
       const uploaded = await uploadBuffImage(imageFile.value)
       buffImage = uploaded.url
@@ -146,6 +153,10 @@ async function submitForm() {
 
     const actionHint = result.action === 'updated' ? '（已覆盖同 ID 记录）' : ''
     message.value = `Buff 添加成功（ID ${result.id}）${actionHint}`
+    if (props.dialogMode) {
+      emit('saved')
+      return
+    }
     keepVersionPhaseAfterSubmit()
     buffName.value = ''
     buffText.value = ''
@@ -162,14 +173,47 @@ async function submitForm() {
   }
 }
 
+function applySlotContext(ctx: AdminBuffSlotContext) {
+  version.value = ctx.version
+  phase.value = ctx.phase
+  customVersion.value = ''
+  customPhase.value = ''
+  buffIndex.value = String(ctx.buffIndex)
+  if (ctx.stage != null) stage.value = String(ctx.stage)
+  if (ctx.roomInStage != null) roomInStage.value = String(ctx.roomInStage)
+  buffName.value = ctx.buffName ?? ''
+  buffText.value = ctx.buffText ?? ''
+  imageFile.value = null
+  imagePickerRef.value?.reset()
+  imageUrl.value = ''
+  imagePreview.value = ''
+  if (ctx.buffImage) {
+    imagePreview.value = resolveAssetUrl(ctx.buffImage) ?? ctx.buffImage
+    if (!String(ctx.buffImage).startsWith('http')) {
+      imageUrl.value = String(ctx.buffImage)
+    }
+  }
+  updatePreviewId()
+}
+
+const imageUrl = ref('')
+
+watch(
+  () => props.slotContext,
+  (ctx) => {
+    if (ctx) applySlotContext(ctx)
+  },
+  { immediate: true },
+)
+
 watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex], () => {
   updatePreviewId()
 })
 </script>
 
 <template>
-  <div class="admin-form-panel">
-    <header class="panel-header">
+  <div class="admin-form-panel" :class="{ 'admin-form-panel--dialog': dialogMode }">
+    <header v-if="!dialogMode" class="panel-header">
       <h1 class="panel-title">添加 Buff</h1>
       <p class="panel-desc">当前模式：{{ adminScopeTitles[scope] }}</p>
     </header>
@@ -177,7 +221,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
     <form class="admin-form" novalidate @submit.prevent="submitForm">
       <label class="field">
         <span class="field-label">版本 *</span>
-        <select v-model="version" class="field-input">
+        <select v-model="version" class="field-input" :disabled="slotLocked">
           <option v-if="!availableVersions.length" value="" disabled>暂无可选版本</option>
           <option v-for="item in availableVersions" :key="item" :value="item">
             {{ item }}
@@ -188,12 +232,13 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
           type="text"
           class="field-input"
           placeholder="新版本（填写后覆盖上方选择）"
+          :disabled="slotLocked"
         />
       </label>
 
       <label class="field">
         <span class="field-label">期数 *</span>
-        <select v-model="phase" class="field-input">
+        <select v-model="phase" class="field-input" :disabled="slotLocked">
           <option v-if="!availablePhases.length" value="" disabled>
             {{ resolvedVersion ? '该版本暂无期数，可在下方输入' : '请先选择版本' }}
           </option>
@@ -206,6 +251,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
           type="text"
           class="field-input"
           placeholder="新期数（填写后覆盖上方选择）"
+          :disabled="slotLocked"
         />
       </label>
 
@@ -217,7 +263,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">关卡 *</span>
-          <input v-model="stage" type="number" min="1" max="99" class="field-input" placeholder="1-99" />
+          <input v-model="stage" type="number" min="1" max="99" class="field-input" placeholder="1-99" :disabled="slotLocked" />
         </label>
         <label class="field">
           <span class="field-label">房间 *</span>
@@ -228,6 +274,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
             max="9"
             class="field-input"
             placeholder="当前关卡第几间"
+            :disabled="slotLocked"
           />
         </label>
       </div>
@@ -241,6 +288,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
           :max="isDefense ? 9 : 99"
           class="field-input"
           :placeholder="isDefense ? '1-9' : '如 1、2、3（对应 ID 末两位）'"
+          :disabled="slotLocked"
         />
       </label>
 

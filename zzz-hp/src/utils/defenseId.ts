@@ -179,6 +179,25 @@ export function encodeCrisisBuffId(parts: CrisisBuffIdParts) {
   return id
 }
 
+/** 危局 Buff ID 解码（与 encodeCrisisBuffId 互逆） */
+export function decodeCrisisBuffId(id: number | string): CrisisBuffIdParts {
+  const text = String(id)
+  if (!/^\d+$/.test(text) || text.length < 4) {
+    throw new Error('无效的危局 Buff ID')
+  }
+  const buffIndex = Number(text.slice(-2))
+  const phase = Number(text.slice(-3, -2))
+  const versionCode = text.slice(0, -3)
+  if (!versionCode || !Number.isFinite(phase) || !Number.isFinite(buffIndex)) {
+    throw new Error('无效的危局 Buff ID')
+  }
+  const version =
+    versionCode.length <= 2
+      ? versionCodeToLabel(versionCode.padStart(2, '0'))
+      : `${Number(versionCode[0])}.${versionCode.slice(1)}`
+  return { version, phase, buffIndex }
+}
+
 export function decodeDefenseBuffId(id: number | string): DefenseBuffIdParts {
   const idText = String(id).padStart(7, '0')
   if (!/^\d{7}$/.test(idText)) {

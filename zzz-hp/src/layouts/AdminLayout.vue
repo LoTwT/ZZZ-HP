@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import AdminSidebar from '@/components/admin/AdminSidebar.vue'
+import AdminVisualMonsterPanel from '@/components/admin/AdminVisualMonsterPanel.vue'
 import AdminMonsterPanel from '@/components/admin/AdminMonsterPanel.vue'
-import AdminDeleteMonsterPanel from '@/components/admin/AdminDeleteMonsterPanel.vue'
 import AdminBuffPanel from '@/components/admin/AdminBuffPanel.vue'
-import AdminDeleteBuffPanel from '@/components/admin/AdminDeleteBuffPanel.vue'
 import AdminSeasonDatePanel from '@/components/admin/AdminSeasonDatePanel.vue'
 import type { AdminPanel, AdminScope } from '@/types/admin'
 
@@ -28,12 +27,13 @@ const activePanel = ref<AdminPanel>('monster')
     />
     <main
       class="admin-content"
-      :class="{ 'admin-content--fill': activePanel === 'season-date' }"
+      :class="{
+        'admin-content--fill': activePanel === 'season-date' || activePanel === 'monster',
+      }"
     >
-      <AdminMonsterPanel v-if="activePanel === 'monster'" :scope="scope" />
-      <AdminDeleteMonsterPanel v-else-if="activePanel === 'delete-monster'" :scope="scope" />
-      <AdminBuffPanel v-else-if="activePanel === 'buff'" :scope="scope" />
-      <AdminDeleteBuffPanel v-else-if="activePanel === 'delete-buff'" :scope="scope" />
+      <AdminVisualMonsterPanel v-if="activePanel === 'monster'" :scope="scope" />
+      <AdminMonsterPanel v-else-if="activePanel === 'monster-form'" :scope="scope" />
+      <AdminBuffPanel v-else-if="activePanel === 'buff-form'" :scope="scope" />
       <AdminSeasonDatePanel v-else :scope="scope" />
     </main>
   </div>
@@ -58,10 +58,12 @@ const activePanel = ref<AdminPanel>('monster')
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  padding: 0;
 }
 
 .admin-content--fill > * {
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 </style>

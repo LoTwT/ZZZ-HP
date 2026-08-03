@@ -9,11 +9,21 @@ import {
 import { historyData } from '@/data/historyData'
 import { modeTitles, type ModeKey, type PhaseData } from '@/types/history'
 import { formatHp, formatHpDelta, formatHpExpansionPercent, parseHpString } from '@/utils/gameData'
+import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admin'
 
 const props = defineProps<{
   mode: ModeKey
   embedded?: boolean
   chartPoint?: HpChartPoint | null
+  /** 管理端：在卡片上显示编辑/添加/删除 */
+  adminMode?: boolean
+}>()
+
+const emit = defineEmits<{
+  'admin-monster': [context: AdminMonsterSlotContext]
+  'admin-delete-monster': [recordId: number, label: string]
+  'admin-buff': [context: AdminBuffSlotContext]
+  'admin-delete-buff': [recordId: number, label: string]
 }>()
 
 const crisisPhases = ref<PhaseData[]>([])
@@ -238,6 +248,89 @@ const currentEnemyHpCoeffComparisons = computed(() => {
     getBossHpCoeffComparison(enemy.bossName, enemy.hpCoeffPercent ?? null),
   )
 })
+
+function parsePhaseNumber(phaseLabel: string) {
+  return (phaseLabel.match(/\d+/)?.[0] ?? phaseLabel.replace(/\D/g, '')) || '1'
+}
+
+function buildCrisisMonsterContext(
+  enemy: PhaseData['enemies'][number],
+  mode: 'create' | 'edit',
+): AdminMonsterSlotContext | null {
+  const phase = currentPhase.value
+  if (!phase?.version) return null
+  const phaseNum = parsePhaseNumber(phase.phase)
+  const room = enemy.room ?? (enemy.isHardRoom ? '4' : '')
+  if (!room) return null
+  return {
+    mode,
+    recordId: enemy.recordId,
+    version: phase.version,
+    phase: phaseNum,
+    room,
+    bossName: enemy.bossName ?? '',
+    hp: enemy.hpValue ?? enemy.hp,
+    defense: enemy.defense,
+    level: enemy.label.match(/Lv(\d+)/)?.[1] ?? (enemy.isHardRoom ? '70' : '70'),
+    weakness: enemy.weakness ?? '',
+    resistance: enemy.resistance ?? '',
+    bossImage: enemy.imageUrl ?? null,
+    crisisBaseHp: enemy.crisisBaseHp,
+    hpCoeffPercent: enemy.hpCoeffPercent,
+    hpCoeffManual: enemy.hpCoeffPercent != null,
+  }
+}
+
+function onAdminEditEnemy(enemy: PhaseData['enemies'][number]) {
+  const ctx = buildCrisisMonsterContext(enemy, 'edit')
+  if (ctx) emit('admin-monster', ctx)
+}
+
+function onAdminAddEnemy(enemy: PhaseData['enemies'][number]) {
+  const ctx = buildCrisisMonsterContext(enemy, 'create')
+  if (ctx) emit('admin-monster', { ...ctx, bossName: '', hp: '', defense: '', level: '70' })
+}
+
+function onAdminDeleteEnemy(enemy: PhaseData['enemies'][number]) {
+  if (!enemy.recordId) return
+  emit('admin-delete-monster', enemy.recordId, enemy.label)
+}
+
+function buildCrisisBuffContext(
+  buff: PhaseData['buffs'][number],
+  mode: 'create' | 'edit',
+): AdminBuffSlotContext | null {
+  const phase = currentPhase.value
+  if (!phase?.version) return null
+  const buffIndex = buff.buffIndex ?? 1
+  return {
+    mode,
+    recordId: buff.recordId,
+    version: phase.version,
+    phase: parsePhaseNumber(phase.phase),
+    buffIndex,
+    buffName: buff.isEmpty ? '' : buff.name,
+    buffText: buff.buffText ?? buff.lines.join('\n'),
+    buffImage: buff.imageUrl ?? null,
+  }
+}
+
+function onAdminEditBuff(buff: PhaseData['buffs'][number]) {
+  const ctx = buildCrisisBuffContext(buff, 'edit')
+  if (ctx) emit('admin-buff', ctx)
+}
+
+function onAdminAddBuff(buff: PhaseData['buffs'][number]) {
+  const ctx = buildCrisisBuffContext(buff, 'create')
+  if (ctx) emit('admin-buff', { ...ctx, buffName: '', buffText: '' })
+}
+
+function onAdminDeleteBuff(buff: PhaseData['buffs'][number]) {
+  if (!buff.recordId) return
+  emit('admin-delete-buff', buff.recordId, buff.name)
+}
+
+defineExpose({ reload: loadCrisisAssaultData })
 
 function defaultPublicPhaseIndex(list: { isHidden?: boolean }[]): number {
   if (!list.length) return 0
@@ -557,7 +650,34 @@ function onPickerWheel(event: WheelEvent) {
             v-for="(buff, index) in currentPhase.buffs"
             :key="`${currentPhase.id}-buff-${index}`"
             class="buff-card"
+            :class="{ 'buff-card--empty': buff.isEmpty, 'buff-card--admin': adminMode }"
           >
+            <div v-if="adminMode" class="enemy-admin-bar">
+              <button
+                v-if="!buff.isEmpty"
+                type="button"
+                class="enemy-admin-btn"
+                @click.stop="onAdminEditBuff(buff)"
+              >
+                编辑
+              </button>
+              <button
+                v-if="!buff.isEmpty && buff.recordId"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--danger"
+                @click.stop="onAdminDeleteBuff(buff)"
+              >
+                删除
+              </button>
+              <button
+                v-if="buff.isEmpty"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--primary"
+                @click.stop="onAdminAddBuff(buff)"
+              >
+                添加 Buff
+              </button>
+            </div>
             <div v-if="buff.imageUrl" class="buff-image">
               <img :src="buff.imageUrl" :alt="buff.name" />
             </div>
@@ -574,9 +694,39 @@ function onPickerWheel(event: WheelEvent) {
             v-for="(enemy, index) in currentPhase.enemies"
             :key="`${currentPhase.id}-enemy-${index}`"
             class="enemy-card"
-            :class="{ 'enemy-card--hard': enemy.isHardRoom }"
+            :class="{
+              'enemy-card--hard': enemy.isHardRoom,
+              'enemy-card--empty': enemy.isEmpty,
+              'enemy-card--admin': adminMode,
+            }"
           >
             <p class="enemy-label">{{ enemy.label }}</p>
+            <div v-if="adminMode" class="enemy-admin-bar">
+              <button
+                v-if="!enemy.isEmpty"
+                type="button"
+                class="enemy-admin-btn"
+                @click.stop="onAdminEditEnemy(enemy)"
+              >
+                编辑
+              </button>
+              <button
+                v-if="!enemy.isEmpty && enemy.recordId"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--danger"
+                @click.stop="onAdminDeleteEnemy(enemy)"
+              >
+                删除
+              </button>
+              <button
+                v-if="enemy.isEmpty"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--primary"
+                @click.stop="onAdminAddEnemy(enemy)"
+              >
+                添加怪物
+              </button>
+            </div>
             <div class="enemy-body">
               <div class="enemy-image">
                 <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
@@ -1656,5 +1806,50 @@ function onPickerWheel(event: WheelEvent) {
     max-width: min(180px, 52vw);
     height: auto;
   }
+}
+
+.buff-card--admin {
+  position: relative;
+}
+
+.buff-card--empty {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.enemy-card--admin {
+  position: relative;
+}
+
+.enemy-card--empty {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.enemy-admin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.enemy-admin-btn {
+  border: 1px solid #3a424f;
+  border-radius: 6px;
+  background: rgba(15, 18, 23, 0.85);
+  color: #d5dae4;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.enemy-admin-btn--primary {
+  border-color: hsla(160, 100%, 37%, 0.55);
+  color: #9ad0b8;
+}
+
+.enemy-admin-btn--danger {
+  border-color: #5a3434;
+  color: #e8a8a8;
 }
 </style>

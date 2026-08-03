@@ -145,6 +145,7 @@ function ensureRoom(frontier, stage, roomInStage) {
       label: `房间 ${roomInStage}`,
       level: 0,
       zoneBuffs: [],
+      zoneBuffRecords: [],
       roomBuff: { name: '', lines: [] },
       battleRooms: new Map(),
     })
@@ -199,6 +200,7 @@ function finalizeRoom(room) {
     label: room.label,
     level: room.level,
     zoneBuffs: room.zoneBuffs,
+    zoneBuffRecords: room.zoneBuffRecords ?? [],
     roomBuff: room.roomBuff.name
       ? room.roomBuff
       : { name: '—', lines: room.zoneBuffs.length ? [] : ['暂无 Buff 数据'] },
@@ -253,6 +255,13 @@ function applyBuffToRoom(room, buff, decoded) {
     .filter(Boolean)
 
   if (decoded.buffIndex <= 2) {
+    if (!room.zoneBuffRecords) room.zoneBuffRecords = []
+    room.zoneBuffRecords.push({
+      recordId: buff.id,
+      buffIndex: decoded.buffIndex,
+      buffText: buff.buff ?? '',
+      buffName: buff.buff_name ?? '',
+    })
     if (lines.length) room.zoneBuffs.push(...lines)
     return
   }
@@ -262,6 +271,9 @@ function applyBuffToRoom(room, buff, decoded) {
       name: buff.buff_name,
       imageUrl: buff.buff_image,
       lines: lines.length ? lines : [buff.buff_name],
+      recordId: buff.id,
+      buffIndex: decoded.buffIndex,
+      buffText: buff.buff ?? '',
     }
   }
 }
@@ -279,8 +291,10 @@ function applyRoomBuffFallback(room, buff, decoded) {
     name: buff.buff_name,
     imageUrl: buff.buff_image,
     lines: lines.length ? lines : [buff.buff_name],
+    recordId: buff.id,
+    buffIndex: decoded.buffIndex,
+    buffText: buff.buff ?? '',
   }
-  void decoded
 }
 
 export async function getDefenseSeasons(variant = 'new', { includeHidden = false } = {}) {
