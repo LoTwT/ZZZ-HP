@@ -139,6 +139,16 @@ const content312 = `相对 3.1.1 的增量更新（蕾米埃尔本人耀变结�
 · 后端 Buff 字段白名单补全 specialMult / specialMultFactor，管理后台保存可正确入库
 · 最优词条与面板计算同步本人耀变输入；补充蕾米埃尔头像、荆棘玫瑰/羽化命运驱动盘图与 check-remiel.mjs 校验脚本`
 
+const content313 = `相对 3.1.2 的增量更新（伤害模式缓存、管理端内容编辑与计算器修正为主）：
+
+· 伤害模式自定义配置按队伍缓存（teamKey），切换编组不再串用其他队伍事件；缓存保留 owner / trigger 产生角色信息
+· 管理端可配置蕾米埃尔耀变事件；流明角色的异常模式仅允许耀变种类
+· 留言板站点管理员（is_site_admin）恢复「账号」Tab 与账号管理 API，无需仅依赖 /admin token
+· 危局 / 式舆管理端「内容管理」：像前台一样可视化编辑怪物与 Buff，删除合并到卡片；保留表单添加入口
+· 式舆区域 Buff 支持 recordId 与按房间槽位对齐（需同步部署后端 defenseService）
+· 最优词条：切换柱体时保留已勾选统计事件，不再重置为全部事件总伤
+· 流明「视作下一位队友属性」仅作用于抗性区；不再参与属性增伤、异常增伤等 Buff 白名单匹配`
+
 const conn = await mysql.createConnection({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
@@ -251,6 +261,17 @@ await conn.query(
     '蕾米埃尔耀变结算与敌方抗性',
     content312,
     '2026-08-01 01:30:00',
+  ],
+)
+
+await conn.query(`DELETE FROM changelog WHERE version = '3.1.3'`)
+await conn.query(
+  `INSERT INTO changelog (version, title, content, published_at) VALUES (?, ?, ?, ?)`,
+  [
+    '3.1.3',
+    '伤害模式缓存与管理端可视化编辑',
+    content313,
+    '2026-08-04 22:30:00',
   ],
 )
 
