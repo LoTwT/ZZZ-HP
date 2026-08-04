@@ -41,6 +41,8 @@ export interface DamageCalcInput {
   staggerPhase?: 'normal' | 'stagger'
   /** 主C 属性，用于火/以太异常持续时间 ÷0.5 */
   mainAgentElement?: string
+  /** 主 C 抗性区基准属性（流明时为下一位非流明队友属性；缺省同 mainAgentElement） */
+  mainAgentResistanceElement?: string | null
   /** 主C id（预留） */
   mainAgentId?: string
   /** 主C 名称 */
@@ -54,6 +56,8 @@ export interface DamageCalcInput {
   triggerFinalPanel?: PanelStats
   /** 触发角色元素（影响异常有效持续时间，若走触发面板） */
   triggerAgentElement?: string
+  /** 产生角色抗性区基准属性（流明时为下一位非流明队友属性；缺省同 triggerAgentElement） */
+  triggerAgentResistanceElement?: string | null
   /** 触发角色 piercePower（命破等）；缺省用主 C piercePower */
   triggerPiercePower?: number
   triggerBaseDamageSource?: BaseDamageSource
@@ -405,7 +409,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     combatPierceDmgBonus: input.combatPierceDmgBonus ?? 0,
     staggerPhase,
     agentLevel: ownerAgentLevel,
-    resistanceElement: input.mainAgentElement,
+    resistanceElement: input.mainAgentResistanceElement ?? input.mainAgentElement,
   })
 
   const triggerParts = useTriggerBase
@@ -423,7 +427,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
         combatPierceDmgBonus: input.combatPierceDmgBonus ?? 0,
         staggerPhase,
         agentLevel: triggerAgentLevel,
-        resistanceElement: input.triggerAgentElement ?? input.mainAgentElement,
+        resistanceElement:
+          input.triggerAgentResistanceElement ??
+          input.triggerAgentElement ??
+          input.mainAgentResistanceElement ??
+          input.mainAgentElement,
         // 异常基础防御区：穿透率/穿透值取产生角色，减防/无视防御取主 C
         defensePanel: {
           penRate: triggerPanel.penRate,

@@ -44,9 +44,8 @@ import { buildSkillContextFromDamageEvent, mergeExtraModsForEvent } from '@/util
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
-  isLuminousElement,
   isRemielSelfRadianceTrigger,
-  resolveLuminousEquivalentElement,
+  resolveDamageCalcResistanceElements,
 } from '@/utils/remielUtils'
 import { resolveRemielSelfRadianceCalcInput } from '@/utils/remielSelfRadiancePanel'
 import {
@@ -470,28 +469,6 @@ function computePiercePower(hp: number, atk: number, pierceMod = 0) {
 
 export type OptimalPanelBreakdown = ReturnType<typeof computeFinalPanel>
 
-function resolveOptimalBuffMatchElementForSlot(
-  ctx: OptimalEvalContext,
-  slotIndex: number,
-): string | undefined {
-  const agent = ctx.panelContext.agents.find(
-    (item) => item.id === ctx.panelContext.teamSlots[slotIndex]?.agentId,
-  )
-  const element = agent?.element
-  if (!element) return undefined
-  if (
-    ctx.panelContext.skillContext?.damageKind === 'direct' &&
-    isLuminousElement(element)
-  ) {
-    return resolveLuminousEquivalentElement(
-      ctx.panelContext.teamSlots,
-      ctx.panelContext.agents,
-      slotIndex,
-    )
-  }
-  return element
-}
-
 function buildOptimalExtraModsForEvent(
   ctx: OptimalEvalContext,
   event: DamageEvent,
@@ -505,11 +482,8 @@ function buildOptimalExtraModsForEvent(
     agents: ctx.panelContext.agents,
     skillSubcategories: ctx.skillSubcategories ?? [],
     followUpSkillRules: ctx.followUpSkillRules ?? [],
-    resolveBuffElement: (agentId) => {
-      const slotIndex = ctx.panelContext.teamSlots.findIndex((slot) => slot.agentId === agentId)
-      if (slotIndex < 0) return undefined
-      return resolveOptimalBuffMatchElementForSlot(ctx, slotIndex)
-    },
+    resolveBuffElement: (agentId) =>
+      ctx.panelContext.agents.find((item) => item.id === agentId)?.element,
     resolveTriggerElement: (evt) => {
       const raw = evt.triggerAgentId ?? ctx.triggerAnomalyAgentId
       if (!raw || raw === '__at_calc__') return undefined
@@ -681,10 +655,7 @@ export function evaluateOptimalEventDetail(
       })
     : false
 
-  const ownerBuffElement =
-    damageKind === 'direct'
-      ? resolveOptimalBuffMatchElementForSlot(ctx, ownerSlotIndex)
-      : ownerAgent?.element
+  const ownerBuffElement = ownerAgent?.element
 
   const skillCtx = {
     damageKind,
@@ -869,6 +840,12 @@ export function evaluateOptimalEventDetail(
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
     staggerPhase: event.staggerPhase,
     mainAgentElement: ctx.mainAgentElement,
+    ...resolveDamageCalcResistanceElements(
+      ctx.panelContext.teamSlots,
+      ctx.panelContext.agents,
+      ctx.panelContext.mainSlotIndex,
+      evtTriggerAgentId,
+    ),
     mainAgentId: ctx.mainAgentId,
     mainAgentName: ctx.mainAgentName,
     anomalySubKind,
@@ -992,6 +969,12 @@ function computeEventDamageLines(
         combatStaggerVulnerable: firstBreakdown.combatMods.staggerVulnerable,
         combatSpecial: firstBreakdown.combatMods.special,
         mainAgentElement: ctx.mainAgentElement,
+        ...resolveDamageCalcResistanceElements(
+          ctx.panelContext.teamSlots,
+          ctx.panelContext.agents,
+          ctx.panelContext.mainSlotIndex,
+          ctx.triggerAnomalyAgentId,
+        ),
         mainAgentId: ctx.mainAgentId,
         mainAgentName: ctx.mainAgentName,
       })
@@ -1067,6 +1050,12 @@ export function evaluateAffixCountsForSweep(
       combatStaggerVulnerable: breakdown.combatMods.staggerVulnerable,
       combatSpecial: breakdown.combatMods.special,
       mainAgentElement: ctx.mainAgentElement,
+      ...resolveDamageCalcResistanceElements(
+        ctx.panelContext.teamSlots,
+        ctx.panelContext.agents,
+        ctx.panelContext.mainSlotIndex,
+        ctx.triggerAnomalyAgentId,
+      ),
       mainAgentId: ctx.mainAgentId,
       mainAgentName: ctx.mainAgentName,
     })
@@ -1214,6 +1203,12 @@ function evaluateAffixCountsUncached(
         combatStaggerVulnerable: breakdown.combatMods.staggerVulnerable,
         combatSpecial: breakdown.combatMods.special,
         mainAgentElement: ctx.mainAgentElement,
+        ...resolveDamageCalcResistanceElements(
+          ctx.panelContext.teamSlots,
+          ctx.panelContext.agents,
+          ctx.panelContext.mainSlotIndex,
+          ctx.triggerAnomalyAgentId,
+        ),
         mainAgentId: ctx.mainAgentId,
         mainAgentName: ctx.mainAgentName,
       })
@@ -1249,6 +1244,12 @@ function evaluateAffixCountsUncached(
     combatStaggerVulnerable: breakdown.combatMods.staggerVulnerable,
     combatSpecial: breakdown.combatMods.special,
     mainAgentElement: ctx.mainAgentElement,
+    ...resolveDamageCalcResistanceElements(
+      ctx.panelContext.teamSlots,
+      ctx.panelContext.agents,
+      ctx.panelContext.mainSlotIndex,
+      ctx.triggerAnomalyAgentId,
+    ),
     mainAgentId: ctx.mainAgentId,
     mainAgentName: ctx.mainAgentName,
   })

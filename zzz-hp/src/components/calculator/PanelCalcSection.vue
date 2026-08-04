@@ -100,7 +100,7 @@ import {
   findLuminousAgentInTeam,
   isLuminousElement,
   isRemielSelfRadianceTrigger,
-  resolveLuminousEquivalentElement,
+  resolveDamageCalcResistanceElements,
   isLuminousAgent,
 } from '@/utils/remielUtils'
 import { resolveRemielSelfRadianceCalcInput, computeRemielSelfInCombatPanel } from '@/utils/remielSelfRadiancePanel'
@@ -242,9 +242,8 @@ function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
     skillSubcategories: skillSubcategories.value,
     followUpSkillRules: followUpSkillRules.value,
     resolveBuffElement: (agentId) => {
-      const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
-      if (slotIndex < 0) return undefined
-      return resolveBuffMatchElementForSlot(slotIndex)
+      const agent = props.agents.find((item) => item.id === agentId)
+      return agent?.element
     },
     resolveTriggerElement: resolveEventTriggerElement,
   })
@@ -434,12 +433,7 @@ function resolveRemielSelfRadianceCalcForTrigger(
 
 function resolveBuffMatchElementForSlot(slotIndex: number): string | undefined {
   const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  const element = agent?.element
-  if (!element) return undefined
-  if (props.damageKind === 'direct' && isLuminousElement(element)) {
-    return resolveLuminousEquivalentElement(props.teamSlots, props.agents, slotIndex)
-  }
-  return element
+  return agent?.element
 }
 
 function resolveLuminousTeamModifiers() {
@@ -652,17 +646,10 @@ const needsTriggerPanel = computed(() => {
   )
 })
 
-/** 异放/乱流/耀变时伤害属性跟随触发角色；直伤流明主 C 用等价属性；否则用主 C */
+/** 异放/乱流/耀变时伤害属性跟随触发角色；否则用主 C（流明不作等价属性替换，等价属性仅用于抗性区） */
 const damageElement = computed(() => {
   if (needsTriggerPanel.value && triggerAgent.value?.element) {
     return triggerAgent.value.element
-  }
-  if (props.damageKind === 'direct' && isLuminousElement(mainAgent.value?.element)) {
-    return resolveLuminousEquivalentElement(
-      props.teamSlots,
-      props.agents,
-      mainSlotIndex.value,
-    )
   }
   return mainAgent.value?.element
 })
@@ -1021,6 +1008,12 @@ const calcParts = computed(() =>
     combatPierceDmgBonus: panelBreakdown.value.combatMods.pierceDmgBonus,
     staggerPhase: props.staggerPhase ?? 'stagger',
     mainAgentElement: mainAgent.value?.element ?? '',
+    ...resolveDamageCalcResistanceElements(
+      props.teamSlots,
+      props.agents,
+      mainSlotIndex.value,
+      props.triggerAnomalyAgentId,
+    ),
     mainAgentId: mainAgent.value?.id ?? '',
     mainAgentName: mainAgent.value?.name ?? '',
     anomalySubKind: props.anomalySubKind ?? 'anomaly',
@@ -1078,10 +1071,7 @@ function buildEventSkillContext(event: DamageEvent) {
       })
     : false
 
-  const ownerBuffElement =
-    evtDamageKind === 'direct'
-      ? resolveBuffMatchElementForSlot(effectiveOwnerSlotIndex)
-      : props.agents.find((item) => item.id === ownerAgentId)?.element
+  const ownerBuffElement = props.agents.find((item) => item.id === ownerAgentId)?.element
 
   return {
     skillCtx: {
@@ -1302,6 +1292,12 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
     staggerPhase: event.staggerPhase,
     mainAgentElement: mainAgent.value?.element ?? '',
+    ...resolveDamageCalcResistanceElements(
+      props.teamSlots,
+      props.agents,
+      mainSlotIndex.value,
+      evtTriggerAgentId,
+    ),
     mainAgentId: actualMainId,
     mainAgentName: mainAgent.value?.name ?? '',
     anomalySubKind: evtAnomalySubKind,

@@ -21,7 +21,8 @@ export function isLegacyAnomalyEventKind(kind: DamageEventKind): boolean {
 }
 
 /**
- * 直伤 Buff 匹配：流明角色取下一槽位等价属性（1→2→3→1；中间空槽顺延）。
+ * 流明「视作下一位非流明队友属性」：仅用于抗性区敌方抗性基准（1→2→3→1；中间空槽顺延）。
+ * 不参与属性增伤、异常增伤等 Buff 白名单匹配。
  */
 export function resolveLuminousEquivalentElement(
   teamSlots: Array<{ agentId: string }>,
@@ -40,6 +41,53 @@ export function resolveLuminousEquivalentElement(
     if (element && !isLuminousElement(element)) return element
   }
   return undefined
+}
+
+/** 某槽位角色在抗性区所参照的属性（流明则取下一位非流明队友属性） */
+export function resolveAgentResistanceElement(
+  teamSlots: Array<{ agentId: string }>,
+  agents: Array<{ id: string; element: string }>,
+  slotIndex: number,
+): string | null {
+  const agentId = teamSlots[slotIndex]?.agentId
+  if (!agentId) return null
+  const agent = agents.find((item) => item.id === agentId)
+  const element = agent?.element?.trim()
+  if (!element) return null
+  if (isLuminousElement(element)) {
+    return resolveLuminousEquivalentElement(teamSlots, agents, slotIndex) ?? null
+  }
+  return element
+}
+
+export function resolveAgentResistanceElementByAgentId(
+  teamSlots: Array<{ agentId: string }>,
+  agents: Array<{ id: string; element: string }>,
+  agentId: string | null | undefined,
+): string | null {
+  if (!agentId) return null
+  const slotIndex = teamSlots.findIndex((slot) => slot.agentId === agentId)
+  if (slotIndex >= 0) return resolveAgentResistanceElement(teamSlots, agents, slotIndex)
+  const element = agents.find((item) => item.id === agentId)?.element?.trim()
+  if (!element) return null
+  return isLuminousElement(element) ? null : element
+}
+
+export function resolveDamageCalcResistanceElements(
+  teamSlots: Array<{ agentId: string }>,
+  agents: Array<{ id: string; element: string }>,
+  mainSlotIndex: number,
+  triggerAgentId?: string | null,
+): {
+  mainAgentResistanceElement: string | null
+  triggerAgentResistanceElement?: string | null
+} {
+  return {
+    mainAgentResistanceElement: resolveAgentResistanceElement(teamSlots, agents, mainSlotIndex),
+    triggerAgentResistanceElement: triggerAgentId
+      ? resolveAgentResistanceElementByAgentId(teamSlots, agents, triggerAgentId)
+      : undefined,
+  }
 }
 
 export function findLuminousSlotIndex(
