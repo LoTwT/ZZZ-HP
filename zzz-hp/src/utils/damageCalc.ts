@@ -587,8 +587,14 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceExpectedNoCrit = turbulencePreCrit * anomalyNoCritZone
   const turbulenceExpectedFullCrit = turbulencePreCrit * anomalyFullCritZone
 
+  const radianceDmgBonusForCombined = remielSelf
+    ? remielSelf.radianceDmgBonus
+    : bonusPanel.radianceDmgBonus
+  const anomalyDmgBonusForCombined = remielSelf
+    ? remielSelf.anomalyDmgBonus
+    : bonusPanel.anomalyDmgBonus
   const radianceCombinedDmgBonusZone =
-    1 + (bonusPanel.radianceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
+    1 + (radianceDmgBonusForCombined + anomalyDmgBonusForCombined) / 100
   const radianceMultZone = computeRadianceMultZone(bonusPanel)
   const specialMultZone = computeSpecialMultZone(bonusPanel)
   const radiancePreCrit = remielSelfRadianceActive

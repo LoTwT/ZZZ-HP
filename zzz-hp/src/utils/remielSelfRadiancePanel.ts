@@ -36,6 +36,8 @@ export function extractRemielSelfInCombatStats(
   pen: number
   resPen: number
   radianceResPen: number
+  radianceDmgBonus: number
+  anomalyDmgBonus: number
 } {
   const panel = breakdown.finalPanel
   return {
@@ -46,6 +48,8 @@ export function extractRemielSelfInCombatStats(
     pen: panel.pen,
     resPen: panel.resPen,
     radianceResPen: panel.radianceResPen,
+    radianceDmgBonus: panel.radianceDmgBonus,
+    anomalyDmgBonus: panel.anomalyDmgBonus,
   }
 }
 
@@ -73,6 +77,8 @@ export function resolveRemielSelfRadianceCalcInput(options: {
     pen: stats.pen,
     resPen: stats.resPen,
     radianceResPen: stats.radianceResPen,
+    radianceDmgBonus: stats.radianceDmgBonus,
+    anomalyDmgBonus: stats.anomalyDmgBonus,
     resistanceElement: resolveLuminousEquivalentElement(
       options.teamSlots,
       options.agents,

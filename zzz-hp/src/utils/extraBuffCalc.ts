@@ -44,14 +44,13 @@ export function buildSkillContextFromDamageEvent(
   const { damageKind, anomalySubKind } = mapEventKindToCalc(event.kind)
   const needsTrigger = eventNeedsAnomalyProducer(event.kind)
   const skillBound = event.skillBound !== false || damageKind === 'direct'
-  const triggerElement = options.resolveTriggerElement(event)
   const ownerElement = options.resolveBuffElement(options.ownerAgentId)
 
   return {
     damageKind,
     categoryId: skillBound ? event.categoryId : 'basic',
     subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-    element: needsTrigger ? triggerElement : ownerElement,
+    element: ownerElement,
     staggerPhase: event.staggerPhase,
     isFollowUp: skillBound
       ? resolveIsFollowUp({

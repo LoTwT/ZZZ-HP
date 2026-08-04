@@ -1078,7 +1078,7 @@ function buildEventSkillContext(event: DamageEvent) {
       damageKind: evtDamageKind,
       categoryId: skillBound ? event.categoryId : ('basic' as const),
       subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-      element: eventNeedsTrigger ? triggerElement : ownerBuffElement,
+      element: ownerBuffElement,
       staggerPhase: event.staggerPhase,
       isFollowUp: evtIsFollowUp,
       anomalySubKind: evtAnomalySubKind,

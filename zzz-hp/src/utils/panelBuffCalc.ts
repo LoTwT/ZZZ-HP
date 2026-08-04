@@ -686,6 +686,13 @@ function defaultSkillContext(
   }
 }
 
+function resolveBeneficiaryElement(ctx: PanelCalcContext): string | undefined {
+  const mainIndex = ctx.mainSlotIndex ?? 0
+  const agentId = ctx.teamSlots[mainIndex]?.agentId
+  if (!agentId) return undefined
+  return ctx.agents.find((item) => item.id === agentId)?.element
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
@@ -697,10 +704,15 @@ function resolvePackMods(
   if (slotIndex != null && ctx.panelSourceValuesBySlot?.has(slotIndex)) {
     panelSourceValues = ctx.panelSourceValuesBySlot.get(slotIndex)
   }
+  const slotElement =
+    slotIndex != null
+      ? ctx.agents.find((item) => item.id === ctx.teamSlots[slotIndex]?.agentId)?.element
+      : undefined
   return resolveEffectsToMods(effects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
-    element: skillCtx.element,
+    element: isMain ? skillCtx.element : slotElement,
+    beneficiaryElement: resolveBeneficiaryElement(ctx),
     stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
     convertInputs: ctx.buffSelection?.convertInputs,
     attrValues: ctx.attrValues,

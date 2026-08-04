@@ -661,7 +661,7 @@ export function evaluateOptimalEventDetail(
     damageKind,
     categoryId: skillBound ? event.categoryId : ('basic' as const),
     subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-    element: eventNeedsTrigger ? evtTriggerElement : ownerBuffElement,
+    element: ownerBuffElement,
     staggerPhase: event.staggerPhase,
     isFollowUp: evtIsFollowUp,
     anomalySubKind,

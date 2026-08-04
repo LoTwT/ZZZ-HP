@@ -581,6 +581,8 @@ export function resolveEffectsToMods(
     applyTargets?: BuffApplyTarget[]
     ctx?: SkillCalcContext | null
     element?: string
+    /** 队伍 Buff 的受益角色属性（通常为当前结算主 C；流明不作等价替换） */
+    beneficiaryElement?: string
     stacksByEffectId?: Record<string, number>
     convertInputs?: Record<string, number>
     attrValues?: Partial<Record<CharacterAttrKey, number>>
@@ -602,7 +604,11 @@ export function resolveEffectsToMods(
     }
     if (!isEffectEnabled(effect, options.selection)) continue
     if (!effectMatchesContext(effect, options.ctx)) continue
-    if (!effectMatchesElement(effect, options.element ?? options.ctx?.element)) continue
+    const matchElement =
+      effect.applyTarget === 'team'
+        ? (options.beneficiaryElement ?? options.element ?? options.ctx?.element)
+        : (options.element ?? options.ctx?.element)
+    if (!effectMatchesElement(effect, matchElement)) continue
     if (options.skipConvert && effect.kind === 'convert') continue
 
     const stacks =
