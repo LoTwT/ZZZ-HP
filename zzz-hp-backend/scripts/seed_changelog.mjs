@@ -149,6 +149,11 @@ const content313 = `相对 3.1.2 的增量更新（伤害模式缓存、管理�
 · 最优词条：切换柱体时保留已勾选统计事件，不再重置为全部事件总伤
 · 流明「视作下一位队友属性」仅作用于抗性区；不再参与属性增伤、异常增伤等 Buff 白名单匹配`
 
+const content314 = `相对 3.1.3 的增量更新（流明 Buff 匹配与蕾米埃尔异化系数修正为主）：
+
+· 流明不再继承下一位队友属性的异常增伤；本人耀变综合增伤仅含自身面板，不含队友赋予的异常增伤
+· 修正蕾米埃尔 basePanel 初始异化系数误填为 100 的问题，恢复为 0（精通 × 0.02% 转模从正确基准起算）`
+
 const conn = await mysql.createConnection({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
@@ -272,6 +277,17 @@ await conn.query(
     '伤害模式缓存与管理端可视化编辑',
     content313,
     '2026-08-04 22:30:00',
+  ],
+)
+
+await conn.query(`DELETE FROM changelog WHERE version = '3.1.4'`)
+await conn.query(
+  `INSERT INTO changelog (version, title, content, published_at) VALUES (?, ?, ?, ?)`,
+  [
+    '3.1.4',
+    '流明异常增伤与异化系数修正',
+    content314,
+    '2026-08-05 00:45:00',
   ],
 )
 
