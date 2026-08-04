@@ -709,10 +709,21 @@ const chartEventSelectionSummary = computed(() => {
 /** 柱状图参与统计的事件；默认全选 = 总伤害 */
 const selectedChartEventIds = ref<string[]>([])
 
+/** 仅在可选事件 id 集合变化时同步选择，切换柱体只更新期望数值时不重置 */
 watch(
-  chartEventOptions,
-  (options) => {
-    selectedChartEventIds.value = options.map((item) => item.id)
+  () => chartEventOptions.value.map((item) => item.id),
+  (optionIds, prevIds) => {
+    if (!optionIds.length) return
+    if (!prevIds?.length) {
+      selectedChartEventIds.value = [...optionIds]
+      return
+    }
+    const idsUnchanged =
+      optionIds.length === prevIds.length && optionIds.every((id, index) => id === prevIds[index])
+    if (idsUnchanged) return
+    const optionSet = new Set(optionIds)
+    const preserved = selectedChartEventIds.value.filter((id) => optionSet.has(id))
+    selectedChartEventIds.value = preserved.length ? preserved : [...optionIds]
   },
   { immediate: true },
 )
