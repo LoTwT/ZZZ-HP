@@ -45,12 +45,9 @@ import {
 import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 import {
-  ENEMY_RESISTANCE_ELEMENTS,
-  ENEMY_RESISTANCE_OPTIONS,
   normalizeDamageEnemyInput,
+  DEFAULT_ENEMY_STAGGER_MULTIPLIER,
   type DamageEnemyInput,
-  type EnemyResistanceElement,
-  type EnemyResistanceType,
 } from '@/utils/enemyResistance'
 import {
   ANOMALY_CONSTRAINTS,
@@ -79,11 +76,7 @@ import {
   type OptimalEventAffixImpact,
   type OptimalEventDamageLine,
 } from '@/utils/optimalAffixAlloc'
-import {
-  ENEMY_DEFENSE_PRESETS,
-  STAGGER_MULTIPLIER_PRESETS,
-} from '@/utils/enemyInputPresets'
-import EnemyPresetCombo from '@/components/calculator/EnemyPresetCombo.vue'
+import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { resolveIsFollowUp } from '@/utils/buffEffect'
@@ -234,22 +227,11 @@ const enemyInput = reactive<DamageEnemyInput>(
   normalizeDamageEnemyInput({
     defense: 953,
     vulnerableMultiplier: 1,
-    staggerMultiplier: 1,
+    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
     specialMultiplier: 1,
     level: 60,
   }),
 )
-
-function ensureElementResistanceMap() {
-  if (!enemyInput.elementResistance) {
-    enemyInput.elementResistance = normalizeDamageEnemyInput(enemyInput).elementResistance
-  }
-  return enemyInput.elementResistance!
-}
-
-function setElementResistance(element: EnemyResistanceElement, value: EnemyResistanceType) {
-  ensureElementResistanceMap()[element] = value
-}
 
 const directAlloc = reactive<DirectAllocState>({
   flatStat: 0,
@@ -1702,53 +1684,7 @@ watch(
       </p>
     </div>
 
-    <h3 class="block-title">敌方与环境</h3>
-    <div class="grid four">
-      <label class="field">
-        <span>敌方防御</span>
-        <EnemyPresetCombo
-          v-model="enemyInput.defense"
-          :presets="ENEMY_DEFENSE_PRESETS"
-          aria-label="敌方防御预设"
-        />
-      </label>
-      <label
-        v-for="element in ENEMY_RESISTANCE_ELEMENTS"
-        :key="`res-${element}`"
-        class="field"
-      >
-        <span>{{ element }} · 抗性</span>
-        <select
-          :value="ensureElementResistanceMap()[element]"
-          @change="setElementResistance(element, ($event.target as HTMLSelectElement).value as EnemyResistanceType)"
-        >
-          <option v-for="opt in ENEMY_RESISTANCE_OPTIONS" :key="opt.id" :value="opt.id">
-            {{ opt.label }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>易伤区（基础）</span>
-        <input v-model.number="enemyInput.vulnerableMultiplier" type="number" step="0.01" />
-      </label>
-      <label class="field">
-        <span>失衡易伤区（基础）</span>
-        <EnemyPresetCombo
-          v-model="enemyInput.staggerMultiplier"
-          :presets="STAGGER_MULTIPLIER_PRESETS"
-          step="0.01"
-          aria-label="失衡易伤预设"
-        />
-      </label>
-      <label class="field">
-        <span>特殊乘区（基础）</span>
-        <input v-model.number="enemyInput.specialMultiplier" type="number" step="0.01" />
-      </label>
-      <label class="field">
-        <span>代理人等级</span>
-        <input v-model.number="enemyInput.level" type="number" min="1" max="60" step="1" />
-      </label>
-    </div>
+    <EnemyEnvironmentSection v-model="enemyInput" title="敌方与环境" />
 
     <div class="kind-hint">
       当前计算方式：{{ damageKind === 'direct' ? '直伤' : '异常' }}（与上方全局选择同步）

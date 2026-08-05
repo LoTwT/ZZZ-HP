@@ -29,6 +29,7 @@ export interface CreateBossPayload {
   crisis_base_hp?: number
   hp_coeff_percent?: number
   hp_coeff_manual?: boolean
+  stagger_multiplier?: number | null
 }
 
 export interface CreateBuffPayload {
@@ -63,6 +64,7 @@ export interface BossInfoRecord {
   weakness: string | null
   resistance: string | null
   crisis_base_hp?: number | null
+  stagger_multiplier?: number | null
 }
 
 export interface BossInfoSyncResult {
@@ -94,6 +96,7 @@ export interface BossRecord {
   weakness: string | null
   resistance: string | null
   boss_image: string | null
+  stagger_multiplier?: number | null
 }
 
 export interface BuffRecord {

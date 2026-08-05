@@ -340,15 +340,28 @@ function defaultPublicPhaseIndex(list: { isHidden?: boolean }[]): number {
   return list.length - 1
 }
 
+function phaseSelectionKey(phase: PhaseData) {
+  const phaseNum = phase.phase.replace(/\D/g, '')
+  return `${phase.version}-${phaseNum || phase.phase}`
+}
+
 async function loadCrisisAssaultData() {
   if (props.mode !== 'crisis-assault') return
 
   loading.value = true
   loadError.value = ''
+  const previousKey =
+    props.adminMode && currentPhase.value ? phaseSelectionKey(currentPhase.value) : null
   try {
     crisisPhases.value = await fetchCrisisAssaultPhases()
     if (props.chartPoint) {
       applyChartPointSelection()
+    } else if (previousKey) {
+      const restoredIndex = crisisPhases.value.findIndex(
+        (item) => phaseSelectionKey(item) === previousKey,
+      )
+      currentIndex.value =
+        restoredIndex >= 0 ? restoredIndex : defaultPublicPhaseIndex(crisisPhases.value)
     } else {
       currentIndex.value = defaultPublicPhaseIndex(crisisPhases.value)
     }

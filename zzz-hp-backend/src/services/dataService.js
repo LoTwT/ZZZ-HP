@@ -1,6 +1,11 @@
 import pool from '../config/db.js'
 import { upsertBossInfo } from './bossInfoService.js'
 import {
+  DEFAULT_BOSS_STAGGER_MULTIPLIER,
+  ensureBossStaggerSchema,
+  normalizeStaggerMultiplier,
+} from '../utils/bossSchema.js'
+import {
   encodeCrisisBuffId,
   encodeDefenseBossId,
   encodeDefenseBuffId,
@@ -46,6 +51,7 @@ function normalizeManualCoeff(raw) {
 }
 
 export async function createBoss(payload) {
+  await ensureBossStaggerSchema()
   const {
     recordScheme = 'crisis',
     id = null,
@@ -68,6 +74,7 @@ export async function createBoss(payload) {
     crisis_base_hp = null,
     hp_coeff_percent = null,
     hp_coeff_manual = false,
+    stagger_multiplier = null,
   } = payload
 
   const versionValue = String(version).trim()
@@ -112,7 +119,16 @@ export async function createBoss(payload) {
     resistance,
     boss_image,
     crisis_base_hp,
+    stagger_multiplier:
+      stagger_multiplier != null && stagger_multiplier !== ''
+        ? normalizeStaggerMultiplier(stagger_multiplier)
+        : DEFAULT_BOSS_STAGGER_MULTIPLIER,
   })
+
+  const staggerValue =
+    stagger_multiplier != null && stagger_multiplier !== ''
+      ? normalizeStaggerMultiplier(stagger_multiplier)
+      : null
 
   const coeffResolved = resolveCrisisHpCoeff({
     bossHp: hpValue,
@@ -132,6 +148,7 @@ export async function createBoss(payload) {
     weakness,
     resistance,
     boss_image,
+    staggerValue,
   ]
 
   if (bossId) {
@@ -140,7 +157,7 @@ export async function createBoss(payload) {
       await pool.execute(
         `UPDATE boss
          SET version = ?, phase = ?, boss_name = ?, hp = ?, hp_coeff_percent = ?, defense = ?, level = ?,
-             room = ?, weakness = ?, resistance = ?, boss_image = ?
+             room = ?, weakness = ?, resistance = ?, boss_image = ?, stagger_multiplier = ?
          WHERE id = ?`,
         [...bossValues, bossId],
       )
@@ -165,8 +182,8 @@ export async function createBoss(payload) {
     }
 
     await pool.execute(
-      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image, stagger_multiplier)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [bossId, ...bossValues],
     )
     return {
@@ -190,8 +207,8 @@ export async function createBoss(payload) {
   }
 
   const [result] = await pool.execute(
-    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image, stagger_multiplier)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     bossValues,
   )
 
@@ -289,6 +306,7 @@ export async function createBuff(payload) {
 }
 
 export async function upsertBoss(payload) {
+  await ensureBossStaggerSchema()
   const {
     id,
     version,
@@ -301,6 +319,7 @@ export async function upsertBoss(payload) {
     weakness = null,
     resistance = null,
     boss_image = null,
+    stagger_multiplier = null,
   } = payload
 
   if (!id) {
@@ -314,7 +333,13 @@ export async function upsertBoss(payload) {
     weakness,
     resistance,
     boss_image,
+    stagger_multiplier,
   })
+
+  const staggerValue =
+    stagger_multiplier != null && stagger_multiplier !== ''
+      ? normalizeStaggerMultiplier(stagger_multiplier)
+      : null
 
   const [existing] = await pool.execute('SELECT id FROM boss WHERE id = ? LIMIT 1', [id])
 
@@ -322,17 +347,43 @@ export async function upsertBoss(payload) {
     await pool.execute(
       `UPDATE boss
        SET version = ?, phase = ?, boss_name = ?, hp = ?, defense = ?, level = ?,
-           room = ?, weakness = ?, resistance = ?, boss_image = ?
+           room = ?, weakness = ?, resistance = ?, boss_image = ?, stagger_multiplier = ?
        WHERE id = ?`,
-      [version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, id],
+      [
+        version,
+        phase,
+        boss_name,
+        hp,
+        defense,
+        level,
+        room,
+        weakness,
+        resistance,
+        boss_image,
+        staggerValue,
+        id,
+      ],
     )
     return { id, action: 'updated', ...payload }
   }
 
   await pool.execute(
-    `INSERT INTO boss (id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image],
+    `INSERT INTO boss (id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, stagger_multiplier)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      version,
+      phase,
+      boss_name,
+      hp,
+      defense,
+      level,
+      room,
+      weakness,
+      resistance,
+      boss_image,
+      staggerValue,
+    ],
   )
 
   return { id, action: 'created', ...payload }
@@ -392,6 +443,7 @@ function matchesBuffRecordScheme(id, recordScheme) {
 }
 
 export async function searchBossRecords(filters = {}) {
+  await ensureBossStaggerSchema()
   const { version, phase, keyword, limit = 50, recordScheme = null } = filters
   const conditions = []
   const params = []
@@ -413,7 +465,7 @@ export async function searchBossRecords(filters = {}) {
   const safeLimit = clampLimit(limit)
 
   const [rows] = await pool.execute(
-    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image
+    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, stagger_multiplier
      FROM boss
      ${where}
      ORDER BY version DESC, phase DESC, id DESC

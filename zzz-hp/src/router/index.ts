@@ -128,6 +128,12 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
     {
+      path: '/admin/boss-info',
+      name: 'admin-boss-info',
+      component: () => import('../views/admin/AdminBossInfoView.vue'),
+      meta: { requiresAdmin: true, title: '怪物基础库' },
+    },
+    {
       path: '/admin/character-calculator',
       name: 'admin-character-calculator',
       component: () => import('../layouts/AdminCalculatorLayout.vue'),

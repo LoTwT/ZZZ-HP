@@ -15,6 +15,10 @@ const props = defineProps<{
   scope: AdminScope
 }>()
 
+const emit = defineEmits<{
+  changed: []
+}>()
+
 const mode = computed<SeasonDateMode>(() =>
   isDefenseScope(props.scope) ? 'defense' : 'crisis',
 )
@@ -141,6 +145,7 @@ async function submitForm() {
     }
     resetForm()
     await loadRows()
+    emit('changed')
   } catch (err) {
     error.value = err instanceof Error ? err.message : '保存失败'
   } finally {
@@ -157,6 +162,7 @@ async function onDelete(row: SeasonDateRecord) {
     if (editingId.value === row.id) resetForm()
     message.value = '已删除'
     await loadRows()
+    emit('changed')
   } catch (err) {
     error.value = err instanceof Error ? err.message : '删除失败'
   }

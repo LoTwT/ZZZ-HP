@@ -51,18 +51,34 @@ function defaultPublicSeasonIndex(list: DefenseSeason[]): number {
   return list.length - 1
 }
 
+function seasonSelectionKey(season: DefenseSeason) {
+  const phaseNum = season.phase.replace(/\D/g, '')
+  return `${season.version}-${phaseNum || season.phase}`
+}
+
 async function loadSeasons() {
   loading.value = true
   loadError.value = ''
+  const previousKey =
+    props.adminMode && currentSeason.value ? seasonSelectionKey(currentSeason.value) : null
+  const previousRoomHpIndex = props.adminMode ? roomHpIndex.value : 0
   try {
     const data = await fetchDefenseSeasons(defenseVariant.value)
     seasons.value = data
     if (props.chartPoint) {
       applyChartPointSelection()
+      roomHpIndex.value = 0
+    } else if (previousKey) {
+      const restoredIndex = data.findIndex((item) => seasonSelectionKey(item) === previousKey)
+      currentIndex.value = restoredIndex >= 0 ? restoredIndex : defaultPublicSeasonIndex(data)
+      const options = buildDefenseRoomHpOptions(data[currentIndex.value] ?? data[0]!)
+      roomHpIndex.value = options.length
+        ? Math.min(previousRoomHpIndex, options.length - 1)
+        : 0
     } else {
       currentIndex.value = defaultPublicSeasonIndex(data)
+      roomHpIndex.value = 0
     }
-    roomHpIndex.value = 0
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '加载失败'
     seasons.value = []
@@ -250,6 +266,115 @@ function buildDefenseMonsterContext(
       bossImage: enemy.imageUrl ?? null,
     }
   }
+}
+
+const DEFAULT_ADMIN_DEFENSE_STAGE = 5
+
+function resolveFrontierStage(frontier: { id: string }) {
+  const season = currentSeason.value
+  if (!season) return null
+  const seasonId = season.seasonId
+  const stageText = frontier.id.startsWith(seasonId)
+    ? frontier.id.slice(seasonId.length)
+    : frontier.id.slice(-2)
+  const stage = Number(stageText) || 0
+  return stage || null
+}
+
+function maxRoomsForDefenseStage(stage: number) {
+  return stage === 5 ? 3 : 2
+}
+
+function buildDefenseMonsterContextFromSlot(
+  slot: { stage: number; roomInStage: number; wave: number },
+): AdminMonsterSlotContext | null {
+  const season = currentSeason.value
+  if (!season) return null
+  return {
+    mode: 'create',
+    version: season.version,
+    phase: parseDefensePhaseNumber(season.phase),
+    stage: slot.stage,
+    roomInStage: slot.roomInStage,
+    wave: slot.wave,
+    monsterCategory: 'boss',
+    monsterSubType: 1,
+    count: 1,
+  }
+}
+
+function onAdminAddDefenseFrontier() {
+  const season = currentSeason.value
+  if (!season) return
+  const usedStages = new Set(
+    season.frontiers
+      .map((frontier) => resolveFrontierStage(frontier))
+      .filter((stage): stage is number => Boolean(stage)),
+  )
+  let nextStage = DEFAULT_ADMIN_DEFENSE_STAGE
+  if (usedStages.has(nextStage)) {
+    for (let stage = 1; stage <= 9; stage += 1) {
+      if (!usedStages.has(stage)) {
+        nextStage = stage
+        break
+      }
+    }
+  }
+  const ctx = buildDefenseMonsterContextFromSlot({
+    stage: nextStage,
+    roomInStage: 1,
+    wave: 1,
+  })
+  if (ctx) emit('admin-monster', ctx)
+}
+
+function onAdminAddDefenseRoom(frontier: { id: string; rooms: Array<{ label: string }> }) {
+  const stage = resolveFrontierStage(frontier)
+  if (!stage) return
+  const used = new Set(
+    frontier.rooms.map((room) => Number(room.label.replace(/\D/g, '')) || 0),
+  )
+  const max = maxRoomsForDefenseStage(stage)
+  let nextRoom = 0
+  for (let roomNum = 1; roomNum <= max; roomNum += 1) {
+    if (!used.has(roomNum)) {
+      nextRoom = roomNum
+      break
+    }
+  }
+  if (!nextRoom) return
+  const ctx = buildDefenseMonsterContextFromSlot({
+    stage,
+    roomInStage: nextRoom,
+    wave: 1,
+  })
+  if (ctx) emit('admin-monster', ctx)
+}
+
+function onAdminAddDefenseWave(
+  frontier: { id: string },
+  room: { id: string },
+  battleRoom: { waves: Array<{ label: string }> },
+) {
+  const roomParts = resolveDefenseRoomParts(frontier, room)
+  if (!roomParts) return
+  const usedWaves = new Set(
+    battleRoom.waves.map((wave, index) => Number(parseWaveNumber(wave.label, index + 1))),
+  )
+  let nextWave = 0
+  for (let waveNum = 1; waveNum <= 9; waveNum += 1) {
+    if (!usedWaves.has(waveNum)) {
+      nextWave = waveNum
+      break
+    }
+  }
+  if (!nextWave) return
+  const ctx = buildDefenseMonsterContextFromSlot({
+    stage: roomParts.stage,
+    roomInStage: roomParts.roomInStage,
+    wave: nextWave,
+  })
+  if (ctx) emit('admin-monster', ctx)
 }
 
 function onAdminEditDefenseEnemy(
@@ -529,6 +654,24 @@ function formatEnemyResistance(value?: string) {
       </header>
 
       <div v-if="currentSeason" class="frontier-scroll">
+        <div v-if="adminMode" class="defense-admin-toolbar">
+          <button
+            type="button"
+            class="enemy-admin-btn enemy-admin-btn--primary"
+            @click="onAdminAddDefenseFrontier"
+          >
+            + 添加防线
+          </button>
+          <p class="defense-admin-hint">新建期数默认展示第五防线；可先添加房间与波次，再填入怪物。</p>
+        </div>
+
+        <p
+          v-if="adminMode && !currentSeason.frontiers.length"
+          class="defense-admin-empty"
+        >
+          本期尚无防线结构，点击「添加防线」从第五防线开始编辑。
+        </p>
+
         <section
           v-for="frontier in currentSeason.frontiers"
           :key="frontier.id"
@@ -538,6 +681,15 @@ function formatEnemyResistance(value?: string) {
             <div class="frontier-title-wrap">
               <h2 class="frontier-title">{{ frontier.title }}</h2>
               <p class="frontier-meta">Lv.{{ frontier.level }} · ID {{ frontier.id }}</p>
+            </div>
+            <div v-if="adminMode" class="enemy-admin-bar enemy-admin-bar--inline">
+              <button
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--primary"
+                @click="onAdminAddDefenseRoom(frontier)"
+              >
+                + 添加房间
+              </button>
             </div>
           </header>
 
@@ -666,6 +818,15 @@ function formatEnemyResistance(value?: string) {
                   <div>
                     <h4 class="battle-room-title">{{ battleRoom.label }}</h4>
                     <p class="battle-room-meta">波次 {{ battleRoom.waveCount }}</p>
+                  </div>
+                  <div v-if="adminMode" class="enemy-admin-bar enemy-admin-bar--inline">
+                    <button
+                      type="button"
+                      class="enemy-admin-btn enemy-admin-btn--primary"
+                      @click="onAdminAddDefenseWave(frontier, room, battleRoom)"
+                    >
+                      + 添加波次
+                    </button>
                   </div>
                   <div
                     v-if="
@@ -1206,9 +1367,41 @@ function formatEnemyResistance(value?: string) {
 }
 
 .frontier-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--color-border);
+}
+
+.defense-admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.defense-admin-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.72;
+}
+
+.defense-admin-empty {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px dashed var(--color-border);
+  font-size: 0.84rem;
+  opacity: 0.8;
 }
 
 .frontier-title {

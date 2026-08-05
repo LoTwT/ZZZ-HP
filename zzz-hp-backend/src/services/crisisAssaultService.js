@@ -175,8 +175,18 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
     phaseMap.get(key).buffs.push(buff)
   }
 
+  for (const [key, dateInfo] of dateMap.entries()) {
+    if (phaseMap.has(key)) continue
+    phaseMap.set(key, {
+      version: String(dateInfo.version),
+      phase: String(dateInfo.phase).replace(/\D/g, '') || String(dateInfo.phase),
+      bosses: [],
+      buffs: [],
+    })
+  }
+
   const phases = [...phaseMap.values()]
-    .filter((item) => item.bosses.length > 0)
+    .filter((item) => item.bosses.length > 0 || includeHidden)
     .sort(comparePhase)
     .map((item) => {
       const bosses = item.bosses.map((boss) => enrichBoss(boss, baseHpByName))
@@ -212,7 +222,10 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
         })),
       }
     })
-    .filter((item) => includeHidden || item.listed)
+    .filter((item) => {
+      if (item.bosses.length > 0) return includeHidden || item.listed
+      return includeHidden
+    })
     .map(({ listed: _listed, ...item }) => item)
 
   return phases

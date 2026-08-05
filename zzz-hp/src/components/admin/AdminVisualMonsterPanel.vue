@@ -79,6 +79,8 @@ async function reloadDetail() {
     actionError.value = error instanceof Error ? error.message : '刷新失败'
   }
 }
+
+defineExpose({ reload: reloadDetail })
 </script>
 
 <template>

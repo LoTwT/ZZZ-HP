@@ -53,6 +53,10 @@ export function resolveAssetUrl(path?: string | null): string | undefined {
   return path
 }
 
+export function hasBossDisplayImage(image?: string | null): boolean {
+  return Boolean(String(image ?? '').trim())
+}
+
 function formatDotDate(value: string): string {
   const [year, month, day] = value.slice(0, 10).split('-')
   return `${year}.${Number(month)}.${Number(day)}`

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS boss (
   weakness VARCHAR(255) DEFAULT NULL COMMENT '弱点',
   resistance VARCHAR(255) DEFAULT NULL COMMENT '抗性',
   boss_image VARCHAR(500) DEFAULT NULL COMMENT 'Boss图片',
+  stagger_multiplier DECIMAL(5,3) NULL COMMENT '失衡易伤区基础乘数；空则回退 boss_info',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Boss表';
 
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS boss_info (
   weakness VARCHAR(255) DEFAULT NULL COMMENT '弱点',
   resistance VARCHAR(255) DEFAULT NULL COMMENT '抗性',
   crisis_base_hp DOUBLE NULL COMMENT '怪物危局基础血量',
+  stagger_multiplier DECIMAL(5,3) NOT NULL DEFAULT 1.500 COMMENT '失衡易伤区基础乘数（1.5=150%）',
   PRIMARY KEY (id),
   UNIQUE KEY uk_boss_name (boss_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Boss基础信息表';

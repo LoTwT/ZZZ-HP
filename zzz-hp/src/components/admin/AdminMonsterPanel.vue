@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   createBoss,
+  deleteBossRecord,
   fetchSeasonDates,
   lookupBossInfo,
   searchBossInfoNames,
@@ -25,7 +26,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{ saved: [] }>()
 
-const slotLocked = computed(() => Boolean(props.slotContext))
+const slotPositionLocked = computed(() => Boolean(props.slotContext))
+
+const editingRecordId = computed(() =>
+  props.slotContext?.mode === 'edit' ? props.slotContext.recordId : undefined,
+)
 
 const isDefense = computed(() => isDefenseScope(props.scope))
 const isDefenseNew = computed(() => props.scope === 'defense-new')
@@ -60,6 +65,7 @@ const count = ref('1')
 const previewId = ref('')
 const weakness = ref('')
 const resistance = ref('')
+const staggerMultiplier = ref('1.5')
 const imageFile = ref<File | null>(null)
 const imagePickerRef = ref<InstanceType<typeof AdminImagePicker> | null>(null)
 const imagePreview = ref('')
@@ -151,11 +157,15 @@ function applyBossInfo(info: {
   resistance: string | null
   boss_image: string | null
   crisis_base_hp?: number | null
+  stagger_multiplier?: number | null
 }) {
   defense.value = String(info.defense ?? 0)
   level.value = String(info.level ?? 1)
   weakness.value = info.weakness ?? ''
   resistance.value = info.resistance ?? ''
+  if (info.stagger_multiplier != null && Number.isFinite(Number(info.stagger_multiplier))) {
+    staggerMultiplier.value = String(info.stagger_multiplier)
+  }
   if (info.crisis_base_hp != null && Number.isFinite(Number(info.crisis_base_hp))) {
     crisisBaseHp.value = String(info.crisis_base_hp)
   } else {
@@ -408,6 +418,12 @@ async function submitForm() {
         showFeedback('error')
         return
       }
+      const waveNum = Number(wave.value)
+      if (!Number.isInteger(waveNum) || waveNum < 1 || waveNum > 9) {
+        error.value = '波次须为 1-9'
+        showFeedback('error')
+        return
+      }
       if (!fieldText(monsterSubType.value) || !fieldText(count.value)) {
         error.value = '怪物序号与数量为必填项'
         showFeedback('error')
@@ -454,6 +470,15 @@ async function submitForm() {
       bossImage = uploaded.url
     }
 
+    if (
+      isDefense.value &&
+      editingRecordId.value &&
+      defenseBossId &&
+      defenseBossId !== editingRecordId.value
+    ) {
+      await deleteBossRecord(editingRecordId.value)
+    }
+
     const defensePayload = isDefense.value
       ? {
           recordScheme: 'defense' as const,
@@ -481,6 +506,9 @@ async function submitForm() {
       room: isDefense.value ? null : normalizeCrisisRoomCode(room.value),
       weakness: fieldText(weakness.value) || null,
       resistance: fieldText(resistance.value) || null,
+      stagger_multiplier: fieldText(staggerMultiplier.value)
+        ? Number(staggerMultiplier.value)
+        : 1.5,
       boss_image: bossImage,
       crisis_base_hp:
         !isDefense.value && fieldText(crisisBaseHp.value)
@@ -521,6 +549,7 @@ async function submitForm() {
     resetCrisisCoeffFields()
     weakness.value = ''
     resistance.value = ''
+    staggerMultiplier.value = '1.5'
     imageFile.value = null
     imagePickerRef.value?.reset()
     imagePreview.value = ''
@@ -574,7 +603,7 @@ watch(
     <form class="admin-form" novalidate @submit.prevent="submitForm">
       <label class="field">
         <span class="field-label">版本 *</span>
-        <select v-model="version" class="field-input" :disabled="slotLocked">
+        <select v-model="version" class="field-input" :disabled="slotPositionLocked">
           <option v-if="!availableVersions.length" value="" disabled>暂无可选版本</option>
           <option v-for="item in availableVersions" :key="item" :value="item">
             {{ item }}
@@ -585,13 +614,13 @@ watch(
           type="text"
           class="field-input"
           placeholder="新版本（填写后覆盖上方选择）"
-          :disabled="slotLocked"
+          :disabled="slotPositionLocked"
         />
       </label>
 
       <label class="field">
         <span class="field-label">期数 *</span>
-        <select v-model="phase" class="field-input" :disabled="slotLocked">
+        <select v-model="phase" class="field-input" :disabled="slotPositionLocked">
           <option v-if="!availablePhases.length" value="" disabled>
             {{ resolvedVersion ? '该版本暂无期数，可在下方输入' : '请先选择版本' }}
           </option>
@@ -604,7 +633,7 @@ watch(
           type="text"
           class="field-input"
           placeholder="新期数（填写后覆盖上方选择）"
-          :disabled="slotLocked"
+          :disabled="slotPositionLocked"
         />
       </label>
 
@@ -669,7 +698,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">关卡 *</span>
-          <select v-model="stage" class="field-input" :disabled="slotLocked">
+          <select v-model="stage" class="field-input" :disabled="slotPositionLocked">
             <option v-for="item in defenseStageOptions" :key="item" :value="String(item)">
               第 {{ item }} 关
             </option>
@@ -677,7 +706,7 @@ watch(
         </label>
         <label class="field">
           <span class="field-label">房间 *</span>
-          <select v-model="roomInStage" class="field-input" :disabled="slotLocked">
+          <select v-model="roomInStage" class="field-input" :disabled="slotPositionLocked">
             <option v-for="item in defenseRoomOptions" :key="item" :value="String(item)">
               房间 {{ item }}
             </option>
@@ -688,7 +717,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">波次 *</span>
-          <input v-model="wave" type="number" min="0" max="9" class="field-input" placeholder="0-9" :disabled="slotLocked" />
+          <input v-model="wave" type="number" min="1" max="9" class="field-input" placeholder="1-9" :disabled="slotPositionLocked" />
         </label>
         <label class="field">
           <span class="field-label">怪物数量 *</span>
@@ -699,7 +728,7 @@ watch(
       <div v-if="isDefense" class="field-row">
         <label class="field">
           <span class="field-label">怪物类型 *</span>
-          <select v-model="monsterCategory" class="field-input" :disabled="slotLocked">
+          <select v-model="monsterCategory" class="field-input">
             <option value="minion">小怪 (0x)</option>
             <option value="elite">精英 (1x)</option>
             <option value="boss">Boss (2x)</option>
@@ -714,14 +743,13 @@ watch(
             max="9"
             class="field-input"
             placeholder="1-9"
-            :disabled="slotLocked"
           />
         </label>
       </div>
 
       <label v-else class="field">
         <span class="field-label">房间 *</span>
-        <select v-model="room" class="field-input" :disabled="slotLocked">
+        <select v-model="room" class="field-input" :disabled="slotPositionLocked">
           <option v-for="item in CRISIS_ROOM_OPTIONS" :key="item.value" :value="item.value">
             {{ item.label }}
           </option>
@@ -729,6 +757,9 @@ watch(
       </label>
 
       <p v-if="isDefense && previewId" class="id-preview">预计怪物 ID：{{ previewId }}</p>
+      <p v-if="isDefense && slotContext" class="field-hint">
+        版本/关卡/房间/波次在可视化编辑中锁定；修改类型、序号或数量会变更怪物 ID 并替换原记录。
+      </p>
 
       <label class="field">
         <span class="field-label">等级</span>
@@ -743,6 +774,11 @@ watch(
       <label class="field">
         <span class="field-label">抗性</span>
         <input v-model="resistance" type="text" class="field-input" />
+      </label>
+
+      <label class="field">
+        <span class="field-label">失衡易伤（乘数，1.5 = 150%）</span>
+        <input v-model="staggerMultiplier" type="number" min="0" step="0.01" class="field-input" />
       </label>
 
       <div class="field">
@@ -839,6 +875,13 @@ watch(
   font-size: 0.8rem;
   color: #e8a838;
   text-align: center;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  opacity: 0.72;
+  line-height: 1.45;
 }
 
 .image-preview {

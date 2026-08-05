@@ -15,6 +15,11 @@ defineProps<{
 }>()
 
 const activePanel = ref<AdminPanel>('monster')
+const visualPanelRef = ref<{ reload?: () => Promise<void> } | null>(null)
+
+async function onSeasonDatesChanged() {
+  await visualPanelRef.value?.reload?.()
+}
 </script>
 
 <template>
@@ -31,10 +36,10 @@ const activePanel = ref<AdminPanel>('monster')
         'admin-content--fill': activePanel === 'season-date' || activePanel === 'monster',
       }"
     >
-      <AdminVisualMonsterPanel v-if="activePanel === 'monster'" :scope="scope" />
+      <AdminVisualMonsterPanel v-if="activePanel === 'monster'" ref="visualPanelRef" :scope="scope" />
       <AdminMonsterPanel v-else-if="activePanel === 'monster-form'" :scope="scope" />
       <AdminBuffPanel v-else-if="activePanel === 'buff-form'" :scope="scope" />
-      <AdminSeasonDatePanel v-else :scope="scope" />
+      <AdminSeasonDatePanel v-else :scope="scope" @changed="onSeasonDatesChanged" />
     </main>
   </div>
 </template>

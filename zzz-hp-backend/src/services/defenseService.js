@@ -11,6 +11,11 @@ import { isSeasonPubliclyVisible, isSeasonUnreleased } from '../utils/crisisRoom
 
 const CHINESE_STAGE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
+/** 管理端空期默认：第五防线 · 房间 1 · 波次 1 */
+const DEFAULT_ADMIN_DEFENSE_STAGE = 5
+const DEFAULT_ADMIN_DEFENSE_ROOM = 1
+const DEFAULT_ADMIN_DEFENSE_WAVE = 1
+
 function compareSeason(a, b) {
   const versionDiff = Number(a.version) - Number(b.version)
   if (versionDiff !== 0) return versionDiff
@@ -176,6 +181,13 @@ function ensureWave(battleRoom, wave) {
     })
   }
   return battleRoom.waves.get(wave)
+}
+
+function ensureDefaultAdminDefenseStructure(season) {
+  const frontier = ensureFrontier(season, DEFAULT_ADMIN_DEFENSE_STAGE)
+  const room = ensureRoom(frontier, DEFAULT_ADMIN_DEFENSE_STAGE, DEFAULT_ADMIN_DEFENSE_ROOM)
+  const battleRoom = ensureBattleRoom(room, DEFAULT_ADMIN_DEFENSE_STAGE, DEFAULT_ADMIN_DEFENSE_ROOM)
+  ensureWave(battleRoom, DEFAULT_ADMIN_DEFENSE_WAVE)
 }
 
 function finalizeBattleRoom(battleRoom) {
@@ -413,9 +425,27 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
     applyRoomBuffFallback(room, buff, decoded)
   }
 
+  for (const [key, dateInfo] of dateMap.entries()) {
+    if (!matchesVariant(dateInfo.version, variant)) continue
+    if (!seasons.has(key)) {
+      seasons.set(key, buildSeasonSkeleton(dateInfo.version, dateInfo.phase, dateInfo))
+    }
+  }
+
+  if (includeHidden) {
+    for (const season of seasons.values()) {
+      if (season.frontiers.size === 0) {
+        ensureDefaultAdminDefenseStructure(season)
+      }
+    }
+  }
+
   return [...seasons.values()]
     .sort(compareSeason)
     .map((season) => finalizeSeason(season))
-    .filter((season) => includeHidden || season.listed)
+    .filter((season) => {
+      if (season.totalHp > 0) return includeHidden || season.listed
+      return includeHidden
+    })
     .map(({ listed: _listed, ...season }) => season)
 }

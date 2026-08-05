@@ -1,4 +1,9 @@
-import { findBossInfoByName, searchBossInfoNames } from '../services/bossInfoService.js'
+import {
+  findBossInfoByName,
+  listBossInfoRecords,
+  searchBossInfoNames,
+  updateBossInfoById,
+} from '../services/bossInfoService.js'
 import { success, fail } from '../utils/response.js'
 
 export async function lookupBossInfo(req, res) {
@@ -20,5 +25,33 @@ export async function searchBossInfo(req, res) {
     return success(res, data)
   } catch (err) {
     return fail(res, 'Boss 名称检索失败', 500, { error: err.message })
+  }
+}
+
+export async function listBossInfo(req, res) {
+  const keyword = req.query.q ?? req.query.keyword ?? ''
+  const limit = req.query.limit
+  const offset = req.query.offset
+
+  try {
+    const data = await listBossInfoRecords({ keyword, limit, offset })
+    return success(res, data)
+  } catch (err) {
+    return fail(res, 'Boss 基础库列表查询失败', 500, { error: err.message })
+  }
+}
+
+export async function patchBossInfo(req, res) {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    return fail(res, '无效的 boss_info ID', 400)
+  }
+
+  try {
+    const data = await updateBossInfoById(id, req.body ?? {})
+    return success(res, data, '已更新 Boss 基础信息')
+  } catch (err) {
+    const status = err.message?.includes('不存在') ? 404 : 400
+    return fail(res, err.message || 'Boss 基础信息更新失败', status, { error: err.message })
   }
 }

@@ -23,6 +23,11 @@ export const ENEMY_RESISTANCE_OPTIONS: { id: EnemyResistanceType; label: string 
 
 export type ElementResistanceMap = Partial<Record<EnemyResistanceElement, EnemyResistanceType>>
 
+/** 敌方失衡易伤区默认 150% */
+export const DEFAULT_ENEMY_STAGGER_MULTIPLIER = 1.5
+
+export type EnemyBossSource = 'manual' | 'boss_info' | 'boss_record'
+
 export interface DamageEnemyInput {
   defense: number
   /** @deprecated 兼容旧存档；未配置的属性回退到此值 */
@@ -33,6 +38,12 @@ export interface DamageEnemyInput {
   staggerMultiplier: number
   specialMultiplier: number
   level: number
+  /** 敌方来源（选 Boss 时写入，便于展示与存档） */
+  bossSource?: EnemyBossSource
+  bossName?: string
+  bossRecordId?: number
+  bossRecordLabel?: string
+  bossImage?: string | null
 }
 
 export function createDefaultElementResistance(): Record<
@@ -65,9 +76,14 @@ export function normalizeDamageEnemyInput(
     resistanceType: fallbackType,
     elementResistance: merged,
     vulnerableMultiplier: input?.vulnerableMultiplier ?? 1,
-    staggerMultiplier: input?.staggerMultiplier ?? 1,
+    staggerMultiplier: input?.staggerMultiplier ?? DEFAULT_ENEMY_STAGGER_MULTIPLIER,
     specialMultiplier: input?.specialMultiplier ?? 1,
     level: input?.level ?? 60,
+    bossSource: input?.bossSource,
+    bossName: input?.bossName,
+    bossRecordId: input?.bossRecordId,
+    bossRecordLabel: input?.bossRecordLabel,
+    bossImage: input?.bossImage,
   }
 }
 
@@ -101,3 +117,16 @@ export function agentElementToResistanceElement(
 ): EnemyResistanceElement | null {
   return isEnemyResistanceElement(element) ? element : null
 }
+
+/** 怪物库模式下仅展示有弱点或有抗性的属性 */
+export function listActiveResistanceElements(
+  input: DamageEnemyInput | null | undefined,
+): EnemyResistanceElement[] {
+  const normalized = normalizeDamageEnemyInput(input)
+  return ENEMY_RESISTANCE_ELEMENTS.filter((element) => {
+    const type = normalized.elementResistance?.[element] ?? 'normal'
+    return type === 'weak' || type === 'res20' || type === 'res40'
+  })
+}
+
+export type EnemyInputMode = 'manual' | 'database'
