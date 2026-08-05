@@ -47,6 +47,7 @@ export interface DamageCalcPanelSnapshot {
     skillCategory?: import('@/types/calculator').BuffSkillTargetId
     skillSubcategoryId?: string | null
     appliesToAnomaly?: boolean
+    applyProfession?: string | null
   }>
   enemyInput: DamageCalcEnemyInputSnapshot
 }

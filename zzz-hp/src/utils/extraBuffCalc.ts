@@ -72,6 +72,16 @@ export function extraGainMatchesEvent(
   return effectMatchesContext(extraGainToEffect(gain), skillCtx)
 }
 
+export function extraGainMatchesProfession(
+  gain: ExtraBuffGain,
+  beneficiaryProfession: string | null | undefined,
+): boolean {
+  const required = gain.applyProfession?.trim()
+  if (!required) return true
+  const profession = String(beneficiaryProfession ?? '').trim()
+  return profession === required
+}
+
 export function mergeExtraModsForEvent(
   gains: ExtraBuffGain[],
   event: DamageEvent,
@@ -81,6 +91,7 @@ export function mergeExtraModsForEvent(
     slotAgentId: string
     ownerAgentId: string
     staggerPhase: StaggerPhase
+    resolveAgentProfession?: (agentId: string) => string | undefined
   },
 ): BuffStatModifiers {
   let total = createEmptyBuffStatModifiers()
@@ -92,6 +103,9 @@ export function mergeExtraModsForEvent(
 
     const applyTarget = gain.applyTarget ?? 'self'
     if (applyTarget === 'self' && options.slotAgentId !== options.ownerAgentId) continue
+
+    const beneficiaryProfession = options.resolveAgentProfession?.(options.slotAgentId)
+    if (!extraGainMatchesProfession(gain, beneficiaryProfession)) continue
 
     const next = createEmptyBuffStatModifiers()
     next[gain.stat] = gain.value

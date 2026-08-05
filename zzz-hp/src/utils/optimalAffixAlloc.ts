@@ -494,6 +494,8 @@ function buildOptimalExtraModsForEvent(
     slotAgentId,
     ownerAgentId,
     staggerPhase: event.staggerPhase,
+    resolveAgentProfession: (agentId) =>
+      ctx.panelContext.agents.find((item) => item.id === agentId)?.profession,
   })
 }
 

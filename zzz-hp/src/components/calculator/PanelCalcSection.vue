@@ -94,6 +94,7 @@ import {
 import { collectParticipantAgentIds, resolveEventOwnerAgentId, summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
 import {
   buildSkillContextFromDamageEvent,
+  extraGainMatchesProfession,
   mergeExtraModsForEvent,
 } from '@/utils/extraBuffCalc'
 import {
@@ -248,6 +249,8 @@ function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
     slotAgentId,
     ownerAgentId,
     staggerPhase: props.staggerPhase ?? 'stagger',
+    resolveAgentProfession: (agentId) =>
+      props.agents.find((item) => item.id === agentId)?.profession,
   })
 }
 
@@ -257,10 +260,13 @@ function buildExtraModsForMainPanel(): BuffStatModifiers {
   const phase = props.staggerPhase ?? 'stagger'
   if (!props.damageEvents?.length) {
     let total = createEmptyBuffStatModifiers()
+    const mainId = mainAgent.value?.id ?? ''
+    const mainProfession = props.agents.find((item) => item.id === mainId)?.profession
     for (const gain of extraGains.value) {
       const situation = gain.applySituation ?? 'global'
       if (situation === 'stagger' && phase !== 'stagger') continue
       if (situation === 'non_stagger' && phase !== 'normal') continue
+      if (!extraGainMatchesProfession(gain, mainProfession)) continue
       const next = createEmptyBuffStatModifiers()
       next[gain.stat as BuffStatKey] = gain.value
       total = mergeBuffStatModifiers(total, next)
@@ -2847,6 +2853,7 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
       skillCategory: item.skillCategory,
       skillSubcategoryId: item.skillSubcategoryId,
       appliesToAnomaly: item.appliesToAnomaly,
+      applyProfession: item.applyProfession ?? null,
     }))
   } else {
     const mods = { ...createEmptyBuffStatModifiers(), ...snapshot.extraMods }

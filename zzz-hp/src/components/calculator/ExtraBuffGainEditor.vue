@@ -12,7 +12,7 @@ import {
   BUFF_SCOPE_OPTIONS,
   BUFF_SKILL_TARGET_OPTIONS,
 } from '@/types/calculator'
-import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { BUFF_STAT_FIELDS, AGENT_ROLES, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { scopeLabel } from '@/utils/extraBuffCalc'
 
 export interface ExtraBuffGain {
@@ -26,6 +26,8 @@ export interface ExtraBuffGain {
   scope?: BuffScope
   /** 作用目标，默认自身 */
   applyTarget?: BuffApplyTarget
+  /** 受益职业；空 = 不限 */
+  applyProfession?: string | null
   /** 招式 scope 时的大类（兼容字段） */
   skillCategory?: BuffSkillTargetId
   /** 招式 scope 时的小类；空 = 整大类 */
@@ -51,6 +53,7 @@ const draftValue = ref(0)
 const draftSituation = ref<BuffApplySituation>('global')
 const draftScope = ref<BuffScope>('general')
 const draftApplyTarget = ref<BuffApplyTarget>('self')
+const draftApplyProfession = ref('')
 const draftSkillCategory = ref<BuffSkillTargetId>('basic')
 const draftSkillSubcategoryId = ref<string>('')
 const draftAppliesToAnomaly = ref(false)
@@ -83,6 +86,9 @@ function addGain() {
     scope: draftScope.value,
     applyTarget: draftApplyTarget.value,
   }
+  if (draftApplyProfession.value.trim()) {
+    gain.applyProfession = draftApplyProfession.value.trim()
+  }
   if (draftScope.value === 'skill') {
     gain.skillCategory = draftSkillCategory.value
     gain.skillSubcategoryId = draftSkillSubcategoryId.value || null
@@ -93,6 +99,7 @@ function addGain() {
   draftSituation.value = 'global'
   draftScope.value = 'general'
   draftApplyTarget.value = 'self'
+  draftApplyProfession.value = ''
   draftSkillSubcategoryId.value = ''
   draftAppliesToAnomaly.value = false
 }
@@ -120,8 +127,11 @@ function gainMeta(item: ExtraBuffGain): string {
   const parts = [
     scopeLabel(item.scope),
     APPLY_TARGET_LABELS[item.applyTarget ?? 'self'],
-    situationLabel(item.applySituation),
   ]
+  if (item.applyProfession?.trim()) {
+    parts.push(`职业·${item.applyProfession.trim()}`)
+  }
+  parts.push(situationLabel(item.applySituation))
   const skill = skillTargetSummary(item)
   if (skill) parts.push(skill)
   if (item.appliesToAnomaly) parts.push('异常也生效')
@@ -132,7 +142,7 @@ function gainMeta(item: ExtraBuffGain): string {
 <template>
   <div class="extra-buff-editor">
     <p class="extra-buff-hint">
-      额外 Buff 添加后立即参与计算：按作用域/目标/失衡情况过滤，有伤害事件时按各事件的产生角色（owner）匹配。
+      额外 Buff 添加后立即参与计算：按作用域/目标/职业/失衡情况过滤，有伤害事件时按各事件的产生角色（owner）匹配。
     </p>
     <div class="extra-buff-form">
       <label class="field">
@@ -160,6 +170,15 @@ function gainMeta(item: ExtraBuffGain): string {
         <select v-model="draftApplyTarget">
           <option value="self">自身</option>
           <option value="team">全队（含自己）</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>职业</span>
+        <select v-model="draftApplyProfession">
+          <option value="">不限</option>
+          <option v-for="role in AGENT_ROLES" :key="role" :value="role">
+            {{ role }}
+          </option>
         </select>
       </label>
       <label class="field">
