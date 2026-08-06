@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
-import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
+import { computed } from 'vue'
+import UnifiedPresetPicker from '@/components/calculator/UnifiedPresetPicker.vue'
 import TeamSlotCard from '@/components/calculator/TeamSlotCard.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
-import { AGENT_ELEMENTS, AGENT_ROLES, WENGINE_RARITIES, isWengineProfessionMatch } from '@/utils/calculatorUi'
 
 const props = defineProps<{
   agents: AgentBuffDoc[]
@@ -24,65 +22,20 @@ const emit = defineEmits<{
   selectWengine: [wengineId: string]
 }>()
 
-const agentRoleFilter = ref('')
-const agentElementFilter = ref('')
-const wengineRoleFilter = ref('')
-const wengineRarityFilter = ref('')
-const agentPickerOpen = ref(false)
-const wenginePickerOpen = ref(false)
-
-const filteredAgents = computed(() =>
-  props.agents.filter((agent) => {
-    const byRole = !agentRoleFilter.value || agent.profession === agentRoleFilter.value
-    const byElement = !agentElementFilter.value || agent.element === agentElementFilter.value
-    return byRole && byElement
-  }),
-)
-
-const selectableWengines = computed(() =>
-  props.wengines.filter((item) => item.id !== 'none'),
-)
-
-const filteredWengines = computed(() =>
-  selectableWengines.value.filter((wengine) => {
-    const byRarity = !wengineRarityFilter.value || wengine.rarity === wengineRarityFilter.value
-    const byRole = !wengineRoleFilter.value || wengine.profession === wengineRoleFilter.value
-    return byRarity && byRole
-  }),
-)
-
 const activeSlotData = computed(() => props.teamSlots[props.activeSlot]!)
 
-const selectedWengine = computed(() =>
-  props.wengines.find((item) => item.id === activeSlotData.value.wengineId),
-)
-
-const wengineBuffsDisabled = computed(() => {
-  if (!props.activeAgent || !selectedWengine.value || selectedWengine.value.id === 'none') {
-    return false
-  }
-  return !isWengineProfessionMatch(props.activeAgent.profession, selectedWengine.value.profession)
-})
-
-function isOffSpecWengine(wengine: WengineBuffDoc) {
-  if (!props.activeAgent) return false
-  return !isWengineProfessionMatch(props.activeAgent.profession, wengine.profession)
+function wengineById(id: string) {
+  if (id === 'none') return undefined
+  return props.wengines.find((item) => item.id === id)
 }
 
-function toggleAgentRoleFilter(role: string) {
-  agentRoleFilter.value = agentRoleFilter.value === role ? '' : role
+function discById(id: string) {
+  if (id === 'none') return undefined
+  return props.driveDiscs.find((item) => item.id === id)
 }
 
-function toggleAgentElementFilter(element: string) {
-  agentElementFilter.value = agentElementFilter.value === element ? '' : element
-}
-
-function toggleWengineRoleFilter(role: string) {
-  wengineRoleFilter.value = wengineRoleFilter.value === role ? '' : role
-}
-
-function toggleWengineRarityFilter(rarity: string) {
-  wengineRarityFilter.value = wengineRarityFilter.value === rarity ? '' : rarity
+function agentById(id: string) {
+  return props.agents.find((item) => item.id === id)
 }
 
 function updateSlotRank(index: number, rank: number) {
@@ -91,82 +44,6 @@ function updateSlotRank(index: number, rank: number) {
 
 function updateSlotRefine(value: number) {
   activeSlotData.value.wengineRefine = value
-}
-
-function agentById(id: string) {
-  return props.agents.find((item) => item.id === id)
-}
-
-function wengineNameById(id: string) {
-  return props.wengines.find((item) => item.id === id)?.name
-}
-
-function driveDiscNameById(id: string) {
-  if (id === 'none') return undefined
-  return props.driveDiscs.find((item) => item.id === id)?.name
-}
-
-function driveDiscSummary(slot: TeamSlot) {
-  const fourName = driveDiscNameById(slot.fourPieceDriveDiscId)
-  const twoName = driveDiscNameById(slot.twoPieceDriveDiscId)
-  if (!fourName && !twoName) return '未选择'
-  const parts: string[] = []
-  if (fourName) parts.push(`4件：${fourName}`)
-  if (twoName && twoName !== fourName) parts.push(`2件：${twoName}`)
-  return parts.join(' · ')
-}
-
-const activeAgentDoc = computed(() =>
-  activeSlotData.value.agentId ? agentById(activeSlotData.value.agentId) : undefined,
-)
-
-const agentPickerChipGroups = computed(() => [
-  {
-    label: '特性',
-    chips: AGENT_ROLES.map((role) => ({
-      id: `role-${role}`,
-      label: role,
-      active: agentRoleFilter.value === role,
-    })),
-  },
-  {
-    label: '属性',
-    chips: AGENT_ELEMENTS.map((element) => ({
-      id: `el-${element}`,
-      label: element,
-      active: agentElementFilter.value === element,
-    })),
-  },
-])
-
-const wenginePickerChipGroups = computed(() => [
-  {
-    label: '特性',
-    chips: AGENT_ROLES.map((role) => ({
-      id: `role-${role}`,
-      label: role,
-      active: wengineRoleFilter.value === role,
-      highlight: props.activeAgent?.profession === role && !wengineRoleFilter.value,
-    })),
-  },
-  {
-    label: '稀有度',
-    chips: WENGINE_RARITIES.map((rarity) => ({
-      id: `rar-${rarity}`,
-      label: rarity,
-      active: wengineRarityFilter.value === rarity,
-    })),
-  },
-])
-
-function onAgentChip(id: string) {
-  if (id.startsWith('role-')) toggleAgentRoleFilter(id.slice(5))
-  else if (id.startsWith('el-')) toggleAgentElementFilter(id.slice(3))
-}
-
-function onWengineChip(id: string) {
-  if (id.startsWith('role-')) toggleWengineRoleFilter(id.slice(5))
-  else if (id.startsWith('rar-')) toggleWengineRarityFilter(id.slice(4))
 }
 </script>
 
@@ -184,91 +61,25 @@ function onWengineChip(id: string) {
         :index="index"
         :slot="slot"
         :agent="slot.agentId ? agentById(slot.agentId) : undefined"
-        :wengine-name="slot.wengineId !== 'none' ? wengineNameById(slot.wengineId) : undefined"
-        :drive-disc-summary="driveDiscSummary(slot)"
+        :wengine="slot.wengineId !== 'none' ? wengineById(slot.wengineId) : undefined"
+        :two-piece-disc="discById(slot.twoPieceDriveDiscId)"
+        :four-piece-disc="discById(slot.fourPieceDriveDiscId)"
         :is-active="activeSlot === index"
         @select="emit('selectSlot', index)"
         @remove="emit('clearSlot', index)"
         @toggle-main-c="emit('toggleMainC', index)"
         @update:rank="updateSlotRank(index, $event)"
+        @update:refine="updateSlotRefine($event)"
       />
     </div>
 
-    <EquipPickerModal
-      v-model:open="agentPickerOpen"
-      title="选择代理人"
-      description="可按特性与属性筛选"
-      search-placeholder="搜索代理人…"
-      :items="(filteredAgents as unknown as Array<Record<string, unknown>>)"
-      :selected-id="activeSlotData.agentId"
-      :selected-label="activeAgentDoc?.name"
-      :selected-avatar="activeAgentDoc?.avatar_image"
-      :chip-groups="agentPickerChipGroups"
-      @select="emit('assignAgent', $event)"
-      @chip-click="onAgentChip"
+    <UnifiedPresetPicker
+      :agents="agents"
+      :wengines="wengines"
+      :drive-discs="driveDiscs"
+      :team-slots="teamSlots"
+      :active-slot="activeSlot"
     />
-  </section>
-
-  <section id="damage-wengine" class="section-card wengine-section damage-anchor">
-    <header class="section-header">
-      <div>
-        <h2>音擎选择</h2>
-        <p class="section-desc">为当前槽位代理人选择音擎；可不佩戴</p>
-      </div>
-    </header>
-
-    <template v-if="activeAgent">
-      <div class="wengine-toolbar">
-        <div class="toolbar-left">
-          <CalculatorAvatar
-            class="toolbar-avatar"
-            :avatar-image="activeAgent.avatar_image"
-            :name="activeAgent.name"
-          />
-          <div>
-            <p class="editing-label">正在编辑槽位 {{ activeSlot + 1 }}</p>
-            <h3>{{ activeAgent.name }} | 全部音擎</h3>
-          </div>
-        </div>
-        <div class="refine-row">
-          <span>精</span>
-          <input
-            class="refine-slider"
-            type="range"
-            min="1"
-            max="5"
-            step="1"
-            :value="activeSlotData.wengineRefine"
-            @input="updateSlotRefine(Number(($event.target as HTMLInputElement).value))"
-          />
-          <span class="refine-badge">精{{ activeSlotData.wengineRefine }}</span>
-        </div>
-      </div>
-
-      <p v-if="wengineBuffsDisabled" class="off-spec-hint">
-        异职音擎：仅基础属性生效，音擎增益不生效
-      </p>
-
-      <EquipPickerModal
-        v-model:open="wenginePickerOpen"
-        title="选择音擎"
-        description="可不佩戴；异职音擎增益不生效"
-        search-placeholder="搜索音擎…"
-        :items="(filteredWengines as unknown as Array<Record<string, unknown>>)"
-        allow-none
-        none-label="不佩戴"
-        :selected-id="activeSlotData.wengineId"
-        :selected-label="
-          selectedWengine && selectedWengine.id !== 'none' ? selectedWengine.name : undefined
-        "
-        :selected-avatar="selectedWengine?.avatar_image"
-        :chip-groups="wenginePickerChipGroups"
-        @select="emit('selectWengine', $event)"
-        @chip-click="onWengineChip"
-      />
-    </template>
-
-    <p v-else class="empty-panel">请先选择代理人。选定代理人后，此处会显示完整音擎列表。</p>
   </section>
 </template>
 
@@ -464,6 +275,46 @@ function onWengineChip(id: string) {
 .off-spec-hint {
   color: #d4a017;
   font-size: 0.78rem;
+}
+
+.wengine-selected-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #2d323a;
+  border-radius: 10px;
+  background: #0f1217;
+}
+
+.wengine-bar-avatar :deep(.calculator-avatar) {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.wengine-bar-name {
+  font-size: 0.84rem;
+  color: #e4e8ef;
+  font-weight: 600;
+}
+
+.wengine-none-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+  border: 1px dashed #2d323a;
+  border-radius: 10px;
+  background: #0f1217;
+  color: #9aa3b0;
+  font-size: 0.84rem;
+}
+
+.wengine-bar-hint {
+  font-size: 0.74rem;
+  color: #7d8796;
+  margin-left: auto;
 }
 
 .wengine-grid {

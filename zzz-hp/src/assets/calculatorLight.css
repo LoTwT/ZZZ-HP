@@ -1,6 +1,6 @@
 /**
- * 角色计算器 · 白天模式
- * 注意：此文件为全局 CSS，勿使用 Vue 的 :deep()
+ * 瑙掕壊璁＄畻鍣?路 鐧藉ぉ妯″紡
+ * 娉ㄦ剰锛氭鏂囦欢涓哄叏灞€ CSS锛屽嬁浣跨敤 Vue 鐨?:deep()
  */
 
 .calculator-page.theme-light {
@@ -15,7 +15,7 @@
   --calc-input-bg: #ffffff;
 }
 
-/* —— 大卡片 —— */
+/* 鈥斺€?澶у崱鐗?鈥斺€?*/
 .calculator-page.theme-light .section-card,
 .calculator-page.theme-light .panel-block,
 .calculator-page.theme-light .calc-mode-section,
@@ -87,7 +87,7 @@
   color: var(--calc-muted) !important;
 }
 
-/* —— 搜索框 / 输入框（含 .search-input；不含 range / 合框内部） —— */
+/* 鈥斺€?鎼滅储妗?/ 杈撳叆妗嗭紙鍚?.search-input锛涗笉鍚?range / 鍚堟鍐呴儴锛?鈥斺€?*/
 .calculator-page.theme-light input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.preset-combo__input),
 .calculator-page.theme-light select,
 .calculator-page.theme-light textarea,
@@ -102,7 +102,7 @@
   color-scheme: light;
 }
 
-/* 敌方预设合框（白天） */
+/* 鏁屾柟棰勮鍚堟锛堢櫧澶╋級 */
 .calculator-page.theme-light .preset-combo {
   border-color: var(--calc-border) !important;
   background: var(--calc-input-bg) !important;
@@ -157,7 +157,7 @@
   color: #98a2b3 !important;
 }
 
-/* —— 拖动条（影画 / 精炼等） —— */
+/* 鈥斺€?鎷栧姩鏉★紙褰辩敾 / 绮剧偧绛夛級 鈥斺€?*/
 .calculator-page.theme-light input[type='range'],
 .calculator-page.theme-light .rank-slider,
 .calculator-page.theme-light .refine-slider {
@@ -252,7 +252,7 @@
   color-scheme: light;
 }
 
-/* —— 计算方式 / chip —— */
+/* 鈥斺€?璁＄畻鏂瑰紡 / chip 鈥斺€?*/
 .calculator-page.theme-light .calc-mode-tab,
 .calculator-page.theme-light .chip,
 .calculator-page.theme-light .result-mode-btn,
@@ -290,7 +290,7 @@
   color: #5c4818 !important;
 }
 
-/* —— 角色 / 音擎 / 邦布 / 驱动盘格子 —— */
+/* 鈥斺€?瑙掕壊 / 闊虫搸 / 閭﹀竷 / 椹卞姩鐩樻牸瀛?鈥斺€?*/
 .calculator-page.theme-light .slot-card,
 .calculator-page.theme-light .agent-cell,
 .calculator-page.theme-light .wengine-cell,
@@ -304,7 +304,7 @@
   color: var(--calc-text) !important;
 }
 
-/* 代理人槽位内：音擎 / 驱动盘信息框 */
+/* 浠ｇ悊浜烘Ы浣嶅唴锛氶煶鎿?/ 椹卞姩鐩樹俊鎭 */
 .calculator-page.theme-light .wengine-box,
 .calculator-page.theme-light .drive-disc-box {
   border-color: var(--calc-border) !important;
@@ -376,7 +376,7 @@
   color: #3d4a63 !important;
 }
 
-/* —— 上传 —— */
+/* 鈥斺€?涓婁紶 鈥斺€?*/
 .calculator-page.theme-light .upload-preview,
 .calculator-page.theme-light .image-picker {
   border-color: var(--calc-border) !important;
@@ -410,7 +410,7 @@
   color: #b42318 !important;
 }
 
-/* —— 结果 / 公式 —— */
+/* 鈥斺€?缁撴灉 / 鍏紡 鈥斺€?*/
 .calculator-page.theme-light .result-grid,
 .calculator-page.theme-light .formula-aligned,
 .calculator-page.theme-light .sources-popover,
@@ -444,7 +444,7 @@
   color: #5c4818 !important;
 }
 
-/* —— 历史 —— */
+/* 鈥斺€?鍘嗗彶 鈥斺€?*/
 .calculator-page.theme-light .history-modal-overlay {
   background: rgba(15, 23, 42, 0.35) !important;
 }
@@ -455,7 +455,7 @@
   color: #b42318 !important;
 }
 
-/* —— 注释 —— */
+/* 鈥斺€?娉ㄩ噴 鈥斺€?*/
 .calculator-page.theme-light .team-notes,
 .calculator-page.theme-light .team-note-item {
   border-color: var(--calc-border) !important;
@@ -509,7 +509,7 @@
   color: var(--calc-text) !important;
 }
 
-/* —— 历史入口内联摘要 —— */
+/* 鈥斺€?鍘嗗彶鍏ュ彛鍐呰仈鎽樿 鈥斺€?*/
 .calculator-page.theme-light .history-summary,
 .calculator-page.theme-light .history-open-hint {
   border-color: var(--calc-border) !important;
@@ -522,7 +522,7 @@
   color: #8a6d2e !important;
 }
 
-/* —— 局内增益汇总 —— */
+/* 鈥斺€?灞€鍐呭鐩婃眹鎬?鈥斺€?*/
 .calculator-page.theme-light .buff-breakdown,
 .calculator-page.theme-light .affix-base-summary,
 .calculator-page.theme-light .extra-mods-block {
@@ -531,7 +531,7 @@
   color: var(--calc-text) !important;
 }
 
-/* —— 额外 Buff 增益编辑 —— */
+/* 鈥斺€?棰濆 Buff 澧炵泭缂栬緫 鈥斺€?*/
 .calculator-page.theme-light .extra-buff-editor .field {
   color: var(--calc-muted) !important;
 }
@@ -585,7 +585,7 @@
   color: var(--calc-text) !important;
 }
 
-/* —— 增益来源 / 增伤列表（角色·音擎·驱动盘·邦布） —— */
+/* 鈥斺€?澧炵泭鏉ユ簮 / 澧炰激鍒楄〃锛堣鑹猜烽煶鎿幝烽┍鍔ㄧ洏路閭﹀竷锛?鈥斺€?*/
 .calculator-page.theme-light .doc-detail {
   border-color: var(--calc-border) !important;
   background: var(--calc-surface-2) !important;
@@ -669,7 +669,7 @@
   color: #3d4f2f !important;
 }
 
-/* —— 最优词条分配 —— */
+/* 鈥斺€?鏈€浼樿瘝鏉″垎閰?鈥斺€?*/
 .calculator-page.theme-light .opt-section {
   --calc-run-border: var(--calc-accent);
   --calc-run-bg: var(--calc-accent-bg);
@@ -910,7 +910,7 @@
   color: #667085 !important;
 }
 
-/* 最优词条 · 计算过程 · 伤害事件列表（须盖过 scoped 深色底） */
+/* 鏈€浼樿瘝鏉?路 璁＄畻杩囩▼ 路 浼ゅ浜嬩欢鍒楄〃锛堥』鐩栬繃 scoped 娣辫壊搴曪級 */
 .calculator-page.theme-light .opt-section .event-summary-block,
 .calculator-page.theme-light .opt-section .owner-share-block {
   border-color: var(--calc-border) !important;
@@ -1058,9 +1058,8 @@
 }
 
 /*
- * Teleport 到 body 的历史弹窗不在 .calculator-page 内，
- * 必须用 html[data-theme] 覆盖。
- */
+ * Teleport 鍒?body 鐨勫巻鍙插脊绐椾笉鍦?.calculator-page 鍐咃紝
+ * 蹇呴』鐢?html[data-theme] 瑕嗙洊銆? */
 [data-theme='light'] .history-modal-overlay {
   background: rgba(15, 23, 42, 0.35) !important;
 }
@@ -1122,9 +1121,8 @@
 }
 
 /*
- * Teleport 到 body 的 Buff 选择弹窗不在 .calculator-page 内，
- * 必须用 html[data-theme] 覆盖。
- */
+ * Teleport 鍒?body 鐨?Buff 閫夋嫨寮圭獥涓嶅湪 .calculator-page 鍐咃紝
+ * 蹇呴』鐢?html[data-theme] 瑕嗙洊銆? */
 [data-theme='light'] .buff-picker-overlay {
   background: rgba(15, 23, 42, 0.35) !important;
 }
@@ -1252,9 +1250,7 @@
 }
 
 /*
- * EquipPickerModal / DamageEventEditor：Teleport 到 body 或硬编码深色，
- * 白天模式需单独覆盖。
- */
+ * EquipPickerModal / DamageEventEditor锛歍eleport 鍒?body 鎴栫‖缂栫爜娣辫壊锛? * 鐧藉ぉ妯″紡闇€鍗曠嫭瑕嗙洊銆? */
 .calculator-page.theme-light .picker-summary {
   background: #ffffff !important;
   border-color: #d5dae3 !important;
@@ -1583,7 +1579,7 @@
   color: var(--calc-muted) !important;
 }
 
-/* 伤害事件模式弹窗（Teleport 到 body，用独立选择器） */
+/* 浼ゅ浜嬩欢妯″紡寮圭獥锛圱eleport 鍒?body锛岀敤鐙珛閫夋嫨鍣級 */
 body:has(.calculator-page.theme-light) .mode-modal,
 .theme-light .mode-modal {
   border-color: #d5dae3 !important;
@@ -1742,7 +1738,7 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #1c212a !important;
 }
 
-/* —— 敌方与环境 —— */
+/* 鈥斺€?鏁屾柟涓庣幆澧?鈥斺€?*/
 .calculator-page.theme-light .enemy-environment-title {
   color: var(--calc-text) !important;
 }
@@ -1805,9 +1801,8 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 }
 
 /*
- * Teleport 到 body 的 Boss 选择弹窗不在 .calculator-page 内，
- * 必须用 html[data-theme] 覆盖。
- */
+ * Teleport 鍒?body 鐨?Boss 閫夋嫨寮圭獥涓嶅湪 .calculator-page 鍐咃紝
+ * 蹇呴』鐢?html[data-theme] 瑕嗙洊銆? */
 [data-theme='light'] .boss-picker-overlay {
   background: rgba(15, 23, 42, 0.35) !important;
 }
@@ -1904,4 +1899,246 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .boss-picker-modal .boss-trait.res {
   color: #b42318 !important;
   background: rgba(180, 35, 24, 0.08) !important;
+}
+
+/*
+ * UnifiedPresetPicker锛歍eleport 鍒?body锛岀敤 [data-theme='light'] 瑕嗙洊銆? * 閰嶈壊涓?EquipPickerModal 淇濇寔涓€鑷淬€? */
+[data-theme='light'] .unified-overlay {
+  background: rgba(15, 23, 42, 0.35) !important;
+}
+
+[data-theme='light'] .unified-modal {
+  border-color: #d5dae3 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%) !important;
+  color: #1c212a !important;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12) !important;
+}
+
+[data-theme='light'] .unified-modal .modal-header {
+  border-bottom-color: #e4e7ec !important;
+}
+
+[data-theme='light'] .unified-modal .modal-header h2 {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .close-btn {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .unified-modal .close-btn:hover {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .tab-bar {
+  border-bottom-color: #e4e7ec !important;
+}
+
+[data-theme='light'] .unified-modal .tab-filters {
+  border-bottom-color: #e4e7ec !important;
+}
+
+[data-theme='light'] .unified-modal .tab-btn {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .unified-modal .tab-btn.active {
+  color: #c9a55c !important;
+  border-bottom-color: #c9a55c !important;
+}
+
+[data-theme='light'] .unified-modal .chip-group-label {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .unified-modal .chip {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #344054 !important;
+}
+
+[data-theme='light'] .unified-modal .chip.active,
+[data-theme='light'] .unified-modal .chip.highlight {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .search {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .unified-modal .search:focus {
+  border-color: #c9a55c !important;
+}
+
+[data-theme='light'] .unified-modal .item-cell {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .item-cell.active {
+  border-color: #c9a55c !important;
+  box-shadow: inset 0 0 0 1px rgba(201, 165, 92, 0.45) !important;
+  background: #fff8eb !important;
+}
+
+[data-theme='light'] .unified-modal .item-placeholder {
+  background: #eef1f5 !important;
+  color: #98a2b3 !important;
+}
+
+[data-theme='light'] .unified-modal .empty-hint {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .unified-modal .rank-bar {
+  border-color: #e4e7ec !important;
+  background: #f6f8fb !important;
+}
+
+[data-theme='light'] .unified-modal .rank-label {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .rank-slider {
+  accent-color: #c9a55c;
+  color-scheme: light;
+}
+
+[data-theme='light'] .unified-modal .rank-badge {
+  border-color: #e6d7b0 !important;
+  background: #fff8eb !important;
+  color: #5c4818 !important;
+}
+
+[data-theme='light'] .unified-modal .disc-col-header h3 {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .disc-col-header p {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .unified-modal .modal-footer {
+  border-top-color: #e4e7ec !important;
+  background: #f6f8fb !important;
+}
+
+[data-theme='light'] .unified-modal .summary-title {
+  color: #8a6d2e !important;
+}
+
+[data-theme='light'] .unified-modal .summary-text {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .unified-modal .cancel-btn {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #344054 !important;
+}
+
+[data-theme='light'] .unified-modal .cancel-btn:hover {
+  background: #f5f7fa !important;
+}
+
+[data-theme='light'] .unified-modal .confirm-btn {
+  background: #c9a55c !important;
+  color: #ffffff !important;
+}
+
+[data-theme='light'] .unified-modal .confirm-btn:not(:disabled):hover {
+  background: #b8964e !important;
+}
+
+/* trigger button 鍦?.calculator-page 鍐?*/
+.calculator-page.theme-light .unified-trigger {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+
+.calculator-page.theme-light .unified-trigger:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+}
+
+.calculator-page.theme-light .unified-trigger .trigger-label {
+  color: #8a6a2b !important;
+}
+
+.calculator-page.theme-light .unified-trigger .trigger-hint {
+  color: #667085 !important;
+}
+
+/*
+ * TeamBuilderSection.vue 鈥?闊虫搸宸查€?鏈€夊睍绀烘潯
+ * 杩欎簺鍏冪礌鍘嗗彶涓婄敱 EquipPickerModal 娓叉煋锛堣嚜甯?light 瑕嗙洊锛夛紝
+ * 鏀规垚缁勪欢鑷覆鏌撳悗锛宻coped style 鍙湁鏆楄壊榛樿鍊硷紝闇€琛?light 瑕嗙洊銆? */
+.calculator-page.theme-light .wengine-selected-bar {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+
+.calculator-page.theme-light .wengine-selected-bar .wengine-bar-name {
+  color: #1c212a !important;
+}
+
+.calculator-page.theme-light .wengine-selected-bar .wengine-bar-hint {
+  color: #667085 !important;
+}
+
+.calculator-page.theme-light .wengine-none-bar {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #667085 !important;
+}
+
+.calculator-page.theme-light .wengine-none-bar .wengine-bar-hint {
+  color: #98a2b3 !important;
+}
+
+/*
+ * DriveDiscPickerSection.vue 鈥?椹卞姩鐩樺凡閫?鏈€夊睍绀烘潯
+ * 鍚屼笂锛屽師鏈敱 EquipPickerModal 娓叉煋銆? */
+.calculator-page.theme-light .disc-selected-bar {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+
+.calculator-page.theme-light .disc-selected-bar .disc-bar-name {
+  color: #1c212a !important;
+}
+
+.calculator-page.theme-light .disc-none-bar {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #667085 !important;
+}
+
+/*
+ * DriveDiscPickerSection.vue 鈥?鍥㈤槦椹卞姩鐩樻敞閲婏紙team-disc-notes锛? * 鏆楄壊榛樿鏄噾榛勬笎鍙橈紝light 妯″紡鏀逛负娴呴噾璋冧互淇濇寔璇嗗埆鎬т絾涓嶈繃鍒嗐€? */
+.calculator-page.theme-light .team-disc-notes {
+  border-color: #e6d7b0 !important;
+  background: #fff8eb !important;
+}
+
+.calculator-page.theme-light .team-disc-notes h4 {
+  color: #5c4818 !important;
+}
+
+.calculator-page.theme-light .disc-note-item + .disc-note-item {
+  border-top-color: #f0e3c4 !important;
+}
+
+.calculator-page.theme-light .disc-note-item strong {
+  color: #5c4818 !important;
+}
+
+.calculator-page.theme-light .disc-note-item p {
+  color: #344054 !important;
 }
