@@ -103,15 +103,18 @@ const selectableWengines = computed(() => props.wengines.filter((w) => w.id !== 
 const filteredWengines = computed(() => {
   const kw = wengineSearch.value.trim().toLowerCase()
   return selectableWengines.value.filter((w) => {
-    // off-spec 音擎直接隐藏（与所选代理人职业不匹配时不出现在候选列表里）
-    if (selectedAgent.value && !isWengineProfessionMatch(selectedAgent.value.profession, w.profession)) {
-      return false
-    }
     const byRarity = !wengineRarityFilter.value || w.rarity === wengineRarityFilter.value
     const byRole = !wengineRoleFilter.value || w.profession === wengineRoleFilter.value
     const byKw = !kw || w.name.includes(kw)
     return byRarity && byRole && byKw
   })
+})
+
+const wengineProfessionMatch = computed(() => {
+  if (!selectedAgent.value || !selectedWengine.value || selectedWengine.value.id === 'none') {
+    return true
+  }
+  return isWengineProfessionMatch(selectedAgent.value.profession, selectedWengine.value.profession)
 })
 
 const wengineChipGroups = computed(() => [
@@ -186,7 +189,10 @@ const summary = computed(() => {
   const parts: string[] = []
   if (selectedAgent.value) parts.push(`${selectedAgent.value.name}（${selected.value.rank}影）`)
   if (selectedWengine.value && selectedWengine.value.id !== 'none') {
-    parts.push(`${selectedWengine.value.name}（精${selected.value.wengineRefine}）`)
+    const refineLabel = wengineProfessionMatch.value
+      ? `精${selected.value.wengineRefine}`
+      : '异职·仅基础'
+    parts.push(`${selectedWengine.value.name}（${refineLabel}）`)
   } else {
     parts.push('未佩戴武器')
   }
@@ -339,8 +345,16 @@ const canConfirm = computed(() => !!selected.value.agentId)
               </div>
             </div>
             <!-- Refine selector (always rendered; visibility hidden when no wengine) -->
-            <div class="rank-bar" :class="{ 'rank-bar-hidden': !selectedWengine || selectedWengine.id === 'none' }">
-              <span class="rank-label">{{ selectedWengine && selectedWengine.id !== 'none' ? selectedWengine.name + ' · ' : '' }}精炼</span>
+            <div
+              class="rank-bar"
+              :class="{
+                'rank-bar-hidden': !selectedWengine || selectedWengine.id === 'none',
+                'rank-bar-off-spec': selectedWengine && !wengineProfessionMatch,
+              }"
+            >
+              <span class="rank-label">
+                {{ selectedWengine && selectedWengine.id !== 'none' ? selectedWengine.name + ' · ' : '' }}精炼
+              </span>
               <input
                 type="range"
                 min="1"
@@ -348,9 +362,12 @@ const canConfirm = computed(() => !!selected.value.agentId)
                 step="1"
                 class="rank-slider"
                 :value="selected.wengineRefine"
+                :disabled="!wengineProfessionMatch"
                 @input="selected.wengineRefine = Number(($event.target as HTMLInputElement).value)"
               />
-              <span class="rank-badge">精{{ selected.wengineRefine }}</span>
+              <span class="rank-badge">
+                {{ wengineProfessionMatch ? `精${selected.wengineRefine}` : '仅基础' }}
+              </span>
             </div>
           </div>
           <div class="tab-grid-wrap">
@@ -369,7 +386,10 @@ const canConfirm = computed(() => !!selected.value.agentId)
                 :key="item.id"
                 type="button"
                 class="item-cell"
-                :class="{ active: selected.wengineId === item.id }"
+                :class="{
+                  active: selected.wengineId === item.id,
+                  'off-spec-wengine': selectedAgent && !isWengineProfessionMatch(selectedAgent.profession, item.profession),
+                }"
                 @click="pickWengine(item.id)"
               >
                 <CalculatorAvatar class="item-avatar" :avatar-image="item.avatar_image" :name="item.name" />
@@ -664,6 +684,15 @@ const canConfirm = computed(() => !!selected.value.agentId)
 .rank-slider {
   width: 110px;
   accent-color: #c9a55c;
+}
+
+.rank-bar-off-spec {
+  border-color: #5a4a31;
+}
+
+.item-cell.off-spec-wengine:not(.active) {
+  border-style: dashed;
+  opacity: 0.92;
 }
 
 .rank-slider:disabled {

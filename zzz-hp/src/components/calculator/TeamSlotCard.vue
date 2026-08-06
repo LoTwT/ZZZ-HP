@@ -2,8 +2,10 @@
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
+import { isWengineProfessionMatch } from '@/utils/calculatorUi'
+import { computed } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   index: number
   slot: TeamSlot
   agent?: AgentBuffDoc
@@ -20,6 +22,11 @@ const emit = defineEmits<{
   'update:rank': [value: number]
   'update:refine': [value: number]
 }>()
+
+const wengineProfessionMatch = computed(() => {
+  if (!props.agent || !props.wengine || props.wengine.id === 'none') return true
+  return isWengineProfessionMatch(props.agent.profession, props.wengine.profession)
+})
 </script>
 
 <template>
@@ -55,12 +62,13 @@ const emit = defineEmits<{
         <span class="rank-label">{{ slot.rank }}影</span>
       </div>
 
-      <div class="gear-row" @click.stop>
+      <div class="gear-row" :class="{ 'off-spec-wengine': wengine && !wengineProfessionMatch }" @click.stop>
         <CalculatorAvatar class="gear-avatar" :avatar-image="wengine?.avatar_image" :name="wengine?.name ?? '未佩戴'" />
         <div class="gear-info">
           <div class="gear-name">
             <span class="gear-tag">音擎</span>
             <span>{{ wengine ? wengine.name : '未佩戴' }}</span>
+            <span v-if="wengine && !wengineProfessionMatch" class="off-spec-wengine-hint">异职·仅基础属性</span>
           </div>
           <div class="refine-row">
             <span class="row-label">精炼</span>
@@ -71,10 +79,10 @@ const emit = defineEmits<{
               max="5"
               step="1"
               :value="slot.wengineRefine"
-              :disabled="!wengine || wengine.id === 'none'"
+              :disabled="!wengine || wengine.id === 'none' || !wengineProfessionMatch"
               @input="emit('update:refine', Number(($event.target as HTMLInputElement).value))"
             />
-            <span class="rank-label">精{{ wengine ? slot.wengineRefine : '-' }}</span>
+            <span class="rank-label">{{ wengine ? (wengineProfessionMatch ? `精${slot.wengineRefine}` : '精-') : '-' }}</span>
           </div>
         </div>
       </div>
@@ -253,11 +261,22 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
   font-size: 0.84rem;
   color: #e4e8ef;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.off-spec-wengine-hint {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: #d4a017;
+  border: 1px solid #5a4a31;
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+}
+
+.gear-row.off-spec-wengine {
+  border-color: #5a4a31;
 }
 
 .gear-tag {

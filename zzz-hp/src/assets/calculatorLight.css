@@ -2142,3 +2142,120 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 .calculator-page.theme-light .disc-note-item p {
   color: #344054 !important;
 }
+
+/*
+ * TeamSlotCard.vue — 槽位卡片内 gear/disc 子块（scoped 暗色需覆盖）
+ */
+.calculator-page.theme-light .gear-row,
+.calculator-page.theme-light .disc-item {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface) !important;
+  background-color: var(--calc-surface) !important;
+}
+
+.calculator-page.theme-light .gear-row.off-spec-wengine {
+  border-color: #e6d7b0 !important;
+  background: #fffdf8 !important;
+}
+
+.calculator-page.theme-light .gear-name,
+.calculator-page.theme-light .disc-text,
+.calculator-page.theme-light .disc-name {
+  color: var(--calc-text) !important;
+}
+
+.calculator-page.theme-light .gear-tag,
+.calculator-page.theme-light .disc-tag {
+  color: #8a6d2e !important;
+  border-color: var(--calc-border) !important;
+}
+
+.calculator-page.theme-light .slot-card .row-label {
+  color: #8a6d2e !important;
+}
+
+.calculator-page.theme-light .off-spec-wengine-hint {
+  color: #8a6a2b !important;
+  border-color: #e6d7b0 !important;
+  background: #fff8eb !important;
+}
+
+.calculator-page.theme-light .slot-card .editing-badge {
+  background: linear-gradient(180deg, #c9a55c, #9f7d3f) !important;
+  color: #1a140d !important;
+}
+
+/*
+ * UnifiedPresetPicker rank-bar：Teleport 到 body，滑条需完整 light 覆盖
+ */
+[data-theme='light'] .unified-modal input[type='range'],
+[data-theme='light'] .unified-modal .rank-slider {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  height: 1.35rem !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  accent-color: #c9a55c !important;
+  color-scheme: light !important;
+  cursor: pointer;
+}
+
+[data-theme='light'] .unified-modal input[type='range']::-webkit-slider-runnable-track,
+[data-theme='light'] .unified-modal .rank-slider::-webkit-slider-runnable-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #d8dee8 !important;
+  border: none;
+}
+
+[data-theme='light'] .unified-modal input[type='range']::-webkit-slider-thumb,
+[data-theme='light'] .unified-modal .rank-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.28rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #c9a55c !important;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
+  cursor: pointer;
+}
+
+[data-theme='light'] .unified-modal input[type='range']::-moz-range-track,
+[data-theme='light'] .unified-modal .rank-slider::-moz-range-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #d8dee8 !important;
+  border: none;
+}
+
+[data-theme='light'] .unified-modal input[type='range']::-moz-range-progress,
+[data-theme='light'] .unified-modal .rank-slider::-moz-range-progress {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #e6d7b0 !important;
+}
+
+[data-theme='light'] .unified-modal input[type='range']::-moz-range-thumb,
+[data-theme='light'] .unified-modal .rank-slider::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #c9a55c !important;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
+  cursor: pointer;
+}
+
+[data-theme='light'] .unified-modal .rank-bar-off-spec {
+  border-color: #e6d7b0 !important;
+  background: #fffdf8 !important;
+}
+
+[data-theme='light'] .unified-modal .item-cell.off-spec-wengine:not(.active) {
+  border-style: dashed !important;
+  border-color: #d5dae3 !important;
+  background: #fafbfc !important;
+}

@@ -10,7 +10,7 @@ import { useThemeStore } from '@/stores/theme'
 
 import '@/assets/calculatorLight.css'
 
-import { AGENT_MINDSCAPE_RANKS, AGENT_ROLES, collectMindscapeRankBuffs, createEmptyBuffStatModifiers, createEmptySelfTeamBuffs, getMindscapeNote, getMindscapeRankOnlyBuffs, REFINEMENT_RANKS, SUPPORT_STAT_OPTIONS, WENGINE_RARITIES } from '@/utils/calculatorUi'
+import { AGENT_ELEMENTS, AGENT_MINDSCAPE_RANKS, AGENT_ROLES, collectMindscapeRankBuffs, createEmptyBuffStatModifiers, createEmptySelfTeamBuffs, getMindscapeNote, getMindscapeRankOnlyBuffs, numericStatFieldLabel, REFINEMENT_RANKS, SUPPORT_STAT_OPTIONS, WENGINE_ADVANCED_STAT_FIELDS, WENGINE_RARITIES } from '@/utils/calculatorUi'
 
 type CalcPage = 'damage' | 'role-buff' | 'wengine-buff' | 'bangboo-buff' | 'drive-disc-buff'
 type MindscapeBuffMode = 'current' | 'cumulative'
@@ -91,7 +91,9 @@ async function scrollToDamageSection(item: DamageCalcNavItem | { id: 'damage-cal
 
 const roleDocSearch = ref('')
 const roleDocRoleFilter = ref('')
+const roleDocElementFilter = ref('')
 const wengineSearch = ref('')
+const wengineRoleFilter = ref('')
 const wengineRarityFilter = ref('')
 const bangbooSearch = ref('')
 const driveDiscSearch = ref('')
@@ -133,12 +135,17 @@ const filteredRoleDocs = computed(() =>
     const bySearch =
       !keyword || `${a.name}${a.profession}${a.element}${a.id}`.includes(keyword)
     const byRole = !roleDocRoleFilter.value || a.profession === roleDocRoleFilter.value
-    return bySearch && byRole
+    const byElement = !roleDocElementFilter.value || a.element === roleDocElementFilter.value
+    return bySearch && byRole && byElement
   }),
 )
 
 function toggleRoleDocRoleFilter(role: string) {
   roleDocRoleFilter.value = roleDocRoleFilter.value === role ? '' : role
+}
+
+function toggleRoleDocElementFilter(element: string) {
+  roleDocElementFilter.value = roleDocElementFilter.value === element ? '' : element
 }
 
 function supportNeedLabels(needs: string[]) {
@@ -178,6 +185,20 @@ const selectedWengineRefinementBuffs = computed(() => {
   )
 })
 
+const selectedWengineAdvancedStatEntries = computed(() => {
+  if (!selectedWengineDoc.value) return []
+  const stats = selectedWengineDoc.value.advancedStats
+  return WENGINE_ADVANCED_STAT_FIELDS.filter((field) => stats[field.key] !== 0)
+})
+
+function toggleWengineDocRoleFilter(role: string) {
+  wengineRoleFilter.value = wengineRoleFilter.value === role ? '' : role
+}
+
+function toggleWengineDocRarityFilter(rarity: string) {
+  wengineRarityFilter.value = wengineRarityFilter.value === rarity ? '' : rarity
+}
+
 const selectedBangbooRefinementBuffs = computed(() => {
   if (!selectedBangbooDoc.value) return createEmptyBuffStatModifiers()
   return (
@@ -193,9 +214,12 @@ function selectAgentDoc(id: string) {
 
 const filteredWengineDocs = computed(() =>
   wengineDocs.value.filter((w) => {
-    const bySearch = !wengineSearch.value || w.name.includes(wengineSearch.value.trim())
+    if (w.id === 'none') return false
+    const keyword = wengineSearch.value.trim()
+    const bySearch = !keyword || `${w.name}${w.profession}${w.rarity}${w.id}`.includes(keyword)
+    const byRole = !wengineRoleFilter.value || w.profession === wengineRoleFilter.value
     const byRarity = !wengineRarityFilter.value || w.rarity === wengineRarityFilter.value
-    return bySearch && byRarity
+    return bySearch && byRole && byRarity
   }),
 )
 
@@ -318,7 +342,7 @@ const filteredDriveDiscDocs = computed(() =>
           <label class="field"><span>搜索角色</span><input v-model="roleDocSearch" type="text" placeholder="输入角色名/职业/属性" /></label>
         </div>
         <div class="filter-block">
-          <p class="filter-label">职业筛选</p>
+          <p class="filter-label">特性</p>
           <div class="chip-row">
             <button
               v-for="role in AGENT_ROLES"
@@ -329,6 +353,21 @@ const filteredDriveDiscDocs = computed(() =>
               @click="toggleRoleDocRoleFilter(role)"
             >
               {{ role }}
+            </button>
+          </div>
+        </div>
+        <div class="filter-block">
+          <p class="filter-label">属性</p>
+          <div class="chip-row">
+            <button
+              v-for="element in AGENT_ELEMENTS"
+              :key="element"
+              type="button"
+              class="chip"
+              :class="{ active: roleDocElementFilter === element }"
+              @click="toggleRoleDocElementFilter(element)"
+            >
+              {{ element }}
             </button>
           </div>
         </div>
@@ -409,18 +448,39 @@ const filteredDriveDiscDocs = computed(() =>
 
       <article v-if="activePage === 'wengine-buff'" class="card">
         <h2>音擎增益详细</h2>
-        <p class="helper-text">点击音擎查看面板外增益说明。</p>
+        <p class="helper-text">点击音擎查看基础属性与面板外增益说明；异职佩戴时仅基础属性参与计算。</p>
         <div class="grid four compact-grid">
-          <label class="field"><span>搜索音擎</span><input v-model="wengineSearch" type="text" placeholder="输入音擎名称" /></label>
-          <label class="field">
-            <span>稀有度筛选</span>
-            <select v-model="wengineRarityFilter">
-              <option value="">全部</option>
-              <option v-for="rarity in WENGINE_RARITIES" :key="rarity" :value="rarity">
-                {{ rarity }}
-              </option>
-            </select>
-          </label>
+          <label class="field"><span>搜索音擎</span><input v-model="wengineSearch" type="text" placeholder="输入音擎名称/职业" /></label>
+        </div>
+        <div class="filter-block">
+          <p class="filter-label">特性</p>
+          <div class="chip-row">
+            <button
+              v-for="role in AGENT_ROLES"
+              :key="role"
+              type="button"
+              class="chip"
+              :class="{ active: wengineRoleFilter === role }"
+              @click="toggleWengineDocRoleFilter(role)"
+            >
+              {{ role }}
+            </button>
+          </div>
+        </div>
+        <div class="filter-block">
+          <p class="filter-label">稀有度</p>
+          <div class="chip-row">
+            <button
+              v-for="rarity in WENGINE_RARITIES"
+              :key="rarity"
+              type="button"
+              class="chip"
+              :class="{ active: wengineRarityFilter === rarity }"
+              @click="toggleWengineDocRarityFilter(rarity)"
+            >
+              {{ rarity }}
+            </button>
+          </div>
         </div>
         <div class="doc-grid">
           <button
@@ -435,14 +495,38 @@ const filteredDriveDiscDocs = computed(() =>
           >
             <CalculatorAvatar :avatar-image="w.avatar_image" :name="w.name" />
             <strong>{{ w.name }}</strong>
-            <span>{{ w.rarity }}级</span>
+            <span>{{ w.profession || '未分类' }} · {{ w.rarity }}级</span>
           </button>
         </div>
         <div v-if="selectedWengineDoc" class="doc-detail">
           <h3>{{ selectedWengineDoc.name }}</h3>
+          <p class="doc-meta">
+            职业：{{ selectedWengineDoc.profession || '未分类' }} · 稀有度：{{ selectedWengineDoc.rarity }}
+          </p>
           <p v-if="selectedWengineDoc.note.trim()" class="doc-note">
             <span class="doc-note-label">音擎注释</span>
             {{ selectedWengineDoc.note }}
+          </p>
+          <h4 class="doc-subtitle">基础属性</h4>
+          <p class="helper-text wengine-base-hint">
+            计入局外面板；异职佩戴时不享受下方固定/精炼增益。
+          </p>
+          <div class="wengine-base-stats">
+            <div class="wengine-stat-item">
+              <span class="wengine-stat-label">基础攻击</span>
+              <strong class="wengine-stat-value">{{ selectedWengineDoc.baseAtk }}</strong>
+            </div>
+            <div
+              v-for="field in selectedWengineAdvancedStatEntries"
+              :key="field.key"
+              class="wengine-stat-item"
+            >
+              <span class="wengine-stat-label">{{ numericStatFieldLabel(field.label, field.unit) }}</span>
+              <strong class="wengine-stat-value">{{ selectedWengineDoc.advancedStats[field.key] }}</strong>
+            </div>
+          </div>
+          <p v-if="!selectedWengineAdvancedStatEntries.length && !selectedWengineDoc.baseAtk" class="empty-mods">
+            暂无额外高级属性
           </p>
           <h4 class="doc-subtitle">固定增益</h4>
           <BuffEffectBlocksDisplay :skill-subcategories="skillSubcategories" :blocks="selectedWengineDoc.fixedBuffs.effectBlocks" />
@@ -896,6 +980,45 @@ const filteredDriveDiscDocs = computed(() =>
   color: #d5dae4;
 }
 
+.wengine-base-hint {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+}
+
+.wengine-base-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+
+.wengine-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #2d323a;
+  border-radius: 8px;
+  background: #0f1217;
+}
+
+.wengine-stat-label {
+  font-size: 0.72rem;
+  color: #9aa3b0;
+}
+
+.wengine-stat-value {
+  font-size: 0.92rem;
+  color: #e4e8ef;
+  font-weight: 600;
+}
+
+.empty-mods {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  color: #7a828f;
+}
+
 .empty-hint {
   color: #7a828f;
   list-style: none;
@@ -1025,6 +1148,24 @@ const filteredDriveDiscDocs = computed(() =>
 
 .calculator-page.theme-light .doc-subtitle {
   color: #1c212a;
+}
+
+.calculator-page.theme-light .wengine-stat-item {
+  border-color: #d5dae3;
+  background: #fff;
+}
+
+.calculator-page.theme-light .wengine-stat-label {
+  color: #667085;
+}
+
+.calculator-page.theme-light .wengine-stat-value {
+  color: #1c212a;
+}
+
+.calculator-page.theme-light .empty-mods,
+.calculator-page.theme-light .wengine-base-hint {
+  color: #667085;
 }
 
 .calculator-page.theme-light .doc-item {
