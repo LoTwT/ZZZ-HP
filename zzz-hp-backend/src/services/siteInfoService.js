@@ -8,13 +8,25 @@ const DEFAULT_SECTIONS = [
     title: '关于本站',
     content: `ZZZ-HP 是由粉丝制作的《绝区零》非官方工具站，旨在整理玩法数据、提供计算辅助，并搭建玩家交流空间。
 
-本站与 HoYoverse / 米哈游官方无任何隶属或授权关系，所有功能由爱好者社区维护，仅供交流与学习使用。`,
+本站与 HoYoverse / 米哈游官方无任何隶属或授权关系，所有功能由爱好者社区维护，仅供交流与学习使用。
+
+【开发人员】
+涅七白
+首页介绍
+https://space.bilibili.com/3546388866534032
+
+憧憬成为江东铁壁
+https://space.bilibili.com/3992380
+
+【QQ交流群】
+还是摆烂吧
+951685472`,
   },
   {
     panelKey: 'features',
     title: '网站内容',
     content: `【危局强袭战】
-往期详细查询（含手机端上一期 / 选期 / 下一期）、总血量折线图、期数对比折线图、单独怪物对比、Buff 总览与 Buff 对比。
+往期详细查询（含手机端上一期 / 选期 / 下一期）、总血量折线图、期数对比折线图、单独怪物对比、Buff 总览与 Buff 对比；支持困难房间相关展示。
 
 【式舆防卫战】
 新旧防卫战数据浏览；与危局强袭战相同的往期详细、折线图与对比能力；历史数据整理与对照。
@@ -23,10 +35,13 @@ const DEFAULT_SECTIONS = [
 相关模式入口与数据浏览。
 
 【角色计算器】
-· 队伍编组、音擎 / 驱动盘 / 邦布选择，局外面板与伤害乘区计算
+· 队伍编组：统一预设选择（角色 / 音擎 / 驱动盘），槽位卡片内影画、精炼与 4+2 件套；邦布选择
+· 敌方与环境：从怪物基础库或期数记录填入；期数记录默认最新已公开版本与期数；弱点 / 抗性 / 防御 / 失衡易伤联动
+· 局内 Buff：可按危局强袭战或式舆防卫战筛选；防卫战按防线选择并展示全部房间 Buff（buff名|第x间）；危局含全局 Buff 与 Boss 场地 Buff，勾选可联动敌方
+· 增益条件：支持队内职业人数分档（恰好 1 / 2 / 3 人）、职业限制、技能与失衡等条件
 · 图片录入：面板截图 OCR（云识别 + 本地兜底），识别 4 / 5 / 6 号盘主属性并一键填入
 · 计算方式：面板计算、词条计算（由局外面板反推副词条）、最优词条分配（扫掠分配并绘制期望伤害柱状图 / 收益曲线）
-· 支持额外 Buff、局外 / 局内面板与增益汇总；白天 / 夜间主题与手机端适配
+· 额外 Buff、局外 / 局内面板与增益汇总；白天 / 夜间主题与手机端适配
 
 【留言板（委托）】
 · 发布 / 浏览委托：分类筛选、搜索、瀑布流列表、评论、点赞、收藏；支持图文与表情、@ 提及
@@ -36,10 +51,10 @@ const DEFAULT_SECTIONS = [
 · 敲敲：系统通知、关注动态、私信聊天；米游社扫码登录与多账号切换
 
 【首页与说明】
-更新日志展示；「网站说明」独立页面（关于本站 / 网站内容 / 借鉴与参考 / 版权声明）。
+更新日志展示；「网站说明」独立页面（关于本站 / 网站内容 / 借鉴与参考 / 版权声明）；关于本站含开发人员与 QQ 交流群。
 
 【管理后台】
-Boss / Buff / 计算器等数据维护；更新日志与网站说明编辑；留言板委托与账号管理（屏蔽、删除、封禁、敏感内容与匿名身份查看）等。`,
+怪物基础库 / Boss / Buff、危局与防卫战可视化维护；计算器角色 / 音擎 / 驱动盘 / 邦布与头像管理；版本日期、更新日志与网站说明编辑；留言板委托与账号管理（屏蔽、删除、封禁、敏感内容与匿名身份查看）等。`,
   },
   {
     panelKey: 'credits',
@@ -109,8 +124,17 @@ async function ensureTable() {
   if (featuresDefault) {
     await pool.query(
       `UPDATE site_info_section SET title = ?, content = ?
-       WHERE panel_key = 'features' AND content NOT LIKE '%最优词条分配%'`,
+       WHERE panel_key = 'features' AND content NOT LIKE '%buff名|第x间%'`,
       [featuresDefault.title, featuresDefault.content],
+    )
+  }
+
+  const aboutDefault = DEFAULT_SECTIONS.find((s) => s.panelKey === 'about')
+  if (aboutDefault) {
+    await pool.query(
+      `UPDATE site_info_section SET title = ?, content = ?
+       WHERE panel_key = 'about' AND content NOT LIKE '%开发人员%'`,
+      [aboutDefault.title, aboutDefault.content],
     )
   }
 

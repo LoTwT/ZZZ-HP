@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { fetchBossInfoList, lookupBossInfo, type BossInfoRecord } from '@/api/bossInfo'
 import { searchBossRecords, type BossRecord } from '@/api/admin'
+import { fetchCrisisAssaultPhases } from '@/api/crisisAssault'
+import { fetchDefenseSeasons } from '@/api/defense'
 import type { DamageEnemyInput } from '@/utils/enemyResistance'
 import {
   mapBossInfoToDamageEnemyInput,
@@ -42,6 +44,7 @@ const brokenRecordIds = ref(new Set<number>())
 const bossImageByName = ref(new Map<string, string>())
 
 let catalogTimer: ReturnType<typeof setTimeout> | null = null
+let applyingRecordDefaults = false
 
 const modalTitle = computed(() =>
   activeTab.value === 'catalog' ? '选择怪物 · 基础库' : '选择怪物 · 期数记录',
@@ -63,6 +66,85 @@ const visibleRecordResults = computed(() =>
   }),
 )
 
+function compareVersionDesc(a: string, b: string) {
+  const parse = (value: string) =>
+    value.split('.').map((part) => Number(part.replace(/\D/g, '')) || 0)
+  const left = parse(a)
+  const right = parse(b)
+  const len = Math.max(left.length, right.length)
+  for (let i = 0; i < len; i += 1) {
+    const diff = (right[i] ?? 0) - (left[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function normalizePhaseNum(phase: string) {
+  const text = String(phase ?? '').trim()
+  return text.replace(/\D/g, '') || text
+}
+
+function pickLatestPublicPhase(
+  items: Array<{ version: string; phase: string; isHidden?: boolean }>,
+): { version: string; phase: string } | null {
+  const visible = items.filter((item) => !item.isHidden)
+  const pool = visible.length ? visible : items
+  if (!pool.length) return null
+  const sorted = pool.slice().sort((a, b) => {
+    const versionDiff = compareVersionDesc(a.version || '', b.version || '')
+    if (versionDiff !== 0) return versionDiff
+    return Number(normalizePhaseNum(b.phase)) - Number(normalizePhaseNum(a.phase))
+  })
+  const top = sorted[0]
+  if (!top) return null
+  return {
+    version: top.version,
+    phase: normalizePhaseNum(top.phase),
+  }
+}
+
+async function applyLatestRecordDefaults() {
+  applyingRecordDefaults = true
+  try {
+    if (recordScheme.value === 'crisis') {
+      const phases = await fetchCrisisAssaultPhases()
+      const latest = pickLatestPublicPhase(
+        phases.map((phase) => ({
+          version: phase.version,
+          phase: phase.phase,
+          isHidden: Boolean(phase.isHidden),
+        })),
+      )
+      recordVersion.value = latest?.version ?? ''
+      recordPhase.value = latest?.phase ?? ''
+      return
+    }
+
+    const [defenseNew, defenseOld] = await Promise.all([
+      fetchDefenseSeasons('new'),
+      fetchDefenseSeasons('old'),
+    ])
+    const latest = pickLatestPublicPhase(
+      [...defenseNew, ...defenseOld].map((season) => ({
+        version: season.version,
+        phase: season.phase,
+        isHidden: Boolean(season.isHidden),
+      })),
+    )
+    recordVersion.value = latest?.version ?? ''
+    recordPhase.value = latest?.phase ?? ''
+  } catch {
+    // 保留已有输入；检索时再提示错误
+  } finally {
+    applyingRecordDefaults = false
+  }
+}
+
+async function openRecordTab() {
+  await applyLatestRecordDefaults()
+  await searchRecords()
+}
+
 watch(
   () => props.open,
   (isOpen) => {
@@ -73,6 +155,8 @@ watch(
     brokenRecordIds.value = new Set()
     if (activeTab.value === 'catalog') {
       loadCatalogList()
+    } else {
+      void openRecordTab()
     }
   },
 )
@@ -80,7 +164,12 @@ watch(
 watch(activeTab, (tab) => {
   if (!props.open) return
   if (tab === 'catalog') loadCatalogList()
-  else recordResults.value = []
+  else void openRecordTab()
+})
+
+watch(recordScheme, () => {
+  if (!props.open || activeTab.value !== 'record' || applyingRecordDefaults) return
+  void openRecordTab()
 })
 
 function rememberBossImages(items: BossInfoRecord[]) {

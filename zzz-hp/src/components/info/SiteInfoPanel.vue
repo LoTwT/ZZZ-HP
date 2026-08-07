@@ -44,7 +44,9 @@ const title = computed(() => props.section?.title || '加载中…')
 const blocks = computed(() => parseBlocks(props.section?.content || ''))
 const useDisclaimer = computed(() => props.panel === 'legal')
 const useCards = computed(
-  () => (props.panel === 'features' || props.panel === 'credits') && blocks.value.some((b) => b.heading),
+  () =>
+    (props.panel === 'features' || props.panel === 'credits' || props.panel === 'about') &&
+    blocks.value.some((b) => b.heading),
 )
 </script>
 
