@@ -53,6 +53,7 @@ import {
 import {
   listCrisisEnvironmentBuffs,
   listDefenseEnvironmentBuffs,
+  listDefenseEnvFrontierFilterOptions,
   parseBossFieldBossName,
   type EnvironmentBuffEntry,
 } from '@/utils/environmentBuffCalc'
@@ -160,7 +161,6 @@ const envBuffMode = ref<EnvironmentBuffFilterMode>('none')
 const envBuffVersion = ref('')
 const envBuffPhaseId = ref('')
 const envBuffFrontierId = ref('')
-const envBuffRoomId = ref('')
 const crisisPhases = ref<PhaseData[]>([])
 const defenseSeasons = ref<DefenseSeason[]>([])
 const envBuffLoadError = ref('')
@@ -250,11 +250,15 @@ function applyDefaultDefenseFrontier() {
   const season = selectedDefenseSeason.value
   if (!season) {
     envBuffFrontierId.value = ''
-    envBuffRoomId.value = ''
     return
   }
-  envBuffFrontierId.value = findFifthFrontierId(season.frontiers)
-  envBuffRoomId.value = ''
+  const preferred = findFifthFrontierId(season.frontiers)
+  const options = listDefenseEnvFrontierFilterOptions(season)
+  if (preferred && options.some((opt) => opt.id === preferred)) {
+    envBuffFrontierId.value = preferred
+    return
+  }
+  envBuffFrontierId.value = options[0]?.id ?? ''
 }
 
 const selectedCrisisPhase = computed(
@@ -265,17 +269,9 @@ const selectedDefenseSeason = computed(
   () => defenseSeasons.value.find((season) => season.seasonId === envBuffPhaseId.value) ?? null,
 )
 
-const defenseRoomOptions = computed(() => {
-  const season = selectedDefenseSeason.value
-  if (!season || !envBuffFrontierId.value) return []
-  const frontier = season.frontiers.find((item) => item.id === envBuffFrontierId.value)
-  if (!frontier) return []
-  return frontier.rooms.map((room) => ({
-    id: room.id,
-    label: room.label || room.id,
-    frontierId: frontier.id,
-  }))
-})
+const defenseFrontierOptions = computed(() =>
+  listDefenseEnvFrontierFilterOptions(selectedDefenseSeason.value),
+)
 
 const activeEnvironmentBuffs = computed<EnvironmentBuffEntry[]>(() => {
   if (envBuffMode.value === 'none' || !envBuffPhaseId.value) return []
@@ -284,12 +280,12 @@ const activeEnvironmentBuffs = computed<EnvironmentBuffEntry[]>(() => {
     if (!phase) return []
     return listCrisisEnvironmentBuffs(phase)
   }
-  if (!envBuffFrontierId.value || !envBuffRoomId.value) return []
+  if (!envBuffFrontierId.value) return []
   const season = selectedDefenseSeason.value
   if (!season) return []
+  // 选中防线后展示该防线全部房间 Buff
   return listDefenseEnvironmentBuffs(season, {
     frontierId: envBuffFrontierId.value,
-    roomId: envBuffRoomId.value,
   })
 })
 
@@ -313,11 +309,11 @@ const envBuffFilterHint = computed(() => {
     const bossCount = list.filter((item) => item.kind === 'boss-field').length
     return `危局 Buff ${crisisCount} 条 · Boss 场地 Buff ${bossCount} 条（默认不勾选；勾选 Boss 场地会联动敌方）。`
   }
-  if (!envBuffRoomId.value) return '已固定第五防线，请选择房间后显示防线 Buff。'
+  if (!envBuffFrontierId.value) return '请选择防线后显示该防线全部房间 Buff。'
   const count = activeEnvironmentBuffs.value.length
   return count
-    ? `已加载 ${count} 条防线 Buff。勾选时展示房间 Boss，并同步到敌方与环境。`
-    : '该房间暂无已录入结构化效果的防线 Buff。'
+    ? `已加载该防线 ${count} 条 Buff（全部房间）。勾选时展示对应房间 Boss，并同步到敌方与环境。`
+    : '该防线暂无已录入结构化效果的 Buff。'
 })
 
 async function loadEnvironmentBuffCatalogs() {
@@ -341,7 +337,6 @@ async function loadEnvironmentBuffCatalogs() {
 
 watch(envBuffMode, (mode) => {
   envBuffFrontierId.value = ''
-  envBuffRoomId.value = ''
   if (mode === 'none') {
     envBuffVersion.value = ''
     envBuffPhaseId.value = ''
@@ -355,10 +350,10 @@ watch(envBuffPhaseId, () => {
   if (envBuffMode.value === 'defense') applyDefaultDefenseFrontier()
 })
 
-watch(envBuffFrontierId, () => {
-  if (!envBuffRoomId.value) return
-  if (!defenseRoomOptions.value.some((opt) => opt.id === envBuffRoomId.value)) {
-    envBuffRoomId.value = ''
+watch(defenseFrontierOptions, (options) => {
+  if (!envBuffFrontierId.value) return
+  if (!options.some((opt) => opt.id === envBuffFrontierId.value)) {
+    envBuffFrontierId.value = options[0]?.id ?? ''
   }
 })
 
@@ -1260,9 +1255,9 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
           v-model:mode="envBuffMode"
           v-model:version="envBuffVersion"
           v-model:phase-id="envBuffPhaseId"
-          v-model:room-id="envBuffRoomId"
+          v-model:frontier-id="envBuffFrontierId"
           :phase-options="envPhaseOptions"
-          :room-options="defenseRoomOptions"
+          :frontier-options="defenseFrontierOptions"
           :hint="envBuffFilterHint"
         />
       </template>

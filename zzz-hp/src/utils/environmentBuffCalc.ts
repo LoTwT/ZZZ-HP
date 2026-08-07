@@ -33,6 +33,8 @@ export interface EnvironmentBuffEntry {
   /** 防卫战房间展示用 Boss 列表 */
   roomBosses?: EnvironmentBuffRoomBoss[]
   roomLabel?: string
+  /** 防卫战：该防线内房间序号（1-based），展示用「第x间」 */
+  roomIndex?: number
 }
 
 export function environmentBuffSourceKey(kind: EnvironmentBuffKind, id: string): string {
@@ -136,8 +138,9 @@ export function listDefenseEnvironmentBuffs(
 
   for (const frontier of season.frontiers) {
     if (options?.frontierId && frontier.id !== options.frontierId) continue
-    for (const room of frontier.rooms) {
-      if (options?.roomId && room.id !== options.roomId) continue
+    frontier.rooms.forEach((room, roomOffset) => {
+      if (options?.roomId && room.id !== options.roomId) return
+      const roomIndex = roomOffset + 1
       const roomBosses = collectDefenseRoomBosses(room)
       const roomLabel = `${frontier.title || frontier.id} · ${room.label || room.id}`
 
@@ -187,12 +190,24 @@ export function listDefenseEnvironmentBuffs(
           phase: phaseNum,
           roomBosses,
           roomLabel,
+          roomIndex,
         })
       }
-    }
+    })
   }
 
   return entries
+}
+
+/** 局内筛选：按防线列出选项（选中后展示该防线全部房间 Buff） */
+export function listDefenseEnvFrontierFilterOptions(
+  season: DefenseSeason | null | undefined,
+): { id: string; label: string }[] {
+  if (!season?.frontiers.length) return []
+  return season.frontiers.map((frontier) => ({
+    id: frontier.id,
+    label: frontier.title?.trim() || frontier.id,
+  }))
 }
 
 export function listCrisisPhaseOptions(phases: PhaseData[]): { version: string; phase: string; id: string; label: string }[] {

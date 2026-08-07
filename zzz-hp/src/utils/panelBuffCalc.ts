@@ -1216,8 +1216,11 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
           ? 'Boss 场地 Buff'
           : '防线 Buff'
     // Boss 场地：卡片写 Boss 名，效果块名固定「场地 Buff」
+    // 防卫战：卡片写「buff名 | 第x间」
     const providerName =
       env.kind === 'boss-field' ? env.bossName || env.name || 'Boss 场地 Buff' : env.name
+    const defenseRoomTitle =
+      env.kind === 'defense-room' && env.roomIndex != null ? `第${env.roomIndex}间` : ''
     const sourceLabel = [
       kindLabel,
       env.version && env.phase ? `${env.version}第${env.phase}期` : '',
@@ -1240,7 +1243,12 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
                 ...block,
                 name: '场地 Buff',
               }))
-            : pack.effectBlocks,
+            : env.kind === 'defense-room' && defenseRoomTitle
+              ? pack.effectBlocks.map((block) => ({
+                  ...block,
+                  name: defenseRoomTitle,
+                }))
+              : pack.effectBlocks,
       },
       env.sourceKey,
       sourceLabel,
@@ -1483,10 +1491,15 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
 
   for (const env of ctx.environmentBuffs ?? []) {
     if (!env.effectBlocks?.length) continue
+    const defenseRoomTitle =
+      env.kind === 'defense-room' && env.roomIndex != null ? `第${env.roomIndex}间` : ''
     for (const entry of collectBlockEntriesFromPack({
       effectBlocks: env.effectBlocks.map((block) => ({
         ...block,
-        name: env.kind === 'boss-field' ? '场地 Buff' : block.name,
+        name:
+          env.kind === 'boss-field'
+            ? '场地 Buff'
+            : defenseRoomTitle || block.name,
       })),
       effects: [],
     })) {
@@ -1507,10 +1520,13 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
         env.kind === 'boss-field' ? env.bossName || env.name : env.name
       sources.push({
         key: `${env.sourceKey}-${entry.blockId}`,
-        label: [kindLabel, bossLabel].filter(Boolean).join(' · '),
+        label: [kindLabel, bossLabel, defenseRoomTitle].filter(Boolean).join(' · '),
         mods,
         effects,
-        blockName: env.kind === 'boss-field' ? '场地 Buff' : entry.blockName || env.name,
+        blockName:
+          env.kind === 'boss-field'
+            ? '场地 Buff'
+            : defenseRoomTitle || entry.blockName || env.name,
         note: mergeBuffDisplayNotes(
           env.text,
           env.kind === 'defense-room' && env.roomBosses?.length

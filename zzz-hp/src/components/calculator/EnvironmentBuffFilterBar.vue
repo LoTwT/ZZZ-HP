@@ -12,25 +12,24 @@ export interface EnvironmentBuffFilterOption {
   isHidden?: boolean
 }
 
-export interface EnvironmentBuffRoomOption {
+export interface EnvironmentBuffFrontierOption {
   id: string
   label: string
-  frontierId: string
 }
 
 const mode = defineModel<EnvironmentBuffFilterMode>('mode', { default: 'none' })
 const version = defineModel<string>('version', { default: '' })
 const phaseId = defineModel<string>('phaseId', { default: '' })
-const roomId = defineModel<string>('roomId', { default: '' })
+const frontierId = defineModel<string>('frontierId', { default: '' })
 
 const props = defineProps<{
   phaseOptions: EnvironmentBuffFilterOption[]
-  roomOptions?: EnvironmentBuffRoomOption[]
+  frontierOptions?: EnvironmentBuffFrontierOption[]
   hint?: string
 }>()
 
 const showModeFilters = computed(() => mode.value === 'crisis' || mode.value === 'defense')
-const showDefenseRoom = computed(() => mode.value === 'defense' && Boolean(phaseId.value))
+const showDefenseFrontier = computed(() => mode.value === 'defense' && Boolean(phaseId.value))
 
 const versionOptions = computed(() => {
   const map = new Map<string, string>()
@@ -96,11 +95,11 @@ watch(version, (next, prev) => {
 })
 
 watch(
-  () => props.roomOptions,
+  () => props.frontierOptions,
   (options) => {
-    if (!roomId.value) return
-    if (!(options ?? []).some((opt) => opt.id === roomId.value)) {
-      roomId.value = ''
+    if (!frontierId.value) return
+    if (!(options ?? []).some((opt) => opt.id === frontierId.value)) {
+      frontierId.value = ''
     }
   },
 )
@@ -136,11 +135,11 @@ watch(
             </option>
           </select>
         </label>
-        <label v-if="showDefenseRoom" class="env-field env-field--sm">
-          <span>房间</span>
-          <select v-model="roomId">
+        <label v-if="showDefenseFrontier" class="env-field env-field--sm">
+          <span>防线</span>
+          <select v-model="frontierId">
             <option value="">请选择</option>
-            <option v-for="opt in roomOptions ?? []" :key="opt.id" :value="opt.id">
+            <option v-for="opt in frontierOptions ?? []" :key="opt.id" :value="opt.id">
               {{ opt.label }}
             </option>
           </select>
