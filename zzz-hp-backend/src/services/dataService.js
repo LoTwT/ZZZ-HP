@@ -6,6 +6,11 @@ import {
   normalizeStaggerMultiplier,
 } from '../utils/bossSchema.js'
 import {
+  ensureEnvironmentBuffSchema,
+  parseEffectBlocksJson,
+  serializeEffectBlocks,
+} from '../utils/environmentBuffSchema.js'
+import {
   encodeCrisisBuffId,
   encodeDefenseBossId,
   encodeDefenseBuffId,
@@ -233,6 +238,7 @@ export async function createBoss(payload) {
 }
 
 export async function createBuff(payload) {
+  await ensureEnvironmentBuffSchema()
   const {
     recordScheme = 'crisis',
     id = null,
@@ -241,6 +247,7 @@ export async function createBuff(payload) {
     buff_name,
     buff = null,
     buff_image = null,
+    effect_blocks = null,
     stage = null,
     roomInStage = null,
     buffIndex = null,
@@ -248,6 +255,7 @@ export async function createBuff(payload) {
 
   const versionValue = String(version).trim()
   const phaseValue = normalizePhase(phase)
+  const effectBlocksJson = serializeEffectBlocks(effect_blocks)
   let buffId = id != null && id !== '' ? Number(id) : null
   let action = 'created'
 
@@ -281,16 +289,16 @@ export async function createBuff(payload) {
   if (existing.length) {
     await pool.execute(
       `UPDATE buff
-       SET version = ?, phase = ?, buff_name = ?, buff = ?, buff_image = ?
+       SET version = ?, phase = ?, buff_name = ?, buff = ?, buff_image = ?, effect_blocks = ?
        WHERE id = ?`,
-      [versionValue, phaseValue, buff_name, buff, buff_image, buffId],
+      [versionValue, phaseValue, buff_name, buff, buff_image, effectBlocksJson, buffId],
     )
     action = 'updated'
   } else {
     await pool.execute(
-      `INSERT INTO buff (id, version, phase, buff_name, buff, buff_image)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [buffId, versionValue, phaseValue, buff_name, buff, buff_image],
+      `INSERT INTO buff (id, version, phase, buff_name, buff, buff_image, effect_blocks)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [buffId, versionValue, phaseValue, buff_name, buff, buff_image, effectBlocksJson],
     )
   }
 
@@ -301,6 +309,7 @@ export async function createBuff(payload) {
     buff_name,
     buff,
     buff_image,
+    effect_blocks: parseEffectBlocksJson(effectBlocksJson),
     action,
   }
 }
@@ -390,6 +399,7 @@ export async function upsertBoss(payload) {
 }
 
 export async function upsertBuff(payload) {
+  await ensureEnvironmentBuffSchema()
   const {
     id,
     version,
@@ -397,31 +407,43 @@ export async function upsertBuff(payload) {
     buff_name,
     buff = null,
     buff_image = null,
+    effect_blocks = null,
   } = payload
 
   if (!id) {
     return createBuff({ ...payload, recordScheme: 'defense' })
   }
 
+  const effectBlocksJson = serializeEffectBlocks(effect_blocks)
   const [existing] = await pool.execute('SELECT id FROM buff WHERE id = ? LIMIT 1', [id])
 
   if (existing.length) {
     await pool.execute(
       `UPDATE buff
-       SET version = ?, phase = ?, buff_name = ?, buff = ?, buff_image = ?
+       SET version = ?, phase = ?, buff_name = ?, buff = ?, buff_image = ?, effect_blocks = ?
        WHERE id = ?`,
-      [version, phase, buff_name, buff, buff_image, id],
+      [version, phase, buff_name, buff, buff_image, effectBlocksJson, id],
     )
-    return { id, action: 'updated', ...payload }
+    return {
+      id,
+      action: 'updated',
+      ...payload,
+      effect_blocks: parseEffectBlocksJson(effectBlocksJson),
+    }
   }
 
   await pool.execute(
-    `INSERT INTO buff (id, version, phase, buff_name, buff, buff_image)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, version, phase, buff_name, buff, buff_image],
+    `INSERT INTO buff (id, version, phase, buff_name, buff, buff_image, effect_blocks)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, version, phase, buff_name, buff, buff_image, effectBlocksJson],
   )
 
-  return { id, action: 'created', ...payload }
+  return {
+    id,
+    action: 'created',
+    ...payload,
+    effect_blocks: parseEffectBlocksJson(effectBlocksJson),
+  }
 }
 
 function clampLimit(limit, fallback = 50, max = 100) {
@@ -491,6 +513,7 @@ export async function deleteBoss(id) {
 }
 
 export async function searchBuffRecords(filters = {}) {
+  await ensureEnvironmentBuffSchema()
   const { version, phase, keyword, limit = 50, recordScheme = null } = filters
   const conditions = []
   const params = []
@@ -512,7 +535,7 @@ export async function searchBuffRecords(filters = {}) {
   const safeLimit = clampLimit(limit)
 
   const [rows] = await pool.execute(
-    `SELECT id, version, phase, buff_name, buff, buff_image
+    `SELECT id, version, phase, buff_name, buff, buff_image, effect_blocks
      FROM buff
      ${where}
      ORDER BY version DESC, phase DESC, id DESC
@@ -520,7 +543,12 @@ export async function searchBuffRecords(filters = {}) {
     params,
   )
 
-  return rows.filter((row) => matchesBuffRecordScheme(row.id, recordScheme))
+  return rows
+    .filter((row) => matchesBuffRecordScheme(row.id, recordScheme))
+    .map((row) => ({
+      ...row,
+      effect_blocks: parseEffectBlocksJson(row.effect_blocks),
+    }))
 }
 
 export async function deleteBuff(id) {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
+import EnvironmentBuffFilterBar from '@/components/calculator/EnvironmentBuffFilterBar.vue'
 import DamageCalcHistorySection from '@/components/calculator/DamageCalcHistorySection.vue'
 import DamageEventModeModal from '@/components/calculator/DamageEventModeModal.vue'
 import OptimalAffixAllocSection from '@/components/calculator/OptimalAffixAllocSection.vue'
@@ -24,6 +25,11 @@ import type {
 } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import { createDefaultExternalPanel } from '@/types/calculatorPanel'
+import type { DefenseSeason } from '@/types/defense'
+import type { PhaseData } from '@/types/history'
+import { fetchCrisisAssaultPhases } from '@/api/crisisAssault'
+import { fetchDefenseSeasons } from '@/api/defense'
+import { lookupBossInfo } from '@/api/bossInfo'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import {
   createHistoryEntryId,
@@ -36,11 +42,22 @@ import {
   collectAllBuffEffects,
   collectConvertSupportSlots,
   createEmptyMultiSlotBuffSelection,
+  getBuffEffectEnabled,
   mergeDefaultBuffSelectionIntoMulti,
   resolveBuffSelectionForSlot,
+  setBuffEffectEnabled,
+  syncTeamProfessionAutoEnabled,
   type MultiSlotBuffSelection,
   type ConvertSlotPanels,
 } from '@/utils/panelBuffCalc'
+import {
+  listCrisisEnvironmentBuffs,
+  listDefenseEnvironmentBuffs,
+  parseBossFieldBossName,
+  type EnvironmentBuffEntry,
+} from '@/utils/environmentBuffCalc'
+import type { EnvironmentBuffFilterMode } from '@/components/calculator/EnvironmentBuffFilterBar.vue'
+import { mapBossInfoToDamageEnemyInput } from '@/utils/enemyInputFromBoss'
 import { resolveIsFollowUp } from '@/utils/buffEffect'
 import { canSelectTurbulenceDamageEvent } from '@/utils/damageEvent'
 import { collectParticipantAgentIds } from '@/utils/damageEventOwner'
@@ -138,6 +155,251 @@ const skillSubcategoryId = computed(() => damageEvents.value[0]?.skillSubcategor
 const buffPickerOpen = ref(false)
 const buffPickerViewSlotIndex = ref(0)
 const multiSlotBuffSelection = reactive<MultiSlotBuffSelection>(createEmptyMultiSlotBuffSelection())
+
+const envBuffMode = ref<EnvironmentBuffFilterMode>('none')
+const envBuffVersion = ref('')
+const envBuffPhaseId = ref('')
+const envBuffFrontierId = ref('')
+const envBuffRoomId = ref('')
+const crisisPhases = ref<PhaseData[]>([])
+const defenseSeasons = ref<DefenseSeason[]>([])
+const envBuffLoadError = ref('')
+let syncingBossFieldBuff = false
+let syncingEnemyFromEnv = false
+const prevEnabledBossFieldKeys = ref<string[]>([])
+const prevEnabledDefenseKeys = ref<string[]>([])
+
+function compareVersionDesc(a: string, b: string) {
+  const parse = (value: string) =>
+    value.split('.').map((part) => Number(part.replace(/\D/g, '')) || 0)
+  const left = parse(a)
+  const right = parse(b)
+  const len = Math.max(left.length, right.length)
+  for (let i = 0; i < len; i += 1) {
+    const diff = (right[i] ?? 0) - (left[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function sortPhaseOptionsDesc<T extends { version?: string; phase?: string; isHidden?: boolean }>(
+  options: T[],
+) {
+  return options.slice().sort((a, b) => {
+    const versionDiff = compareVersionDesc(a.version || '', b.version || '')
+    if (versionDiff !== 0) return versionDiff
+    return Number(b.phase || 0) - Number(a.phase || 0)
+  })
+}
+
+function pickLatestPublicOptionId<T extends { id: string; isHidden?: boolean }>(options: T[]) {
+  const publicOpt = options.find((opt) => !opt.isHidden)
+  return publicOpt?.id ?? options[0]?.id ?? ''
+}
+
+function findFifthFrontierId(frontiers: { id: string; title: string }[]) {
+  const byTitle = frontiers.find((frontier) => /第五防线/.test(frontier.title))
+  if (byTitle) return byTitle.id
+  const byId = frontiers.find((frontier) => /05$/.test(frontier.id))
+  return byId?.id ?? frontiers[0]?.id ?? ''
+}
+
+const crisisPhaseOptions = computed(() =>
+  sortPhaseOptionsDesc(
+    crisisPhases.value.map((phase) => {
+      const phaseNum = phase.phase.replace(/\D/g, '') || phase.phase
+      return {
+        id: phase.id,
+        label: `${phase.version} 第${phaseNum}期`,
+        version: phase.version,
+        phase: phaseNum,
+        isHidden: Boolean(phase.isHidden),
+      }
+    }),
+  ),
+)
+
+const defensePhaseOptions = computed(() =>
+  sortPhaseOptionsDesc(
+    defenseSeasons.value.map((season) => {
+      const phaseNum = season.phase.replace(/\D/g, '') || season.phase
+      return {
+        id: season.seasonId,
+        label: `${season.version} 第${phaseNum}期`,
+        version: season.version,
+        phase: phaseNum,
+        isHidden: Boolean(season.isHidden),
+      }
+    }),
+  ),
+)
+
+const envPhaseOptions = computed(() => {
+  if (envBuffMode.value === 'crisis') return crisisPhaseOptions.value
+  if (envBuffMode.value === 'defense') return defensePhaseOptions.value
+  return []
+})
+
+function pickLatestEnvPhaseId(mode: EnvironmentBuffFilterMode) {
+  if (mode === 'crisis') return pickLatestPublicOptionId(crisisPhaseOptions.value)
+  if (mode === 'defense') return pickLatestPublicOptionId(defensePhaseOptions.value)
+  return ''
+}
+
+function applyDefaultDefenseFrontier() {
+  const season = selectedDefenseSeason.value
+  if (!season) {
+    envBuffFrontierId.value = ''
+    envBuffRoomId.value = ''
+    return
+  }
+  envBuffFrontierId.value = findFifthFrontierId(season.frontiers)
+  envBuffRoomId.value = ''
+}
+
+const selectedCrisisPhase = computed(
+  () => crisisPhases.value.find((phase) => phase.id === envBuffPhaseId.value) ?? null,
+)
+
+const selectedDefenseSeason = computed(
+  () => defenseSeasons.value.find((season) => season.seasonId === envBuffPhaseId.value) ?? null,
+)
+
+const defenseRoomOptions = computed(() => {
+  const season = selectedDefenseSeason.value
+  if (!season || !envBuffFrontierId.value) return []
+  const frontier = season.frontiers.find((item) => item.id === envBuffFrontierId.value)
+  if (!frontier) return []
+  return frontier.rooms.map((room) => ({
+    id: room.id,
+    label: room.label || room.id,
+    frontierId: frontier.id,
+  }))
+})
+
+const activeEnvironmentBuffs = computed<EnvironmentBuffEntry[]>(() => {
+  if (envBuffMode.value === 'none' || !envBuffPhaseId.value) return []
+  if (envBuffMode.value === 'crisis') {
+    const phase = selectedCrisisPhase.value
+    if (!phase) return []
+    return listCrisisEnvironmentBuffs(phase)
+  }
+  if (!envBuffFrontierId.value || !envBuffRoomId.value) return []
+  const season = selectedDefenseSeason.value
+  if (!season) return []
+  return listDefenseEnvironmentBuffs(season, {
+    frontierId: envBuffFrontierId.value,
+    roomId: envBuffRoomId.value,
+  })
+})
+
+const envBuffForceGroups = computed(() => {
+  if (envBuffMode.value === 'crisis') return ['危局 Buff', 'Boss 场地 Buff']
+  if (envBuffMode.value === 'defense') return ['防线 Buff']
+  return []
+})
+
+const envBuffFilterHint = computed(() => {
+  if (envBuffLoadError.value) return envBuffLoadError.value
+  if (envBuffMode.value === 'none') {
+    return '默认不显示危局 / Boss 场地 / 防线 Buff。选择模式后出现对应分组。'
+  }
+  if (!envBuffPhaseId.value) {
+    return '请选择版本与期数（默认已公开最新一期）。'
+  }
+  if (envBuffMode.value === 'crisis') {
+    const list = activeEnvironmentBuffs.value
+    const crisisCount = list.filter((item) => item.kind === 'crisis').length
+    const bossCount = list.filter((item) => item.kind === 'boss-field').length
+    return `危局 Buff ${crisisCount} 条 · Boss 场地 Buff ${bossCount} 条（默认不勾选；勾选 Boss 场地会联动敌方）。`
+  }
+  if (!envBuffRoomId.value) return '已固定第五防线，请选择房间后显示防线 Buff。'
+  const count = activeEnvironmentBuffs.value.length
+  return count
+    ? `已加载 ${count} 条防线 Buff。勾选时展示房间 Boss，并同步到敌方与环境。`
+    : '该房间暂无已录入结构化效果的防线 Buff。'
+})
+
+async function loadEnvironmentBuffCatalogs() {
+  envBuffLoadError.value = ''
+  try {
+    const [crisis, defenseNew, defenseOld] = await Promise.all([
+      fetchCrisisAssaultPhases(),
+      fetchDefenseSeasons('new'),
+      fetchDefenseSeasons('old'),
+    ])
+    crisisPhases.value = crisis
+    defenseSeasons.value = [...defenseNew, ...defenseOld]
+    if (envBuffMode.value !== 'none' && !envBuffPhaseId.value) {
+      envBuffPhaseId.value = pickLatestEnvPhaseId(envBuffMode.value)
+      if (envBuffMode.value === 'defense') applyDefaultDefenseFrontier()
+    }
+  } catch (err) {
+    envBuffLoadError.value = err instanceof Error ? err.message : '场地 Buff 数据加载失败'
+  }
+}
+
+watch(envBuffMode, (mode) => {
+  envBuffFrontierId.value = ''
+  envBuffRoomId.value = ''
+  if (mode === 'none') {
+    envBuffVersion.value = ''
+    envBuffPhaseId.value = ''
+    return
+  }
+  envBuffPhaseId.value = pickLatestEnvPhaseId(mode)
+  if (mode === 'defense') applyDefaultDefenseFrontier()
+})
+
+watch(envBuffPhaseId, () => {
+  if (envBuffMode.value === 'defense') applyDefaultDefenseFrontier()
+})
+
+watch(envBuffFrontierId, () => {
+  if (!envBuffRoomId.value) return
+  if (!defenseRoomOptions.value.some((opt) => opt.id === envBuffRoomId.value)) {
+    envBuffRoomId.value = ''
+  }
+})
+
+onMounted(() => {
+  void loadEnvironmentBuffCatalogs()
+})
+
+function disableCollectedEffects(
+  effects: ReturnType<typeof collectAllBuffEffects>,
+  predicate: (item: (typeof effects)[number]) => boolean,
+) {
+  for (const item of effects) {
+    if (!predicate(item)) continue
+    setBuffEffectEnabled(
+      multiSlotBuffSelection,
+      buffPickerViewSlotIndex.value,
+      item.effect.id,
+      item.effect.applyTarget,
+      false,
+      { manual: false },
+    )
+  }
+}
+
+async function applyEnemyBossByName(bossName: string, meta?: { version?: string; phase?: string }) {
+  const name = bossName.trim()
+  if (!name || syncingEnemyFromEnv) return
+  syncingEnemyFromEnv = true
+  try {
+    const info = await lookupBossInfo(name)
+    if (!info) return
+    const current = panelCalcSectionRef.value?.enemyInput
+    const next = mapBossInfoToDamageEnemyInput(info, current ?? undefined)
+    if (meta?.version && meta?.phase) {
+      next.bossRecordLabel = `${meta.version} 第${meta.phase}期 · ${name}`
+    }
+    panelCalcSectionRef.value?.applyEnemyInput(next)
+  } finally {
+    syncingEnemyFromEnv = false
+  }
+}
 
 const anomalyTriggerOptions = computed(() =>
   teamSlots
@@ -367,6 +629,7 @@ function buildBuffCollectContext(mainSlotIdx: number) {
     bangbooRefine: bangbooRefine.value,
     mainSlotIndex: mainSlotIdx,
     driveDiscs: driveDiscs.value,
+    environmentBuffs: activeEnvironmentBuffs.value,
     skillContext: {
       damageKind: damageKind.value,
       categoryId: skillCategoryId.value,
@@ -409,6 +672,7 @@ const convertSupportSlots = computed(() =>
       bangbooRefine: bangbooRefine.value,
       mainSlotIndex: mainSlotIndex.value,
       driveDiscs: driveDiscs.value,
+      environmentBuffs: activeEnvironmentBuffs.value,
       buffSelection: resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
       anomalySlotPanels,
       convertSlotPanels,
@@ -476,6 +740,13 @@ function syncBuffDefaultsForSlot(slotIndex: number) {
     {}
   const defaults = buildDefaultBuffSelection(effects, attrDefaults)
   mergeDefaultBuffSelectionIntoMulti(multiSlotBuffSelection, slotIndex, effects, defaults)
+  syncTeamProfessionAutoEnabled(
+    multiSlotBuffSelection,
+    slotIndex,
+    effects,
+    teamSlots,
+    agents.value,
+  )
 }
 
 watch(teamBuffSignature, () => {
@@ -504,6 +775,27 @@ watch(
   { immediate: true },
 )
 
+/** 仅队伍职业构成变化时重同步人数条件勾选（保留人工勾选） */
+watch(
+  () =>
+    [
+      ...teamSlots.map((slot) => slot.agentId),
+      ...agents.value.map((agent) => `${agent.id}:${agent.profession}`),
+    ].join('|'),
+  () => {
+    for (const opt of buffPickerSlotOptions.value) {
+      const effects = collectAllBuffEffects(buildBuffCollectContext(opt.index))
+      syncTeamProfessionAutoEnabled(
+        multiSlotBuffSelection,
+        opt.index,
+        effects,
+        teamSlots,
+        agents.value,
+      )
+    }
+  },
+)
+
 watch(
   () => panelCalcSectionRef.value?.convertAttrDefaults,
   () => {
@@ -525,6 +817,107 @@ watch(
           configured != null && Number.isFinite(configured) ? configured : 0
       }
     }
+  },
+)
+
+watch(
+  [activeEnvironmentBuffs, () => multiSlotBuffSelection, buffPickerViewSlotIndex],
+  async () => {
+    if (syncingBossFieldBuff) return
+    const catalog = activeEnvironmentBuffs.value
+    if (!catalog.length) return
+    const effects = collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value))
+    const enabledBossFieldKeys = new Set<string>()
+    for (const item of effects) {
+      const bossName = parseBossFieldBossName(item.sourceKey)
+      if (!bossName) continue
+      const enabled = getBuffEffectEnabled(
+        multiSlotBuffSelection,
+        buffPickerViewSlotIndex.value,
+        item.effect.id,
+        item.effect.applyTarget,
+        item.effect.enabledDefault !== false,
+      )
+      if (enabled) enabledBossFieldKeys.add(item.sourceKey)
+    }
+
+    if (enabledBossFieldKeys.size > 1) {
+      syncingBossFieldBuff = true
+      try {
+        const current = [...enabledBossFieldKeys]
+        const newly = current.filter((key) => !prevEnabledBossFieldKeys.value.includes(key))
+        const keepKey = newly[0] ?? current[current.length - 1]!
+        disableCollectedEffects(effects, (item) => {
+          const fieldBoss = parseBossFieldBossName(item.sourceKey)
+          return Boolean(fieldBoss) && item.sourceKey !== keepKey
+        })
+        enabledBossFieldKeys.clear()
+        enabledBossFieldKeys.add(keepKey)
+      } finally {
+        syncingBossFieldBuff = false
+      }
+    }
+    prevEnabledBossFieldKeys.value = [...enabledBossFieldKeys]
+
+    if (enabledBossFieldKeys.size === 1) {
+      const sourceKey = [...enabledBossFieldKeys][0]!
+      const entry = catalog.find((item) => item.sourceKey === sourceKey)
+      const bossName = entry?.bossName ?? parseBossFieldBossName(sourceKey)
+      const currentBoss = panelCalcSectionRef.value?.enemyInput?.bossName
+      if (bossName && bossName !== currentBoss) {
+        await applyEnemyBossByName(bossName, {
+          version: entry?.version,
+          phase: entry?.phase,
+        })
+      }
+    }
+
+    const enabledDefenseKeys = catalog
+      .filter((entry) => {
+        if (entry.kind !== 'defense-room') return false
+        return effects.some((item) => {
+          if (item.sourceKey !== entry.sourceKey) return false
+          return getBuffEffectEnabled(
+            multiSlotBuffSelection,
+            buffPickerViewSlotIndex.value,
+            item.effect.id,
+            item.effect.applyTarget,
+            item.effect.enabledDefault !== false,
+          )
+        })
+      })
+      .map((entry) => entry.sourceKey)
+    const newlyDefense = enabledDefenseKeys.filter(
+      (key) => !prevEnabledDefenseKeys.value.includes(key),
+    )
+    prevEnabledDefenseKeys.value = enabledDefenseKeys
+    const defenseKey =
+      newlyDefense[0] ?? (enabledDefenseKeys.length === 1 ? enabledDefenseKeys[0] : null)
+    if (!defenseKey) return
+    const defenseEntry = catalog.find((entry) => entry.sourceKey === defenseKey)
+    const roomBoss = defenseEntry?.roomBosses?.[0]
+    const currentBoss = panelCalcSectionRef.value?.enemyInput?.bossName
+    if (roomBoss?.name && roomBoss.name !== currentBoss) {
+      await applyEnemyBossByName(roomBoss.name, {
+        version: defenseEntry?.version,
+        phase: defenseEntry?.phase,
+      })
+    }
+  },
+  { deep: true },
+)
+
+watch(
+  () => panelCalcSectionRef.value?.enemyInput?.bossName,
+  (bossName) => {
+    if (syncingEnemyFromEnv || syncingBossFieldBuff) return
+    const effects = collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value))
+    const keepKey = bossName ? `boss-field-${bossName}` : null
+    disableCollectedEffects(effects, (item) => {
+      const fieldBoss = parseBossFieldBossName(item.sourceKey)
+      if (!fieldBoss) return false
+      return !keepKey || item.sourceKey !== keepKey
+    })
   },
 )
 
@@ -853,12 +1246,27 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       v-model:multi-selection="multiSlotBuffSelection"
       v-model:view-slot-index="buffPickerViewSlotIndex"
       :effects="collectedEffectsForPicker"
+      :force-groups="envBuffForceGroups"
       :slot-options="buffPickerSlotOptions"
+      :team-slots="teamSlots"
+      :agents="agents"
       :attr-defaults="panelCalcSectionRef?.getAttrDefaultsForSlot?.(buffPickerViewSlotIndex) ?? panelCalcSectionRef?.convertAttrDefaults ?? {}"
       :panel-source-values="panelCalcSectionRef?.getPanelSourceValuesForSlot?.(buffPickerViewSlotIndex) ?? panelCalcSectionRef?.convertPanelSourceValues ?? undefined"
       :panel-source-values-by-slot="panelCalcSectionRef?.panelSourceValuesBySlot ?? undefined"
       :skill-subcategories="skillSubcategories"
-    />
+    >
+      <template #environment-filter>
+        <EnvironmentBuffFilterBar
+          v-model:mode="envBuffMode"
+          v-model:version="envBuffVersion"
+          v-model:phase-id="envBuffPhaseId"
+          v-model:room-id="envBuffRoomId"
+          :phase-options="envPhaseOptions"
+          :room-options="defenseRoomOptions"
+          :hint="envBuffFilterHint"
+        />
+      </template>
+    </BuffEffectPickerModal>
 
     <section id="damage-calc-mode" class="calc-mode-section damage-anchor">
       <header class="calc-mode-header">
@@ -924,6 +1332,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :slot-buff-selections="multiSlotBuffSelection"
       :stagger-phase="staggerPhase"
       :damage-events="damageEvents"
+      :environment-buffs="activeEnvironmentBuffs"
       v-model:extra-gains="extraGains"
       @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"
       @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
@@ -951,6 +1360,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
         :slot-buff-selections="multiSlotBuffSelection"
         :stagger-phase="staggerPhase"
         :damage-events="damageEvents"
+        :environment-buffs="activeEnvironmentBuffs"
         v-model:extra-gains="extraGains"
         :convert-slot-panels="convertSlotPanels"
         @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"

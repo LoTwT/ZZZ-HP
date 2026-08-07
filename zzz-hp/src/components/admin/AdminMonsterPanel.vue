@@ -380,11 +380,21 @@ watch(
 
 watch([version, customVersion], () => {
   const phases = availablePhases.value
-  if (phase.value && !phases.includes(phase.value)) {
-    phase.value = phases[0] ?? ''
-  } else if (!phase.value && phases.length) {
-    phase.value = phases[0] ?? ''
+  const current = String(phase.value || customPhase.value || '')
+    .trim()
+    .replace(/\D/g, '') || String(phase.value || customPhase.value || '').trim()
+  if (current && phases.includes(current)) {
+    phase.value = current
+    if (String(customPhase.value).replace(/\D/g, '') === current) customPhase.value = ''
+    return
   }
+  // 当前期数不在下拉中时保留原值，切勿跳到最新一期
+  if (current) {
+    phase.value = ''
+    customPhase.value = current
+    return
+  }
+  if (phases.length) phase.value = phases[0] ?? ''
 })
 
 watch(stage, () => {

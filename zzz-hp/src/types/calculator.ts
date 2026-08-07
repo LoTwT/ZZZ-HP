@@ -256,6 +256,22 @@ export interface BuffEffect {
   applyTarget: BuffApplyTarget
   /** 作用情况：全局 / 失衡期 / 非失衡期，默认全局 */
   applySituation?: BuffApplySituation
+  /** 受益职业限制；空/缺省 = 不限 */
+  applyProfession?: string | null
+  /**
+   * 队内职业人数条件：空/缺省 = 不限。
+   * 仅决定该人数下效果是否生效，不改变固定/叠层/转模的数值算法。
+   */
+  teamProfession?: string | null
+  /**
+   * 启用的人数档：下标 0=恰好1人、1=恰好2人、2=恰好3人；非 null 表示该档启用。
+   * 结算与自动勾选均按「恰好 N 人」；未勾任何档则不生效。
+   */
+  teamProfessionValues?: Array<number | null> | null
+  /**
+   * @deprecated 旧「≥N 门槛」；仅兼容读取，新数据请用 teamProfessionValues 勾选人数
+   */
+  teamProfessionMinCount?: number | null
   /**
    * 招式作用目标列表（可多选，按顺序展示）。
    * 匹配时任一目标命中即生效。

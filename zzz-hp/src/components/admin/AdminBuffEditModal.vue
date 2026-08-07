@@ -81,8 +81,8 @@ function onSaved() {
 }
 
 .admin-buff-modal {
-  width: min(680px, 100%);
-  max-height: min(92vh, 860px);
+  width: min(1100px, 100%);
+  max-height: min(94vh, 960px);
   overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: 12px;

@@ -10,7 +10,12 @@ import type {
   StaggerPhase,
 } from '@/types/calculator'
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
-import { effectMatchesContext, resolveIsFollowUp } from '@/utils/buffEffect'
+import {
+  countTeamProfession,
+  effectMatchesContext,
+  effectMatchesTeamProfessionGate,
+  resolveIsFollowUp,
+} from '@/utils/buffEffect'
 import { eventNeedsAnomalyProducer, mapEventKindToCalc } from '@/utils/damageEvent'
 import { resolveEventOwnerAgentId } from '@/utils/damageEventOwner'
 import { createEmptyBuffStatModifiers, mergeBuffStatModifiers } from '@/utils/calculatorUi'
@@ -20,6 +25,10 @@ export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
     scope: gain.scope ?? 'general',
     applyTarget: gain.applyTarget ?? 'self',
     applySituation: gain.applySituation ?? 'global',
+    applyProfession: gain.applyProfession ?? null,
+    teamProfession: gain.teamProfession ?? null,
+    teamProfessionValues: gain.teamProfessionValues ?? null,
+    teamProfessionMinCount: gain.teamProfessionMinCount ?? null,
     skillTargets: normalizeExtraGainSkillTargets(gain),
     skillCategory: gain.skillCategory,
     skillSubcategoryId: gain.skillSubcategoryId,
@@ -73,13 +82,38 @@ export function extraGainMatchesEvent(
 }
 
 export function extraGainMatchesProfession(
-  gain: ExtraBuffGain,
+  gain: Pick<{ applyProfession?: string | null }, 'applyProfession'>,
   beneficiaryProfession: string | null | undefined,
 ): boolean {
   const required = gain.applyProfession?.trim()
   if (!required) return true
   const profession = String(beneficiaryProfession ?? '').trim()
   return profession === required
+}
+
+export function extraGainMatchesTeamProfessionGate(
+  gain: Pick<
+    ExtraBuffGain,
+    'teamProfession' | 'teamProfessionValues' | 'teamProfessionMinCount' | 'value'
+  >,
+  teamSlots: Array<{ agentId?: string | null }>,
+  agents: Array<{ id: string; profession?: string | null }>,
+): boolean {
+  const required = gain.teamProfession?.trim()
+  if (!required) return true
+  const count = countTeamProfession(teamSlots, agents, required)
+  return effectMatchesTeamProfessionGate(gain, count)
+}
+
+export function resolveExtraGainValue(
+  gain: ExtraBuffGain,
+  teamSlots?: Array<{ agentId?: string | null }>,
+  agents?: Array<{ id: string; profession?: string | null }>,
+): number | null {
+  if (gain.teamProfession?.trim() && teamSlots && agents) {
+    if (!extraGainMatchesTeamProfessionGate(gain, teamSlots, agents)) return null
+  }
+  return gain.value
 }
 
 export function mergeExtraModsForEvent(
@@ -92,6 +126,8 @@ export function mergeExtraModsForEvent(
     ownerAgentId: string
     staggerPhase: StaggerPhase
     resolveAgentProfession?: (agentId: string) => string | undefined
+    teamSlots?: Array<{ agentId?: string | null }>
+    agents?: Array<{ id: string; profession?: string | null }>
   },
 ): BuffStatModifiers {
   let total = createEmptyBuffStatModifiers()
@@ -107,8 +143,11 @@ export function mergeExtraModsForEvent(
     const beneficiaryProfession = options.resolveAgentProfession?.(options.slotAgentId)
     if (!extraGainMatchesProfession(gain, beneficiaryProfession)) continue
 
+    const amount = resolveExtraGainValue(gain, options.teamSlots, options.agents)
+    if (amount == null) continue
+
     const next = createEmptyBuffStatModifiers()
-    next[gain.stat] = gain.value
+    next[gain.stat] = amount
     total = mergeBuffStatModifiers(total, next)
   }
   return total

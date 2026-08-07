@@ -196,6 +196,7 @@ const props = defineProps<{
   slotBuffSelections?: import('@/utils/panelBuffCalc').MultiSlotBuffSelection | null
   staggerPhase?: import('@/types/calculator').StaggerPhase
   damageEvents?: import('@/types/calculator').DamageEvent[]
+  environmentBuffs?: import('@/utils/environmentBuffCalc').EnvironmentBuffEntry[]
 }>()
 
 const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [] })
@@ -315,6 +316,7 @@ function buildBasePanelCalcContext() {
     buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
     anomalySlotPanels: props.anomalySlotPanels,
     convertSlotPanels: props.convertSlotPanels,
+    environmentBuffs: props.environmentBuffs,
   }
 }
 
@@ -497,6 +499,7 @@ const evalCtx = computed(() =>
     resolveSubcategory: (id) => skillSubcategories.value.find((item) => item.id === id) ?? null,
     skillSubcategories: skillSubcategories.value,
     followUpSkillRules: followUpSkillRules.value,
+    environmentBuffs: props.environmentBuffs,
   }),
 )
 

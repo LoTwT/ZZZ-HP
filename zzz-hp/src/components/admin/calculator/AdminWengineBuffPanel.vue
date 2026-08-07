@@ -195,14 +195,18 @@ async function saveItem() {
 
   saving.value = true
   try {
-    const avatar_image = (await avatarFieldRef.value?.resolveAvatarImageOnSave(id)) ?? null
-    const doc: WengineBuffDoc = {
+    const previousAvatar =
+      wengines.value.find((item) => item.id === selectedId.value)?.avatar_image ?? null
+    const avatar_image =
+      (await avatarFieldRef.value?.resolveAvatarImageOnSave(id, previousAvatar)) ?? null
+    const doc: WengineBuffDoc & { clearAvatar?: boolean } = {
       id,
       name,
       profession: form.value.profession,
       rarity: form.value.rarity,
       note: form.value.note.trim(),
       avatar_image,
+      clearAvatar: Boolean(avatarFieldRef.value?.clearedByUser),
       baseAtk: Number(form.value.baseAtk) || 0,
       advancedStats: normalizeWengineAdvancedStats(form.value.advancedStats),
       fixedBuffs: packFromBlocks(form.value.fixedBuffs.effectBlocks ?? []),

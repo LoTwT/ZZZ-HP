@@ -200,7 +200,10 @@ async function saveItem() {
 
   saving.value = true
   try {
-    const avatar_image = (await avatarFieldRef.value?.resolveAvatarImageOnSave(id)) ?? null
+    const previousAvatar =
+      bangboos.value.find((item) => item.id === selectedId.value)?.avatar_image ?? null
+    const avatar_image =
+      (await avatarFieldRef.value?.resolveAvatarImageOnSave(id, previousAvatar)) ?? null
     const fixedPack = packFromBlocks(forceTeamBlocks(form.value.fixedBuffs.effectBlocks ?? []))
     const refinementPacks = buildRefinementPacks()
     const effectBlocks = fixedPack.effectBlocks
@@ -210,10 +213,11 @@ async function saveItem() {
       flattenEffectBlocks(pack.effectBlocks ?? []),
     )
 
-    const doc: BangbooBuffDoc = {
+    const doc: BangbooBuffDoc & { clearAvatar?: boolean } = {
       id,
       name,
       avatar_image,
+      clearAvatar: Boolean(avatarFieldRef.value?.clearedByUser),
       effectBlocks,
       effects,
       refinementEffectBlocks,

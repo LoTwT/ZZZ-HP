@@ -9,6 +9,10 @@ import {
 import { convertHpToDefense953, roundConvertedHp } from '../utils/defenseHpConvert.js'
 import { isCrisisHardRoom, isSeasonPubliclyVisible, isSeasonUnreleased } from '../utils/crisisRoom.js'
 import { getSeasonDateMap } from './seasonDateService.js'
+import {
+  ensureEnvironmentBuffSchema,
+  parseEffectBlocksJson,
+} from '../utils/environmentBuffSchema.js'
 
 let schemaEnsured = false
 
@@ -73,7 +77,7 @@ function formatDateValue(value) {
   return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
 }
 
-function enrichBoss(boss, baseHpByName) {
+function enrichBoss(boss, baseHpByName, fieldBuffByName = new Map()) {
   const baseHp =
     baseHpByName.get(boss.boss_name) ??
     getCrisisBaseHpByName(boss.boss_name)
@@ -85,6 +89,7 @@ function enrichBoss(boss, baseHpByName) {
   const defense = Number(boss.defense)
   const hp = Number(boss.hp)
   const hpConverted = roundConvertedHp(convertHpToDefense953(hp, defense))
+  const fieldBuff = fieldBuffByName.get(boss.boss_name) ?? null
   return {
     id: boss.id,
     boss_name: boss.boss_name,
@@ -101,6 +106,7 @@ function enrichBoss(boss, baseHpByName) {
     hp_coeff_manual: resolved.manual,
     hp_coeff_label: formatCrisisHpCoeffPercent(resolved.percent),
     is_hard_room: isCrisisHardRoom(boss.room),
+    field_buff: fieldBuff,
   }
 }
 
@@ -127,6 +133,33 @@ async function loadCrisisBaseHpMap() {
   return map
 }
 
+async function loadBossFieldBuffMap() {
+  await ensureEnvironmentBuffSchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      `SELECT boss_name, field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks
+       FROM boss_info
+       WHERE (field_buff_name IS NOT NULL AND field_buff_name <> '')
+          OR field_buff_effect_blocks IS NOT NULL`,
+    )
+    for (const row of rows) {
+      const effectBlocks = parseEffectBlocksJson(row.field_buff_effect_blocks)
+      const name = String(row.field_buff_name ?? '').trim() || String(row.boss_name ?? '').trim()
+      if (!name && !(Array.isArray(effectBlocks) && effectBlocks.length)) continue
+      map.set(row.boss_name, {
+        name,
+        text: row.field_buff_text ?? '',
+        image: row.field_buff_image ?? null,
+        effectBlocks,
+      })
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossFieldBuffMap fallback:', err.message)
+  }
+  return map
+}
+
 function normalizeRoomType(roomType) {
   const value = String(roomType || 'all').trim().toLowerCase()
   if (value === 'normal' || value === 'hard') return value
@@ -135,6 +168,7 @@ function normalizeRoomType(roomType) {
 
 export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   await ensureCrisisSchema()
+  await ensureEnvironmentBuffSchema()
   const [bossRowsRaw] = await pool.execute(
     'SELECT * FROM boss ORDER BY version, phase, CAST(room AS UNSIGNED)',
   )
@@ -144,6 +178,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   const dateMap = await getSeasonDateMap('crisis')
   const [idRows] = await pool.execute('SELECT id, tid FROM id_table')
   const baseHpByName = await loadCrisisBaseHpMap()
+  const fieldBuffByName = await loadBossFieldBuffMap()
 
   const tidMap = new Map(idRows.map((row) => [Number(row.id), Number(row.tid)]))
 
@@ -189,7 +224,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
     .filter((item) => item.bosses.length > 0 || includeHidden)
     .sort(comparePhase)
     .map((item) => {
-      const bosses = item.bosses.map((boss) => enrichBoss(boss, baseHpByName))
+      const bosses = item.bosses.map((boss) => enrichBoss(boss, baseHpByName, fieldBuffByName))
       const normalBosses = bosses.filter((boss) => !boss.is_hard_room)
       const hardBosses = bosses.filter((boss) => boss.is_hard_room)
       const dateInfo = dateMap.get(seasonDateKey(item.version, item.phase))
@@ -219,6 +254,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
           buff_name: buff.buff_name,
           buff: buff.buff,
           buff_image: buff.buff_image,
+          effect_blocks: parseEffectBlocksJson(buff.effect_blocks),
         })),
       }
     })

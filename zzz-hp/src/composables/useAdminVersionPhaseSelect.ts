@@ -72,7 +72,9 @@ export function useAdminVersionPhaseSelect(
     const latestVersion = availableVersions.value[0] ?? ''
     if (!version.value && latestVersion) version.value = latestVersion
     const phases = availablePhases.value
-    if (!phase.value && phases.length) phase.value = phases[0] ?? ''
+    if (!normalizePhase(phase.value) && !customPhase.value.trim() && phases.length) {
+      phase.value = phases[0] ?? ''
+    }
   }
 
   async function loadVersionPhaseOptions() {
@@ -112,21 +114,32 @@ export function useAdminVersionPhaseSelect(
 
   function keepVersionPhaseAfterSubmit() {
     const keptVersion = resolvedVersion.value
-    const keptPhase = resolvedPhase.value
+    const keptPhase = normalizePhase(resolvedPhase.value)
     version.value = keptVersion
     phase.value = keptPhase
     customVersion.value = ''
     customPhase.value = ''
     if (keptPhase && !availablePhases.value.includes(keptPhase)) {
       customPhase.value = keptPhase
+      phase.value = ''
     }
   }
 
   watch([version, customVersion], () => {
     const phases = availablePhases.value
-    if (phase.value && !phases.includes(phase.value)) {
-      phase.value = phases[0] ?? ''
-    } else if (!phase.value && phases.length) {
+    const current = normalizePhase(phase.value || customPhase.value)
+    if (current && phases.includes(current)) {
+      phase.value = current
+      if (normalizePhase(customPhase.value) === current) customPhase.value = ''
+      return
+    }
+    // 当前期数不在下拉中时保留原值，切勿跳到最新一期
+    if (current) {
+      phase.value = ''
+      customPhase.value = current
+      return
+    }
+    if (autoDefault && phases.length) {
       phase.value = phases[0] ?? ''
     }
   })

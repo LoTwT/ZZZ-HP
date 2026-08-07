@@ -44,6 +44,42 @@ function asJson(value) {
   return JSON.stringify(value ?? null)
 }
 
+/** 历史错把角色 id 写成 remielle（随 remielle.webp 文件名），正式 id 为 remiel */
+async function migrateRemielAliasIds(conn) {
+  const [[remiel]] = await conn.query('SELECT id FROM `character` WHERE id = ? LIMIT 1', [
+    'remiel',
+  ])
+  const [[remielle]] = await conn.query('SELECT id FROM `character` WHERE id = ? LIMIT 1', [
+    'remielle',
+  ])
+  if (remielle && remiel) {
+    await conn.query('DELETE FROM `character` WHERE id = ?', ['remielle'])
+  } else if (remielle && !remiel) {
+    await conn.query('UPDATE `character` SET id = ? WHERE id = ?', ['remiel', 'remielle'])
+  }
+  // 头像统一到 /character/remiel.webp（避免仍指向易丢的 /calculator_image/哈希名）
+  const [result] = await conn.query(
+    `UPDATE \`character\`
+     SET avatar_image = '/character/remiel.webp'
+     WHERE id = 'remiel'
+       AND (
+         avatar_image IS NULL
+         OR avatar_image = ''
+         OR avatar_image LIKE '%remielle%'
+         OR avatar_image LIKE '/calculator_image/%'
+       )`,
+  )
+  return {
+    alias:
+      remielle && remiel
+        ? 'deleted-duplicate'
+        : remielle
+          ? 'renamed'
+          : 'none',
+    avatarFixed: Number(result?.affectedRows ?? 0) > 0,
+  }
+}
+
 function normalizeAgent(item) {
   const mindscapeNotes = Array.isArray(item.mindscapeNotes)
     ? [0, 1, 2, 3, 4, 5, 6].map((index) =>
@@ -151,6 +187,11 @@ async function main() {
     await conn.query(CREATE_SQL)
 
     await conn.beginTransaction()
+
+    const remielMigration = await migrateRemielAliasIds(conn)
+    if (remielMigration.alias !== 'none' || remielMigration.avatarFixed) {
+      console.log(`蕾米埃尔迁移: ${JSON.stringify(remielMigration)}`)
+    }
 
     const agentCount = await upsertMany(
       conn,

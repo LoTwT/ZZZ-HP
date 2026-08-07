@@ -13,6 +13,7 @@ import {
   BUFF_SKILL_TARGET_OPTIONS,
 } from '@/types/calculator'
 import { BUFF_STAT_FIELDS, AGENT_ROLES, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatTeamProfessionGateLabel } from '@/utils/buffEffect'
 import { scopeLabel } from '@/utils/extraBuffCalc'
 
 export interface ExtraBuffGain {
@@ -28,6 +29,12 @@ export interface ExtraBuffGain {
   applyTarget?: BuffApplyTarget
   /** 受益职业；空 = 不限 */
   applyProfession?: string | null
+  /** 队内职业人数条件；空 = 不限 */
+  teamProfession?: string | null
+  /** 启用的人数档（非 null = 该人数生效） */
+  teamProfessionValues?: Array<number | null> | null
+  /** @deprecated */
+  teamProfessionMinCount?: number | null
   /** 招式 scope 时的大类（兼容字段） */
   skillCategory?: BuffSkillTargetId
   /** 招式 scope 时的小类；空 = 整大类 */
@@ -54,6 +61,8 @@ const draftSituation = ref<BuffApplySituation>('global')
 const draftScope = ref<BuffScope>('general')
 const draftApplyTarget = ref<BuffApplyTarget>('self')
 const draftApplyProfession = ref('')
+const draftTeamProfession = ref('')
+const draftTeamProfessionValues = ref<Array<number | null>>([null, null, null])
 const draftSkillCategory = ref<BuffSkillTargetId>('basic')
 const draftSkillSubcategoryId = ref<string>('')
 const draftAppliesToAnomaly = ref(false)
@@ -75,6 +84,22 @@ const draftSubcategories = computed(() =>
   ),
 )
 
+function onDraftTeamProfessionChange() {
+  if (!draftTeamProfession.value) {
+    draftTeamProfessionValues.value = [null, null, null]
+  }
+}
+
+function isDraftTierOn(index: number) {
+  return draftTeamProfessionValues.value[index] != null
+}
+
+function setDraftTierOn(index: number, on: boolean) {
+  const next = [...draftTeamProfessionValues.value]
+  next[index] = on ? 0 : null
+  draftTeamProfessionValues.value = next
+}
+
 function addGain() {
   const name = draftName.value.trim() || '自定义增益'
   const gain: ExtraBuffGain = {
@@ -89,6 +114,10 @@ function addGain() {
   if (draftApplyProfession.value.trim()) {
     gain.applyProfession = draftApplyProfession.value.trim()
   }
+  if (draftTeamProfession.value.trim()) {
+    gain.teamProfession = draftTeamProfession.value.trim()
+    gain.teamProfessionValues = [...draftTeamProfessionValues.value]
+  }
   if (draftScope.value === 'skill') {
     gain.skillCategory = draftSkillCategory.value
     gain.skillSubcategoryId = draftSkillSubcategoryId.value || null
@@ -100,6 +129,8 @@ function addGain() {
   draftScope.value = 'general'
   draftApplyTarget.value = 'self'
   draftApplyProfession.value = ''
+  draftTeamProfession.value = ''
+  draftTeamProfessionValues.value = [null, null, null]
   draftSkillSubcategoryId.value = ''
   draftAppliesToAnomaly.value = false
 }
@@ -131,6 +162,8 @@ function gainMeta(item: ExtraBuffGain): string {
   if (item.applyProfession?.trim()) {
     parts.push(`职业·${item.applyProfession.trim()}`)
   }
+  const gate = formatTeamProfessionGateLabel(item)
+  if (gate) parts.push(gate)
   parts.push(situationLabel(item.applySituation))
   const skill = skillTargetSummary(item)
   if (skill) parts.push(skill)
@@ -142,7 +175,7 @@ function gainMeta(item: ExtraBuffGain): string {
 <template>
   <div class="extra-buff-editor">
     <p class="extra-buff-hint">
-      额外 Buff 添加后立即参与计算：按作用域/目标/职业/失衡情况过滤，有伤害事件时按各事件的产生角色（owner）匹配。
+      额外 Buff 添加后立即参与计算。队内职业人数条件只限制何时生效，不改变数值本身。
     </p>
     <div class="extra-buff-form">
       <label class="field">
@@ -177,6 +210,15 @@ function gainMeta(item: ExtraBuffGain): string {
         <select v-model="draftApplyProfession">
           <option value="">不限</option>
           <option v-for="role in AGENT_ROLES" :key="role" :value="role">
+            {{ role }}
+          </option>
+        </select>
+      </label>
+      <label class="field">
+        <span>队内职业人数条件</span>
+        <select v-model="draftTeamProfession" @change="onDraftTeamProfessionChange">
+          <option value="">不限</option>
+          <option v-for="role in AGENT_ROLES" :key="`gate-${role}`" :value="role">
             {{ role }}
           </option>
         </select>
@@ -217,6 +259,22 @@ function gainMeta(item: ExtraBuffGain): string {
         </label>
       </template>
       <button type="button" class="add-btn" @click="addGain">添加增益</button>
+    </div>
+
+    <div v-if="draftTeamProfession" class="team-prof-tiers">
+      <span class="tiers-label">何时生效（勾选人数）</span>
+      <div class="team-prof-tier-row">
+        <label v-for="n in 3" :key="`draft-tier-${n}`" class="tier-cell">
+          <span class="tier-head">
+            <input
+              type="checkbox"
+              :checked="isDraftTierOn(n - 1)"
+              @change="setDraftTierOn(n - 1, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>恰好{{ n }}人时生效</span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <ul v-if="gains.length" class="extra-buff-list">
@@ -282,34 +340,64 @@ function gainMeta(item: ExtraBuffGain): string {
 
 .field input,
 .field select {
-  border: 1px solid var(--calc-border, #4a5563);
+  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.12));
   border-radius: 8px;
-  background: var(--calc-input-bg, #1a1f2a);
-  color: var(--calc-text, #e8ecf4);
+  background: var(--calc-panel, #151922);
+  color: var(--calc-text, #edf1f7);
+  padding: 0.42rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.team-prof-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tiers-label {
+  font-size: 0.78rem;
+  color: var(--calc-muted, #c9d0dc);
+}
+
+.team-prof-tier-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.tier-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
   padding: 0.45rem 0.55rem;
+  background: var(--calc-panel, #151922);
+}
+
+.tier-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--calc-text, #edf1f7);
 }
 
 .add-btn,
 .remove-btn {
-  border: 1px solid var(--calc-border, #4a5563);
+  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.14));
   border-radius: 8px;
-  background: var(--calc-surface-3, #243044);
-  color: var(--calc-text, #e8ecf4);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--calc-text, #edf1f7);
   padding: 0.45rem 0.7rem;
   cursor: pointer;
   font-size: 0.8rem;
 }
 
-.remove-btn {
-  background: transparent;
-  color: #c45c5c;
-  border-color: rgba(196, 92, 92, 0.45);
-}
-
 .extra-buff-list {
+  list-style: none;
   margin: 0;
   padding: 0;
-  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -317,13 +405,12 @@ function gainMeta(item: ExtraBuffGain): string {
 
 .extra-buff-item {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  align-items: center;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--calc-border, #3a4456);
+  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.1));
   border-radius: 10px;
-  background: var(--calc-surface-2, #161b24);
+  padding: 0.55rem 0.7rem;
 }
 
 .extra-buff-copy {
@@ -334,24 +421,28 @@ function gainMeta(item: ExtraBuffGain): string {
 }
 
 .extra-buff-copy strong {
-  font-size: 0.86rem;
-  color: var(--calc-text, #e8ecf4);
+  font-size: 0.88rem;
 }
 
 .extra-buff-copy span {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--calc-muted, #9aa3b5);
+  word-break: break-word;
 }
 
 .extra-buff-empty {
   margin: 0;
-  font-size: 0.8rem;
-  color: var(--calc-muted, #8b93a3);
+  font-size: 0.78rem;
+  color: var(--calc-muted, #9aa3b5);
 }
 
 @media (max-width: 900px) {
   .extra-buff-form {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-prof-tier-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

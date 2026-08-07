@@ -13,7 +13,7 @@ import AdminBossInfoCatalogPanel from '@/components/admin/AdminBossInfoCatalogPa
 .admin-boss-info-page {
   min-height: 100vh;
   padding: 1.25rem 1rem 2rem;
-  max-width: 1240px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 

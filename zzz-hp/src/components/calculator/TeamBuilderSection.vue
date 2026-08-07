@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import UnifiedPresetPicker from '@/components/calculator/UnifiedPresetPicker.vue'
 import TeamSlotCard from '@/components/calculator/TeamSlotCard.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
@@ -22,8 +21,6 @@ const emit = defineEmits<{
   selectWengine: [wengineId: string]
 }>()
 
-const activeSlotData = computed(() => props.teamSlots[props.activeSlot]!)
-
 function wengineById(id: string) {
   if (id === 'none') return undefined
   return props.wengines.find((item) => item.id === id)
@@ -42,8 +39,8 @@ function updateSlotRank(index: number, rank: number) {
   props.teamSlots[index]!.rank = rank
 }
 
-function updateSlotRefine(value: number) {
-  activeSlotData.value.wengineRefine = value
+function updateSlotRefine(index: number, value: number) {
+  props.teamSlots[index]!.wengineRefine = value
 }
 </script>
 
@@ -69,7 +66,7 @@ function updateSlotRefine(value: number) {
         @remove="emit('clearSlot', index)"
         @toggle-main-c="emit('toggleMainC', index)"
         @update:rank="updateSlotRank(index, $event)"
-        @update:refine="updateSlotRefine($event)"
+        @update:refine="updateSlotRefine(index, $event)"
       />
     </div>
 

@@ -40,6 +40,8 @@ export interface CreateBuffPayload {
   buff_name: string
   buff?: string | null
   buff_image?: string | null
+  /** 计算器结构化效果块 */
+  effect_blocks?: unknown[] | null
   stage?: number
   roomInStage?: number
   buffIndex?: number
@@ -187,6 +189,21 @@ export async function uploadCalculatorPublicImage(
   })
 
   return parseResponse<UploadImageResult>(response)
+}
+
+/** 将旧 calculator_image 等路径迁到 /character/{id}.webp 固定路径 */
+export async function ensureCalculatorPublicAvatar(
+  kind: CalculatorPublicAvatarKind,
+  entityId: string,
+  url: string,
+) {
+  const query = new URLSearchParams({ kind, entityId: entityId.trim() })
+  const response = await fetch(`/api/upload/calculator-public/ensure?${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+  return parseResponse<{ url: string; action: string }>(response)
 }
 
 export async function lookupBossInfo(bossName: string) {

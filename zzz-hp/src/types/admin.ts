@@ -22,6 +22,8 @@ export interface AdminBuffSlotContext {
   buffName?: string
   buffText?: string
   buffImage?: string | null
+  /** 计算器结构化效果块 */
+  effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 /** 可视化编辑怪物时传入的槽位上下文 */

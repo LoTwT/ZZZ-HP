@@ -119,40 +119,86 @@ function normalizeEffectList(value) {
   if (!Array.isArray(value)) return []
   return value
     .filter((item) => item && typeof item === 'object')
-    .map((item, index) => ({
-      id: typeof item.id === 'string' && item.id ? item.id : `eff-${index}`,
-      origin: typeof item.origin === 'string' ? item.origin : '',
-      scope: normalizeScopeValue(item.scope),
-      applyTarget: item.applyTarget === 'team' ? 'team' : 'self',
-      applySituation:
-        item.applySituation === 'stagger' || item.applySituation === 'non_stagger'
-          ? item.applySituation
-          : 'global',
-      skillCategory: item.skillCategory || undefined,
-      skillSubcategoryId: item.skillSubcategoryId ?? null,
-      skillTargets: Array.isArray(item.skillTargets)
-        ? item.skillTargets
-            .filter((t) => t && typeof t === 'object')
-            .map((t) => ({
-              category: t.category || 'basic',
-              subcategoryId: t.subcategoryId ?? null,
-            }))
-        : undefined,
-      elementFilter: item.elementFilter ?? 'all',
-      kind:
-        item.kind === 'stacked' || item.kind === 'convert' ? item.kind : 'fixed',
-      stat: BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus',
-      value: readNumber(item.value),
-      stackable: Boolean(item.stackable),
-      maxStacks: Math.max(1, readNumber(item.maxStacks) || 1),
-      valuePerStack: readNumber(item.valuePerStack),
-      defaultStacks: Math.max(0, readNumber(item.defaultStacks) || 1),
-      convert: normalizeConvert(item.convert),
-      appliesToAnomaly:
-        item.appliesToAnomaly == null ? undefined : Boolean(item.appliesToAnomaly),
-      enabledDefault: item.enabledDefault === false ? false : true,
-      note: typeof item.note === 'string' ? item.note : '',
-    }))
+    .map((item, index) => {
+      const teamProfession =
+        item.teamProfession == null || String(item.teamProfession).trim() === ''
+          ? null
+          : String(item.teamProfession).trim()
+      const teamProfessionMinCount =
+        !teamProfession ||
+        item.teamProfessionMinCount == null ||
+        item.teamProfessionMinCount === ''
+          ? null
+          : Math.min(3, Math.max(1, Math.round(readNumber(item.teamProfessionMinCount) || 1)))
+      let teamProfessionValues = null
+      if (teamProfession && Array.isArray(item.teamProfessionValues)) {
+        teamProfessionValues = [null, null, null]
+        for (let i = 0; i < 3; i += 1) {
+          const raw = item.teamProfessionValues[i]
+          if (raw == null || raw === '') {
+            teamProfessionValues[i] = null
+            continue
+          }
+          const n = Number(raw)
+          teamProfessionValues[i] = Number.isFinite(n) ? n : null
+        }
+      }
+      // 无有效人数档时：用旧 minCount 迁成恰好 N 人一档；否则保留全空（不生效）
+      if (teamProfession) {
+        const hasTier =
+          Array.isArray(teamProfessionValues) &&
+          teamProfessionValues.some((v) => v != null && Number.isFinite(Number(v)))
+        if (!hasTier) {
+          teamProfessionValues = [null, null, null]
+          if (teamProfessionMinCount != null) {
+            teamProfessionValues[teamProfessionMinCount - 1] = 0
+          }
+        }
+      }
+      const applyProfession =
+        item.applyProfession == null || String(item.applyProfession).trim() === ''
+          ? null
+          : String(item.applyProfession).trim()
+
+      return {
+        id: typeof item.id === 'string' && item.id ? item.id : `eff-${index}`,
+        origin: typeof item.origin === 'string' ? item.origin : '',
+        scope: normalizeScopeValue(item.scope),
+        applyTarget: item.applyTarget === 'team' ? 'team' : 'self',
+        applySituation:
+          item.applySituation === 'stagger' || item.applySituation === 'non_stagger'
+            ? item.applySituation
+            : 'global',
+        applyProfession,
+        teamProfession,
+        teamProfessionValues,
+        teamProfessionMinCount,
+        skillCategory: item.skillCategory || undefined,
+        skillSubcategoryId: item.skillSubcategoryId ?? null,
+        skillTargets: Array.isArray(item.skillTargets)
+          ? item.skillTargets
+              .filter((t) => t && typeof t === 'object')
+              .map((t) => ({
+                category: t.category || 'basic',
+                subcategoryId: t.subcategoryId ?? null,
+              }))
+          : undefined,
+        elementFilter: item.elementFilter ?? 'all',
+        kind:
+          item.kind === 'stacked' || item.kind === 'convert' ? item.kind : 'fixed',
+        stat: BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus',
+        value: readNumber(item.value),
+        stackable: Boolean(item.stackable),
+        maxStacks: Math.max(1, readNumber(item.maxStacks) || 1),
+        valuePerStack: readNumber(item.valuePerStack),
+        defaultStacks: Math.max(0, readNumber(item.defaultStacks) || 1),
+        convert: normalizeConvert(item.convert),
+        appliesToAnomaly:
+          item.appliesToAnomaly == null ? undefined : Boolean(item.appliesToAnomaly),
+        enabledDefault: item.enabledDefault === false ? false : true,
+        note: typeof item.note === 'string' ? item.note : '',
+      }
+    })
 }
 
 function normalizeSelfTeamBuffs(value) {
@@ -267,6 +313,18 @@ function parseJson(value, fallback) {
     }
   }
   return fallback
+}
+
+/**
+ * 空 avatar 保存时保留库里已有路径，避免管理端未选文件就把头像冲掉。
+ * 仅当 clearAvatar === true 时允许写成 null。
+ */
+async function resolveAvatarImageForUpsert(tableSql, id, incoming, clearAvatar) {
+  if (clearAvatar === true) return null
+  const trimmed = typeof incoming === 'string' ? incoming.trim() : ''
+  if (trimmed) return trimmed
+  const [[row]] = await pool.query(`SELECT avatar_image FROM ${tableSql} WHERE id = ?`, [id])
+  return row?.avatar_image ?? null
 }
 
 function rowToAgent(row) {
@@ -506,13 +564,20 @@ export async function upsertAgent(doc) {
     throw new Error('角色 ID 与名称为必填项')
   }
 
+  const avatar_image = await resolveAvatarImageForUpsert(
+    '`character`',
+    id,
+    doc.avatar_image,
+    doc.clearAvatar,
+  )
+
   const payload = {
     id,
     name,
     profession: String(doc.profession ?? ''),
     element: String(doc.element ?? ''),
     supportNeeds: Array.isArray(doc.supportNeeds) ? doc.supportNeeds : [],
-    avatar_image: doc.avatar_image ?? null,
+    avatar_image,
     note: typeof doc.note === 'string' ? doc.note : '',
     basePanel: normalizeAgentBasePanel(doc.basePanel),
     mindscapeNotes: normalizeMindscapeNotesArray(doc.mindscapeNotes),
@@ -572,10 +637,17 @@ export async function upsertBangboo(doc) {
     throw new Error('邦布 ID 与名称为必填项')
   }
 
+  const avatar_image = await resolveAvatarImageForUpsert(
+    '`bangboo`',
+    id,
+    doc.avatar_image,
+    doc.clearAvatar,
+  )
+
   const payload = {
     id,
     name,
-    avatar_image: doc.avatar_image ?? null,
+    avatar_image,
     effectBlocks: normalizeEffectBlocks(doc.effectBlocks),
     effects: normalizeEffectList(doc.effects),
     refinementEffectBlocks: Array.isArray(doc.refinementEffectBlocks)
@@ -672,10 +744,17 @@ export async function upsertDriveDisc(doc) {
     )
   }
 
+  const avatar_image = await resolveAvatarImageForUpsert(
+    '`drive_disc`',
+    id,
+    doc.avatar_image,
+    doc.clearAvatar,
+  )
+
   const payload = {
     id,
     name,
-    avatar_image: doc.avatar_image ?? null,
+    avatar_image,
     twoPieceNote: typeof doc.twoPieceNote === 'string' ? doc.twoPieceNote : '',
     fourPieceNote: typeof doc.fourPieceNote === 'string' ? doc.fourPieceNote : '',
     twoPieceEffectBlocks: twoPieceEffectBlocks.length
@@ -729,12 +808,19 @@ export async function upsertWengine(doc) {
     throw new Error('音擎 ID 与名称为必填项')
   }
 
+  const avatar_image = await resolveAvatarImageForUpsert(
+    WENGINE_TABLE,
+    id,
+    doc.avatar_image,
+    doc.clearAvatar,
+  )
+
   const payload = {
     id,
     name,
     profession: String(doc.profession ?? ''),
     rarity: String(doc.rarity ?? 'A'),
-    avatar_image: doc.avatar_image ?? null,
+    avatar_image,
     note: typeof doc.note === 'string' ? doc.note : '',
     baseAtk: readNumber(doc.baseAtk),
     advancedStats: normalizeWengineAdvancedStats(doc.advancedStats),

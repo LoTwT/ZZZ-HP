@@ -32,6 +32,7 @@ export interface DefenseZoneBuffRecord {
   buffIndex: number
   buffText?: string
   buffName?: string
+  effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 export interface DefenseBuffInfo {
@@ -42,6 +43,7 @@ export interface DefenseBuffInfo {
   buffIndex?: number
   buffText?: string
   isEmpty?: boolean
+  effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 export interface DefenseRoom {

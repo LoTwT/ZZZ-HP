@@ -95,6 +95,7 @@ import { collectParticipantAgentIds, resolveEventOwnerAgentId, summarizeDamageBy
 import {
   buildSkillContextFromDamageEvent,
   extraGainMatchesProfession,
+  resolveExtraGainValue,
   mergeExtraModsForEvent,
 } from '@/utils/extraBuffCalc'
 import {
@@ -214,6 +215,8 @@ const props = defineProps<{
   damageEvents?: DamageEvent[]
   /** 为 true 时跳过伤害事件汇总等非必要重算（如最优词条模式） */
   calcSuspended?: boolean
+  /** 场地 / 环境 Buff（危局全局、Boss 场地、防卫房间） */
+  environmentBuffs?: import('@/utils/environmentBuffCalc').EnvironmentBuffEntry[]
 }>()
 
 const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [] })
@@ -251,6 +254,8 @@ function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
     staggerPhase: props.staggerPhase ?? 'stagger',
     resolveAgentProfession: (agentId) =>
       props.agents.find((item) => item.id === agentId)?.profession,
+    teamSlots: props.teamSlots,
+    agents: props.agents,
   })
 }
 
@@ -267,8 +272,10 @@ function buildExtraModsForMainPanel(): BuffStatModifiers {
       if (situation === 'stagger' && phase !== 'stagger') continue
       if (situation === 'non_stagger' && phase !== 'normal') continue
       if (!extraGainMatchesProfession(gain, mainProfession)) continue
+      const amount = resolveExtraGainValue(gain, props.teamSlots, props.agents)
+      if (amount == null) continue
       const next = createEmptyBuffStatModifiers()
-      next[gain.stat as BuffStatKey] = gain.value
+      next[gain.stat as BuffStatKey] = amount
       total = mergeBuffStatModifiers(total, next)
     }
     return total
@@ -494,6 +501,7 @@ function buildPanelCalcContextForSlot(
     convertSlotPanels: props.convertSlotPanels,
     mainExternalPanel: resolveExternalPanelForSlotIndex(mainSlotIndex.value),
     attrValues: getAttrDefaultsForSlot(slotIndex),
+    environmentBuffs: props.environmentBuffs,
   }
 }
 
@@ -2854,6 +2862,9 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
       skillSubcategoryId: item.skillSubcategoryId,
       appliesToAnomaly: item.appliesToAnomaly,
       applyProfession: item.applyProfession ?? null,
+      teamProfession: item.teamProfession ?? null,
+      teamProfessionValues: item.teamProfessionValues ?? null,
+      teamProfessionMinCount: item.teamProfessionMinCount ?? null,
     }))
   } else {
     const mods = { ...createEmptyBuffStatModifiers(), ...snapshot.extraMods }
@@ -2940,6 +2951,10 @@ defineExpose({
   resolveMultDefaultsForEvent,
   getAttrDefaultsForSlot,
   getPanelSourceValuesForSlot,
+  enemyInput,
+  applyEnemyInput(next: import('@/utils/enemyResistance').DamageEnemyInput) {
+    Object.assign(enemyInput, normalizeDamageEnemyInput(next))
+  },
 })
 </script>
 

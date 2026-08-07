@@ -53,14 +53,17 @@ function ensureDir(dir) {
 }
 
 function copyIfDirExists(srcFile, destDir) {
+  if (!fs.existsSync(destDir)) {
+    ensureDir(destDir)
+  }
   if (!fs.existsSync(destDir)) return
-  ensureDir(destDir)
   fs.copyFileSync(srcFile, path.join(destDir, path.basename(srcFile)))
 }
 
 /**
- * 保存计算器实体头像到 public/{folder}/{id}.ext，并尽量同步到 dist/{folder}/。
- * @returns {Promise<{ url: string, filename: string, relativePath: string }>}
+ * 保存计算器实体头像：
+ * - 前端 public / dist（本地 vite / 静态站点）
+ * - 后端同名目录（生产 IIS 把 /character 等反代到 Node，与 boss_image 一致）
  */
 export async function saveCalculatorPublicAvatar(kind, entityId, file) {
   if (!file?.buffer && !file?.path) {
@@ -84,7 +87,15 @@ export async function saveCalculatorPublicAvatar(kind, entityId, file) {
     fs.copyFileSync(file.path, publicFile)
   }
 
-  copyIfDirExists(publicFile, path.join(distRoot, folder))
+  // 始终写入 dist（站点根常是 dist）；目录不存在则创建
+  const distDir = path.join(distRoot, folder)
+  ensureDir(distDir)
+  fs.copyFileSync(publicFile, path.join(distDir, filename))
+
+  // 后端静态目录：生产反代 /character → Node
+  const backendDir = path.join(backendRoot, folder)
+  ensureDir(backendDir)
+  fs.copyFileSync(publicFile, path.join(backendDir, filename))
 
   return {
     url: `${urlPrefix}/${filename}`,
@@ -154,6 +165,7 @@ export function syncEntityAvatarToPublic(kind, entityId, avatarUrl) {
   }
 
   copyIfDirExists(publicFile, path.join(distRoot, folder))
+  copyIfDirExists(publicFile, path.join(backendRoot, folder))
 
   if (avatarUrl === targetUrl) return { url: targetUrl, action: 'ok' }
   return { url: targetUrl, action: 'updated' }

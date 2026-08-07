@@ -1,5 +1,8 @@
 import { success, fail } from '../utils/response.js'
-import { saveCalculatorPublicAvatar } from '../utils/calculatorPublicAsset.js'
+import {
+  saveCalculatorPublicAvatar,
+  syncEntityAvatarToPublic,
+} from '../utils/calculatorPublicAsset.js'
 
 function buildImageUrl(type, filename) {
   return `/${type}_image/${filename}`
@@ -24,12 +27,17 @@ export function uploadBuff(req, res) {
 }
 
 export function uploadCalculator(req, res) {
-  if (!req.file) {
-    return fail(res, '请上传图片文件，字段名为 image', 400)
+  // 兼容旧接口：若带 kind + entityId，走固定路径；否则拒绝哈希名上传
+  const kind = req.query?.kind
+  const entityId = req.query?.entityId
+  if (kind && entityId && req.file) {
+    return uploadCalculatorPublic(req, res)
   }
-
-  const url = buildImageUrl('calculator', req.file.filename)
-  return success(res, { url, filename: req.file.filename }, '计算器头像上传成功', 201)
+  return fail(
+    res,
+    '请使用 /api/upload/calculator-public?kind=&entityId=，头像固定为 /character/{id}.webp 等形式',
+    400,
+  )
 }
 
 export async function uploadCalculatorPublic(req, res) {
@@ -45,11 +53,38 @@ export async function uploadCalculatorPublic(req, res) {
     return success(
       res,
       { url: saved.url, filename: saved.filename },
-      '计算器头像已保存到 public 固定路径',
+      '计算器头像已保存到固定路径',
       201,
     )
   } catch (err) {
     return fail(res, err.message || '上传失败', 400)
+  }
+}
+
+/** 将已有头像（含旧 /calculator_image/哈希）迁移为 /character/{id}.webp 等固定路径 */
+export async function ensureCalculatorPublic(req, res) {
+  const kind = req.query?.kind ?? req.body?.kind
+  const entityId = req.query?.entityId ?? req.body?.entityId
+  const currentUrl =
+    typeof req.body?.url === 'string'
+      ? req.body.url
+      : typeof req.query?.url === 'string'
+        ? req.query.url
+        : null
+
+  try {
+    const result = syncEntityAvatarToPublic(kind, entityId, currentUrl)
+    if (result.action === 'missing' && currentUrl) {
+      return fail(res, `找不到头像文件：${currentUrl}`, 404)
+    }
+    return success(
+      res,
+      { url: result.url, action: result.action },
+      result.action === 'updated' ? '头像已迁移到固定路径' : '头像路径已是固定路径',
+      200,
+    )
+  } catch (err) {
+    return fail(res, err.message || '迁移失败', 400)
   }
 }
 

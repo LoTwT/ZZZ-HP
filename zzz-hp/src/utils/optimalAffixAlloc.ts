@@ -496,6 +496,8 @@ function buildOptimalExtraModsForEvent(
     staggerPhase: event.staggerPhase,
     resolveAgentProfession: (agentId) =>
       ctx.panelContext.agents.find((item) => item.id === agentId)?.profession,
+    teamSlots: ctx.panelContext.teamSlots,
+    agents: ctx.panelContext.agents,
   })
 }
 
@@ -1703,6 +1705,7 @@ export function buildOptimalEvalContext(input: {
   resolveSubcategory?: (id: string | null) => SkillSubcategory | null
   skillSubcategories?: SkillSubcategory[]
   followUpSkillRules?: import('@/types/calculator').FollowUpSkillRule[]
+  environmentBuffs?: import('@/utils/environmentBuffCalc').EnvironmentBuffEntry[]
 }): OptimalEvalContext {
   const mainSlot = input.teamSlots[input.mainSlotIndex]!
   const mainAgent = input.agents.find((a) => a.id === mainSlot.agentId)
@@ -1736,6 +1739,7 @@ export function buildOptimalEvalContext(input: {
       convertSlotPanels: input.convertSlotPanels,
       baseAnomalyControl: mainAgent?.basePanel.anomalyControl ?? 0,
       baseEnergyRegen: mainAgent?.basePanel.energyRegen ?? 0,
+      environmentBuffs: input.environmentBuffs,
     },
     enemyInput: input.enemyInput,
     baseDamageSource: input.baseDamageSource,

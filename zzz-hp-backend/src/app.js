@@ -42,6 +42,11 @@ app.use('/boss_image', express.static(path.join(__dirname, '../boss_image')))
 app.use('/buff_image', express.static(path.join(__dirname, '../buff_image')))
 app.use('/calculator_image', express.static(path.join(__dirname, '../calculator_image')))
 app.use('/guestbook_image', express.static(path.join(__dirname, '../guestbook_image')))
+// 计算器实体头像（管理端上传写入这些目录；IIS 需反代到 Node，与 boss_image 相同）
+app.use('/character', express.static(path.join(__dirname, '../character')))
+app.use('/wengine', express.static(path.join(__dirname, '../wengine')))
+app.use('/drive_disc', express.static(path.join(__dirname, '../drive_disc')))
+app.use('/bangboo', express.static(path.join(__dirname, '../bangboo')))
 
 app.get('/health', (_req, res) => {
   res.json({ code: 200, message: 'ok', data: null })

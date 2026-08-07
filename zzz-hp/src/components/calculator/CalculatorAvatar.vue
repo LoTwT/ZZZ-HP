@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { resolveAssetUrl } from '@/utils/gameData'
 
 const props = defineProps<{
@@ -7,13 +7,28 @@ const props = defineProps<{
   name: string
 }>()
 
+const loadFailed = ref(false)
 const imageUrl = computed(() => resolveAssetUrl(props.avatarImage))
 const fallback = computed(() => props.name.trim().slice(0, 1) || '?')
+
+watch(
+  () => props.avatarImage,
+  () => {
+    loadFailed.value = false
+  },
+)
+
+function onImgError() {
+  loadFailed.value = true
+}
 </script>
 
 <template>
-  <span class="calculator-avatar">
-    <img v-if="imageUrl" :src="imageUrl" :alt="name" />
+  <span
+    class="calculator-avatar"
+    :title="imageUrl && loadFailed ? `头像加载失败: ${imageUrl}` : undefined"
+  >
+    <img v-if="imageUrl && !loadFailed" :src="imageUrl" :alt="name" @error="onImgError" />
     <span v-else class="fallback">{{ fallback }}</span>
   </span>
 </template>

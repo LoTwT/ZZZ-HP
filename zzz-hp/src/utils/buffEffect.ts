@@ -194,6 +194,37 @@ function newEffectId() {
   return `eff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+/** 标准化人数启用档：下标 0/1/2 = 恰好 1/2/3 人；非 null 表示该档启用。不把 value 回填进各档。 */
+export function normalizeTeamProfessionValues(
+  raw: unknown,
+  teamProfession?: string | null,
+  legacyMinCount?: number | null,
+  _legacyValue?: number | null,
+): Array<number | null> | null {
+  if (teamProfession == null || String(teamProfession).trim() === '') return null
+  const values: Array<number | null> = [null, null, null]
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < 3; i += 1) {
+      const item = raw[i]
+      if (item == null || item === '') {
+        values[i] = null
+        continue
+      }
+      const n = Number(item)
+      values[i] = Number.isFinite(n) ? n : null
+    }
+    // 已有勾选档 → 直接用；全空时再回退旧 minCount，避免 [null,null,null] 吞掉兼容数据
+    if (values.some((v) => v != null)) return values
+  }
+  // 旧 ≥N 门槛：仅启用 minCount 这一档（按恰好 N 人兼容）
+  if (legacyMinCount != null && Number.isFinite(Number(legacyMinCount))) {
+    const min = Math.min(3, Math.max(1, Math.round(Number(legacyMinCount) || 1)))
+    values[min - 1] = 0
+    return values
+  }
+  return values
+}
+
 export function createEmptyBuffEffect(
   overrides: Partial<BuffEffect> = {},
 ): BuffEffect {
@@ -209,6 +240,29 @@ export function createEmptyBuffEffect(
     scope: overrides.scope ?? 'general',
     applyTarget: overrides.applyTarget ?? 'self',
     applySituation: overrides.applySituation ?? 'global',
+    applyProfession:
+      overrides.applyProfession == null || String(overrides.applyProfession).trim() === ''
+        ? null
+        : String(overrides.applyProfession).trim(),
+    teamProfession:
+      overrides.teamProfession == null || String(overrides.teamProfession).trim() === ''
+        ? null
+        : String(overrides.teamProfession).trim(),
+    teamProfessionValues: normalizeTeamProfessionValues(
+      overrides.teamProfessionValues,
+      overrides.teamProfession,
+      overrides.teamProfessionMinCount,
+      overrides.value,
+    ),
+    teamProfessionMinCount:
+      overrides.teamProfession == null || String(overrides.teamProfession).trim() === ''
+        ? null
+        : overrides.teamProfessionMinCount == null
+          ? null
+          : Math.min(
+              3,
+              Math.max(1, Math.round(Number(overrides.teamProfessionMinCount) || 1)),
+            ),
     skillTargets: skillTargets.length ? skillTargets : undefined,
     skillCategory: primary?.category ?? overrides.skillCategory,
     skillSubcategoryId: primary?.subcategoryId ?? overrides.skillSubcategoryId ?? null,
@@ -536,6 +590,94 @@ export function effectMatchesElement(effect: BuffEffect, element?: string): bool
   return filter.includes(element)
 }
 
+/** 统计编组中已上阵角色某职业人数（空槽不计） */
+export function countTeamProfession(
+  teamSlots: Array<{ agentId?: string | null }>,
+  agents: Array<{ id: string; profession?: string | null }>,
+  profession: string,
+): number {
+  const required = profession.trim()
+  if (!required) return 0
+  let count = 0
+  for (const slot of teamSlots) {
+    const agentId = String(slot.agentId ?? '').trim()
+    if (!agentId || agentId === 'none') continue
+    const agent = agents.find((item) => item.id === agentId)
+    if (String(agent?.profession ?? '').trim() === required) count += 1
+  }
+  return count
+}
+
+/** 队内职业人数条件：无配置 → 放行；勾选的人数档按「恰好 N 人」生效 */
+export function effectMatchesTeamProfessionGate(
+  effect: Pick<
+    BuffEffect,
+    'teamProfession' | 'teamProfessionValues' | 'teamProfessionMinCount' | 'value'
+  >,
+  teamProfessionCount: number,
+): boolean {
+  const required = effect.teamProfession?.trim()
+  if (!required) return true
+  if (teamProfessionCount < 1 || teamProfessionCount > 3) return false
+
+  const values = normalizeTeamProfessionValues(
+    effect.teamProfessionValues,
+    effect.teamProfession,
+    effect.teamProfessionMinCount,
+    effect.value,
+  )
+  if (!values) return true
+
+  const thresholds = values
+    .map((v, index) => (v != null && Number.isFinite(Number(v)) ? index + 1 : null))
+    .filter((n): n is number => n != null)
+  // 未勾任何人数（且无旧 minCount 可迁）→ 不生效
+  if (!thresholds.length) return false
+  return thresholds.includes(teamProfessionCount)
+}
+
+/**
+ * @deprecated 人数条件不再覆盖数值；请用 effectMatchesTeamProfessionGate。
+ * 保留：不满足条件 → null；满足 → undefined（继续走固定/叠层/转模自身数值）。
+ */
+export function resolveTeamProfessionAmount(
+  effect: Pick<
+    BuffEffect,
+    | 'kind'
+    | 'teamProfession'
+    | 'teamProfessionValues'
+    | 'teamProfessionMinCount'
+    | 'value'
+  >,
+  teamProfessionCount: number,
+): number | null | undefined {
+  if (!effectMatchesTeamProfessionGate(effect, teamProfessionCount)) return null
+  return undefined
+}
+
+export function formatTeamProfessionGateLabel(
+  effect: Pick<
+    BuffEffect,
+    'teamProfession' | 'teamProfessionValues' | 'teamProfessionMinCount' | 'value'
+  >,
+): string {
+  const required = effect.teamProfession?.trim()
+  if (!required) return ''
+  const values = normalizeTeamProfessionValues(
+    effect.teamProfessionValues,
+    effect.teamProfession,
+    effect.teamProfessionMinCount,
+    effect.value,
+  )
+  if (values?.some((v) => v != null)) {
+    const parts = values
+      .map((v, i) => (v == null ? null : `${i + 1}人`))
+      .filter(Boolean)
+    return parts.length ? `队内·${required}·${parts.join('/')}` : `队内·${required}`
+  }
+  return `队内·${required}`
+}
+
 export function filterEffects(
   effects: BuffEffect[],
   options: {
@@ -568,6 +710,8 @@ export function isEffectEnabled(
   selection: { enabledIds?: Record<string, boolean> } | null | undefined,
 ): boolean {
   if (!selection?.enabledIds || !(effect.id in selection.enabledIds)) {
+    // 有队内职业人数条件：未同步前默认不启用，避免条件未满足却全开
+    if (effect.teamProfession?.trim()) return false
     return effect.enabledDefault !== false
   }
   return Boolean(selection.enabledIds[effect.id])
@@ -593,6 +737,8 @@ export function resolveEffectsToMods(
     /** 跳过转模效果（用于先叠非转模再算转模） */
     skipConvert?: boolean
     selection?: { enabledIds?: Record<string, boolean> } | null
+    /** 队内某职业人数；有人数条件的效果必须传入，否则带条件效果一律不结算 */
+    resolveTeamProfessionCount?: (profession: string) => number
   } = {},
 ): BuffStatModifiers {
   let total = emptyMods()
@@ -609,6 +755,11 @@ export function resolveEffectsToMods(
         ? (options.beneficiaryElement ?? options.element ?? options.ctx?.element)
         : (options.element ?? options.ctx?.element)
     if (!effectMatchesElement(effect, matchElement)) continue
+    if (effect.teamProfession?.trim()) {
+      if (!options.resolveTeamProfessionCount) continue
+      const count = options.resolveTeamProfessionCount(effect.teamProfession.trim())
+      if (!effectMatchesTeamProfessionGate(effect, count)) continue
+    }
     if (options.skipConvert && effect.kind === 'convert') continue
 
     const stacks =
@@ -732,6 +883,26 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
     scope: normalizeScope(entry.scope),
     applyTarget: normalizeApplyTarget(entry.applyTarget),
     applySituation: normalizeApplySituation(entry.applySituation),
+    applyProfession:
+      entry.applyProfession == null || String(entry.applyProfession).trim() === ''
+        ? null
+        : String(entry.applyProfession).trim(),
+    teamProfession:
+      entry.teamProfession == null || String(entry.teamProfession).trim() === ''
+        ? null
+        : String(entry.teamProfession).trim(),
+    teamProfessionValues: normalizeTeamProfessionValues(
+      entry.teamProfessionValues,
+      entry.teamProfession == null ? null : String(entry.teamProfession),
+      entry.teamProfessionMinCount == null ? null : readNumber(entry.teamProfessionMinCount),
+      entry.value == null ? null : readNumber(entry.value),
+    ),
+    teamProfessionMinCount:
+      entry.teamProfession == null || String(entry.teamProfession).trim() === ''
+        ? null
+        : entry.teamProfessionMinCount == null || entry.teamProfessionMinCount === ''
+          ? null
+          : Math.min(3, Math.max(1, Math.round(readNumber(entry.teamProfessionMinCount) || 1))),
     skillTargets: Array.isArray(entry.skillTargets)
       ? (entry.skillTargets as BuffSkillTarget[])
       : undefined,
@@ -1016,6 +1187,7 @@ export function effectSummaryLabel(
       : (BUFF_SCOPE_LABELS[effect.scope] ?? '通用')
   const situation =
     APPLY_SITUATION_LABELS[effect.applySituation ?? 'global'] ?? '全局'
+  const gate = formatTeamProfessionGateLabel(effect)
   const statText = statLabelFn?.(effect.stat) ?? effect.stat
   const kind =
     effect.kind === 'stacked'
@@ -1023,7 +1195,10 @@ export function effectSummaryLabel(
       : effect.kind === 'convert'
         ? convertSummaryLabel(effect.convert)
         : `${effect.value ?? 0}`
-  return `${target} · ${scope} · ${situation} · ${statText} ${kind}`
+  const parts = [target, scope, situation]
+  if (gate) parts.push(gate)
+  parts.push(`${statText} ${kind}`)
+  return parts.join(' · ')
 }
 
 /** 局内 Buff 卡片效果行：`[终结技：斩妄开天]无视防御/减防% +40` */
@@ -1037,7 +1212,9 @@ export function formatBuffEffectResultText(
 ): string {
   const skillPrefix = formatSkillTargetsPrefix(effect, options?.skillSubcategories)
   const label = options?.statLabelFn?.(effect.stat) ?? effect.stat
-  return `${skillPrefix}${label} ${amountText}`
+  const gate = formatTeamProfessionGateLabel(effect)
+  const gatePrefix = gate ? `${gate} ` : ''
+  return `${skillPrefix}${gatePrefix}${label} ${amountText}`
 }
 
 export { BUFF_STAT_KEYS }

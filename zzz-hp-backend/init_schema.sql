@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS buff (
   buff_name VARCHAR(100) NOT NULL COMMENT 'Buff名称',
   buff TEXT DEFAULT NULL COMMENT 'Buff效果描述',
   buff_image VARCHAR(500) DEFAULT NULL COMMENT 'Buff图片',
+  effect_blocks JSON NULL COMMENT '计算器结构化效果块（BuffEffectBlock[]）',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Buff表';
 
@@ -51,6 +52,10 @@ CREATE TABLE IF NOT EXISTS boss_info (
   resistance VARCHAR(255) DEFAULT NULL COMMENT '抗性',
   crisis_base_hp DOUBLE NULL COMMENT '怪物危局基础血量',
   stagger_multiplier DECIMAL(5,3) NOT NULL DEFAULT 1.500 COMMENT '失衡易伤区基础乘数（1.5=150%）',
+  field_buff_name VARCHAR(100) NULL COMMENT 'Boss 场地 Buff 名称',
+  field_buff_text TEXT NULL COMMENT 'Boss 场地 Buff 文本说明',
+  field_buff_image VARCHAR(500) NULL COMMENT 'Boss 场地 Buff 图片',
+  field_buff_effect_blocks JSON NULL COMMENT 'Boss 场地 Buff 结构化效果块',
   PRIMARY KEY (id),
   UNIQUE KEY uk_boss_name (boss_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Boss基础信息表';

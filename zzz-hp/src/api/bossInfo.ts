@@ -8,6 +8,10 @@ export interface BossInfoRecord {
   resistance: string | null
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
+  field_buff_name?: string | null
+  field_buff_text?: string | null
+  field_buff_image?: string | null
+  field_buff_effect_blocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 export interface BossInfoListResult {
@@ -15,7 +19,10 @@ export interface BossInfoListResult {
   total: number
   limit: number
   offset: number
+  catalog?: 'all' | 'crisis' | 'defense'
 }
+
+export type BossInfoCatalog = 'all' | 'crisis' | 'defense'
 
 interface ApiResult<T> {
   code: number
@@ -60,11 +67,13 @@ export async function fetchBossInfoList(params: {
   keyword?: string
   limit?: number
   offset?: number
+  catalog?: BossInfoCatalog
 } = {}) {
   const query = new URLSearchParams()
   if (params.keyword?.trim()) query.set('q', params.keyword.trim())
   if (params.limit != null) query.set('limit', String(params.limit))
   if (params.offset != null) query.set('offset', String(params.offset))
+  if (params.catalog && params.catalog !== 'all') query.set('catalog', params.catalog)
   const suffix = query.toString()
   const response = await fetch(`/api/boss-info/list${suffix ? `?${suffix}` : ''}`)
   return parseResponse<BossInfoListResult>(response)

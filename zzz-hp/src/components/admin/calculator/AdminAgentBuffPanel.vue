@@ -190,14 +190,18 @@ async function saveAgent() {
 
   saving.value = true
   try {
-    const avatar_image = (await avatarFieldRef.value?.resolveAvatarImageOnSave(id)) ?? null
-    const doc: AgentBuffDoc = {
+    const previousAvatar =
+      agents.value.find((item) => item.id === selectedId.value)?.avatar_image ?? null
+    const avatar_image =
+      (await avatarFieldRef.value?.resolveAvatarImageOnSave(id, previousAvatar)) ?? null
+    const doc: AgentBuffDoc & { clearAvatar?: boolean } = {
       id,
       name,
       profession: form.value.profession.trim(),
       element: form.value.element.trim(),
       supportNeeds: [...form.value.supportNeeds],
       avatar_image,
+      clearAvatar: Boolean(avatarFieldRef.value?.clearedByUser),
       note: form.value.note.trim(),
       basePanel: { ...form.value.basePanel } as AgentBasePanel,
       mindscapeNotes: form.value.mindscapeNotes.map((item) => item.trim()),

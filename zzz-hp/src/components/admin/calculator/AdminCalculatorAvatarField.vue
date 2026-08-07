@@ -12,6 +12,7 @@ const {
   imagePickerRef,
   avatarImage,
   imagePreview,
+  clearedByUser,
   onImageChange,
   clearAvatarImage,
   setAvatarImage,
@@ -20,6 +21,7 @@ const {
 
 defineExpose({
   avatarImage,
+  clearedByUser,
   setAvatarImage,
   clearAvatarImage,
   resolveAvatarImageOnSave,
@@ -34,8 +36,12 @@ defineExpose({
       <img :src="imagePreview" alt="头像预览" class="avatar-preview" />
       <button type="button" class="clear-btn" @click="clearAvatarImage">清除头像</button>
     </div>
-    <p v-else-if="avatarImage" class="avatar-path">{{ avatarImage }}</p>
-    <p v-else class="avatar-hint">未上传头像时将显示名称首字；保存后写入 public 固定路径（随 dist 上云）</p>
+    <p v-if="avatarImage" class="avatar-path">当前：{{ avatarImage }}</p>
+    <p v-else class="avatar-hint">
+      未上传时列表显示名称首字。选择图片后点「保存」写入
+      <code>/character/角色ID.webp</code>
+      （音擎/驱动盘/邦布同理）。勿在未选新图时误点「清除」。
+    </p>
   </div>
 </template>
 

@@ -28,6 +28,14 @@ interface ApiBoss {
   hp_coeff_percent?: number | null
   hp_coeff_manual?: boolean
   hp_coeff_label?: string | null
+  field_buff?: ApiFieldBuff | null
+}
+
+interface ApiFieldBuff {
+  name: string
+  text?: string
+  image?: string | null
+  effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 interface ApiBuff {
@@ -35,6 +43,7 @@ interface ApiBuff {
   buff_name: string
   buff: string | null
   buff_image: string | null
+  effect_blocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 interface ApiPhase {
@@ -93,6 +102,7 @@ function mapBuffToInfo(buff: ApiBuff, buffIndex: number) {
     recordId: buff.id,
     buffIndex,
     buffText: buff.buff ?? '',
+    effectBlocks: buff.effect_blocks ?? null,
     isEmpty: false,
   }
 }
@@ -144,6 +154,14 @@ function mapBossToEnemy(boss: ApiBoss): EnemySlot {
     isHardRoom: hard,
     recordId: boss.id,
     room: normalizeCrisisRoomCode(boss.room),
+    fieldBuff: boss.field_buff
+      ? {
+          name: boss.field_buff.name,
+          text: boss.field_buff.text ?? '',
+          imageUrl: resolveAssetUrl(boss.field_buff.image),
+          effectBlocks: boss.field_buff.effectBlocks ?? null,
+        }
+      : null,
     isEmpty: false,
   }
 }

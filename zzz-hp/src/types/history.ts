@@ -9,6 +9,8 @@ export interface BuffInfo {
   buffIndex?: number
   buffText?: string
   isEmpty?: boolean
+  /** 计算器结构化效果块 */
+  effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
 export interface EnemySlot {
@@ -39,6 +41,13 @@ export interface EnemySlot {
   recordId?: number
   /** 危局房间码：1 / 2 / 3 / 4（困难） */
   room?: string
+  /** Boss 场地 Buff（挂 boss_info，与 Boss 名一一对应） */
+  fieldBuff?: {
+    name: string
+    text?: string
+    imageUrl?: string
+    effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
+  } | null
   /** 该槽位尚无怪物数据 */
   isEmpty?: boolean
 }

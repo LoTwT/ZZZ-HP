@@ -48,6 +48,10 @@ export interface DamageCalcPanelSnapshot {
     skillSubcategoryId?: string | null
     appliesToAnomaly?: boolean
     applyProfession?: string | null
+    teamProfession?: string | null
+    teamProfessionValues?: Array<number | null> | null
+    /** @deprecated */
+    teamProfessionMinCount?: number | null
   }>
   enemyInput: DamageCalcEnemyInputSnapshot
 }

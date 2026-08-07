@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { createBuff, uploadBuffImage } from '@/api/admin'
 import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
+import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
 import { useAdminVersionPhaseSelect } from '@/composables/useAdminVersionPhaseSelect'
 import type { AdminBuffSlotContext, AdminScope } from '@/types/admin'
+import type { BuffEffectBlock } from '@/types/calculator'
 import { adminScopeTitles, isDefenseScope } from '@/types/admin'
 import { encodeCrisisBuffId, encodeDefenseBuffId } from '@/utils/defenseId'
 import { resolveAssetUrl } from '@/utils/gameData'
+import { normalizeBuffEffectBlocks, packFromBlocks } from '@/utils/buffEffect'
+import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 
 const props = defineProps<{
   scope: AdminScope
@@ -35,6 +39,7 @@ const {
 
 const buffName = ref('')
 const buffText = ref('')
+const effectBlocks = ref<BuffEffectBlock[]>([])
 const stage = ref('')
 const roomInStage = ref('')
 const buffIndex = ref('1')
@@ -142,12 +147,27 @@ async function submitForm() {
           buffIndex: Number(buffIndex.value),
         }
 
+    const packed = packFromBlocks(normalizeBuffEffectBlocks(effectBlocks.value))
+    const defaultName = fieldText(buffName.value)
+    const blocks = packed.effectBlocks
+      .filter((block) => block.effects?.length)
+      .map((block, index) => {
+        const name = block.name?.trim() || ''
+        const isGeneric = !name || /^效果块\s*\d+$/.test(name)
+        return {
+          ...block,
+          name: isGeneric ? defaultName || `效果块 ${index + 1}` : name,
+          note: block.note?.trim() || '',
+        }
+      })
+
     const result = await createBuff({
       version: resolvedVersion.value,
       phase: resolvedPhase.value,
       buff_name: fieldText(buffName.value),
       buff: fieldText(buffText.value) || null,
       buff_image: buffImage,
+      effect_blocks: blocks.length ? blocks : null,
       ...schemePayload,
     })
 
@@ -160,6 +180,7 @@ async function submitForm() {
     keepVersionPhaseAfterSubmit()
     buffName.value = ''
     buffText.value = ''
+    effectBlocks.value = []
     resetDefenseFields()
     imageFile.value = null
     imagePickerRef.value?.reset()
@@ -173,9 +194,11 @@ async function submitForm() {
   }
 }
 
+const imageUrl = ref('')
+
 function applySlotContext(ctx: AdminBuffSlotContext) {
   version.value = ctx.version
-  phase.value = ctx.phase
+  phase.value = String(ctx.phase ?? '').replace(/\D/g, '') || String(ctx.phase ?? '')
   customVersion.value = ''
   customPhase.value = ''
   buffIndex.value = String(ctx.buffIndex)
@@ -183,6 +206,7 @@ function applySlotContext(ctx: AdminBuffSlotContext) {
   if (ctx.roomInStage != null) roomInStage.value = String(ctx.roomInStage)
   buffName.value = ctx.buffName ?? ''
   buffText.value = ctx.buffText ?? ''
+  effectBlocks.value = normalizeBuffEffectBlocks(ctx.effectBlocks ?? [])
   imageFile.value = null
   imagePickerRef.value?.reset()
   imageUrl.value = ''
@@ -196,7 +220,11 @@ function applySlotContext(ctx: AdminBuffSlotContext) {
   updatePreviewId()
 }
 
-const imageUrl = ref('')
+const calculatorBuffStore = useCalculatorBuffStore()
+
+onMounted(() => {
+  void calculatorBuffStore.ensureLoaded().catch(() => {})
+})
 
 watch(
   () => props.slotContext,
@@ -300,7 +328,7 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
           v-model="buffText"
           class="field-textarea"
           rows="6"
-          placeholder="每行一条效果描述"
+          placeholder="每行一条效果描述（展示对照用）"
         />
       </label>
 
@@ -309,22 +337,47 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
         <AdminImagePicker ref="imagePickerRef" @change="onImageChange" />
         <img v-if="imagePreview" :src="imagePreview" alt="预览" class="image-preview" />
       </div>
-
-      <p v-if="error" class="form-error">{{ error }}</p>
-      <p v-if="message" class="form-success">{{ message }}</p>
-
-      <button type="submit" class="submit-btn" :disabled="submitting">
-        {{ submitting ? '提交中...' : '提交' }}
-      </button>
     </form>
+
+    <!-- 效果块编辑器放在 form 外，避免回车误提交、控件被表单逻辑干扰 -->
+    <div class="effect-editor-section">
+      <span class="field-label">计算器结构化效果（可选）</span>
+      <p class="field-hint">
+        录入后可在伤害计算器「局内 Buff · 场地」中勾选；默认不勾选。可指定目标 self/team、职业限制与队内职业人数条件。
+      </p>
+      <AdminBuffEffectEditor
+        v-model="effectBlocks"
+        :default-first-block-name="buffName"
+      />
+    </div>
+
+    <p v-if="error" class="form-error">{{ error }}</p>
+    <p v-if="message" class="form-success">{{ message }}</p>
+
+    <button type="button" class="submit-btn" :disabled="submitting" @click="submitForm">
+      {{ submitting ? '提交中...' : '提交' }}
+    </button>
   </div>
 </template>
 
 <style scoped>
 .admin-form-panel {
   width: 100%;
-  max-width: 640px;
+  max-width: 960px;
   margin: 0 auto;
+}
+
+.admin-form-panel--dialog {
+  max-width: none;
+}
+
+.effect-editor-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
 .panel-header {
@@ -368,6 +421,13 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-heading);
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.72;
 }
 
 .field-input,
@@ -428,6 +488,8 @@ watch([isDefense, resolvedVersion, resolvedPhase, stage, roomInStage, buffIndex]
 }
 
 .submit-btn {
+  display: block;
+  margin: 1rem auto 0;
   align-self: center;
   min-width: 8rem;
   padding: 0.55rem 1.2rem;

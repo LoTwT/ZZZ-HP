@@ -427,6 +427,7 @@ function buildDefenseBuffContext(
     buffText?: string
     imageUrl?: string
     lines?: string[]
+    effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
   } | null,
   mode: 'create' | 'edit',
 ): AdminBuffSlotContext | null {
@@ -443,12 +444,13 @@ function buildDefenseBuffContext(
     buffName: source?.buffName ?? '',
     buffText: source?.buffText ?? source?.lines?.join('\n') ?? '',
     buffImage: source?.imageUrl ?? null,
+    effectBlocks: source?.effectBlocks ?? null,
   }
 }
 
 function onAdminEditRoomBuff(
   frontier: { id: string },
-  room: { id: string; roomBuff: { recordId?: number; buffIndex?: number; name: string; buffText?: string; imageUrl?: string; lines: string[] } },
+  room: { id: string; roomBuff: { recordId?: number; buffIndex?: number; name: string; buffText?: string; imageUrl?: string; lines: string[]; effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null } },
 ) {
   const slot = resolveDefenseRoomParts(frontier, room)
   if (!slot) return
@@ -462,6 +464,7 @@ function onAdminEditRoomBuff(
       buffText: room.roomBuff.buffText,
       imageUrl: room.roomBuff.imageUrl,
       lines: room.roomBuff.lines,
+      effectBlocks: room.roomBuff.effectBlocks,
     },
     room.roomBuff.recordId ? 'edit' : 'create',
   )
@@ -482,6 +485,7 @@ function onAdminEditZoneBuff(
       recordId: record.recordId,
       buffName: record.buffName,
       buffText: record.buffText,
+      effectBlocks: record.effectBlocks,
     },
     'edit',
   )

@@ -12,7 +12,9 @@ import {
   getBuffEffectConvertInput,
   getBuffEffectEnabled,
   getBuffEffectStacks,
+  isEnvironmentBuffGroup,
   parseSourceKeySlotIndex,
+  resolveEnvironmentBlockItemEnabled,
   setBuffEffectConvertInput,
   setBuffEffectEnabled,
   setBuffEffectStacks,
@@ -32,6 +34,12 @@ const props = defineProps<{
   skillSubcategories?: SkillSubcategory[]
   /** 可选角色槽位（Buff 勾选视角） */
   slotOptions?: { index: number; label: string }[]
+  /** 强制显示的分组（如场地，即使当前无效果） */
+  forceGroups?: string[]
+  /** 队伍槽位（场地效果块按职业人数条件勾选） */
+  teamSlots?: Array<{ agentId?: string | null }>
+  /** 代理人列表（读取 profession） */
+  agents?: Array<{ id: string; profession?: string | null }>
 }>()
 
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
@@ -61,6 +69,9 @@ const groupOrder = [
   '队友音擎',
   '队友驱动盘',
   '邦布',
+  '危局 Buff',
+  'Boss 场地 Buff',
+  '防线 Buff',
 ]
 
 interface BuffCardGroup {
@@ -75,6 +86,7 @@ interface BuffCardGroup {
 
 const availableGroups = computed(() => {
   const set = new Set(props.effects.map((item) => item.group))
+  for (const group of props.forceGroups ?? []) set.add(group)
   return groupOrder.filter((g) => g === '全部' || set.has(g))
 })
 
@@ -103,22 +115,30 @@ function isManualConvert(item: CollectedEffect) {
 }
 
 function isEnabled(item: CollectedEffect) {
+  const fallback = item.effect.teamProfession?.trim()
+    ? false
+    : item.effect.enabledDefault !== false
   return getBuffEffectEnabled(
     multiSelection.value,
     viewSlotIndex.value,
     item.effect.id,
     item.effect.applyTarget,
-    item.effect.enabledDefault !== false,
+    fallback,
   )
 }
 
-function setEnabled(item: CollectedEffect, enabled: boolean) {
+function setEnabled(
+  item: CollectedEffect,
+  enabled: boolean,
+  options?: { manual?: boolean },
+) {
   setBuffEffectEnabled(
     multiSelection.value,
     viewSlotIndex.value,
     item.effect.id,
     item.effect.applyTarget,
     enabled,
+    options,
   )
 }
 
@@ -287,17 +307,53 @@ function isConvert(item: CollectedEffect) {
   return item.effect.kind === 'convert' && Boolean(item.effect.convert)
 }
 
+function desiredEnvironmentOn(item: CollectedEffect) {
+  return resolveEnvironmentBlockItemEnabled(
+    item.effect,
+    props.teamSlots ?? [],
+    props.agents ?? [],
+  )
+}
+
 function cardSelected(card: BuffCardGroup) {
+  if (isEnvironmentBuffGroup(card.group)) {
+    const anyDesired = card.items.some((item) => desiredEnvironmentOn(item))
+    if (!anyDesired) return card.items.some((item) => isEnabled(item))
+    return (
+      card.items.some((item) => isEnabled(item)) &&
+      card.items.every((item) => isEnabled(item) === desiredEnvironmentOn(item))
+    )
+  }
   return card.items.every((item) => isEnabled(item))
 }
 
 function cardPartial(card: BuffCardGroup) {
+  if (isEnvironmentBuffGroup(card.group)) {
+    const states = card.items.map((item) => isEnabled(item))
+    const on = states.filter(Boolean).length
+    if (on === 0) return false
+    return !cardSelected(card)
+  }
   const states = card.items.map((item) => isEnabled(item))
   const on = states.filter(Boolean).length
   return on > 0 && on < states.length
 }
 
 function toggleCard(card: BuffCardGroup) {
+  // 危局 / Boss 场地 / 防线：按「默认启用」+ 队内职业人数条件开启；无任何应开项则点选不生效
+  if (isEnvironmentBuffGroup(card.group)) {
+    const anyOn = card.items.some((item) => isEnabled(item))
+    if (anyOn) {
+      for (const item of card.items) setEnabled(item, false, { manual: false })
+      return
+    }
+    const toEnable = card.items.filter((item) => desiredEnvironmentOn(item))
+    if (!toEnable.length) return
+    for (const item of card.items) {
+      setEnabled(item, desiredEnvironmentOn(item), { manual: false })
+    }
+    return
+  }
   const next = !cardSelected(card)
   for (const item of card.items) {
     setEnabled(item, next)
@@ -424,6 +480,16 @@ function close() {
           >
             {{ group }}
           </button>
+        </div>
+
+        <div
+          v-if="
+            $slots['environment-filter'] &&
+            (activeGroup === '全部' || isEnvironmentBuffGroup(activeGroup))
+          "
+          class="env-filter-slot"
+        >
+          <slot name="environment-filter" :active-group="activeGroup" />
         </div>
 
         <div v-if="!filteredCards.length" class="empty">当前筛选下无可选增益</div>
@@ -716,6 +782,14 @@ function close() {
   padding: 0.55rem;
   border-radius: 10px;
   background: #1a2030;
+}
+
+.env-filter-slot {
+  margin: 0 1.1rem 0.55rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid #3a4456;
+  background: #151b28;
 }
 
 .group-tab.active {

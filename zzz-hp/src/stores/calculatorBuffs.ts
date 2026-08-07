@@ -96,10 +96,28 @@ function normalizeMindscapeBuffs(item: Record<string, unknown>) {
 }
 
 function mergeMissingDefaultAgents(docs: AgentBuffDoc[]): AgentBuffDoc[] {
-  const merged = [...docs]
+  // 历史错 id remielle 与正式 remiel 并存时合并为一条
+  const byId = new Map<string, AgentBuffDoc>()
+  for (const doc of docs) {
+    const id = doc.id === 'remielle' ? 'remiel' : doc.id
+    const normalized = id === doc.id ? doc : { ...doc, id }
+    const existing = byId.get(id)
+    if (!existing) {
+      byId.set(id, normalized)
+      continue
+    }
+    // 同 id：优先保留正式 remiel 行（而非仅改名的 remielle）
+    if (doc.id === 'remiel') byId.set(id, doc)
+  }
+  const merged = [...byId.values()]
   const ids = new Set(merged.map((item) => item.id))
+  const names = new Set(merged.map((item) => item.name.trim()).filter(Boolean))
+  const hasLuminous = merged.some((item) => item.element === '流明')
   for (const placeholder of defaultAgentBuffDocs) {
     if (ids.has(placeholder.id)) continue
+    if (names.has(String(placeholder.name ?? '').trim())) continue
+    // 已有流明角色时不再塞占位蕾米埃尔
+    if (placeholder.id === 'remiel' && hasLuminous) continue
     merged.push(normalizeAgent(placeholder as unknown as Record<string, unknown>))
     ids.add(placeholder.id)
   }

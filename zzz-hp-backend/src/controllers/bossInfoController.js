@@ -32,9 +32,10 @@ export async function listBossInfo(req, res) {
   const keyword = req.query.q ?? req.query.keyword ?? ''
   const limit = req.query.limit
   const offset = req.query.offset
+  const catalog = req.query.catalog ?? req.query.scope ?? 'all'
 
   try {
-    const data = await listBossInfoRecords({ keyword, limit, offset })
+    const data = await listBossInfoRecords({ keyword, limit, offset, catalog })
     return success(res, data)
   } catch (err) {
     return fail(res, 'Boss 基础库列表查询失败', 500, { error: err.message })

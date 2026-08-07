@@ -17,7 +17,7 @@ import {
   BUFF_SCOPE_OPTIONS,
   SKILL_CATEGORY_OPTIONS,
 } from '@/types/calculator'
-import { AGENT_ELEMENTS } from '@/utils/calculatorUi'
+import { AGENT_ELEMENTS, AGENT_ROLES } from '@/utils/calculatorUi'
 import {
   BUFF_STAT_FIELDS,
   GENERAL_BUFF_STAT_FIELDS,
@@ -30,6 +30,7 @@ import {
   createEmptyBuffEffectBlock,
   formatSkillTargetBracket,
   getEffectSkillTargets,
+  normalizeTeamProfessionValues,
   packFromBlocks,
   setEffectSkillTargets,
 } from '@/utils/buffEffect'
@@ -43,6 +44,8 @@ const props = defineProps<{
   agentId?: string
   /** 空列表时新增的第一个效果块默认名称（如「精1」） */
   defaultFirstBlockName?: string
+  /** 空列表时新增的第一个效果块默认注释 */
+  defaultFirstBlockNote?: string
   /** 仅允许能量回复效率（百分比）等受限场景用；现已统一百分比语义 */
   energyRegenFlatOnly?: boolean
   /**
@@ -130,6 +133,53 @@ function skillTargetsOf(effect: BuffEffect) {
 
 function skillTargetLabel(target: BuffSkillTarget) {
   return formatSkillTargetBracket(target, skillSubcategories.value)
+}
+
+function onTeamProfessionChange(effect: BuffEffect, role: string) {
+  const next = role.trim()
+  if (!next) {
+    effect.teamProfession = null
+    effect.teamProfessionValues = null
+    effect.teamProfessionMinCount = null
+    return
+  }
+  effect.teamProfession = next
+  effect.teamProfessionMinCount = null
+  // 人数档需手动勾选；全空表示条件未配置完成、不生效
+  effect.teamProfessionValues = [null, null, null]
+}
+
+function onKindChange(effect: BuffEffect, kind: BuffEffect['kind']) {
+  effect.kind = kind
+  if (kind === 'convert') {
+    ensureConvert(effect)
+  } else {
+    effect.convert = undefined
+  }
+}
+
+function teamProfessionTier(effect: BuffEffect): Array<number | null> {
+  if (!effect.teamProfession) return [null, null, null]
+  return (
+    normalizeTeamProfessionValues(
+      effect.teamProfessionValues,
+      effect.teamProfession,
+      effect.teamProfessionMinCount,
+      effect.value,
+    ) ?? [null, null, null]
+  )
+}
+
+function isTeamProfessionTierOn(effect: BuffEffect, index: number) {
+  return teamProfessionTier(effect)[index] != null
+}
+
+function setTeamProfessionTierOn(effect: BuffEffect, index: number, on: boolean) {
+  const tiers = [...teamProfessionTier(effect)]
+  // 仅作启用标记；数值无意义，固定写 0
+  tiers[index] = on ? 0 : null
+  effect.teamProfessionValues = tiers
+  effect.teamProfessionMinCount = null
 }
 
 function removeSkillTarget(effect: BuffEffect, index: number) {
@@ -231,10 +281,15 @@ function addBlock() {
     isFirst && props.defaultFirstBlockName?.trim()
       ? props.defaultFirstBlockName.trim()
       : `效果块 ${model.value.length + 1}`
+  const note =
+    isFirst && props.defaultFirstBlockNote?.trim()
+      ? props.defaultFirstBlockNote.trim()
+      : ''
   model.value = [
     ...model.value,
     createEmptyBuffEffectBlock({
       name,
+      note,
       effects: [
         createEmptyBuffEffect({
           applyTarget: props.lockApplyTarget ?? 'self',
@@ -512,8 +567,24 @@ defineExpose({
           </label>
 
           <label class="field">
+            <span>职业限制（谁受益）</span>
+            <select
+              :value="effect.applyProfession ?? ''"
+              @change="effect.applyProfession = ($event.target as HTMLSelectElement).value || null"
+            >
+              <option value="">不限</option>
+              <option v-for="role in AGENT_ROLES" :key="role" :value="role">
+                {{ role }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
             <span>数值类型</span>
-            <select v-model="effect.kind">
+            <select
+              :value="effect.kind"
+              @change="onKindChange(effect, ($event.target as HTMLSelectElement).value as BuffEffect['kind'])"
+            >
               <option value="fixed">固定</option>
               <option value="stacked">叠层</option>
               <option value="convert">转模</option>
@@ -698,6 +769,39 @@ defineExpose({
           <p v-if="subcatMessage" class="ok">{{ subcatMessage }}</p>
         </div>
 
+        <div class="field field-span team-prof-condition">
+          <label class="field">
+            <span>队内职业人数条件（与数值类型无关；勾选为恰好 N 人时生效）</span>
+            <select
+              :value="effect.teamProfession ?? ''"
+              @change="onTeamProfessionChange(effect, ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">不限</option>
+              <option v-for="role in AGENT_ROLES" :key="`gate-${role}`" :value="role">
+                {{ role }}
+              </option>
+            </select>
+          </label>
+          <div v-if="effect.teamProfession" class="team-prof-tier-row team-prof-tier-row--gate">
+            <label v-for="n in 3" :key="`tier-${effect.id}-${n}`" class="tier-cell tier-cell--gate">
+              <span class="tier-head">
+                <input
+                  type="checkbox"
+                  :checked="isTeamProfessionTierOn(effect, n - 1)"
+                  @change="
+                    setTeamProfessionTierOn(
+                      effect,
+                      n - 1,
+                      ($event.target as HTMLInputElement).checked,
+                    )
+                  "
+                />
+                <span>恰好{{ n }}人时生效</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
         <div v-if="effect.kind === 'fixed'" class="grid">
           <label class="field">
             <span>数值</span>
@@ -742,7 +846,7 @@ defineExpose({
           </label>
         </div>
 
-        <div v-else class="grid">
+        <div v-else-if="effect.kind === 'convert'" class="grid">
           <label class="field">
             <span>面板来源</span>
             <select v-model="ensureConvert(effect).panelSource">
@@ -981,6 +1085,54 @@ defineExpose({
 
 .field-span {
   grid-column: 1 / -1;
+}
+
+.team-prof-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.team-prof-condition {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.team-prof-condition > .field {
+  max-width: 320px;
+}
+
+.team-prof-tier-row--gate {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tier-cell--gate {
+  padding: 0.4rem 0.55rem;
+}
+
+.team-prof-tier-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.tier-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  background: var(--color-background);
+}
+
+.tier-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--color-text);
 }
 
 .chip-row {

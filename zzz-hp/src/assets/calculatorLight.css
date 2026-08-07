@@ -1188,6 +1188,24 @@
   background: #eef1f5 !important;
 }
 
+[data-theme='light'] .buff-picker-modal .env-filter-slot {
+  border-color: #d5dae3 !important;
+  background: #f6f8fb !important;
+}
+
+[data-theme='light'] .buff-picker-modal .env-buff-filter .env-field span,
+[data-theme='light'] .buff-picker-modal .env-buff-hint {
+  color: #667085 !important;
+  opacity: 1 !important;
+}
+
+[data-theme='light'] .buff-picker-modal .env-buff-filter .env-field select {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
 [data-theme='light'] .buff-picker-modal .group-tab.active,
 [data-theme='light'] .buff-picker-modal .primary {
   border-color: #98a2b3 !important;

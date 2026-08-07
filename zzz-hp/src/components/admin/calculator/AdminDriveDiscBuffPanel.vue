@@ -135,7 +135,10 @@ async function saveItem() {
 
   saving.value = true
   try {
-    const avatar_image = (await avatarFieldRef.value?.resolveAvatarImageOnSave(id)) ?? null
+    const previousAvatar =
+      driveDiscs.value.find((item) => item.id === selectedId.value)?.avatar_image ?? null
+    const avatar_image =
+      (await avatarFieldRef.value?.resolveAvatarImageOnSave(id, previousAvatar)) ?? null
     const twoPieceBlocks = normalizeBuffEffectBlocks(form.value.twoPieceBlocks)
     const twoPieceEffects = flattenEffectBlocks(twoPieceBlocks)
     const twoPieceMods = createEmptyBuffStatModifiers()
@@ -143,10 +146,11 @@ async function saveItem() {
       const amount = Number(effect.value ?? effect.valuePerStack) || 0
       if (amount) twoPieceMods[effect.stat] += amount
     }
-    const doc: DriveDiscBuffDoc = {
+    const doc: DriveDiscBuffDoc & { clearAvatar?: boolean } = {
       id,
       name,
       avatar_image,
+      clearAvatar: Boolean(avatarFieldRef.value?.clearedByUser),
       twoPieceNote: form.value.twoPieceNote.trim(),
       fourPieceNote: form.value.fourPieceNote.trim(),
       twoPieceEffectBlocks: twoPieceBlocks,

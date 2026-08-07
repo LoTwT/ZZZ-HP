@@ -22,8 +22,10 @@ import {
   cloneEffectInstance,
   collectBlockEntriesFromPack,
   collectEffectsFromPack,
+  countTeamProfession,
   effectMatchesContext,
   effectMatchesElement,
+  effectMatchesTeamProfessionGate,
   flatModsToEffects,
   isEffectEnabled,
   resolveEffectsToMods,
@@ -36,9 +38,41 @@ import {
   isWengineProfessionMatch,
   mergeBuffStatModifiers,
 } from '@/utils/calculatorUi'
+import type { EnvironmentBuffEntry } from '@/utils/environmentBuffCalc'
+import { extraGainMatchesProfession } from '@/utils/extraBuffCalc'
 
 function flattenBlocks(blocks: { effects?: BuffEffect[] }[]): BuffEffect[] {
   return blocks.flatMap((block) => block.effects ?? [])
+}
+
+/** 局内 Buff 选择：模块注释与效果块注释相同（或空白）时只保留一条 */
+function mergeBuffDisplayNotes(...parts: Array<string | null | undefined>): string {
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const part of parts) {
+    const trimmed = typeof part === 'string' ? part.trim() : ''
+    if (!trimmed) continue
+    const key = trimmed.replace(/\s+/g, '\n')
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(trimmed)
+  }
+  return unique.join('\n')
+}
+
+/** 危局 / Boss 场地 / 防线 Buff 分组 */
+export const ENVIRONMENT_BUFF_GROUPS = new Set(['危局 Buff', 'Boss 场地 Buff', '防线 Buff'])
+
+export function isEnvironmentBuffGroup(group: string) {
+  return ENVIRONMENT_BUFF_GROUPS.has(group)
+}
+
+export function isEnvironmentBuffSourceKey(sourceKey: string) {
+  return (
+    sourceKey.startsWith('crisis-buff-') ||
+    sourceKey.startsWith('boss-field-') ||
+    sourceKey.startsWith('defense-buff-')
+  )
 }
 
 /** 2 件套：优先按效果块（保留名称/注释），否则回退扁平效果 */
@@ -144,6 +178,8 @@ export interface BuffSelectionState {
   stacksByEffectId: Record<string, number>
   /** 转模：用户手动输入的被转模基础数值 */
   convertInputs: Record<string, number>
+  /** 用户亲手点过的效果：之后不再被队内职业条件自动改勾选 */
+  manualTouchedIds?: Record<string, true>
 }
 
 /** 按角色槽位的 Buff 勾选：全队增益共享，自身增益分槽位 */
@@ -153,7 +189,7 @@ export interface MultiSlotBuffSelection {
 }
 
 export function createEmptyBuffSelectionState(): BuffSelectionState {
-  return { enabledIds: {}, stacksByEffectId: {}, convertInputs: {} }
+  return { enabledIds: {}, stacksByEffectId: {}, convertInputs: {}, manualTouchedIds: {} }
 }
 
 export function createEmptyMultiSlotBuffSelection(): MultiSlotBuffSelection {
@@ -195,6 +231,7 @@ export function resolveBuffSelectionForSlot(
     enabledIds: { ...multi.team.enabledIds, ...self.enabledIds },
     stacksByEffectId: { ...multi.team.stacksByEffectId, ...self.stacksByEffectId },
     convertInputs: { ...multi.team.convertInputs, ...self.convertInputs },
+    manualTouchedIds: { ...multi.team.manualTouchedIds, ...self.manualTouchedIds },
   }
 }
 
@@ -204,8 +241,88 @@ export function setBuffEffectEnabled(
   effectId: string,
   applyTarget: string | undefined,
   enabled: boolean,
+  options?: { manual?: boolean },
 ): void {
-  buffStoreForEffect(multi, slotIndex, applyTarget).enabledIds[effectId] = enabled
+  const store = buffStoreForEffect(multi, slotIndex, applyTarget)
+  store.enabledIds = { ...store.enabledIds, [effectId]: enabled }
+  if (options?.manual === false) {
+    if (store.manualTouchedIds?.[effectId]) {
+      const next = { ...store.manualTouchedIds }
+      delete next[effectId]
+      store.manualTouchedIds = next
+    }
+    return
+  }
+  store.manualTouchedIds = { ...(store.manualTouchedIds ?? {}), [effectId]: true }
+}
+
+/**
+ * 危局 / Boss 场地 / 防线：勾选整块效果时，单条是否应开启。
+ * - 有队内职业人数条件 → 按当前队伍恰好 N 人
+ * - 否则 → 仅「默认启用」开启
+ */
+export function resolveEnvironmentBlockItemEnabled(
+  effect: BuffEffect,
+  teamSlots: Array<{ agentId?: string | null }>,
+  agents: Array<{ id: string; profession?: string | null }>,
+): boolean {
+  const required = effect.teamProfession?.trim()
+  if (required) {
+    const count = countTeamProfession(teamSlots, agents, required)
+    return effectMatchesTeamProfessionGate(effect, count)
+  }
+  return effect.enabledDefault !== false
+}
+
+function environmentBlockKey(item: CollectedEffect): string {
+  return `${item.sourceKey}::${item.blockName ?? ''}`
+}
+
+/**
+ * 按队内职业人数条件自动勾选：条件满足→已勾选，否则未勾选。
+ * 用户亲手点过的效果（manualTouchedIds）不改。
+ * 场地 Buff：仅当同效果块已有任意条目勾选（用户已选过整块/单项）时才同步，避免目录默认被人数条件提前勾上。
+ */
+export function syncTeamProfessionAutoEnabled(
+  multi: MultiSlotBuffSelection,
+  slotIndex: number,
+  effects: CollectedEffect[],
+  teamSlots: Array<{ agentId?: string | null }>,
+  agents: Array<{ id: string; profession?: string | null }>,
+): void {
+  const envBlockActive = new Set<string>()
+  for (const item of effects) {
+    if (!isEnvironmentBuffSourceKey(item.sourceKey)) continue
+    const key = environmentBlockKey(item)
+    if (envBlockActive.has(key)) continue
+    const active = effects.some((sibling) => {
+      if (environmentBlockKey(sibling) !== key) return false
+      return getBuffEffectEnabled(
+        multi,
+        slotIndex,
+        sibling.effect.id,
+        sibling.effect.applyTarget,
+        false,
+      )
+    })
+    if (active) envBlockActive.add(key)
+  }
+
+  for (const item of effects) {
+    const effect = item.effect
+    if (!effect.teamProfession?.trim()) continue
+    const store = buffStoreForEffect(multi, slotIndex, effect.applyTarget)
+    if (store.manualTouchedIds?.[effect.id]) continue
+    if (isEnvironmentBuffSourceKey(item.sourceKey)) {
+      if (!envBlockActive.has(environmentBlockKey(item))) {
+        store.enabledIds = { ...store.enabledIds, [effect.id]: false }
+        continue
+      }
+    }
+    const count = countTeamProfession(teamSlots, agents, effect.teamProfession.trim())
+    const on = effectMatchesTeamProfessionGate(effect, count)
+    store.enabledIds = { ...store.enabledIds, [effect.id]: on }
+  }
 }
 
 export function setBuffEffectStacks(
@@ -282,6 +399,11 @@ export function mergeDefaultBuffSelectionIntoMulti(
     }
     for (const id of Object.keys(store.convertInputs)) {
       if (!validIds.has(id)) delete store.convertInputs[id]
+    }
+    if (store.manualTouchedIds) {
+      for (const id of Object.keys(store.manualTouchedIds)) {
+        if (!validIds.has(id)) delete store.manualTouchedIds[id]
+      }
     }
   }
 
@@ -384,6 +506,8 @@ export interface PanelCalcContext {
   skipConvert?: boolean
   /** 仅收集指定槽位的 Buff 来源（蕾米埃尔本人耀变：不含队友/邦布） */
   restrictToSlotIndex?: number
+  /** 场地 / 环境 Buff（危局全局、Boss 场地、防卫房间） */
+  environmentBuffs?: EnvironmentBuffEntry[]
   /** 跳过邦布 Buff（默认随 restrictToSlotIndex 启用） */
   excludeBangboo?: boolean
 }
@@ -693,6 +817,10 @@ function resolveBeneficiaryElement(ctx: PanelCalcContext): string | undefined {
   return ctx.agents.find((item) => item.id === agentId)?.element
 }
 
+function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
+  return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
@@ -719,6 +847,7 @@ function resolvePackMods(
     panelSourceValues,
     skipConvert: ctx.skipConvert,
     selection: ctx.buffSelection,
+    resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
   })
 }
 
@@ -861,7 +990,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
           group: groupFor(effect),
           blockId: entry.blockId,
           blockName: entry.blockName,
-          blockNote: [extraNote, entry.blockNote].filter((part) => part.trim()).join('\n'),
+          blockNote: mergeBuffDisplayNotes(extraNote, entry.blockNote),
         })
       }
     }
@@ -970,9 +1099,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             group,
             blockId: entry.blockId,
             blockName: entry.blockName,
-            blockNote: [fourDisc.twoPieceNote?.trim() || '', entry.blockNote]
-              .filter(Boolean)
-              .join('\n'),
+            blockNote: mergeBuffDisplayNotes(fourDisc.twoPieceNote, entry.blockNote),
           })
         }
       }
@@ -988,9 +1115,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             group,
             blockId: entry.blockId,
             blockName: entry.blockName,
-            blockNote: [fourDisc.fourPieceNote?.trim() || '', entry.blockNote]
-              .filter(Boolean)
-              .join('\n'),
+            blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
           })
         }
       }
@@ -1011,9 +1136,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             group,
             blockId: entry.blockId,
             blockName: entry.blockName,
-            blockNote: [twoDisc.twoPieceNote?.trim() || '', entry.blockNote]
-              .filter(Boolean)
-              .join('\n'),
+            blockNote: mergeBuffDisplayNotes(twoDisc.twoPieceNote, entry.blockNote),
           })
         }
       }
@@ -1031,9 +1154,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             group,
             blockId: entry.blockId,
             blockName: entry.blockName,
-            blockNote: [fourDisc.fourPieceNote?.trim() || '', entry.blockNote]
-              .filter(Boolean)
-              .join('\n'),
+            blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
           })
         }
       }
@@ -1075,6 +1196,62 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
       () => '邦布',
       () => true,
     )
+  }
+
+  const beneficiaryAgent = ctx.agents.find(
+    (item) => item.id === ctx.teamSlots[mainIndex]?.agentId,
+  )
+  const beneficiaryProfession = beneficiaryAgent?.profession
+
+  for (const env of ctx.environmentBuffs ?? []) {
+    if (!env.effectBlocks?.length) continue
+    const pack = {
+      effectBlocks: env.effectBlocks,
+      effects: [] as BuffEffect[],
+    }
+    const kindLabel =
+      env.kind === 'crisis'
+        ? '危局 Buff'
+        : env.kind === 'boss-field'
+          ? 'Boss 场地 Buff'
+          : '防线 Buff'
+    // Boss 场地：卡片写 Boss 名，效果块名固定「场地 Buff」
+    const providerName =
+      env.kind === 'boss-field' ? env.bossName || env.name || 'Boss 场地 Buff' : env.name
+    const sourceLabel = [
+      kindLabel,
+      env.version && env.phase ? `${env.version}第${env.phase}期` : '',
+      env.kind === 'boss-field' ? '' : env.roomLabel || '',
+      env.kind === 'boss-field' ? providerName : '',
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    // Buff 原文照常作为注释；与效果块注释相同时由 mergeBuffDisplayNotes 去重
+    const noteParts = [env.text?.trim() || '']
+    if (env.kind === 'defense-room' && env.roomBosses?.length) {
+      noteParts.push(`房间 Boss：${env.roomBosses.map((b) => b.name).join('、')}`)
+    }
+    pushPack(
+      {
+        ...pack,
+        effectBlocks:
+          env.kind === 'boss-field'
+            ? pack.effectBlocks.map((block) => ({
+                ...block,
+                name: '场地 Buff',
+              }))
+            : pack.effectBlocks,
+      },
+      env.sourceKey,
+      sourceLabel,
+      providerName,
+      env.imageUrl,
+      () => kindLabel,
+      (effect) => extraGainMatchesProfession(effect, beneficiaryProfession),
+      noteParts.filter(Boolean).join('\n'),
+    )
+    // 保留数据里的 enabledDefault，供首次勾选效果块时只开「默认启用」项；
+    // 初始不勾选由 buildDefaultBuffSelection 对场地分组写 false。
   }
 
   return collected
@@ -1286,6 +1463,7 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
         ctx.panelSourceValuesBySlot?.get(ctx.mainSlotIndex) ?? ctx.panelSourceValues,
       skipConvert: ctx.skipConvert,
       selection: ctx.buffSelection,
+      resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
     })
     const refineBlockName =
       ctx.bangboo.refinementEffectBlocks?.[refineIndex]?.[0]?.name?.trim() ||
@@ -1297,6 +1475,51 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
       effects,
       blockName: refineBlockName,
     })
+  }
+
+  const beneficiaryProfession = ctx.agents.find(
+    (item) => item.id === ctx.teamSlots[mainIndex]?.agentId,
+  )?.profession
+
+  for (const env of ctx.environmentBuffs ?? []) {
+    if (!env.effectBlocks?.length) continue
+    for (const entry of collectBlockEntriesFromPack({
+      effectBlocks: env.effectBlocks.map((block) => ({
+        ...block,
+        name: env.kind === 'boss-field' ? '场地 Buff' : block.name,
+      })),
+      effects: [],
+    })) {
+      const effects = entry.effects
+        .filter((effect) => extraGainMatchesProfession(effect, beneficiaryProfession))
+        .map((effect) => ({
+          ...cloneEffectInstance(effect, env.sourceKey, entry.blockId),
+        }))
+      if (!effects.length) continue
+      const mods = resolvePackMods(effects, true, { ...ctx, skillContext: skillCtx })
+      const kindLabel =
+        env.kind === 'crisis'
+          ? '危局 Buff'
+          : env.kind === 'boss-field'
+            ? 'Boss 场地 Buff'
+            : '防线 Buff'
+      const bossLabel =
+        env.kind === 'boss-field' ? env.bossName || env.name : env.name
+      sources.push({
+        key: `${env.sourceKey}-${entry.blockId}`,
+        label: [kindLabel, bossLabel].filter(Boolean).join(' · '),
+        mods,
+        effects,
+        blockName: env.kind === 'boss-field' ? '场地 Buff' : entry.blockName || env.name,
+        note: mergeBuffDisplayNotes(
+          env.text,
+          env.kind === 'defense-room' && env.roomBosses?.length
+            ? `房间 Boss：${env.roomBosses.map((b) => b.name).join('、')}`
+            : '',
+          entry.blockNote,
+        ) || undefined,
+      })
+    }
   }
 
   if (ctx.extraMods) {
@@ -1482,6 +1705,10 @@ export function resolveMainCAnomalyReleaseMultFields(
     if (!effectMatchesContext(effect, skillCtx)) continue
     if (!effectMatchesReleaseMultElement(effect, triggerElement)) continue
     if (!effectMatchesElement(effect, triggerElement)) continue
+    if (effect.teamProfession?.trim()) {
+      const count = countTeamProfession(ctx.teamSlots, ctx.agents, effect.teamProfession.trim())
+      if (!effectMatchesTeamProfessionGate(effect, count)) continue
+    }
     releaseMultEffects.push(effect)
   }
 
@@ -1493,6 +1720,7 @@ export function resolveMainCAnomalyReleaseMultFields(
     attrValues: ctx.attrValues,
     panelSourceValues: ctx.panelSourceValues,
     selection: ctx.buffSelection,
+    resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
   })
 
   return {
@@ -1576,7 +1804,14 @@ export function buildDefaultBuffSelection(
   const stacksByEffectId: Record<string, number> = {}
   const convertInputs: Record<string, number> = {}
   for (const item of collected) {
-    enabledIds[item.effect.id] = isEffectEnabled(item.effect, { enabledIds: {} })
+    // 危局 / Boss 场地 / 防线：目录默认不勾选；点效果块时按 enabledDefault + 队内职业人数开启
+    // 非场地的队内职业人数条件：默认不勾，由 syncTeamProfessionAutoEnabled 按恰好 N 人写入
+    const startEnabled = isEnvironmentBuffSourceKey(item.sourceKey)
+      ? false
+      : item.effect.teamProfession?.trim()
+        ? false
+        : isEffectEnabled(item.effect, { enabledIds: {} })
+    enabledIds[item.effect.id] = startEnabled
     if (item.effect.kind === 'stacked' || item.effect.stackable) {
       stacksByEffectId[item.effect.id] = item.effect.defaultStacks ?? 1
     }

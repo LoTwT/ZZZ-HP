@@ -8,8 +8,9 @@ import {
 } from '@/data/crisisScoreHpTable'
 import { historyData } from '@/data/historyData'
 import { modeTitles, type ModeKey, type PhaseData } from '@/types/history'
-import { formatHp, formatHpDelta, formatHpExpansionPercent, parseHpString } from '@/utils/gameData'
+import { formatHp, formatHpDelta, formatHpExpansionPercent, parseHpString, splitBuffLines } from '@/utils/gameData'
 import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admin'
+import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 
 const props = defineProps<{
   mode: ModeKey
@@ -249,8 +250,39 @@ const currentEnemyHpCoeffComparisons = computed(() => {
   )
 })
 
+const normalEnemyEntries = computed(() =>
+  (currentPhase.value?.enemies ?? [])
+    .map((enemy, index) => ({ enemy, index }))
+    .filter(({ enemy }) => !enemy.isHardRoom),
+)
+
+const hardEnemyEntries = computed(() =>
+  (currentPhase.value?.enemies ?? [])
+    .map((enemy, index) => ({ enemy, index }))
+    .filter(({ enemy }) => enemy.isHardRoom),
+)
+
 function parsePhaseNumber(phaseLabel: string) {
   return (phaseLabel.match(/\d+/)?.[0] ?? phaseLabel.replace(/\D/g, '')) || '1'
+}
+
+function fieldBuffLines(enemy: PhaseData['enemies'][number]) {
+  const text = enemy.fieldBuff?.text?.trim()
+  if (text) return splitBuffLines(text)
+  return []
+}
+
+/** 往期详情：原文照常展示；效果块注释与原文相同时去掉，避免重复 */
+function blocksForHistoryDisplay(
+  blocks: NonNullable<PhaseData['buffs'][number]['effectBlocks']> | null | undefined,
+  content: string,
+) {
+  if (!blocks?.length) return null
+  const text = content.trim()
+  return blocks.map((block) => ({
+    ...block,
+    note: block.note?.trim() && block.note.trim() !== text ? block.note : '',
+  }))
 }
 
 function buildCrisisMonsterContext(
@@ -312,6 +344,7 @@ function buildCrisisBuffContext(
     buffName: buff.isEmpty ? '' : buff.name,
     buffText: buff.buffText ?? buff.lines.join('\n'),
     buffImage: buff.imageUrl ?? null,
+    effectBlocks: buff.effectBlocks ?? null,
   }
 }
 
@@ -691,24 +724,36 @@ function onPickerWheel(event: WheelEvent) {
                 添加 Buff
               </button>
             </div>
-            <div v-if="buff.imageUrl" class="buff-image">
-              <img :src="buff.imageUrl" :alt="buff.name" />
+            <div class="buff-card-head">
+              <div v-if="buff.imageUrl" class="buff-image">
+                <img :src="buff.imageUrl" :alt="buff.name" />
+              </div>
+              <div v-else class="buff-icon">{{ buff.icon }}</div>
+              <h3 class="buff-name">{{ buff.name }}</h3>
             </div>
-            <div v-else class="buff-icon">{{ buff.icon }}</div>
-            <h3 class="buff-name">{{ buff.name }}</h3>
-            <ul class="buff-lines">
+            <ul v-if="buff.lines.length" class="buff-lines">
               <li v-for="(line, lineIndex) in buff.lines" :key="lineIndex">{{ line }}</li>
             </ul>
+            <BuffEffectBlocksDisplay
+              v-if="blocksForHistoryDisplay(buff.effectBlocks, buff.buffText ?? buff.lines.join('\n'))?.length"
+              compact
+              :blocks="blocksForHistoryDisplay(buff.effectBlocks, buff.buffText ?? buff.lines.join('\n'))"
+              :title="buff.name || '危局 Buff'"
+              empty-text="暂无效果块"
+            />
           </article>
         </div>
 
-        <div class="enemy-row">
+        <div
+          v-if="normalEnemyEntries.length"
+          class="enemy-row enemy-row--normal"
+          :style="{ '--enemy-cols': String(Math.max(normalEnemyEntries.length, 1)) }"
+        >
           <article
-            v-for="(enemy, index) in currentPhase.enemies"
+            v-for="{ enemy, index } in normalEnemyEntries"
             :key="`${currentPhase.id}-enemy-${index}`"
             class="enemy-card"
             :class="{
-              'enemy-card--hard': enemy.isHardRoom,
               'enemy-card--empty': enemy.isEmpty,
               'enemy-card--admin': adminMode,
             }"
@@ -740,56 +785,212 @@ function onPickerWheel(event: WheelEvent) {
                 添加怪物
               </button>
             </div>
-            <div class="enemy-body">
-              <div class="enemy-image">
-                <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
-                <span v-else class="image-placeholder">怪物图片</span>
-              </div>
-              <div class="enemy-info">
-                <h3 v-if="enemy.bossName" class="enemy-name">{{ enemy.bossName }}</h3>
-                <p v-else-if="enemy.subStats" class="enemy-stats">{{ enemy.subStats }}</p>
-                <div class="enemy-hp-block">
-                  <p class="enemy-hp-row">
-                    <span class="enemy-hp-prefix">血量：</span>
-                    <span class="enemy-hp-number">{{ enemy.hp }}</span>
-                    <span
-                      v-if="currentEnemyHpComparisons[index]?.expansion"
-                      class="enemy-hp-expansion"
-                    >
-                      {{ currentEnemyHpComparisons[index]!.expansion }}
-                    </span>
-                  </p>
-                  <p v-if="currentEnemyHpComparisons[index]" class="enemy-hp-row enemy-hp-row--diff">
-                    <span class="enemy-hp-prefix enemy-hp-prefix--ghost" aria-hidden="true">血量：</span>
-                    <span class="enemy-hp-delta">
-                      {{ formatHpDelta(currentEnemyHpComparisons[index]!.diff) }}
-                    </span>
-                  </p>
-                  <p
-                    v-if="shouldShowConvertedEnemyHp(enemy)"
-                    class="enemy-hp-row enemy-hp-row--meta enemy-hp-row--converted"
-                  >
-                    <span class="enemy-hp-prefix">953防御换算：</span>
-                    <span class="enemy-hp-number">{{ enemy.hpConverted953 }}</span>
-                  </p>
-                  <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta">
-                    <span class="enemy-hp-prefix">基础血量：</span>
-                    <span class="enemy-hp-number">{{ formatHp(enemy.crisisBaseHp) }}</span>
-                  </p>
-                  <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta">
-                    <span class="enemy-hp-prefix">危局血量系数：</span>
-                    <span class="enemy-hp-number">{{ enemy.hpCoeffLabel }}</span>
-                    <span
-                      v-if="currentEnemyHpCoeffComparisons[index]?.deltaLabel"
-                      class="enemy-hp-expansion"
-                    >
-                      {{ currentEnemyHpCoeffComparisons[index]!.deltaLabel }}
-                    </span>
-                  </p>
+            <div class="enemy-main">
+              <div class="enemy-body">
+                <div class="enemy-image">
+                  <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
+                  <span v-else class="image-placeholder">怪物图片</span>
                 </div>
-                <p v-if="enemy.defense !== undefined" class="enemy-defense">防御：{{ enemy.defense }}</p>
-                <p v-if="enemy.weakness" class="enemy-weakness">弱点：{{ enemy.weakness }}</p>
-                <p v-if="enemy.resistance" class="enemy-resistance">抗性：{{ enemy.resistance }}</p>
+                <div class="enemy-info">
+                  <h3 v-if="enemy.bossName" class="enemy-name">{{ enemy.bossName }}</h3>
+                  <p v-else-if="enemy.subStats" class="enemy-stats">{{ enemy.subStats }}</p>
+                  <div class="enemy-hp-block">
+                    <p class="enemy-hp-row">
+                      <span class="enemy-hp-prefix">血量：</span>
+                      <span class="enemy-hp-number">{{ enemy.hp }}</span>
+                      <span
+                        v-if="currentEnemyHpComparisons[index]?.expansion"
+                        class="enemy-hp-expansion"
+                      >
+                        {{ currentEnemyHpComparisons[index]!.expansion }}
+                      </span>
+                    </p>
+                    <p v-if="currentEnemyHpComparisons[index]" class="enemy-hp-row enemy-hp-row--diff">
+                      <span class="enemy-hp-prefix enemy-hp-prefix--ghost" aria-hidden="true">血量：</span>
+                      <span class="enemy-hp-delta">
+                        {{ formatHpDelta(currentEnemyHpComparisons[index]!.diff) }}
+                      </span>
+                    </p>
+                    <p
+                      v-if="shouldShowConvertedEnemyHp(enemy)"
+                      class="enemy-hp-row enemy-hp-row--meta enemy-hp-row--converted"
+                    >
+                      <span class="enemy-hp-prefix">953防御换算：</span>
+                      <span class="enemy-hp-number">{{ enemy.hpConverted953 }}</span>
+                    </p>
+                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta">
+                      <span class="enemy-hp-prefix">基础血量：</span>
+                      <span class="enemy-hp-number">{{ formatHp(enemy.crisisBaseHp) }}</span>
+                    </p>
+                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta">
+                      <span class="enemy-hp-prefix">危局血量系数：</span>
+                      <span class="enemy-hp-number">{{ enemy.hpCoeffLabel }}</span>
+                      <span
+                        v-if="currentEnemyHpCoeffComparisons[index]?.deltaLabel"
+                        class="enemy-hp-expansion"
+                      >
+                        {{ currentEnemyHpCoeffComparisons[index]!.deltaLabel }}
+                      </span>
+                    </p>
+                  </div>
+                  <p v-if="enemy.defense !== undefined" class="enemy-defense">防御：{{ enemy.defense }}</p>
+                  <p v-if="enemy.weakness" class="enemy-weakness">弱点：{{ enemy.weakness }}</p>
+                  <p v-if="enemy.resistance" class="enemy-resistance">抗性：{{ enemy.resistance }}</p>
+                </div>
+              </div>
+              <div
+                v-if="enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length"
+                class="enemy-field-buff"
+              >
+                <p class="enemy-field-buff-title">
+                  场地 Buff
+                  <span v-if="enemy.fieldBuff?.name">· {{ enemy.fieldBuff.name }}</span>
+                </p>
+                <ul
+                  v-if="fieldBuffLines(enemy).length"
+                  class="enemy-field-buff-lines"
+                >
+                  <li v-for="(line, lineIndex) in fieldBuffLines(enemy)" :key="lineIndex">
+                    {{ line }}
+                  </li>
+                </ul>
+                <BuffEffectBlocksDisplay
+                  v-if="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
+                  compact
+                  :blocks="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')"
+                  :title="enemy.fieldBuff?.name || '场地 Buff'"
+                  empty-text="暂无场地 Buff 效果块"
+                />
+                <p
+                  v-else-if="!fieldBuffLines(enemy).length && enemy.fieldBuff?.text"
+                  class="enemy-field-buff-meta"
+                >
+                  {{ enemy.fieldBuff.text }}
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="hardEnemyEntries.length" class="enemy-row enemy-row--hard">
+          <article
+            v-for="{ enemy, index } in hardEnemyEntries"
+            :key="`${currentPhase.id}-enemy-${index}`"
+            class="enemy-card enemy-card--hard"
+            :class="{
+              'enemy-card--empty': enemy.isEmpty,
+              'enemy-card--admin': adminMode,
+            }"
+          >
+            <p class="enemy-label">{{ enemy.label }}</p>
+            <div v-if="adminMode" class="enemy-admin-bar">
+              <button
+                v-if="!enemy.isEmpty"
+                type="button"
+                class="enemy-admin-btn"
+                @click.stop="onAdminEditEnemy(enemy)"
+              >
+                编辑
+              </button>
+              <button
+                v-if="!enemy.isEmpty && enemy.recordId"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--danger"
+                @click.stop="onAdminDeleteEnemy(enemy)"
+              >
+                删除
+              </button>
+              <button
+                v-if="enemy.isEmpty"
+                type="button"
+                class="enemy-admin-btn enemy-admin-btn--primary"
+                @click.stop="onAdminAddEnemy(enemy)"
+              >
+                添加怪物
+              </button>
+            </div>
+            <div class="enemy-main enemy-main--hard">
+              <div class="enemy-body">
+                <div class="enemy-image">
+                  <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
+                  <span v-else class="image-placeholder">怪物图片</span>
+                </div>
+                <div class="enemy-info">
+                  <h3 v-if="enemy.bossName" class="enemy-name">{{ enemy.bossName }}</h3>
+                  <p v-else-if="enemy.subStats" class="enemy-stats">{{ enemy.subStats }}</p>
+                  <div class="enemy-hp-block">
+                    <p class="enemy-hp-row">
+                      <span class="enemy-hp-prefix">血量：</span>
+                      <span class="enemy-hp-number">{{ enemy.hp }}</span>
+                      <span
+                        v-if="currentEnemyHpComparisons[index]?.expansion"
+                        class="enemy-hp-expansion"
+                      >
+                        {{ currentEnemyHpComparisons[index]!.expansion }}
+                      </span>
+                    </p>
+                    <p v-if="currentEnemyHpComparisons[index]" class="enemy-hp-row enemy-hp-row--diff">
+                      <span class="enemy-hp-prefix enemy-hp-prefix--ghost" aria-hidden="true">血量：</span>
+                      <span class="enemy-hp-delta">
+                        {{ formatHpDelta(currentEnemyHpComparisons[index]!.diff) }}
+                      </span>
+                    </p>
+                    <p
+                      v-if="shouldShowConvertedEnemyHp(enemy)"
+                      class="enemy-hp-row enemy-hp-row--meta enemy-hp-row--converted"
+                    >
+                      <span class="enemy-hp-prefix">953防御换算：</span>
+                      <span class="enemy-hp-number">{{ enemy.hpConverted953 }}</span>
+                    </p>
+                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta">
+                      <span class="enemy-hp-prefix">基础血量：</span>
+                      <span class="enemy-hp-number">{{ formatHp(enemy.crisisBaseHp) }}</span>
+                    </p>
+                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta">
+                      <span class="enemy-hp-prefix">危局血量系数：</span>
+                      <span class="enemy-hp-number">{{ enemy.hpCoeffLabel }}</span>
+                      <span
+                        v-if="currentEnemyHpCoeffComparisons[index]?.deltaLabel"
+                        class="enemy-hp-expansion"
+                      >
+                        {{ currentEnemyHpCoeffComparisons[index]!.deltaLabel }}
+                      </span>
+                    </p>
+                  </div>
+                  <p v-if="enemy.defense !== undefined" class="enemy-defense">防御：{{ enemy.defense }}</p>
+                  <p v-if="enemy.weakness" class="enemy-weakness">弱点：{{ enemy.weakness }}</p>
+                  <p v-if="enemy.resistance" class="enemy-resistance">抗性：{{ enemy.resistance }}</p>
+                </div>
+              </div>
+              <div
+                v-if="enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length"
+                class="enemy-field-buff"
+              >
+                <p class="enemy-field-buff-title">
+                  场地 Buff
+                  <span v-if="enemy.fieldBuff?.name">· {{ enemy.fieldBuff.name }}</span>
+                </p>
+                <ul
+                  v-if="fieldBuffLines(enemy).length"
+                  class="enemy-field-buff-lines"
+                >
+                  <li v-for="(line, lineIndex) in fieldBuffLines(enemy)" :key="lineIndex">
+                    {{ line }}
+                  </li>
+                </ul>
+                <BuffEffectBlocksDisplay
+                  v-if="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
+                  compact
+                  :blocks="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')"
+                  :title="enemy.fieldBuff?.name || '场地 Buff'"
+                  empty-text="暂无场地 Buff 效果块"
+                />
+                <p
+                  v-else-if="!fieldBuffLines(enemy).length && enemy.fieldBuff?.text"
+                  class="enemy-field-buff-meta"
+                >
+                  {{ enemy.fieldBuff.text }}
+                </p>
               </div>
             </div>
           </article>
@@ -895,15 +1096,16 @@ function onPickerWheel(event: WheelEvent) {
   padding: 0.55rem 0.65rem;
 }
 
-.content-grid--embedded .buff-image {
-  width: 40px;
-  height: 40px;
-  margin-bottom: 0.25rem;
+.content-grid--embedded .buff-image,
+.content-grid--embedded .buff-icon {
+  width: 32px;
+  height: 32px;
+  margin: 0;
 }
 
 .content-grid--embedded .buff-name {
   font-size: 0.86rem;
-  margin-bottom: 0.35rem;
+  margin: 0;
 }
 
 .content-grid--embedded .buff-lines {
@@ -912,11 +1114,15 @@ function onPickerWheel(event: WheelEvent) {
   overflow: visible;
 }
 
-.content-grid--embedded .enemy-row {
+.content-grid--embedded .enemy-row--normal {
   min-height: 0;
   overflow: visible;
   align-items: stretch;
   gap: 0.75rem;
+}
+
+.content-grid--embedded .enemy-row--hard {
+  margin-top: 0.75rem;
 }
 
 .content-grid--embedded .enemy-card {
@@ -927,7 +1133,9 @@ function onPickerWheel(event: WheelEvent) {
 }
 
 .content-grid--embedded .enemy-card--hard {
-  width: min(100%, 320px);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .content-grid--embedded .enemy-label {
@@ -984,6 +1192,12 @@ function onPickerWheel(event: WheelEvent) {
 .content-grid--embedded .enemy-resistance {
   font-size: clamp(0.72rem, 1.2vh, 0.84rem);
   line-height: 1.35;
+}
+
+.content-grid--embedded .enemy-field-buff-title,
+.content-grid--embedded .enemy-field-buff-lines,
+.content-grid--embedded .enemy-field-buff-meta {
+  font-size: clamp(0.68rem, 1.15vh, 0.78rem);
 }
 
 .content-grid--embedded .enemy-info {
@@ -1364,17 +1578,55 @@ function onPickerWheel(event: WheelEvent) {
   align-items: stretch;
 }
 
-.enemy-row {
+.enemy-row--normal {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--enemy-cols, 3), minmax(0, 1fr));
+  width: max-content;
+  max-width: 100%;
+  margin-inline: auto;
   gap: 0.85rem;
-  align-items: start;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.enemy-row--hard {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.85rem;
+  width: 100%;
 }
 
 .enemy-card--hard {
-  grid-column: 1 / -1;
-  width: min(100%, 360px);
-  justify-self: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.enemy-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.enemy-main--hard {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.enemy-main--hard .enemy-body {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.enemy-main--hard .enemy-field-buff {
+  flex: 1 1 auto;
+  margin-top: 0;
+  min-width: 0;
+  max-width: none;
+  align-self: stretch;
 }
 
 .buff-card {
@@ -1385,19 +1637,31 @@ function onPickerWheel(event: WheelEvent) {
   background: var(--color-background-soft);
   display: flex;
   flex-direction: column;
+  gap: 0.4rem;
+}
+
+.buff-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .buff-icon {
+  flex-shrink: 0;
   font-size: 1.05rem;
-  margin-bottom: 0.25rem;
-  align-self: center;
-  text-align: center;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .buff-image {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 0.3rem;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin: 0;
 }
 
 .buff-image img {
@@ -1407,21 +1671,31 @@ function onPickerWheel(event: WheelEvent) {
 }
 
 .buff-name {
+  margin: 0;
   font-size: 0.84rem;
   font-weight: 700;
   color: var(--color-heading);
-  margin-bottom: 0.4rem;
-  text-align: center;
-  width: 100%;
+  text-align: left;
+  line-height: 1.3;
+  min-width: 0;
+  flex: 1;
 }
 
 .buff-lines {
   list-style: disc;
+  margin: 0;
   padding-left: 1rem;
   font-size: 0.7rem;
   line-height: 1.5;
   color: var(--color-text);
   flex: 1;
+}
+
+.buff-card :deep(.effect-blocks-display) {
+  width: 100%;
+  margin-top: 0.1rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .enemy-card {
@@ -1597,9 +1871,60 @@ function onPickerWheel(event: WheelEvent) {
   line-height: 1.4;
 }
 
+.enemy-field-buff {
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.55rem 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  border-left: 3px solid color-mix(in srgb, #e8a838 75%, transparent);
+  background: color-mix(in srgb, var(--color-background) 55%, transparent);
+}
+
+.enemy-field-buff-title {
+  margin: 0 0 0.25rem;
+  font-size: clamp(0.72rem, 1.3vw, 0.8rem);
+  font-weight: 650;
+  color: var(--color-heading);
+}
+
+.enemy-field-buff-lines {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: clamp(0.7rem, 1.25vw, 0.78rem);
+  line-height: 1.4;
+  opacity: 0.88;
+}
+
+.enemy-field-buff-meta {
+  margin: 0;
+  font-size: clamp(0.7rem, 1.25vw, 0.78rem);
+  opacity: 0.7;
+}
+
+.enemy-field-buff :deep(.effect-blocks-display) {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 65%, transparent);
+}
+
 @media (max-width: 1100px) {
-  .enemy-row {
+  .enemy-row--normal {
     grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .enemy-main--hard {
+    flex-direction: column;
+  }
+
+  .enemy-main--hard .enemy-field-buff {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .enemy-card--hard {
+    width: 100%;
+    min-width: 0;
   }
 
   .enemy-image {
@@ -1671,9 +1996,29 @@ function onPickerWheel(event: WheelEvent) {
   }
 
   .buff-row,
-  .enemy-row {
+  .enemy-row--normal {
     grid-template-columns: 1fr;
+    width: 100%;
     gap: 0.65rem;
+  }
+
+  .enemy-row--hard {
+    margin-top: 0.65rem;
+  }
+
+  .enemy-card--hard {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .enemy-main--hard {
+    flex-direction: column;
+  }
+
+  .enemy-main--hard .enemy-field-buff {
+    min-width: 0;
+    max-width: none;
   }
 
   .enemy-body {
@@ -1786,9 +2131,19 @@ function onPickerWheel(event: WheelEvent) {
   }
 
   .content-grid--embedded .buff-row,
-  .content-grid--embedded .enemy-row {
+  .content-grid--embedded .enemy-row--normal {
     grid-template-columns: 1fr;
+    width: 100%;
     overflow: visible;
+  }
+
+  .content-grid--embedded .enemy-card--hard {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .content-grid--embedded .enemy-main--hard {
+    flex-direction: column;
   }
 
   .content-grid--embedded .buff-card,

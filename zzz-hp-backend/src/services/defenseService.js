@@ -8,6 +8,10 @@ import {
 import { getDefenseSeasonMeta } from './nanoka/defenseSeasonCatalog.js'
 import { versionPhaseToDisplayId } from '../utils/defenseSeasonId.js'
 import { isSeasonPubliclyVisible, isSeasonUnreleased } from '../utils/crisisRoom.js'
+import {
+  ensureEnvironmentBuffSchema,
+  parseEffectBlocksJson,
+} from '../utils/environmentBuffSchema.js'
 
 const CHINESE_STAGE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
@@ -265,6 +269,7 @@ function applyBuffToRoom(room, buff, decoded) {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
+  const effectBlocks = parseEffectBlocksJson(buff.effect_blocks)
 
   if (decoded.buffIndex <= 2) {
     if (!room.zoneBuffRecords) room.zoneBuffRecords = []
@@ -273,6 +278,7 @@ function applyBuffToRoom(room, buff, decoded) {
       buffIndex: decoded.buffIndex,
       buffText: buff.buff ?? '',
       buffName: buff.buff_name ?? '',
+      effectBlocks,
     })
     if (lines.length) room.zoneBuffs.push(...lines)
     return
@@ -286,6 +292,7 @@ function applyBuffToRoom(room, buff, decoded) {
       recordId: buff.id,
       buffIndex: decoded.buffIndex,
       buffText: buff.buff ?? '',
+      effectBlocks,
     }
   }
 }
@@ -310,13 +317,14 @@ function applyRoomBuffFallback(room, buff, decoded) {
 }
 
 export async function getDefenseSeasons(variant = 'new', { includeHidden = false } = {}) {
+  await ensureEnvironmentBuffSchema()
   const [bossRows] = await pool.execute(
     `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image
      FROM boss
      ORDER BY version, CAST(phase AS UNSIGNED), id`,
   )
   const [buffRows] = await pool.execute(
-    `SELECT id, version, phase, buff_name, buff, buff_image
+    `SELECT id, version, phase, buff_name, buff, buff_image, effect_blocks
      FROM buff
      ORDER BY version, CAST(phase AS UNSIGNED), id`,
   )
