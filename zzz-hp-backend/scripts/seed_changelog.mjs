@@ -330,13 +330,14 @@ const content3161 = `相对 3.1.6 的增量更新（绝区零风格 UI 与协议
 · 亮色主题统一为暖纸色调；修复移动端「上一期 / 选期 / 下一期」暗色下隐形
 · 修复 logout 未导入 revokeUserSession；官方伤害模式保留 ownerAgentId / radiance；增益 scope 白名单补 radiance / mutation`
 
-const content3162 = `相对 3.1.6.1 的增量更新（敏感数据清除与上传 / 计算边界加固为主）：
+const content3162 = `相对 3.1.6.1 的增量更新（敏感凭据清除与上传 / 计算边界加固为主）：
 
-· 从仓库当前树移除含明文管理员密码的 zzz_full_dump.sql，并强化 gitignore / 协作约定禁止再提交真实库转储
+· 从仓库当前树移除含明文管理员密码的 SQL 转储；Git 历史中管理员明文口令已替换为占位符（生产仍须轮换密码）
 · 头像路径解析改为前缀白名单 + realpath 根目录 containment，拒绝路径穿越
 · 用户头像：鉴权中间件前移到 Multer 之前；留言 / 头像改为内存接收、魔数校验后再落盘，并加上传限流与目录容量上限
 · OTP 改用 crypto.randomInt；生产默认不再打印验证码
-· Buff 空 *Factor 增量默认改为 0；defaultStacks 合法 0 层不再被改写成 1`
+· Buff 空 *Factor 增量默认改为 0；defaultStacks 合法 0 层不再被改写成 1
+· 提交 / 打包密钥闸门只拦截明文管理员密码；计算器 / 危局 / 防卫 / 站点等业务 SQL 数据放行`
 
 await conn.query(`DELETE FROM changelog WHERE version IN ('3.1.6', '3.1.6.1', '3.1.6.2')`)
 await conn.query(
