@@ -74,7 +74,10 @@ onMounted(async () => {
       </button>
     </header>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint hint--loading">
+      <img class="bangboo-loading" src="/zzz-assets/Bangboo.gif" alt="" aria-hidden="true" />
+      加载中…
+    </p>
     <p v-else-if="error" class="hint error">{{ error }}</p>
     <p v-else-if="!latest" class="hint">暂无更新记录</p>
 
@@ -178,6 +181,18 @@ onMounted(async () => {
   font-size: 0.88rem;
   color: var(--color-text);
   opacity: 0.7;
+}
+
+.hint--loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bangboo-loading {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .hint.error {

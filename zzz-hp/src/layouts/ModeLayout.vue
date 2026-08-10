@@ -49,7 +49,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mode-layout" :class="{ 'mode-layout--nav-open': mobileNavOpen }">
+  <div class="mode-layout zzz-cursor-zone" :class="{ 'mode-layout--nav-open': mobileNavOpen }">
     <header class="mobile-topbar">
       <button
         type="button"
@@ -166,6 +166,9 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--zzz-bg);
+  background-image: var(--zzz-tex-dots);
+  background-size: 14px 14px;
 }
 
 .mode-content-portal:not(:empty) {
@@ -219,21 +222,39 @@ onUnmounted(() => {
     flex-shrink: 0;
     padding: 0.55rem 0.75rem;
     padding-top: max(0.55rem, env(safe-area-inset-top));
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-background-soft);
+    border-bottom: 1px solid var(--zzz-line);
+    background: var(--zzz-ink);
+    color: #f5f5f0;
   }
 
   .mobile-menu-btn {
     flex-shrink: 0;
     min-height: 2.4rem;
-    padding: 0.4rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-background);
-    color: var(--color-heading);
-    font-size: 0.85rem;
-    font-weight: 600;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #000;
+    border-radius: var(--zzz-radius-btn);
+    background: var(--zzz-ink-2);
+    color: #f5f5f0;
+    font-family: var(--zzz-font-mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     cursor: pointer;
+    box-shadow:
+      inset 0 1px 2px rgba(255, 255, 255, 0.14),
+      inset 0 0 0 2px #2e2e2e;
+    transition:
+      background-color 0.16s ease-out,
+      color 0.16s ease-out,
+      box-shadow 0.16s ease-out;
+  }
+
+  .mobile-menu-btn:hover {
+    background: var(--zzz-yellow);
+    color: #0a0a0a;
+    box-shadow:
+      inset 0 1px 2px rgba(255, 255, 255, 0.35),
+      inset 0 0 0 2px rgba(0, 0, 0, 0.6);
   }
 
   .mobile-topbar-text {
@@ -245,14 +266,17 @@ onUnmounted(() => {
 
   .mobile-topbar-text strong {
     font-size: 0.92rem;
-    color: var(--color-heading);
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    color: #f5f5f0;
     line-height: 1.2;
   }
 
   .mobile-topbar-text span {
-    font-size: 0.75rem;
-    color: var(--color-text);
-    opacity: 0.7;
+    font-family: var(--zzz-font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    color: rgba(245, 245, 240, 0.55);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

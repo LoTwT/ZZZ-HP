@@ -1967,9 +1967,9 @@ function onPickerWheel(event: WheelEvent) {
   .mobile-step-btn {
     min-height: 2.4rem;
     padding: 0.4rem 0.55rem;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-border-hover);
     border-radius: 8px;
-    background: var(--color-background);
+    background: var(--color-background-soft);
     color: var(--color-heading);
     font-size: 0.8rem;
     font-weight: 600;
@@ -1977,7 +1977,7 @@ function onPickerWheel(event: WheelEvent) {
   }
 
   .mobile-step-btn:disabled {
-    opacity: 0.4;
+    opacity: 0.55;
     cursor: not-allowed;
   }
 

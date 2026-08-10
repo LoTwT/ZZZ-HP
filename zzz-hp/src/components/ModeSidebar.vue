@@ -35,6 +35,8 @@ const panels = computed(() =>
   allPanels.filter((panel) => !panel.crisisOnly || props.mode === 'crisis-assault'),
 )
 
+const backText = computed(() => (props.backLabel ?? '返回首页').replace(/^←\s*/, ''))
+
 function selectPanel(id: SidebarPanel) {
   activePanel.value = id
   mobileOpen.value = false
@@ -56,10 +58,13 @@ function closeMobileNav() {
     />
     <aside class="sidebar" :class="{ 'sidebar--open': mobileOpen }">
       <RouterLink :to="backTo ?? '/'" class="back" @click="closeMobileNav">
-        {{ backLabel ?? '← 返回首页' }}
+        <span class="back-arrow" aria-hidden="true">◄</span>{{ backText }}
       </RouterLink>
 
-      <h2 class="sidebar-title">{{ title }}</h2>
+      <h2 class="sidebar-title zzz-display">
+        <span class="sidebar-title-text">{{ title }}</span>
+        <span class="sidebar-title-bar" aria-hidden="true" />
+      </h2>
 
       <nav class="sidebar-nav">
         <button
@@ -70,9 +75,12 @@ function closeMobileNav() {
           :class="{ active: activePanel === panel.id }"
           @click="selectPanel(panel.id)"
         >
-          {{ panel.label }}
+          <span class="nav-btn-tick" aria-hidden="true" />
+          <span class="nav-btn-label">{{ panel.label }}</span>
         </button>
       </nav>
+
+      <div class="sidebar-foot" aria-hidden="true">ZZZ-HP</div>
     </aside>
   </div>
 </template>
@@ -86,71 +94,156 @@ function closeMobileNav() {
   display: none;
 }
 
+/* ZZZ 深色侧栏轨道：明暗主题下都保持游戏菜单质感 */
 .sidebar {
-  width: 220px;
+  width: 224px;
   height: 100vh;
   flex-shrink: 0;
-  padding: 1.5rem 1rem;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-background-soft);
+  padding: 1.4rem 0.9rem;
+  border-right: 2px solid #000;
+  background: var(--zzz-ink);
+  background-image: var(--zzz-tex-chessboard-dark);
+  background-position:
+    0 0,
+    3px 3px;
+  background-size: 6px 6px;
+  color: #f5f5f0;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.3rem;
   overflow-y: auto;
 }
 
 .back {
-  font-size: 0.85rem;
-  color: var(--color-text);
-  opacity: 0.7;
-  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--zzz-font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(245, 245, 240, 0.55);
   text-decoration: none;
+  transition: color 0.18s ease-out;
+}
+
+.back-arrow {
+  font-size: 0.62rem;
+  color: var(--zzz-yellow);
 }
 
 .back:hover {
-  opacity: 1;
+  color: #f5f5f0;
 }
 
 .sidebar-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--color-heading);
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--zzz-line);
+}
+
+.sidebar-title-text {
+  font-size: 1.28rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #f5f5f0;
+}
+
+.sidebar-title-bar {
+  width: 2.4rem;
+  height: 4px;
+  background: var(--zzz-yellow);
+  transform: skew(-24deg);
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .nav-btn {
+  position: relative;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background);
-  color: var(--color-heading);
-  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.72rem 0.9rem;
+  border: 1px solid #000;
+  border-radius: var(--zzz-radius-btn);
+  background: var(--zzz-ink-2);
+  color: rgba(245, 245, 240, 0.85);
+  font-size: 0.92rem;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.14),
+    inset 0 0 0 2px #2e2e2e,
+    inset 0 0 0 3px var(--zzz-ink-2);
   transition:
-    background-color 0.2s,
-    border-color 0.2s,
-    color 0.2s;
+    background-color 0.16s ease-out,
+    color 0.16s ease-out,
+    box-shadow 0.16s ease-out;
+}
+
+.nav-btn-tick {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  background: transparent;
+  transform: skew(-24deg);
+  border: 1px solid rgba(245, 245, 240, 0.35);
+  transition:
+    background-color 0.16s ease-out,
+    border-color 0.16s ease-out;
 }
 
 .nav-btn:hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-background-mute);
+  color: #f5f5f0;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.14),
+    inset 0 0 0 2px var(--zzz-yellow),
+    inset 0 0 0 3px var(--zzz-ink-2);
+}
+
+.nav-btn:hover .nav-btn-tick {
+  border-color: var(--zzz-yellow);
 }
 
 .nav-btn.active {
-  border-color: hsla(160, 100%, 37%, 0.6);
-  background: hsla(160, 100%, 37%, 0.12);
-  color: var(--color-heading);
-  font-weight: 600;
+  color: #0a0a0a;
+  font-weight: 800;
+  animation: zzz-flash-bg 1s ease-in-out infinite alternate;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.35),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+.nav-btn.active .nav-btn-tick {
+  background: #0a0a0a;
+  border-color: #0a0a0a;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  font-family: var(--zzz-font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.14em;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--zzz-line);
+  user-select: none;
+}
+
+.sidebar-foot::before {
+  content: '';
+  display: block;
+  height: 10px;
+  margin-bottom: 0.7rem;
+  border-radius: 2px;
+  background: #050505 url('/zzz-assets/tab-bg-point.webp') repeat;
 }
 
 /* 仅手机：侧栏改为抽屉，桌面样式不变 */
@@ -169,7 +262,7 @@ function closeMobileNav() {
     border: none;
     padding: 0;
     margin: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     cursor: pointer;
   }
 
@@ -180,8 +273,7 @@ function closeMobileNav() {
     z-index: 1200;
     width: min(280px, 86vw);
     height: 100dvh;
-    border-right: 1px solid var(--color-border);
-    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.28);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.45);
     transform: translateX(-105%);
     transition: transform 0.22s ease;
     padding-top: max(1.25rem, env(safe-area-inset-top));
