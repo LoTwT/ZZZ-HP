@@ -29,7 +29,7 @@ npm run export:guestbook
 
 脚本见 `zzz-hp-backend/scripts/export-guestbook.mjs`。
 
-**安全**：留言板导出含用户与私信，只作私有备份，不要当公开更新包上传；**不要**把 `admin` 表或全库 `zzz_full_dump.sql` 打进发版 zip。发版 / 提交前用根目录 `scripts/check-no-secrets.ps1` 闸门。
+**安全**：留言板导出含用户与私信，只作私有备份，不要当公开更新包上传。发版 / 提交闸门 `scripts/check-no-secrets.ps1` **只拦截明文管理员密码**；计算器 / 危局 / 站点业务 SQL 放行。
 
 ## 校验图片完整性
 

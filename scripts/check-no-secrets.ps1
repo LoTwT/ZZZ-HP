@@ -1,25 +1,23 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Fail if admin plaintext passwords, DB dumps, or common secrets are present.
+  Fail if plaintext admin passwords or common credential files leak into commit/pack.
+
+  Business DB data is allowed (character / w-engine / drive_disc / bangboo /
+  boss / buff / boss_info / date / changelog / site_info_section, etc.).
+  Only admin plaintext password is blocked.
 
 .EXAMPLE
   .\scripts\check-no-secrets.ps1
-  Scan the repo working tree (skips node_modules / dist / .git / packages).
-
 .EXAMPLE
   .\scripts\check-no-secrets.ps1 -Path .\packages\stage
-  Scan a pack staging directory before zip.
-
 .EXAMPLE
   .\scripts\check-no-secrets.ps1 -StagedOnly
-  Scan only git staged files (for commit gate).
 #>
 [CmdletBinding()]
 param(
   [string]$Path = '',
-  [switch]$StagedOnly,
-  [switch]$AllowDumpFiles
+  [switch]$StagedOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,15 +44,6 @@ $TextExt = [System.Collections.Generic.HashSet[string]]::new(
   ),
   [StringComparer]::OrdinalIgnoreCase
 )
-
-function Test-IsDumpFileName {
-  param([string]$Name)
-  return (
-    $Name -ieq 'zzz_full_dump.sql' -or
-    $Name -match '(?i)full[_-]?dump' -or
-    ($Name -match '(?i)\.sql$' -and $Name -match '(?i)dump')
-  )
-}
 
 function Test-IsBcryptOrPlaceholder {
   param([string]$Password)
@@ -118,10 +107,31 @@ function Test-IsGitIgnored {
   }
 }
 
-$adminInsertPattern = 'INSERT\s+INTO\s+[`'']?admin[`'']?\s+VALUES\s*\(\s*\d+\s*,\s*''([^'']*)'''
+function Test-FileForPlainAdminPassword {
+  param(
+    [System.IO.FileInfo]$File,
+    [string]$Rel
+  )
+
+  $linePattern = 'INSERT\s+INTO\s+[`'']?admin[`'']?\s+VALUES'
+  $valuePattern = 'INSERT\s+INTO\s+[`'']?admin[`'']?\s+VALUES\s*\(\s*\d+\s*,\s*''([^'']*)'''
+
+  $hits = Select-String -LiteralPath $File.FullName -Pattern $linePattern -AllMatches -ErrorAction SilentlyContinue
+  foreach ($hit in $hits) {
+    $m = [regex]::Match(
+      $hit.Line,
+      $valuePattern,
+      [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if ($m.Success -and -not (Test-IsBcryptOrPlaceholder $m.Groups[1].Value)) {
+      Add-Finding "plaintext admin password in $Rel (value redacted in report)"
+    }
+  }
+}
+
 $adminPasswordLinePattern = '(?m)^\s*ADMIN_PASSWORD\s*=\s*(.+)\s*$'
 
-Write-Host ">> check-no-secrets  path=$Path  stagedOnly=$StagedOnly"
+Write-Host ">> check-no-secrets  path=$Path  stagedOnly=$StagedOnly  (admin-password only)"
 
 foreach ($file in Get-ScanFiles) {
   $name = $file.Name
@@ -135,7 +145,6 @@ foreach ($file in Get-ScanFiles) {
   $isEnvName = ($name -ieq '.env') -or ($name.StartsWith('.env.') -and $name -ine '.env.example')
 
   # Working tree: ignored local .env is OK. Staged .env still fails.
-  # Dump files are always blocked even if gitignored.
   if (-not $StagedOnly -and $isEnvName -and (Test-IsGitIgnored $file.FullName)) {
     continue
   }
@@ -148,15 +157,18 @@ foreach ($file in Get-ScanFiles) {
     Add-Finding "credential/key file: $rel"
     continue
   }
-  if (-not $AllowDumpFiles -and (Test-IsDumpFileName $name)) {
-    Add-Finding "database dump file forbidden: $rel"
+
+  $ext = $file.Extension
+  $scanText = $TextExt.Contains($ext) -or $name -ieq '.env.example'
+  if (-not $scanText) { continue }
+
+  # SQL dumps: only inspect admin INSERT lines (business tables are allowed)
+  if ($ext -ieq '.sql') {
+    Test-FileForPlainAdminPassword -File $file -Rel $rel
     continue
   }
 
-  $ext = $file.Extension
-  $scanText = $TextExt.Contains($ext) -or $name -ieq '.env.example' -or (Test-IsDumpFileName $name)
-  if (-not $scanText) { continue }
-  if ($file.Length -gt 20MB) { continue }
+  if ($file.Length -gt 8MB) { continue }
 
   $text = $null
   try {
@@ -167,13 +179,7 @@ foreach ($file in Get-ScanFiles) {
   }
   if (-not $text) { continue }
 
-  $adminMatches = [regex]::Matches($text, $adminInsertPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-  foreach ($m in $adminMatches) {
-    $pwd = $m.Groups[1].Value
-    if (-not (Test-IsBcryptOrPlaceholder $pwd)) {
-      Add-Finding "plaintext admin password in $rel (value redacted in report)"
-    }
-  }
+  Test-FileForPlainAdminPassword -File $file -Rel $rel
 
   if ($name -ine '.env.example') {
     $envMatches = [regex]::Matches($text, $adminPasswordLinePattern)
@@ -193,7 +199,8 @@ if ($findings.Count -gt 0) {
     Write-Host "  - $f" -ForegroundColor Red
   }
   Write-Host ''
-  Write-Host 'Rules: never commit/pack real DB dumps; admin password only via .env + set-admin-password.mjs (bcrypt in DB).' -ForegroundColor Yellow
+  Write-Host 'Rule: block plaintext admin password only. Calculator/crisis/defense/site SQL data is allowed.' -ForegroundColor Yellow
+  Write-Host 'Admin password belongs in cloud .env + set-admin-password.mjs (bcrypt in DB).' -ForegroundColor Yellow
   exit 1
 }
 

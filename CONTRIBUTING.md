@@ -89,8 +89,7 @@ git push origin v3.0.10
 
 - 不要 `git add .` 无脑全加；先 `git status` / `git diff` 确认。
 - 勿提交：`.env`、证书、`guestbook_image` 用户上传、`data/*` 会话文件、`node_modules`、`packages/` 打包产物。
-- **禁止提交任何真实数据库转储**（`*dump*.sql`、`zzz_full_dump.sql` 等）。空库请用 `init_schema.sql` / `insert_*.sql`；生产快照只放本机或私有备份，永不进 Git。
-- **管理员密码不泄露**：禁止在仓库或更新包中出现明文管理员口令（含 dump 里的 `INSERT INTO admin`）。口令只写云端 `.env` 的 `ADMIN_PASSWORD`，执行 `node scripts/set-admin-password.mjs` 写入 bcrypt。提交 / 打包前运行：
+- **管理员密码不泄露（唯一强制拦截项）**：禁止明文管理员口令（含 SQL 中 `INSERT INTO admin`）。计算器 / 危局 / 防卫 / 站点等业务表数据放行。口令只写云端 `.env` 的 `ADMIN_PASSWORD`，执行 `node scripts/set-admin-password.mjs` 写入 bcrypt。提交 / 打包前运行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-no-secrets.ps1
@@ -105,5 +104,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-no-secrets.p
 - [ ] 只包含与本 PR 相关的文件
 - [ ] 前端：`cd zzz-hp && npm run type-check`（有 UI 改动时建议再 `npm run build`）
 - [ ] 后端：相关接口本地可跑通；涉及表结构时说明迁移 / `init_schema.sql` 是否需更新
-- [ ] 无密钥、无真实库转储、无明文管理员密码（已跑 `scripts/check-no-secrets.ps1`）
+- [ ] 无密钥文件、无明文管理员密码（已跑 `scripts/check-no-secrets.ps1`；业务 SQL 数据可放行）
 - [ ] 无大体积二进制误加

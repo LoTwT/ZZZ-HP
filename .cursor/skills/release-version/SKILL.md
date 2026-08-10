@@ -18,7 +18,7 @@ description: Cut a new ZZZ-HP release. Use when the user asks to 发版 / 打版
 复制此清单并逐项完成：
 
 ```
-- [ ] 0 密钥 / dump 闸门（必须）
+- [ ] 0 密钥闸门（必须）
 - [ ] 1 确认版本号与分支
 - [ ] 2 同步 package.json 版本
 - [ ] 3 type-check + build
@@ -28,9 +28,10 @@ description: Cut a new ZZZ-HP release. Use when the user asks to 发版 / 打版
 - [ ] 7 可选：打包（含密钥扫描）
 ```
 
-### 0 密钥 / dump 闸门（必须）
+### 0 密钥闸门（必须）
 
-**管理员密码与真实库转储不得进入 Git 或更新包。**
+**只拦截明文管理员密码**（及 `.env` / 密钥文件）。  
+计算器（`character` / `w-engine` / `drive_disc` / `bangboo`）、危局/防卫（`boss` / `buff` / `boss_info` / `date`）、站点（`changelog` / `site_info_section`）等业务数据**放行**，不按密钥失败。
 
 提交 / 发版 / 打包前运行：
 
@@ -44,10 +45,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-no-secrets.p
 
 硬规则：
 
-- 禁止 `zzz_full_dump.sql`、`*dump*.sql` 等真实库转储进仓库或 zip。
-- 禁止明文管理员密码（含 `INSERT INTO admin VALUES (...'明文'...)`）。
+- 禁止明文管理员密码（含 `INSERT INTO admin VALUES (...'明文'...)`；bcrypt / `REDACTED_ADMIN_PASSWORD` 可过）。
 - 管理员口令只放云端 `.env` 的 `ADMIN_PASSWORD`，用 `node scripts/set-admin-password.mjs` 写成 bcrypt；仓库只保留空的 `.env.example`。
-- 打包用 `.\pack-update.ps1`（已内置同一闸门）；不要手工把 dump / `.env` 塞进 zip。
+- 打包用 `.\pack-update.ps1`（已内置同一闸门）。
 
 ### 1 确认版本号与分支
 
@@ -108,12 +108,12 @@ git push origin vX.Y.Z
 .\pack-update-quick.bat
 ```
 
-产物在 `packages/ZZZ-HP-X.Y.Z-update-*.zip`。脚本会在压缩前扫描并拒绝含 dump / 明文管理员密码的内容。
+产物在 `packages/ZZZ-HP-X.Y.Z-update-*.zip`。脚本会在压缩前扫描并拒绝含明文管理员密码的内容。
 
 ## 红线
 
 - 未通过 `scripts/check-no-secrets.ps1` 不提交、不打 tag、不打包。
 - 未 type-check / build 通过不打 tag。
-- 不提交 `.env`、上传图、`data/*`、`node_modules`、`packages/`、任何真实库转储。
+- 不提交 `.env`、上传图、`data/*`、`node_modules`、`packages/`、明文管理员密码。
 - 未经用户确认不 `git push`。
 - 若历史曾泄露管理员明文口令：先轮换密码并清 session，再发版。
