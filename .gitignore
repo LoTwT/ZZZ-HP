@@ -18,11 +18,15 @@ SecretKey.csv
 *SecretKey*.csv
 *.pem
 *.key
+# DB dumps / exports with real data (never commit)
 **/zzz_full_dump.sql
 **/*full_dump*.sql
 **/*_dump.sql
+**/*dump*.sql
+!**/*schema*.sql
 !**/init_schema.sql
 !**/insert_*.sql
+!**/create_*.sql
 
 # Logs
 logs/

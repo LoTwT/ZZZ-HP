@@ -89,6 +89,7 @@ git push origin v3.0.10
 
 - 不要 `git add .` 无脑全加；先 `git status` / `git diff` 确认。
 - 勿提交：`.env`、证书、`guestbook_image` 用户上传、`data/*` 会话文件、`node_modules`、`packages/` 打包产物。
+- **禁止提交任何真实数据库转储**（`*dump*.sql`、`zzz_full_dump.sql` 等）。空库请用 `init_schema.sql` / `insert_*.sql`；生产快照只放本机或私有备份，永不进 Git。
 - 运行时上传目录已在 `.gitignore`；默认封面等需入库的静态资源走导出包或运维拷贝，不要指望 git 备份用户图。
 
 ## PR 检查清单

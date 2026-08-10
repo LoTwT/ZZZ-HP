@@ -16,12 +16,14 @@ import {
   setPassword,
 } from '../services/accountSecurityService.js'
 import { fail, success } from '../utils/response.js'
+import { persistGuestbookBuffer } from './uploadController.js'
 
 function buildImageUrl(filename) {
   return `/guestbook_image/${filename}`
 }
 
 async function requireUser(req, res) {
+  if (req.user) return req.user
   const token = extractBearerToken(req)
   if (!token) {
     fail(res, '未登录', 401)
@@ -107,15 +109,17 @@ export async function updateMe(req, res) {
 export async function uploadAvatar(req, res) {
   const current = await requireUser(req, res)
   if (!current) return
-  if (!req.file) return fail(res, '请上传图片文件，字段名为 image', 400)
 
   try {
-    const url = buildImageUrl(req.file.filename)
+    const filename = persistGuestbookBuffer(req.file)
+    const url = buildImageUrl(filename)
     const field = req.body?.field === 'banner' ? 'banner' : 'avatar'
     const user = await updateUserProfile(current.id, { [field]: url })
-    return success(res, { url, filename: req.file.filename, user }, '上传成功', 201)
+    return success(res, { url, filename, user }, '上传成功', 201)
   } catch (err) {
-    return fail(res, err.message || '上传失败', 500)
+    const msg = err.message || '上传失败'
+    const status = /满|支持|上传图片/.test(msg) ? 400 : 500
+    return fail(res, msg, status)
   }
 }
 

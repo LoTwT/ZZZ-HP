@@ -112,16 +112,20 @@ export async function sendPhoneCode({ userId, phone, purpose = 'bind' }) {
     throw new Error(`请 ${wait} 秒后再试`)
   }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000))
+  const code = String(crypto.randomInt(100000, 1000000))
   codes[key] = { code, sentAt: now, expiresAt: now + CODE_TTL_MS }
   writeCodes(codes)
 
-  // 暂未接入短信网关：开发/默认模式下回传验证码便于联调
+  // 暂未接入短信网关：仅非生产或显式 SMS_MOCK=1 时回传/打印验证码
   const exposeCode =
-    process.env.SMS_MOCK !== '0' &&
-    (process.env.NODE_ENV !== 'production' || process.env.SMS_MOCK === '1')
+    process.env.SMS_MOCK === '1' ||
+    (process.env.SMS_MOCK !== '0' && process.env.NODE_ENV !== 'production')
 
-  console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} code=${code}`)
+  if (exposeCode) {
+    console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} code=${code}`)
+  } else {
+    console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} sent`)
+  }
 
   return {
     ok: true,

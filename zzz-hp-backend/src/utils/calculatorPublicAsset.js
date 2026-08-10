@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { detectImageKind, extForImageKind } from './imageMagic.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const backendRoot = path.join(__dirname, '../..')
@@ -20,6 +21,25 @@ export const CALCULATOR_PUBLIC_AVATAR_KINDS = {
 const SAFE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._&'-]*$/
 const ALLOWED_EXT = new Set(['.webp', '.jpg', '.jpeg', '.png', '.gif'])
 
+const ALLOWED_URL_PREFIXES = [
+  ...Object.values(CALCULATOR_PUBLIC_AVATAR_KINDS).map((item) => item.urlPrefix),
+  '/calculator_image',
+]
+
+function getAllowedRoots() {
+  const folders = Object.values(CALCULATOR_PUBLIC_AVATAR_KINDS).map((item) => item.folder)
+  const roots = [
+    publicRoot,
+    distRoot,
+    backendRoot,
+    path.join(backendRoot, 'calculator_image'),
+    ...folders.map((folder) => path.join(publicRoot, folder)),
+    ...folders.map((folder) => path.join(distRoot, folder)),
+    ...folders.map((folder) => path.join(backendRoot, folder)),
+  ]
+  return roots
+}
+
 export function normalizeCalculatorPublicKind(raw) {
   const key = typeof raw === 'string' ? raw.trim() : ''
   if (!Object.hasOwn(CALCULATOR_PUBLIC_AVATAR_KINDS, key)) {
@@ -36,7 +56,12 @@ export function normalizeCalculatorEntityId(raw) {
   return id
 }
 
-function resolveExtension(originalName, mimetype) {
+function resolveExtension(originalName, mimetype, buffer) {
+  if (Buffer.isBuffer(buffer)) {
+    const kind = detectImageKind(buffer)
+    const fromMagic = extForImageKind(kind)
+    if (fromMagic) return fromMagic
+  }
   const ext = path.extname(originalName || '').toLowerCase()
   if (ALLOWED_EXT.has(ext)) return ext
   if (mimetype === 'image/webp') return '.webp'
@@ -60,6 +85,48 @@ function copyIfDirExists(srcFile, destDir) {
   fs.copyFileSync(srcFile, path.join(destDir, path.basename(srcFile)))
 }
 
+function isPathInsideRoot(candidate, root) {
+  const rel = path.relative(root, candidate)
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+/** 规范化 avatar URL：拒绝 ..、反斜杠、NUL、未知前缀 */
+export function normalizeAvatarSourceUrl(avatarUrl) {
+  if (typeof avatarUrl !== 'string') return null
+  let raw = avatarUrl.trim()
+  if (!raw.startsWith('/')) return null
+  try {
+    raw = decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+  if (raw.includes('\0') || raw.includes('\\') || raw.includes('..')) return null
+  if (!ALLOWED_URL_PREFIXES.some((prefix) => raw === prefix || raw.startsWith(`${prefix}/`))) {
+    return null
+  }
+  const parts = raw.split('/').filter(Boolean)
+  if (!parts.length || parts.some((part) => part === '.' || part === '..')) return null
+  return `/${parts.join('/')}`
+}
+
+function resolveContainedExistingFile(absoluteCandidate) {
+  try {
+    const real = fs.realpathSync(absoluteCandidate)
+    if (!fs.statSync(real).isFile()) return null
+    const allowed = getAllowedRoots().some((root) => {
+      try {
+        const realRoot = fs.existsSync(root) ? fs.realpathSync(root) : path.resolve(root)
+        return isPathInsideRoot(real, realRoot)
+      } catch {
+        return false
+      }
+    })
+    return allowed ? real : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * 保存计算器实体头像：
  * - 前端 public / dist（本地 vite / 静态站点）
@@ -70,29 +137,29 @@ export async function saveCalculatorPublicAvatar(kind, entityId, file) {
     throw new Error('缺少图片文件')
   }
 
+  const buffer = file.buffer
+    ? file.buffer
+    : fs.readFileSync(file.path)
+  if (!detectImageKind(buffer)) {
+    throw new Error('仅支持真实的 jpg、png、gif、webp 图片')
+  }
+
   const normalizedKind = normalizeCalculatorPublicKind(kind)
   const normalizedId = normalizeCalculatorEntityId(entityId)
   const { folder, urlPrefix } = CALCULATOR_PUBLIC_AVATAR_KINDS[normalizedKind]
-  const ext = resolveExtension(file.originalname, file.mimetype)
+  const ext = resolveExtension(file.originalname, file.mimetype, buffer)
   const filename = `${normalizedId}${ext}`
   const relativePath = `${folder}/${filename}`
 
   const publicDir = path.join(publicRoot, folder)
   ensureDir(publicDir)
   const publicFile = path.join(publicDir, filename)
+  fs.writeFileSync(publicFile, buffer)
 
-  if (file.buffer) {
-    fs.writeFileSync(publicFile, file.buffer)
-  } else {
-    fs.copyFileSync(file.path, publicFile)
-  }
-
-  // 始终写入 dist（站点根常是 dist）；目录不存在则创建
   const distDir = path.join(distRoot, folder)
   ensureDir(distDir)
   fs.copyFileSync(publicFile, path.join(distDir, filename))
 
-  // 后端静态目录：生产反代 /character → Node
   const backendDir = path.join(backendRoot, folder)
   ensureDir(backendDir)
   fs.copyFileSync(publicFile, path.join(backendDir, filename))
@@ -116,19 +183,24 @@ function extFromUrlOrFile(urlOrName) {
   return ALLOWED_EXT.has(ext) ? ext : '.webp'
 }
 
-/** 根据 avatar URL 在仓库内查找已有文件 */
+/** 根据 avatar URL 在允许根目录内查找已有文件（防路径穿越） */
 export function resolveExistingAvatarFile(avatarUrl) {
-  if (typeof avatarUrl !== 'string' || !avatarUrl.startsWith('/')) return null
+  const safeUrl = normalizeAvatarSourceUrl(avatarUrl)
+  if (!safeUrl) return null
 
-  const rel = avatarUrl.replace(/^\//, '').replace(/\//g, path.sep)
+  const rel = safeUrl.replace(/^\//, '').replace(/\//g, path.sep)
+  const basename = path.basename(rel)
   const candidates = [
     path.join(publicRoot, rel),
+    path.join(distRoot, rel),
     path.join(backendRoot, rel),
-    path.join(backendRoot, 'character', path.basename(rel)),
+    path.join(backendRoot, 'calculator_image', basename),
+    path.join(backendRoot, 'character', basename),
   ]
 
   for (const file of candidates) {
-    if (fs.existsSync(file) && fs.statSync(file).isFile()) return file
+    const contained = resolveContainedExistingFile(file)
+    if (contained) return contained
   }
   return null
 }
@@ -146,8 +218,7 @@ export function syncEntityAvatarToPublic(kind, entityId, avatarUrl) {
   const source =
     resolveExistingAvatarFile(avatarUrl) ||
     resolveExistingAvatarFile(`${urlPrefix}/${normalizedId}.webp`) ||
-    resolveExistingAvatarFile(`${urlPrefix}/${normalizedId}.png`) ||
-    path.join(backendRoot, 'character', `${normalizedId}.webp`)
+    resolveExistingAvatarFile(`${urlPrefix}/${normalizedId}.png`)
 
   if (!source || !fs.existsSync(source)) {
     return { url: avatarUrl ?? null, action: 'missing' }

@@ -918,7 +918,12 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
     stackable: Boolean(entry.stackable),
     maxStacks: Math.max(1, readNumber(entry.maxStacks) || 1),
     valuePerStack: readNumber(entry.valuePerStack),
-    defaultStacks: Math.max(0, readNumber(entry.defaultStacks) || 1),
+    defaultStacks: (() => {
+      if (entry.defaultStacks == null || entry.defaultStacks === '') return 1
+      const n = Number(entry.defaultStacks)
+      if (!Number.isFinite(n)) return 1
+      return Math.max(0, n)
+    })(),
     convert: normalizeConvert(entry.convert),
     appliesToAnomaly:
       entry.appliesToAnomaly == null ? undefined : Boolean(entry.appliesToAnomaly),

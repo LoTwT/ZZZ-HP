@@ -107,6 +107,16 @@ app.use('/api/auth/login', authWriteLimiter)
 app.use('/api/auth/mihoyo', authWriteLimiter)
 app.use('/api/auth/phone', authWriteLimiter)
 
+const guestbookUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.GUESTBOOK_UPLOAD_RATE_LIMIT_MAX) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { code: 429, message: '图片上传过于频繁，请稍后再试', data: null },
+})
+app.use('/api/upload/guestbook', guestbookUploadLimiter)
+app.use('/api/auth/me/avatar', guestbookUploadLimiter)
+
 app.use('/api/admin', adminAuthRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/upload', uploadRoutes)

@@ -318,6 +318,48 @@ await conn.query(
   ],
 )
 
+const content316 = `相对 3.1.5 的增量更新（安全加固与伤害事件体验为主）：
+
+· 管理端写接口统一 requireAdmin；部署层补充 Helmet、CORS 白名单、API / 登录限流；生产环境默认不暴露错误详情
+· 伤害事件：产生角色显示修复；左侧事件栏独立滚动；模式侧栏支持按名称 / 产生者 / 触发者模糊搜索；白天主题适配
+· 前端管理写请求统一附带管理员鉴权头`
+
+const content3161 = `相对 3.1.6 的增量更新（绝区零风格 UI 与协议边界修复为主）：
+
+· 首页 / 模式页外壳重设计：荧光黄纪律卡片、拼贴背景、邦布剪影、自定义光标与设计 tokens
+· 亮色主题统一为暖纸色调；修复移动端「上一期 / 选期 / 下一期」暗色下隐形
+· 修复 logout 未导入 revokeUserSession；官方伤害模式保留 ownerAgentId / radiance；增益 scope 白名单补 radiance / mutation`
+
+const content3162 = `相对 3.1.6.1 的增量更新（敏感数据清除与上传 / 计算边界加固为主）：
+
+· 从仓库当前树移除含明文管理员密码的 zzz_full_dump.sql，并强化 gitignore / 协作约定禁止再提交真实库转储
+· 头像路径解析改为前缀白名单 + realpath 根目录 containment，拒绝路径穿越
+· 用户头像：鉴权中间件前移到 Multer 之前；留言 / 头像改为内存接收、魔数校验后再落盘，并加上传限流与目录容量上限
+· OTP 改用 crypto.randomInt；生产默认不再打印验证码
+· Buff 空 *Factor 增量默认改为 0；defaultStacks 合法 0 层不再被改写成 1`
+
+await conn.query(`DELETE FROM changelog WHERE version IN ('3.1.6', '3.1.6.1', '3.1.6.2')`)
+await conn.query(
+  `INSERT INTO changelog (version, title, content, published_at) VALUES
+   (?, ?, ?, ?),
+   (?, ?, ?, ?),
+   (?, ?, ?, ?)`,
+  [
+    '3.1.6',
+    '管理端鉴权加固与伤害事件体验',
+    content316,
+    '2026-08-10 19:00:00',
+    '3.1.6.1',
+    '绝区零风格 UI 与协议边界修复',
+    content3161,
+    '2026-08-10 23:30:00',
+    '3.1.6.2',
+    '清除敏感转储与上传计算边界加固',
+    content3162,
+    '2026-08-11 00:30:00',
+  ],
+)
+
 const [rowsAfter] = await conn.query(
   `SELECT id, version, title, CHAR_LENGTH(content) AS len FROM changelog ORDER BY published_at DESC LIMIT 5`,
 )

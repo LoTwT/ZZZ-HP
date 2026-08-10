@@ -114,21 +114,9 @@ export function readNumber(value) {
   return Number.isFinite(num) ? num : 0
 }
 
-const MULT_FACTOR_DEFAULT_KEYS = [
-  'directDmgMultFactor',
-  'anomalyMultFactor',
-  'anomalyReleaseMultFactor',
-  'disorderBaseMultFactor',
-  'turbulenceBaseMultFactor',
-  'radianceMultFactor',
-  'specialMultFactor',
-  'mutationCoeffFactor',
-]
-
 export function createEmptyBuffStatModifiers() {
-  return Object.fromEntries(
-    BUFF_STAT_KEYS.map((key) => [key, MULT_FACTOR_DEFAULT_KEYS.includes(key) ? 1 : 0]),
-  )
+  // Buff 增量：*Factor 空值默认 0（不是面板倍率 1）
+  return Object.fromEntries(BUFF_STAT_KEYS.map((key) => [key, 0]))
 }
 
 export function createEmptyAgentBasePanel() {

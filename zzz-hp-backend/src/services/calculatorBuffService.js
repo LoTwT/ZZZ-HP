@@ -193,7 +193,13 @@ function normalizeEffectList(value) {
         stackable: Boolean(item.stackable),
         maxStacks: Math.max(1, readNumber(item.maxStacks) || 1),
         valuePerStack: readNumber(item.valuePerStack),
-        defaultStacks: Math.max(0, readNumber(item.defaultStacks) || 1),
+        defaultStacks: (() => {
+          if (item.defaultStacks == null || item.defaultStacks === '') return 1
+          const n = Number(item.defaultStacks)
+          if (!Number.isFinite(n)) return 1
+          return Math.max(0, n)
+        })(),
+
         convert: normalizeConvert(item.convert),
         appliesToAnomaly:
           item.appliesToAnomaly == null ? undefined : Boolean(item.appliesToAnomaly),

@@ -1,11 +1,66 @@
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
 import { success, fail } from '../utils/response.js'
 import {
   saveCalculatorPublicAvatar,
   syncEntityAvatarToPublic,
 } from '../utils/calculatorPublicAsset.js'
+import { imageDirs } from '../middleware/upload.js'
+import { detectImageKind, extForImageKind } from '../utils/imageMagic.js'
+
+const GUESTBOOK_DIR_MAX_BYTES =
+  Number(process.env.GUESTBOOK_IMAGE_DIR_MAX_BYTES) || 2 * 1024 * 1024 * 1024
 
 function buildImageUrl(type, filename) {
   return `/${type}_image/${filename}`
+}
+
+function dirTotalBytes(dir) {
+  if (!fs.existsSync(dir)) return 0
+  let total = 0
+  for (const name of fs.readdirSync(dir)) {
+    try {
+      const st = fs.statSync(path.join(dir, name))
+      if (st.isFile()) total += st.size
+    } catch {
+      // ignore unreadable entries
+    }
+  }
+  return total
+}
+
+function persistGuestbookBuffer(file) {
+  if (!file?.buffer) {
+    throw new Error('请上传图片文件，字段名为 image')
+  }
+  const kind = detectImageKind(file.buffer)
+  const ext = extForImageKind(kind)
+  if (!ext) {
+    throw new Error('仅支持真实的 jpg、png、gif、webp 图片')
+  }
+
+  const destDir = imageDirs.guestbook
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true })
+
+  const nextTotal = dirTotalBytes(destDir) + file.buffer.length
+  if (nextTotal > GUESTBOOK_DIR_MAX_BYTES) {
+    throw new Error('留言板图片存储已满，请稍后再试')
+  }
+
+  const filename = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`
+  const fullPath = path.join(destDir, filename)
+  try {
+    fs.writeFileSync(fullPath, file.buffer)
+  } catch (err) {
+    try {
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+    } catch {
+      // ignore cleanup errors
+    }
+    throw err
+  }
+  return filename
 }
 
 export function uploadBoss(req, res) {
@@ -27,7 +82,6 @@ export function uploadBuff(req, res) {
 }
 
 export function uploadCalculator(req, res) {
-  // 兼容旧接口：若带 kind + entityId，走固定路径；否则拒绝哈希名上传
   const kind = req.query?.kind
   const entityId = req.query?.entityId
   if (kind && entityId && req.file) {
@@ -89,13 +143,18 @@ export async function ensureCalculatorPublic(req, res) {
 }
 
 export function uploadGuestbook(req, res) {
-  if (!req.file) {
-    return fail(res, '请上传图片文件，字段名为 image', 400)
+  try {
+    const filename = persistGuestbookBuffer(req.file)
+    const url = buildImageUrl('guestbook', filename)
+    return success(res, { url, filename }, '留言板图片上传成功', 201)
+  } catch (err) {
+    const msg = err.message || '图片上传失败'
+    const status = /满|支持|上传图片/.test(msg) ? 400 : 500
+    return fail(res, msg, status)
   }
-
-  const url = buildImageUrl('guestbook', req.file.filename)
-  return success(res, { url, filename: req.file.filename }, '留言板图片上传成功', 201)
 }
+
+export { persistGuestbookBuffer }
 
 export function handleUploadError(err, _req, res, next) {
   if (!err) return next()

@@ -1,6 +1,7 @@
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -21,7 +22,7 @@ function ensureDir(dir) {
   }
 }
 
-function createUploader(type) {
+function createDiskUploader(type) {
   const dest = imageDirs[type]
   ensureDir(dest)
 
@@ -37,7 +38,7 @@ function createUploader(type) {
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase() || '.jpg'
       const safeExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) ? ext : '.jpg'
-      const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${safeExt}`
+      const name = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}${safeExt}`
       cb(null, name)
     },
   })
@@ -55,11 +56,6 @@ function createUploader(type) {
   })
 }
 
-export const uploadBossImage = createUploader('boss').single('image')
-export const uploadBuffImage = createUploader('buff').single('image')
-export const uploadCalculatorImage = createUploader('calculator').single('image')
-export const uploadGuestbookImage = createUploader('guestbook').single('image')
-
 const memoryUploader = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -72,6 +68,11 @@ const memoryUploader = multer({
   },
 })
 
+export const uploadBossImage = createDiskUploader('boss').single('image')
+export const uploadBuffImage = createDiskUploader('buff').single('image')
+export const uploadCalculatorImage = createDiskUploader('calculator').single('image')
+/** 留言 / 头像：先入内存，校验魔数后再落盘 */
+export const uploadGuestbookImage = memoryUploader.single('image')
 /** 计算器实体头像 → 前端 public 固定路径（kind、entityId 走 query） */
 export const uploadCalculatorPublicImage = memoryUploader.single('image')
 

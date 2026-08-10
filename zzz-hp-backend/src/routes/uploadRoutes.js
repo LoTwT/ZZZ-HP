@@ -30,7 +30,7 @@ router.post(
   uploadCalculatorPublic,
 )
 router.post('/calculator-public/ensure', requireAdmin, ensureCalculatorPublic)
-// 留言板用户发帖上传，保持公开（另有用户侧风控）
+// 留言板图片：限流在 app.js；内存接收 + 魔数校验后再落盘
 router.post('/guestbook', uploadGuestbookImage, handleUploadError, uploadGuestbook)
 
 export default router
