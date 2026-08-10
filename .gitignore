@@ -18,6 +18,11 @@ SecretKey.csv
 *SecretKey*.csv
 *.pem
 *.key
+**/zzz_full_dump.sql
+**/*full_dump*.sql
+**/*_dump.sql
+!**/init_schema.sql
+!**/insert_*.sql
 
 # Logs
 logs/
