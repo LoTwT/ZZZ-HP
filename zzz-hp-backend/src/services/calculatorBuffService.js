@@ -19,6 +19,8 @@ const BUFF_SCOPE_VALUES = new Set([
   'disorder',
   'turbulence',
   'anomalyRelease',
+  'radiance',
+  'mutation',
 ])
 
 function normalizeScopeValue(value) {

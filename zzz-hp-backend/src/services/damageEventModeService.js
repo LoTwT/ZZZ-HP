@@ -31,7 +31,7 @@ async function ensureTable() {
 function normalizeEvent(raw, index = 0) {
   const entry = raw && typeof raw === 'object' ? raw : {}
   const kind = String(entry.kind ?? 'direct')
-  const allowedKinds = ['direct', 'anomaly', 'disorder', 'anomalyRelease', 'turbulence']
+  const allowedKinds = ['direct', 'anomaly', 'disorder', 'anomalyRelease', 'turbulence', 'radiance']
   const safeKind = allowedKinds.includes(kind) ? kind : 'direct'
   const critMode = String(entry.critMode ?? 'expected')
   const safeCrit =
@@ -51,6 +51,10 @@ function normalizeEvent(raw, index = 0) {
     count: Math.max(0, Number(entry.count) || 1),
     staggerPhase: safeStagger,
     critMode: safeCrit,
+    ownerAgentId:
+      entry.ownerAgentId == null || entry.ownerAgentId === ''
+        ? null
+        : String(entry.ownerAgentId),
     triggerAgentId:
       entry.triggerAgentId == null || entry.triggerAgentId === ''
         ? null

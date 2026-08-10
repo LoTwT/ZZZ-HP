@@ -8,6 +8,7 @@ import {
   clearBanKickMark,
   getUserSession,
   touchUserSession,
+  revokeUserSession,
 } from './userSessionService.js'
 
 const DEFAULT_PROFILE_SHOW_TABS = ['posts', 'favorites', 'likes', 'comments']

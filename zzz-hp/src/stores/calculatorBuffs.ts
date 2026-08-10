@@ -362,6 +362,10 @@ function normalizeDamageEventMode(item: Record<string, unknown>): DamageEventMod
           entry.critMode === 'noCrit' || entry.critMode === 'fullCrit'
             ? entry.critMode
             : 'expected',
+        ownerAgentId:
+          entry.ownerAgentId == null || entry.ownerAgentId === ''
+            ? null
+            : String(entry.ownerAgentId),
         triggerAgentId:
           entry.triggerAgentId == null || entry.triggerAgentId === ''
             ? null
