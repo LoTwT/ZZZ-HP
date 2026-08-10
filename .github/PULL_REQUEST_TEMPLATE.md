@@ -16,7 +16,8 @@
 
 - [ ] `cd zzz-hp && npm run type-check`
 - [ ] 相关页面 / API 本地手测通过
-- [ ] 未误提交 `.env`、上传图、会话文件等
+- [ ] 未误提交 `.env`、上传图、会话文件、真实库转储、明文管理员密码
+- [ ] 已跑：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-no-secrets.ps1 -StagedOnly`
 
 ## Notes
 

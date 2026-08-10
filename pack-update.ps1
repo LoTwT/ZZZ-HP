@@ -123,6 +123,16 @@ Write-Host "ZZZ-HP pack  mode=$(if ($FullPack) { 'full' } else { 'quick' })  ver
 Write-Host "Output: $ZipPath"
 Write-Host '========================================' -ForegroundColor Cyan
 
+$SecretCheck = Join-Path $Root 'scripts\check-no-secrets.ps1'
+if (-not (Test-Path -LiteralPath $SecretCheck)) {
+  throw "Missing secret gate script: $SecretCheck"
+}
+Write-Host '>> Preflight secret scan (working tree)'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $SecretCheck -Path $Root
+if ($LASTEXITCODE -ne 0) {
+  throw 'Secret scan failed on working tree. Fix dumps/admin plaintext before packing.'
+}
+
 if ($FullPack) {
   if (-not $SkipExport) {
     Invoke-NpmIn -Dir $Back -Script 'export:calculator-buffs' -Label 'Export calculator buffs'
@@ -166,6 +176,9 @@ $ExcludeFiles = @(
   '.env.development',
   'SecretKey.csv',
   'zzz_full_dump.sql',
+  '*full_dump*.sql',
+  '*_dump.sql',
+  '*dump*.sql',
   '.DS_Store',
   'Thumbs.db'
 )
@@ -298,6 +311,8 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('[Included / excluded]')
 [void]$sb.AppendLine('- .env and secrets excluded')
+[void]$sb.AppendLine('- Real DB dumps (*dump*.sql / zzz_full_dump.sql) excluded')
+[void]$sb.AppendLine('- Admin password must NOT appear in pack; set via cloud .env + set-admin-password.mjs')
 [void]$sb.AppendLine('- node_modules, .git excluded')
 [void]$sb.AppendLine('- backend data/*.json runtime files excluded')
 [void]$sb.AppendLine($exportLine)
@@ -324,12 +339,25 @@ Get-ChildItem -LiteralPath $StageRoot -Recurse -Force -File -ErrorAction Silentl
   elseif ($n.StartsWith('.env.')) { $bad = $true }
   elseif ($n -match 'SecretKey') { $bad = $true }
   elseif ($n -match '\.(pem|key)$') { $bad = $true }
+  elseif (
+    $n -ieq 'zzz_full_dump.sql' -or
+    $n -match '(?i)full[_-]?dump' -or
+    ($n -match '(?i)\.sql$' -and $n -match '(?i)dump')
+  ) {
+    $bad = $true
+  }
 
   if ($bad) {
     $rel = $_.FullName.Substring($StageRoot.Length)
-    Write-Warning "Removed secret from package: $rel"
+    Write-Warning "Removed secret/dump from package: $rel"
     Remove-Item -LiteralPath $_.FullName -Force
   }
+}
+
+Write-Host '>> Stage secret content scan (admin password / dumps)'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $SecretCheck -Path $StageRoot
+if ($LASTEXITCODE -ne 0) {
+  throw 'Secret scan failed on pack stage. Refusing to create zip.'
 }
 
 if ($FullPack) {
@@ -369,6 +397,7 @@ else {
   Write-Host 'Quick pack — no dist inside; build on server.' -ForegroundColor Yellow
 }
 Write-Host 'Upload zip only. Do not copy local .env over cloud .env.'
+Write-Host 'Do not ship DB dumps or plaintext admin passwords; set ADMIN_PASSWORD on server then run set-admin-password.mjs.'
 
 if (-not $NoOpen) {
   try {

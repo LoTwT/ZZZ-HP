@@ -27,12 +27,14 @@
 **要点**：
 
 - 清除仓库中的 `zzz_full_dump.sql`（含明文管理员密码），并禁止再提交真实库转储
+- Git 历史已将明文管理员口令替换为 `REDACTED_ADMIN_PASSWORD`（生产仍须轮换密码）
 - 头像路径 containment（白名单 + realpath）
 - 用户头像鉴权前移；留言/头像内存接收 + 魔数校验 + 限流 + 容量上限
 - OTP 使用 `crypto.randomInt`；生产不打印验证码
 - Buff 空 `*Factor` 默认 0；`defaultStacks=0` 可保留
+- 提交 / 打包闸门：`scripts/check-no-secrets.ps1`，已接入 `pack-update.ps1` 与 release skill
 
 ## 运维注意
 
-- Git 历史中仍可能残留旧 dump；生产若曾用过 dump 内口令，请立刻轮换管理员密码并撤销 session。
-- 历史 rewrite / force push 另开维护窗口，不与功能发版混做。
+- 生产若曾用过 dump 内旧口令，请立刻轮换管理员密码并撤销 session。
+- 其他机器的旧 clone 需重新 clone 或按新历史重置。
