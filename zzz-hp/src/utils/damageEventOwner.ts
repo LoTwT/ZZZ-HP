@@ -185,5 +185,54 @@ export function isRadianceOwnerValid(
   return isLuminousAgent(owner)
 }
 
+export type DamageEventAgentOption = {
+  id: string
+  name: string
+  element?: string
+}
+
+/**
+ * 队内选项 ∪ 事件已引用的产生者/异常触发者。
+ * 已下阵角色仍保留展示（标注「未上阵」），不清空存储。
+ */
+export function mergeDamageEventAgentOptions(
+  teamOptions: DamageEventAgentOption[],
+  catalog: Array<{ id: string; name: string; element?: string | null }>,
+  events: DamageEvent[],
+  mainAgentId: string,
+  formatName: (agent: { id: string; name: string; element?: string | null }, offTeam: boolean) => string = (
+    agent,
+    offTeam,
+  ) => (offTeam ? `${agent.name}（未上阵）` : agent.name),
+): DamageEventAgentOption[] {
+  const map = new Map<string, DamageEventAgentOption>()
+  for (const opt of teamOptions) {
+    map.set(opt.id, opt)
+  }
+
+  const ensure = (agentId: string | null | undefined) => {
+    if (!agentId || agentId === TRIGGER_AGENT_AT_CALC) return
+    if (map.has(agentId)) return
+    const agent = catalog.find((item) => item.id === agentId)
+    if (!agent) {
+      map.set(agentId, { id: agentId, name: `${agentId}（未上阵）` })
+      return
+    }
+    map.set(agentId, {
+      id: agent.id,
+      name: formatName(agent, true),
+      element: agent.element ?? undefined,
+    })
+  }
+
+  for (const event of events) {
+    if (event.ownerAgentId) ensure(event.ownerAgentId)
+    ensure(resolveEventOwnerAgentId(event, mainAgentId))
+    if (eventNeedsAnomalyProducer(event.kind)) ensure(event.triggerAgentId)
+  }
+
+  return [...map.values()]
+}
+
 export const RADIANCE_SELF_TRIGGER_HINT =
   '本人耀变 = 蕾米埃尔异常基础 × 防御区 × 抗性区 × 耀变综合增伤 × 耀变倍率；异常基础 = 局内攻 × 局内精通区 × 特殊等级区 × 异化系数 × 等级区（局内攻/精不含队友增益）。'

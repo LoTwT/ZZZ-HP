@@ -297,7 +297,7 @@ export function filterAnomalyProducerAgentOptions<
   return agents.filter((agent) => canAgentBeAnomalyProducerForKind(agent, kind))
 }
 
-/** @deprecated 使用 getDamageEventKindOptionsForMode */
+/** @deprecated 使用 getDamageEventKindOptionsForMode；非流明主 C 时仍保留耀变选项 */
 export function filterDamageEventKindOptionsForMainAgent(
   options: { id: DamageEventKind; label: string }[],
   mainAgentElement: string | null | undefined,
@@ -309,7 +309,7 @@ export function filterDamageEventKindOptionsForMainAgent(
   if (isLuminousElement(mainAgentElement ?? null)) {
     return options.filter((opt) => opt.id === 'radiance')
   }
-  return options.filter((opt) => opt.id !== 'direct' && opt.id !== 'radiance')
+  return options.filter((opt) => opt.id !== 'direct')
 }
 
 /** 队伍中是否同时存在风属性与至少一个非风属性代理人 */

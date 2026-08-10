@@ -10,15 +10,16 @@ import type {
 import { TRIGGER_AGENT_AT_CALC } from '@/types/calculator'
 import {
   createEmptyDamageEvent,
+  DAMAGE_EVENT_KIND_OPTIONS,
+  formatDamageEventDisplayName,
 } from '@/utils/damageEvent'
 import {
   createCustomModeId,
   loadCustomModes,
   removeCustomMode,
-  resolveDamageModeTeamKey,
   upsertCustomMode,
 } from '@/utils/customDamageEventModes'
-import { buildDamageModeTeamKey } from '@/utils/damageEventOwner'
+import { buildDamageModeTeamKey, resolveEventOwnerAgentId } from '@/utils/damageEventOwner'
 
 const props = withDefaults(
   defineProps<{
@@ -48,6 +49,7 @@ const modeName = defineModel<string>('modeName', { default: '' })
 const draftName = ref('')
 const message = ref('')
 const customModes = ref<DamageEventMode[]>(loadCustomModes())
+const modeSearchQuery = ref('')
 
 const isPresetMode = computed(() => {
   if (!modeId.value) return false
@@ -67,30 +69,83 @@ const agentPresets = computed(() =>
 
 const mainAgentIdRef = computed(() => props.mainAgentId ?? props.agentId ?? '')
 
-const currentTeamKey = computed(() =>
-  buildDamageModeTeamKey(events.value, mainAgentIdRef.value),
-)
-
 const agentCustoms = computed(() =>
   customModes.value.filter((item) => {
     if (item.modeType !== props.modeType) return false
-    const key = currentTeamKey.value
-    if (key) {
-      const itemKey = resolveDamageModeTeamKey(
-        item.events,
-        mainAgentIdRef.value,
-        item.teamKey,
-      )
-      if (itemKey) return itemKey === key
-    }
+    // 按主 C / 绑定角色展示；不再用当前事件 teamKey 硬过滤，
+    // 否则改产生者后其它自定义模式会从侧栏消失。
     return !item.agentId || !props.agentId || item.agentId === props.agentId
   }),
+)
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function stripAgentLabelNoise(name: string): string {
+  return name
+    .replace(/（未上阵）/g, '')
+    .replace(/（其他角色）/g, '')
+    .trim()
+}
+
+function agentLabel(agentId: string | null | undefined): string {
+  if (!agentId || agentId === TRIGGER_AGENT_AT_CALC) {
+    return agentId === TRIGGER_AGENT_AT_CALC ? '计算时选择' : ''
+  }
+  const raw =
+    props.triggerAgentOptions?.find((item) => item.id === agentId)?.name ??
+    props.ownerAgentOptions?.find((item) => item.id === agentId)?.name ??
+    agentId
+  const cleaned = stripAgentLabelNoise(raw)
+  const base = cleaned.includes('·') ? cleaned.split('·')[0]!.trim() : cleaned
+  return base || cleaned
+}
+
+function modeSearchBlob(mode: DamageEventMode): string {
+  const mainId = mainAgentIdRef.value
+  const parts: string[] = [mode.name, mode.modeType === 'anomaly' ? '异常' : '直伤']
+  for (const event of mode.events ?? []) {
+    const ownerId = resolveEventOwnerAgentId(event, mainId)
+    const ownerName = agentLabel(ownerId)
+    const triggerName = agentLabel(event.triggerAgentId)
+    const kind =
+      DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === event.kind)?.label ?? event.kind
+    const display = formatDamageEventDisplayName(
+      event,
+      (id) =>
+        id ? props.skillSubcategories.find((item) => item.id === id) ?? null : null,
+      ownerName || undefined,
+    )
+    parts.push(kind, display, ownerName, triggerName)
+  }
+  return normalizeSearchText(parts.filter(Boolean).join(' '))
+}
+
+function modeMatchesQuery(mode: DamageEventMode, query: string): boolean {
+  if (!query) return true
+  return modeSearchBlob(mode).includes(query)
+}
+
+const filteredAgentPresets = computed(() => {
+  const query = normalizeSearchText(modeSearchQuery.value)
+  return agentPresets.value.filter((mode) => modeMatchesQuery(mode, query))
+})
+
+const filteredAgentCustoms = computed(() => {
+  const query = normalizeSearchText(modeSearchQuery.value)
+  return agentCustoms.value.filter((mode) => modeMatchesQuery(mode, query))
+})
+
+const hasModeSearchHits = computed(
+  () => filteredAgentPresets.value.length > 0 || filteredAgentCustoms.value.length > 0,
 )
 
 watch(open, (isOpen) => {
   if (isOpen) {
     draftName.value = modeName.value || ''
     message.value = ''
+    modeSearchQuery.value = ''
     customModes.value = loadCustomModes()
     // 管理员预设：每次打开重置为默认，会话内改动不持久化
     if (isPresetMode.value && modeId.value) {
@@ -139,13 +194,15 @@ function selectPreset(mode: DamageEventMode) {
 }
 
 function cloneEventsFromCustom(source: DamageEvent[]): DamageEvent[] {
+  const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
   return source.map((event, index) => ({
     ...event,
     ownerAgentId: event.ownerAgentId ?? null,
     multOverrides: event.multOverrides ? { ...event.multOverrides } : null,
     triggerAgentId:
       event.triggerAgentId === TRIGGER_AGENT_AT_CALC ? null : (event.triggerAgentId ?? null),
-    id: event.id || `evt-copy-${Date.now().toString(36)}-${index}`,
+    // 始终换新 id，避免重复 key 导致列表只剩一条可点
+    id: `evt-copy-${stamp}-${index}`,
   }))
 }
 
@@ -257,35 +314,56 @@ function applyModeName() {
 
         <div class="mode-body">
           <aside class="mode-aside">
-            <h4>管理员预设</h4>
-            <button
-              v-for="mode in agentPresets"
-              :key="mode.id"
-              type="button"
-              class="mode-item"
-              :class="{ active: modeId === mode.id }"
-              @click="selectPreset(mode)"
-            >
-              <strong>{{ mode.name }}</strong>
-              <span>{{ mode.events.length }} 条 · 预设</span>
-            </button>
-            <p v-if="!agentPresets.length" class="aside-empty">暂无该角色的管理端预设</p>
+            <div class="mode-aside-toolbar">
+              <label class="mode-search">
+                <span class="sr-only">搜索模式</span>
+                <input
+                  v-model="modeSearchQuery"
+                  type="search"
+                  placeholder="搜索模式 / 事件 / 产生者 / 触发者"
+                  autocomplete="off"
+                />
+              </label>
+            </div>
 
-            <h4 class="aside-section">自定义模式</h4>
-            <button type="button" class="mode-item mode-item--add" @click="createCustom">
-              + 新建自定义模式
-            </button>
-            <button
-              v-for="mode in agentCustoms"
-              :key="mode.id"
-              type="button"
-              class="mode-item"
-              :class="{ active: modeId === mode.id }"
-              @click="selectCustom(mode)"
-            >
-              <strong>{{ mode.name }}</strong>
-              <span>{{ mode.events.length }} 条事件</span>
-            </button>
+            <div class="mode-aside-scroll">
+              <h4>管理员预设</h4>
+              <button
+                v-for="mode in filteredAgentPresets"
+                :key="mode.id"
+                type="button"
+                class="mode-item"
+                :class="{ active: modeId === mode.id }"
+                @click="selectPreset(mode)"
+              >
+                <strong>{{ mode.name }}</strong>
+                <span>{{ mode.events.length }} 条 · 预设</span>
+              </button>
+              <p v-if="!agentPresets.length" class="aside-empty">暂无该角色的管理端预设</p>
+              <p v-else-if="!filteredAgentPresets.length" class="aside-empty">无匹配预设</p>
+
+              <h4 class="aside-section">自定义模式</h4>
+              <button type="button" class="mode-item mode-item--add" @click="createCustom">
+                + 新建自定义模式
+              </button>
+              <button
+                v-for="mode in filteredAgentCustoms"
+                :key="mode.id"
+                type="button"
+                class="mode-item"
+                :class="{ active: modeId === mode.id }"
+                @click="selectCustom(mode)"
+              >
+                <strong>{{ mode.name }}</strong>
+                <span>{{ mode.events.length }} 条事件</span>
+              </button>
+              <p
+                v-if="modeSearchQuery.trim() && !hasModeSearchHits"
+                class="aside-empty"
+              >
+                无匹配模式
+              </p>
+            </div>
           </aside>
 
           <div class="mode-main">
@@ -464,7 +542,7 @@ function applyModeName() {
 
 .mode-body {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: 0.85rem;
   min-height: 320px;
 }
@@ -472,9 +550,43 @@ function applyModeName() {
 .mode-aside {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  min-width: 220px;
+  max-height: min(62vh, 560px);
+  min-height: 0;
   border-right: 1px solid #2a2f36;
   padding-right: 0.75rem;
+}
+
+.mode-aside-toolbar {
+  flex-shrink: 0;
+}
+
+.mode-search input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #2d323a;
+  border-radius: 8px;
+  background: #0f1217;
+  color: #ebedf0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.mode-search input::placeholder {
+  color: #7f8794;
+}
+
+.mode-aside-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.1rem;
+  overscroll-behavior: contain;
 }
 
 .mode-aside h4 {
@@ -486,6 +598,18 @@ function applyModeName() {
 
 .aside-section {
   margin-top: 0.85rem !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .mode-item {
@@ -501,6 +625,7 @@ function applyModeName() {
   font-size: 0.76rem;
   text-align: left;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .mode-item strong {
@@ -621,6 +746,7 @@ function applyModeName() {
     border-bottom: 1px solid #2a2f36;
     padding-right: 0;
     padding-bottom: 0.75rem;
+    max-height: 280px;
   }
 }
 </style>

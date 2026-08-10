@@ -1416,6 +1416,7 @@
 
 [data-theme='light'] .mode-item,
 [data-theme='light'] .name-row input,
+[data-theme='light'] .mode-search input,
 [data-theme='light'] .mode-modal .event-item,
 [data-theme='light'] .mode-modal .field select,
 [data-theme='light'] .mode-modal .field input {
@@ -1423,6 +1424,10 @@
   background: #ffffff !important;
   color: #1c212a !important;
   color-scheme: light;
+}
+
+[data-theme='light'] .mode-search input::placeholder {
+  color: #98a2b3 !important;
 }
 
 [data-theme='light'] .mode-item.active,
@@ -1617,6 +1622,19 @@ body:has(.calculator-page.theme-light) .mode-item,
   border-color: #d5dae3 !important;
   background: #ffffff !important;
   color: #1c212a !important;
+}
+
+body:has(.calculator-page.theme-light) .mode-search input,
+.theme-light .mode-search input {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+body:has(.calculator-page.theme-light) .mode-search input::placeholder,
+.theme-light .mode-search input::placeholder {
+  color: #98a2b3 !important;
 }
 
 body:has(.calculator-page.theme-light) .mode-item.active,

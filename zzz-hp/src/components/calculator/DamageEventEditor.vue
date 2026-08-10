@@ -102,9 +102,20 @@ function isSkillBound(event: DamageEvent) {
   return event.skillBound !== false
 }
 
+function stripAgentLabelNoise(name: string): string {
+  return name
+    .replace(/（未上阵）/g, '')
+    .replace(/（其他角色）/g, '')
+    .trim()
+}
+
 function resolveOwnerName(event: DamageEvent): string | undefined {
   const ownerId = resolveOwnerAgentId(event)
-  return props.ownerAgentOptions?.find((item) => item.id === ownerId)?.name
+  const raw = props.ownerAgentOptions?.find((item) => item.id === ownerId)?.name
+  if (!raw) return undefined
+  const cleaned = stripAgentLabelNoise(raw)
+  const base = cleaned.includes('·') ? cleaned.split('·')[0]!.trim() : cleaned
+  return base || cleaned
 }
 
 function eventSummary(event: DamageEvent) {
@@ -130,12 +141,53 @@ function resolveRemielAgentId(): string | null {
   return null
 }
 
+function ensureUniqueEventIds(list: DamageEvent[]): DamageEvent[] {
+  const seen = new Set<string>()
+  let changed = false
+  const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`
+  const next = list.map((event, index) => {
+    if (event.id && !seen.has(event.id)) {
+      seen.add(event.id)
+      return event
+    }
+    changed = true
+    const id = `evt-fix-${stamp}-${index}`
+    seen.add(id)
+    return { ...event, id }
+  })
+  return changed ? next : list
+}
+
+watch(
+  () => props.modelValue,
+  (list) => {
+    if (!list?.length) return
+    const fixed = ensureUniqueEventIds(list)
+    if (fixed !== list) emit('update:modelValue', fixed)
+  },
+  { immediate: true },
+)
+
+watch(selectedEventId, (id) => {
+  if (!id) return
+  const event = events.value.find((item) => item.id === id)
+  if (!event || event.ownerAgentId) return
+  if (event.kind === 'radiance') {
+    const remielId = resolveRemielAgentId()
+    if (remielId) updateEvent(event.id, { ownerAgentId: remielId })
+    return
+  }
+  const fallback = props.mainAgentId || props.agentId
+  if (fallback) updateEvent(event.id, { ownerAgentId: fallback })
+})
+
 function addEvent() {
   let defaultKind: DamageEventKind = props.modeType === 'anomaly' ? 'anomaly' : 'direct'
   if (props.modeType === 'anomaly' && isLuminousElement(props.mainAgentElement)) {
     defaultKind = 'radiance'
   }
   const next = createEmptyDamageEvent(events.value.length, defaultKind)
+  next.id = `evt-local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${events.value.length}`
   const remielId = resolveRemielAgentId()
   next.ownerAgentId =
     defaultKind === 'radiance' && remielId
@@ -300,10 +352,12 @@ const kindOptions = computed(() => {
     props.teamHasRemiel ?? isLuminousElement(props.mainAgentElement)
   const base = getDamageEventKindOptionsForMode(modeType, teamHasRemiel)
   if (modeType !== 'anomaly') return base
+  // 主 C 为流明：仅耀变
   if (isLuminousElement(props.mainAgentElement)) {
     return base.filter((opt) => opt.id === 'radiance')
   }
-  return base.filter((opt) => opt.id !== 'radiance')
+  // 其他主 C：旧四类 + 耀变（队内无蕾米时耀变 disabled，仍可选后提示）
+  return base
 })
 
 const radianceHint = computed(() => {
@@ -371,29 +425,34 @@ watch(
 <template>
   <section class="damage-event-editor" :class="{ embedded }">
     <div class="editor-layout">
-      <aside class="event-list">
-        <button type="button" class="add-btn" @click="addEvent">+ 添加事件</button>
-        <div v-if="!events.length" class="empty-hint">暂无伤害事件，点击上方添加</div>
-        <button
-          v-for="event in events"
-          :key="event.id"
-          type="button"
-          class="event-item"
-          :class="{ active: selectedEventId === event.id }"
-          @click="selectedEventId = event.id"
-        >
-          {{ eventSummary(event) }}
-        </button>
+      <aside class="event-sidebar">
+        <div class="event-sidebar-toolbar">
+          <button type="button" class="add-btn" @click="addEvent">+ 添加事件</button>
+        </div>
+
+        <div class="event-list-scroll">
+          <div v-if="!events.length" class="empty-hint">暂无伤害事件，点击上方添加</div>
+          <button
+            v-for="(event, index) in events"
+            :key="`${index}-${event.id}`"
+            type="button"
+            class="event-item"
+            :class="{ active: selectedEventId === event.id }"
+            @click="selectedEventId = event.id"
+          >
+            {{ eventSummary(event) }}
+          </button>
+        </div>
       </aside>
 
       <form v-if="selectedEvent" class="event-detail" @submit.prevent>
         <h4>事件详情</h4>
         <div class="field-row">
-          <label v-if="ownerAgentOptions?.length" class="field">
+          <label class="field">
             <span>事件产生角色</span>
             <select
               :value="resolveOwnerAgentId(selectedEvent!)"
-              :disabled="selectedEvent!.kind === 'radiance'"
+              :disabled="selectedEvent!.kind === 'radiance' || !ownerAgentOptions?.length"
               @change="
                 updateEvent(selectedEvent!.id, {
                   ownerAgentId: ($event.target as HTMLSelectElement).value || null,
@@ -401,8 +460,11 @@ watch(
                 })
               "
             >
+              <option v-if="!ownerAgentOptions?.length" value="" disabled>
+                暂无角色数据
+              </option>
               <option
-                v-for="agent in ownerAgentOptions"
+                v-for="agent in ownerAgentOptions ?? []"
                 :key="agent.id"
                 :value="agent.id"
               >
@@ -585,15 +647,41 @@ watch(
 
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 0.75rem;
   align-items: start;
 }
 
-.event-list {
+.event-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 240px;
+  max-width: 240px;
+  max-height: min(58vh, 560px);
+  min-height: 0;
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+}
+
+.event-sidebar-toolbar {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.event-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+  overscroll-behavior: contain;
 }
 
 .add-btn {
@@ -615,6 +703,7 @@ watch(
   font-size: 0.76rem;
   text-align: left;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .event-item.active {
@@ -714,6 +803,17 @@ watch(
 @media (max-width: 768px) {
   .editor-layout {
     grid-template-columns: 1fr;
+  }
+
+  .event-sidebar {
+    width: 100%;
+    max-width: none;
+    max-height: 240px;
+    position: static;
+  }
+
+  .event-list-scroll {
+    max-height: 160px;
   }
 }
 </style>

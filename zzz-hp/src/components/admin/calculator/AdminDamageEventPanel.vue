@@ -50,9 +50,13 @@ const selectedAgent = computed(() => {
 const selectedAgentElement = computed(() => selectedAgent.value?.element ?? null)
 
 const editorOwnerAgentOptions = computed(() => {
-  const agent = selectedAgent.value
-  if (!agent) return undefined
-  return [{ id: agent.id, name: agent.name, element: agent.element }]
+  // 管理端也始终给出全角色表，便于配置队友产生的事件（如主模式绑青衣、产生者为蕾米）
+  const boundId = selectedAgent.value?.id
+  return agents.value.map((agent) => ({
+    id: agent.id,
+    name: boundId && agent.id === boundId ? agent.name : `${agent.name}（其他角色）`,
+    element: agent.element,
+  }))
 })
 
 const teamHasRemielForEditor = computed(() => isLuminousElement(selectedAgentElement.value))

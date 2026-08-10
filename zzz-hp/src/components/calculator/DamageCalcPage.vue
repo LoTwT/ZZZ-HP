@@ -61,7 +61,7 @@ import type { EnvironmentBuffFilterMode } from '@/components/calculator/Environm
 import { mapBossInfoToDamageEnemyInput } from '@/utils/enemyInputFromBoss'
 import { resolveIsFollowUp } from '@/utils/buffEffect'
 import { canSelectTurbulenceDamageEvent } from '@/utils/damageEvent'
-import { collectParticipantAgentIds } from '@/utils/damageEventOwner'
+import { collectParticipantAgentIds, mergeDamageEventAgentOptions } from '@/utils/damageEventOwner'
 import { findLuminousAgentInTeam } from '@/utils/remielUtils'
 import { createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils/calculatorUi'
 
@@ -412,22 +412,52 @@ const anomalyTriggerOptions = computed(() =>
 
 const teamHasRemiel = computed(() => Boolean(findLuminousAgentInTeam(teamSlots, agents.value)))
 
-const ownerAgentOptionsForEditor = computed(() =>
-  teamSlots
+const mainAgentIdForEvents = computed(
+  () => teamSlots.find((slot) => slot.isMainC)?.agentId ?? '',
+)
+
+const allDamageEvents = computed(() => [...directEvents.value, ...anomalyEvents.value])
+
+const teamAgentIdSet = computed(() => {
+  const ids = new Set<string>()
+  for (const slot of teamSlots) {
+    if (slot.agentId) ids.add(slot.agentId)
+  }
+  return ids
+})
+
+/** 队内优先，并始终带上全角色表，保证产生者下拉始终有选项可显示 */
+const ownerAgentOptionsForEditor = computed(() => {
+  const teamIds = teamAgentIdSet.value
+  const teamOptions = teamSlots
     .map((slot) => {
       const agent = agents.value.find((item) => item.id === slot.agentId)
       if (!agent) return null
       return { id: agent.id, name: agent.name, element: agent.element }
     })
-    .filter((item): item is { id: string; name: string; element: string } => Boolean(item)),
-)
+    .filter((item): item is { id: string; name: string; element: string } => Boolean(item))
+
+  const merged = mergeDamageEventAgentOptions(
+    teamOptions,
+    agents.value,
+    allDamageEvents.value,
+    mainAgentIdForEvents.value,
+  )
+  const seen = new Set(merged.map((item) => item.id))
+  for (const agent of agents.value) {
+    if (seen.has(agent.id)) continue
+    merged.push({
+      id: agent.id,
+      name: teamIds.has(agent.id) ? agent.name : `${agent.name}（未上阵）`,
+      element: agent.element,
+    })
+    seen.add(agent.id)
+  }
+  return merged
+})
 
 function getParticipantAgentIds(): string[] {
-  const mainAgentId = teamSlots.find((slot) => slot.isMainC)?.agentId ?? ''
-  return collectParticipantAgentIds(
-    [...directEvents.value, ...anomalyEvents.value],
-    mainAgentId,
-  )
+  return collectParticipantAgentIds(allDamageEvents.value, mainAgentIdForEvents.value)
 }
 
 function ensureAnomalySlotPanel(agentId: string) {
@@ -460,9 +490,37 @@ function ensureAnomalySlotPanel(agentId: string) {
   anomalySlotPanels[agentId] = panel
 }
 
-const triggerAgentOptionsForEditor = computed(() =>
-  anomalyTriggerOptions.value.map((opt) => ({ id: opt.id, name: opt.label })),
-)
+const triggerAgentOptionsForEditor = computed(() => {
+  const teamIds = teamAgentIdSet.value
+  const teamOptions = anomalyTriggerOptions.value.map((opt) => ({
+    id: opt.id,
+    name: opt.label,
+    element: opt.element,
+  }))
+  const merged = mergeDamageEventAgentOptions(
+    teamOptions,
+    agents.value,
+    allDamageEvents.value,
+    mainAgentIdForEvents.value,
+    (agent, offTeam) =>
+      offTeam
+        ? `${agent.name}·${agent.element ?? ''}（未上阵）`
+        : `${agent.name}·${agent.element ?? ''}`,
+  )
+  const seen = new Set(merged.map((item) => item.id))
+  for (const agent of agents.value) {
+    if (seen.has(agent.id)) continue
+    merged.push({
+      id: agent.id,
+      name: teamIds.has(agent.id)
+        ? `${agent.name}·${agent.element}`
+        : `${agent.name}·${agent.element}（未上阵）`,
+      element: agent.element,
+    })
+    seen.add(agent.id)
+  }
+  return merged.map((opt) => ({ id: opt.id, name: opt.name }))
+})
 
 function syncStaggerPhaseToEvents(phase: StaggerPhase) {
   for (const event of directEvents.value) {
@@ -488,20 +546,17 @@ watch(
   },
 )
 
-watch(anomalyTriggerOptions, (opts) => {
-  const validIds = new Set(opts.map((item) => item.id))
-  for (const event of anomalyEvents.value) {
-    // 计算页不保留「计算时选择」哨兵
-    if (event.triggerAgentId === '__at_calc__') {
-      event.triggerAgentId = null
-      continue
+/** 仅清掉计算页不应保留的「计算时选择」哨兵；已选产生者/触发者不因下阵而清空 */
+watch(
+  () => anomalyEvents.value.map((event) => event.triggerAgentId).join(','),
+  () => {
+    for (const event of anomalyEvents.value) {
+      if (event.triggerAgentId === '__at_calc__') {
+        event.triggerAgentId = null
+      }
     }
-    if (event.triggerAgentId && !validIds.has(event.triggerAgentId)) {
-      event.triggerAgentId = null
-    }
-  }
-})
-
+  },
+)
 watch(
   () =>
     [
