@@ -19,33 +19,34 @@ import {
   saveDamageEventMode,
   saveWengine,
 } from '../controllers/calculatorBuffController.js'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 
 const router = Router()
 
 router.get('/', getCalculatorBuffs)
 
 router.get('/skill-subcategories', getSkillSubcategories)
-router.put('/skill-subcategories', saveSkillSubcategory)
-router.delete('/skill-subcategories/:id', removeSkillSubcategory)
+router.put('/skill-subcategories', requireAdmin, saveSkillSubcategory)
+router.delete('/skill-subcategories/:id', requireAdmin, removeSkillSubcategory)
 
 router.get('/follow-up-rules', getFollowUpSkillRules)
-router.put('/follow-up-rules', saveFollowUpSkillRule)
-router.delete('/follow-up-rules/:id', removeFollowUpSkillRule)
+router.put('/follow-up-rules', requireAdmin, saveFollowUpSkillRule)
+router.delete('/follow-up-rules/:id', requireAdmin, removeFollowUpSkillRule)
 
 router.get('/damage-event-modes', getDamageEventModes)
-router.put('/damage-event-modes', saveDamageEventMode)
-router.delete('/damage-event-modes/:id', removeDamageEventMode)
+router.put('/damage-event-modes', requireAdmin, saveDamageEventMode)
+router.delete('/damage-event-modes/:id', requireAdmin, removeDamageEventMode)
 
-router.put('/agents', saveAgent)
-router.delete('/agents/:id', removeAgent)
+router.put('/agents', requireAdmin, saveAgent)
+router.delete('/agents/:id', requireAdmin, removeAgent)
 
-router.put('/bangboos', saveBangboo)
-router.delete('/bangboos/:id', removeBangboo)
+router.put('/bangboos', requireAdmin, saveBangboo)
+router.delete('/bangboos/:id', requireAdmin, removeBangboo)
 
-router.put('/drive-discs', saveDriveDisc)
-router.delete('/drive-discs/:id', removeDriveDisc)
+router.put('/drive-discs', requireAdmin, saveDriveDisc)
+router.delete('/drive-discs/:id', requireAdmin, removeDriveDisc)
 
-router.put('/wengines', saveWengine)
-router.delete('/wengines/:id', removeWengine)
+router.put('/wengines', requireAdmin, saveWengine)
+router.delete('/wengines/:id', requireAdmin, removeWengine)
 
 export default router

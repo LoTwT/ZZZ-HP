@@ -1,3 +1,5 @@
+import { withAdminAuthHeaders } from '@/utils/adminAuth'
+
 export type SiteInfoPanelId = 'about' | 'features' | 'credits' | 'legal'
 
 export interface SiteInfoSection {
@@ -19,7 +21,10 @@ interface ApiResponse<T> {
 }
 
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init)
+  const method = (init?.method || 'GET').toUpperCase()
+  const needsAdmin = method !== 'GET' && method !== 'HEAD'
+  const headers = needsAdmin ? withAdminAuthHeaders(init?.headers) : init?.headers
+  const response = await fetch(input, { ...init, headers })
   const json = (await response.json()) as ApiResponse<T>
   if (!response.ok || json.code !== 200) {
     throw new Error(json.message || `请求失败: ${response.status}`)

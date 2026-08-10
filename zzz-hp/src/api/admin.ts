@@ -1,4 +1,5 @@
 import type { DefenseMonsterCategory, RecordScheme } from '@/types/admin'
+import { withAdminAuthHeaders } from '@/utils/adminAuth'
 
 interface ApiResult<T> {
   code: number
@@ -142,6 +143,7 @@ export async function uploadBossImage(file: File) {
 
   const response = await fetch('/api/upload/boss', {
     method: 'POST',
+    headers: withAdminAuthHeaders(),
     body: formData,
   })
 
@@ -154,6 +156,7 @@ export async function uploadBuffImage(file: File) {
 
   const response = await fetch('/api/upload/buff', {
     method: 'POST',
+    headers: withAdminAuthHeaders(),
     body: formData,
   })
 
@@ -166,6 +169,7 @@ export async function uploadCalculatorImage(file: File) {
 
   const response = await fetch('/api/upload/calculator', {
     method: 'POST',
+    headers: withAdminAuthHeaders(),
     body: formData,
   })
 
@@ -185,6 +189,7 @@ export async function uploadCalculatorPublicImage(
 
   const response = await fetch(`/api/upload/calculator-public?${query}`, {
     method: 'POST',
+    headers: withAdminAuthHeaders(),
     body: formData,
   })
 
@@ -200,7 +205,7 @@ export async function ensureCalculatorPublicAvatar(
   const query = new URLSearchParams({ kind, entityId: entityId.trim() })
   const response = await fetch(`/api/upload/calculator-public/ensure?${query}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ url }),
   })
   return parseResponse<{ url: string; action: string }>(response)
@@ -225,7 +230,7 @@ export async function searchBossInfoNames(keyword: string) {
 export async function createBoss(payload: CreateBossPayload) {
   const response = await fetch('/api/boss', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
 
@@ -235,7 +240,7 @@ export async function createBoss(payload: CreateBossPayload) {
 export async function createBuff(payload: CreateBuffPayload) {
   const response = await fetch('/api/buff', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
 
@@ -259,7 +264,10 @@ export async function searchBossRecords(params: AdminSearchParams = {}) {
 }
 
 export async function deleteBossRecord(id: number) {
-  const response = await fetch(`/api/boss/${id}`, { method: 'DELETE' })
+  const response = await fetch(`/api/boss/${id}`, {
+    method: 'DELETE',
+    headers: withAdminAuthHeaders(),
+  })
   return parseResponse<{ id: number }>(response)
 }
 
@@ -270,7 +278,10 @@ export async function searchBuffRecords(params: AdminSearchParams = {}) {
 }
 
 export async function deleteBuffRecord(id: number) {
-  const response = await fetch(`/api/buff/${id}`, { method: 'DELETE' })
+  const response = await fetch(`/api/buff/${id}`, {
+    method: 'DELETE',
+    headers: withAdminAuthHeaders(),
+  })
   return parseResponse<{ id: number }>(response)
 }
 
@@ -301,7 +312,7 @@ export async function fetchSeasonDates(mode: SeasonDateMode) {
 export async function createSeasonDate(payload: SeasonDatePayload) {
   const response = await fetch('/api/season-dates', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   return parseResponse<SeasonDateRecord>(response)
@@ -310,13 +321,16 @@ export async function createSeasonDate(payload: SeasonDatePayload) {
 export async function updateSeasonDate(id: number, payload: SeasonDatePayload) {
   const response = await fetch(`/api/season-dates/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   return parseResponse<SeasonDateRecord>(response)
 }
 
 export async function deleteSeasonDate(id: number) {
-  const response = await fetch(`/api/season-dates/${id}`, { method: 'DELETE' })
+  const response = await fetch(`/api/season-dates/${id}`, {
+    method: 'DELETE',
+    headers: withAdminAuthHeaders(),
+  })
   return parseResponse<{ id: number }>(response)
 }

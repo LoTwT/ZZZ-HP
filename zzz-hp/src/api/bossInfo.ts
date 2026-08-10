@@ -1,3 +1,5 @@
+import { withAdminAuthHeaders } from '@/utils/adminAuth'
+
 export interface BossInfoRecord {
   id: number
   boss_name: string
@@ -85,7 +87,7 @@ export async function updateBossInfoRecord(
 ) {
   const response = await fetch(`/api/boss-info/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   return parseResponse<BossInfoRecord>(response)

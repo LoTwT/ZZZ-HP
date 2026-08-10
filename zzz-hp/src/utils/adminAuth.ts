@@ -52,6 +52,25 @@ export function clearAdminAuthenticated() {
   setAdminAuthenticated(false)
 }
 
+/** 管理端写请求统一附加 Authorization + X-Admin-Token */
+export function withAdminAuthHeaders(
+  headers: HeadersInit | undefined = undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (headers) {
+    const normalized = new Headers(headers)
+    normalized.forEach((value, key) => {
+      out[key] = value
+    })
+  }
+  const token = getAdminToken()
+  if (token) {
+    out.Authorization = `Bearer ${token}`
+    out['X-Admin-Token'] = token
+  }
+  return out
+}
+
 function writeCookie(name: string, value: string) {
   try {
     const maxAge = 60 * 60 * 24 * 400

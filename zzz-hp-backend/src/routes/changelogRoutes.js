@@ -6,13 +6,14 @@ import {
   getChangelogs,
   removeChangelog,
 } from '../controllers/changelogController.js'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 
 const router = Router()
 
 router.get('/', getChangelogs)
 router.get('/:id', getChangelog)
-router.post('/', addChangelog)
-router.put('/:id', editChangelog)
-router.delete('/:id', removeChangelog)
+router.post('/', requireAdmin, addChangelog)
+router.put('/:id', requireAdmin, editChangelog)
+router.delete('/:id', requireAdmin, removeChangelog)
 
 export default router
