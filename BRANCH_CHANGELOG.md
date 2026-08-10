@@ -2,6 +2,8 @@
 
 对照本地 / 远程分支用途与内容。站点首页更新日志由 `zzz-hp-backend/scripts/seed_changelog.mjs` 写入数据库；本文件面向开发与发版选分支。
 
+**维护约定**（见 `.cursor/rules/git-workflow.mdc`、`CONTRIBUTING.md`）：新建分支或该分支首次功能提交前，先在本文件补一条介绍；版本线面向用户时同步改 `seed_changelog.mjs`。勿另建零散分支 `.md`。
+
 **当前推荐发布线**：`3.1.6.1`（已合入 `3.1.6.2`，尖端相同）。  
 **稳定主干**：`main`（含 3.1.6 级管理端鉴权，尚未含 UI 重设计与后续安全加固）。
 

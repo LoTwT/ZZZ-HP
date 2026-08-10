@@ -14,6 +14,15 @@
 
 **不要**再使用四段版本号作分支名（如 `3.0.9.1`）。历史分支可保留，新发布统一用 `release/3.0.10` 或直接在 `main` 打 tag。
 
+### 分支介绍（必写）
+
+GitHub 没有「每个分支一段介绍」字段。本仓库约定：
+
+1. **新建分支或该分支首次功能提交之前**，先更新根目录 [`BRANCH_CHANGELOG.md`](./BRANCH_CHANGELOG.md)：写清定位、内容要点、状态/建议。
+2. **版本发布线**若对用户可见，再改 `zzz-hp-backend/scripts/seed_changelog.mjs`（站点首页更新日志）。
+3. **不要**为每个分支再建零散 `xxx.md`；统一维护 `BRANCH_CHANGELOG.md`。
+4. 仅 typo / 文档微调可跳过；分支定位或重大能力变化时补写。
+
 ### 日常流程
 
 ```sh
@@ -21,14 +30,14 @@ git checkout main
 git pull
 git checkout -b feature/your-change
 
-# 开发与自测 …
+# 先写 BRANCH_CHANGELOG.md，再开发与自测 …
 
-git add <相关文件>
+git add BRANCH_CHANGELOG.md <相关文件>
 git commit -m "feat(scope): 简述"
 git push -u origin HEAD
 ```
 
-在 GitHub 开 PR → 合并进 `main` → 删除远程功能分支。
+在 GitHub 开 PR → 合并进 `main` → 删除远程功能分支。合并后可在 `BRANCH_CHANGELOG.md` 将该分支标为已合入/归档。
 
 ## 提交信息（Conventional Commits）
 
