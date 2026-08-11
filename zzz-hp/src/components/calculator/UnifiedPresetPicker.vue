@@ -124,7 +124,7 @@ const wengineChipGroups = computed(() => [
       id: `role-${r}`,
       label: r,
       active: wengineRoleFilter.value === r,
-      highlight: selectedAgent.value?.profession === r && !wengineRoleFilter.value,
+      highlight: selectedAgent.value?.profession === r,
     })),
   },
   {
@@ -648,11 +648,13 @@ const canConfirm = computed(() => !!selected.value.agentId)
   cursor: pointer;
 }
 
-.chip.active,
-.chip.highlight {
+.chip.active {
   border-color: #c9a55c;
   background: rgba(201, 165, 92, 0.14);
   color: #f0d7a2;
+}
+.chip.highlight {
+  border: 1px dashed #4a90d9 !important;
 }
 
 /* Rank / Refine bar (now in top-fixed area, always visible) */
