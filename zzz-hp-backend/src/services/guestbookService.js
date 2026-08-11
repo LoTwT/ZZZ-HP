@@ -264,6 +264,11 @@ async function ensureTable() {
   void purgeExpiredDeletedPosts()
 }
 
+/** 供启动引导集中调用 */
+export async function ensureGuestbookSchema() {
+  await ensureTable()
+}
+
 const DEFAULT_MODERATION_MESSAGES = {
   hidden: '您的委托暂时不符合委托规约，已被屏蔽，若想恢复帖子请联系管理员',
   deleted: '您的委托暂时不符合委托规约，已被删除，若想恢复帖子请联系管理员',
@@ -872,17 +877,31 @@ export async function toggleGuestbookLike(userId, postId, actor = null) {
   const post = await getGuestbookById(pid)
   if (!post || post.isHidden || post.isDeleted) return { error: 'not_found' }
 
-  const [existing] = await pool.query(
-    `SELECT id FROM guestbook_like WHERE user_id = ? AND post_id = ? LIMIT 1`,
-    [uid, pid],
-  )
   let liked = false
-  if (existing.length) {
-    await pool.query(`DELETE FROM guestbook_like WHERE user_id = ? AND post_id = ?`, [uid, pid])
-    liked = false
-  } else {
-    await pool.query(`INSERT INTO guestbook_like (user_id, post_id) VALUES (?, ?)`, [uid, pid])
-    liked = true
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [existing] = await conn.query(
+      `SELECT id FROM guestbook_like WHERE user_id = ? AND post_id = ? LIMIT 1 FOR UPDATE`,
+      [uid, pid],
+    )
+    if (existing.length) {
+      await conn.query(`DELETE FROM guestbook_like WHERE user_id = ? AND post_id = ?`, [uid, pid])
+      liked = false
+    } else {
+      await conn.query(`INSERT INTO guestbook_like (user_id, post_id) VALUES (?, ?)`, [uid, pid])
+      liked = true
+    }
+    await conn.commit()
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  } finally {
+    conn.release()
   }
 
   const updated = await getGuestbookById(pid, { viewerUserId: uid })
@@ -908,17 +927,31 @@ export async function toggleGuestbookFavorite(userId, postId, actor = null) {
   const post = await getGuestbookById(pid)
   if (!post || post.isHidden || post.isDeleted) return { error: 'not_found' }
 
-  const [existing] = await pool.query(
-    `SELECT id FROM guestbook_favorite WHERE user_id = ? AND post_id = ? LIMIT 1`,
-    [uid, pid],
-  )
   let favorited = false
-  if (existing.length) {
-    await pool.query(`DELETE FROM guestbook_favorite WHERE user_id = ? AND post_id = ?`, [uid, pid])
-    favorited = false
-  } else {
-    await pool.query(`INSERT INTO guestbook_favorite (user_id, post_id) VALUES (?, ?)`, [uid, pid])
-    favorited = true
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [existing] = await conn.query(
+      `SELECT id FROM guestbook_favorite WHERE user_id = ? AND post_id = ? LIMIT 1 FOR UPDATE`,
+      [uid, pid],
+    )
+    if (existing.length) {
+      await conn.query(`DELETE FROM guestbook_favorite WHERE user_id = ? AND post_id = ?`, [uid, pid])
+      favorited = false
+    } else {
+      await conn.query(`INSERT INTO guestbook_favorite (user_id, post_id) VALUES (?, ?)`, [uid, pid])
+      favorited = true
+    }
+    await conn.commit()
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  } finally {
+    conn.release()
   }
 
   const updated = await getGuestbookById(pid, { viewerUserId: uid })
@@ -1303,17 +1336,37 @@ export async function toggleCommentLike(userId, commentId) {
   const post = await getGuestbookById(row.post_id)
   if (!post || post.isHidden || post.isDeleted) return { error: 'not_found' }
 
-  const [existing] = await pool.query(
-    `SELECT id FROM guestbook_comment_like WHERE user_id = ? AND comment_id = ? LIMIT 1`,
-    [uid, cid],
-  )
   let liked = false
-  if (existing.length) {
-    await pool.query(`DELETE FROM guestbook_comment_like WHERE user_id = ? AND comment_id = ?`, [uid, cid])
-    liked = false
-  } else {
-    await pool.query(`INSERT INTO guestbook_comment_like (user_id, comment_id) VALUES (?, ?)`, [uid, cid])
-    liked = true
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [existing] = await conn.query(
+      `SELECT id FROM guestbook_comment_like WHERE user_id = ? AND comment_id = ? LIMIT 1 FOR UPDATE`,
+      [uid, cid],
+    )
+    if (existing.length) {
+      await conn.query(`DELETE FROM guestbook_comment_like WHERE user_id = ? AND comment_id = ?`, [
+        uid,
+        cid,
+      ])
+      liked = false
+    } else {
+      await conn.query(`INSERT INTO guestbook_comment_like (user_id, comment_id) VALUES (?, ?)`, [
+        uid,
+        cid,
+      ])
+      liked = true
+    }
+    await conn.commit()
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  } finally {
+    conn.release()
   }
 
   const comments = await listComments(row.post_id, {

@@ -15,6 +15,7 @@
     "upsert:agent": "node scripts/upsert-agent.mjs",
     "export:guestbook": "node scripts/export-guestbook.mjs",
     "check:guestbook-images": "node scripts/check-guestbook-images.mjs",
+    "check:guestbook-orphans": "node scripts/check-guestbook-images.mjs --orphans",
     "seed:admin": "node scripts/seed-admin.mjs",
     "set:admin-password": "node scripts/set-admin-password.mjs"
   },

@@ -5,6 +5,8 @@
 -- 说明：
 -- - 仅创建库与表结构，不含业务数据
 -- - 数据导入请使用 insert_*.sql 或 scripts/ 下的导入脚本
+-- - 留言板 / 用户安全等增量列仍可能由运行时 ensure* 自愈；启动入口见
+--   src/bootstrap/ensureRuntimeSchema.js（app 启动时调用）
 
 CREATE DATABASE IF NOT EXISTS zzz DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

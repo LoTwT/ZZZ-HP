@@ -16,9 +16,9 @@
 5. ✅ **最优词条 enemyInput**：提升到 `DamageCalcPage`，面板与最优词条 `v-model:enemy-input` 共享。
 6. ✅ **`is_site_admin` 授标收窄**：改 `isSiteAdmin` 字段仅密码管理员会话可写；资料编辑仍允许站管。
 7. ✅ **OCR 配额防绕过**：clientId 与 IP **双桶**计数，换 id 无法绕过同 IP 限额。
-8. 🟨 **事务/唯一约束**：手机号绑定已包事务 + `FOR UPDATE`；其余 toggle/唯一索引仍待。
-9. 🟨 **上传链路**：鉴权/魔数此前已做；**永久删帖**时清理 `guestbook_image` 本地文件（软删 15 天后 purge）。孤儿定期扫描仍可加强。
-10. 🟨 **运行时 DDL / health**：`/health` 已加 DB `SELECT 1`；schema 自愈合并仍待。
+8. ✅ **事务/唯一约束**：手机号可空 + `uk_guestbook_user_phone`；toggle like/fav/评论赞与 `blockUser` 包事务；`followUser` 用 `INSERT IGNORE`。
+9. ✅ **上传链路**：鉴权/魔数 + 永久删帖清图；`npm run check:guestbook-orphans`（`--apply` 删孤儿）。
+10. ✅ **运行时 DDL / health**：`/health` 探 DB；启动 `ensureRuntimeSchema` 集中触发用户/留言板/社交自愈（完整表仍以 `init_schema.sql` 为准）。
 11. ✅ **破坏性脚本闸门**：此前已 dry-run + `--apply`。
 12. 🟨 **腾讯 SDK**：已升 ^4.1.289；**OCR 联调回归**仍须你在本机验证。
 13. ✅ **session 撤销**：封禁 `revokeAllSessionsForUser(markBanned)`；改密 `revokeOtherSessionsForUser` 保留当前；logout 原有单 token 撤销。

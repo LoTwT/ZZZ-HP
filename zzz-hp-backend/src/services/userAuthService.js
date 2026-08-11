@@ -38,13 +38,13 @@ async function ensureUserTable() {
       avatar VARCHAR(512) NOT NULL DEFAULT '',
       bio VARCHAR(120) NOT NULL DEFAULT '',
       banner VARCHAR(512) NOT NULL DEFAULT '',
-      phone VARCHAR(20) NOT NULL DEFAULT '',
+      phone VARCHAR(20) NULL DEFAULT NULL,
       password_hash VARCHAR(160) NOT NULL DEFAULT '',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       UNIQUE KEY uk_guestbook_user_aid (mihoyo_aid),
-      KEY idx_guestbook_user_phone (phone)
+      UNIQUE KEY uk_guestbook_user_phone (phone)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `)
 
@@ -62,7 +62,7 @@ async function ensureUserTable() {
   }
   if (!names.has('phone')) {
     await pool.query(
-      `ALTER TABLE guestbook_user ADD COLUMN phone VARCHAR(20) NOT NULL DEFAULT '' COMMENT '绑定手机号' AFTER banner`,
+      `ALTER TABLE guestbook_user ADD COLUMN phone VARCHAR(20) NULL DEFAULT NULL COMMENT '绑定手机号' AFTER banner`,
     )
   }
   if (!names.has('password_hash')) {
@@ -115,6 +115,33 @@ async function ensureUserTable() {
       `ALTER TABLE guestbook_user ADD COLUMN exp INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '当前等级经验' AFTER level`,
     )
   }
+
+  // 手机号：空串 → NULL，可空列 + 唯一索引（多 NULL 互不冲突）
+  const [phoneCols] = await pool.query(`SHOW COLUMNS FROM guestbook_user LIKE 'phone'`)
+  const phoneCol = phoneCols[0]
+  if (phoneCol) {
+    if (String(phoneCol.Null || '').toUpperCase() === 'NO') {
+      await pool.query(
+        `ALTER TABLE guestbook_user MODIFY COLUMN phone VARCHAR(20) NULL DEFAULT NULL COMMENT '绑定手机号'`,
+      )
+    }
+    await pool.query(`UPDATE guestbook_user SET phone = NULL WHERE phone = ''`)
+
+    const [phoneIdx] = await pool.query(
+      `SHOW INDEX FROM guestbook_user WHERE Key_name = 'uk_guestbook_user_phone'`,
+    )
+    if (!phoneIdx.length) {
+      try {
+        await pool.query(`ALTER TABLE guestbook_user ADD UNIQUE KEY uk_guestbook_user_phone (phone)`)
+      } catch (err) {
+        console.warn(
+          '[guestbook_user] skip uk_guestbook_user_phone (可能存在历史重复手机号):',
+          err?.message || err,
+        )
+      }
+    }
+  }
+
   ensured = true
 }
 

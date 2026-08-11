@@ -31,6 +31,11 @@ async function ensureTables() {
   ensured = true
 }
 
+/** 供启动引导集中调用 */
+export async function ensureGuestbookSocialSchema() {
+  await ensureTables()
+}
+
 function mapSocialUser(row) {
   return {
     id: row.id,
@@ -190,9 +195,11 @@ export async function followUser(followerId, followingId) {
   if (a === b) return { error: 'self' }
   if (!(await getUserById(b))) return { error: 'not_found' }
   if (await isBlockedBetween(a, b)) return { error: 'blocked' }
-  if (await isFollowing(a, b)) return { following: true }
 
-  await pool.query(`INSERT INTO guestbook_follow (follower_id, following_id) VALUES (?, ?)`, [a, b])
+  await pool.query(
+    `INSERT IGNORE INTO guestbook_follow (follower_id, following_id) VALUES (?, ?)`,
+    [a, b],
+  )
   return { following: true }
 }
 
@@ -213,13 +220,33 @@ export async function blockUser(blockerId, blockedId) {
   if (a === b) return { error: 'self' }
   if (!(await getUserById(b))) return { error: 'not_found' }
 
-  await pool.query(`DELETE FROM guestbook_follow WHERE follower_id = ? AND following_id = ?`, [a, b])
-  await pool.query(`DELETE FROM guestbook_follow WHERE follower_id = ? AND following_id = ?`, [b, a])
-  await pool.query(
-    `INSERT INTO guestbook_block (blocker_id, blocked_id) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE blocker_id = blocker_id`,
-    [a, b],
-  )
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    await conn.query(`DELETE FROM guestbook_follow WHERE follower_id = ? AND following_id = ?`, [
+      a,
+      b,
+    ])
+    await conn.query(`DELETE FROM guestbook_follow WHERE follower_id = ? AND following_id = ?`, [
+      b,
+      a,
+    ])
+    await conn.query(
+      `INSERT INTO guestbook_block (blocker_id, blocked_id) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE blocker_id = blocker_id`,
+      [a, b],
+    )
+    await conn.commit()
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  } finally {
+    conn.release()
+  }
   return { blocked: true }
 }
 

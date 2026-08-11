@@ -20,6 +20,7 @@ import guestbookRoutes from './routes/guestbookRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import seasonDateRoutes from './routes/seasonDateRoutes.js'
 import pool from './config/db.js'
+import { ensureRuntimeSchema } from './bootstrap/ensureRuntimeSchema.js'
 import { fail } from './utils/response.js'
 
 dotenv.config()
@@ -156,4 +157,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(port, () => {
   console.log(`后端 API 服务已启动: http://localhost:${port}`)
+  ensureRuntimeSchema().catch((err) => {
+    console.warn('[schema] ensureRuntimeSchema failed:', err?.message || err)
+  })
 })

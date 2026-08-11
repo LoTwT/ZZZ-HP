@@ -6,9 +6,21 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+/**
+ * 对照 DB 引用与 guestbook_image 磁盘文件。
+ * 默认只报告；加 --orphans 列出孤儿；再加 --apply 删除孤儿（需同时带 --orphans）。
+ *
+ * 用法：
+ *   node scripts/check-guestbook-images.mjs
+ *   node scripts/check-guestbook-images.mjs --orphans
+ *   node scripts/check-guestbook-images.mjs --orphans --apply
+ */
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 const imageDir = path.join(root, 'guestbook_image')
+const wantOrphans = process.argv.includes('--orphans')
+const wantApply = process.argv.includes('--apply')
 
 function extractName(value) {
   if (!value) return null
@@ -64,15 +76,57 @@ for (const row of users) {
 
 await conn.end()
 
-const onDisk = new Set(fs.existsSync(imageDir) ? fs.readdirSync(imageDir) : [])
-const missing = [...referenced].filter((name) => !onDisk.has(name)).sort()
-const present = [...referenced].filter((name) => onDisk.has(name))
+const onDisk = fs.existsSync(imageDir)
+  ? fs.readdirSync(imageDir).filter((name) => {
+      const full = path.join(imageDir, name)
+      return fs.statSync(full).isFile()
+    })
+  : []
+const onDiskSet = new Set(onDisk)
+const missing = [...referenced].filter((name) => !onDiskSet.has(name)).sort()
+const present = [...referenced].filter((name) => onDiskSet.has(name))
+const orphans = onDisk.filter((name) => !referenced.has(name)).sort()
 
 console.log(`referenced: ${referenced.size}`)
 console.log(`present:    ${present.length}`)
 console.log(`missing:    ${missing.length}`)
+console.log(`orphans:    ${orphans.length}`)
+
 if (missing.length) {
-  console.log('missing files:')
+  console.log('missing files (DB refs without disk file):')
   for (const name of missing) console.log(`  - ${name}`)
+  process.exitCode = 1
+}
+
+if (wantOrphans) {
+  if (!orphans.length) {
+    console.log('no orphan files')
+  } else {
+    console.log(
+      wantApply
+        ? 'deleting orphan files (disk without DB ref):'
+        : 'orphan files (disk without DB ref; pass --apply to delete):',
+    )
+    for (const name of orphans) {
+      const full = path.join(imageDir, name)
+      if (wantApply) {
+        try {
+          fs.unlinkSync(full)
+          console.log(`  deleted ${name}`)
+        } catch (err) {
+          console.log(`  FAIL ${name}: ${err?.message || err}`)
+          process.exitCode = 1
+        }
+      } else {
+        console.log(`  - ${name}`)
+      }
+    }
+  }
+} else if (orphans.length) {
+  console.log(`(hint: ${orphans.length} orphan(s) on disk; re-run with --orphans [--apply])`)
+}
+
+if (wantApply && !wantOrphans) {
+  console.error('refusing --apply without --orphans')
   process.exitCode = 1
 }
