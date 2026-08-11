@@ -339,9 +339,19 @@ const content3162 = `相对 3.1.6.1 的增量更新（敏感凭据清除与上�
 · Buff 空 *Factor 增量默认改为 0；defaultStacks 合法 0 层不再被改写成 1
 · 提交 / 打包密钥闸门只拦截明文管理员密码；计算器 / 危局 / 防卫 / 站点等业务 SQL 数据放行`
 
-await conn.query(`DELETE FROM changelog WHERE version IN ('3.1.6', '3.1.6.1', '3.1.6.2')`)
+const content3163 = `相对 3.1.6.2 的增量更新（handoff1 稳定性与 UI 拼贴，保留本地密钥闸门）：
+
+· OCR：识别失败不扣配额（先预检，成功后再扣）
+· 留言板：封禁用户不可编辑已有帖；resolveGuestbookStaff 加兜底，DB 抖动不再崩进程
+· 短信验证码 fail-closed（仅 SMS_MOCK=1 回传）；验证码永不写日志
+· 删除脚手架死代码；前端 oxlint 清理；升级腾讯 OCR SDK 与 body-parser
+· 背景拼贴 v4（去除期数编号，危险条纹 / 微注记 / QR 点缀）
+· 不引入 handoff 的 zzz_full_dump.sql；继续沿用本地密钥闸门与上传加固`
+
+await conn.query(`DELETE FROM changelog WHERE version IN ('3.1.6', '3.1.6.1', '3.1.6.2', '3.1.6.3')`)
 await conn.query(
   `INSERT INTO changelog (version, title, content, published_at) VALUES
+   (?, ?, ?, ?),
    (?, ?, ?, ?),
    (?, ?, ?, ?),
    (?, ?, ?, ?)`,
@@ -358,6 +368,10 @@ await conn.query(
     '清除敏感转储与上传计算边界加固',
     content3162,
     '2026-08-11 00:30:00',
+    '3.1.6.3',
+    'handoff1 稳定性批与拼贴 v4',
+    content3163,
+    '2026-08-11 13:30:00',
   ],
 )
 
