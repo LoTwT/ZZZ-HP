@@ -344,11 +344,13 @@ function onChip(chip: EquipPickerChip) {
   cursor: pointer;
 }
 
-.chip.active,
-.chip.highlight {
+.chip.active {
   border-color: #c9a55c;
   background: rgba(201, 165, 92, 0.14);
   color: #f0d7a2;
+}
+.chip.highlight {
+  border: 1px dashed #4a90d9 !important;
 }
 
 .item-grid {

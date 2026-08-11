@@ -274,7 +274,6 @@
 
 .calculator-page.theme-light .calc-mode-tab.active,
 .calculator-page.theme-light .chip.active,
-.calculator-page.theme-light .chip.highlight,
 .calculator-page.theme-light .result-mode-btn.active,
 .calculator-page.theme-light .mindscape-tab.active,
 .calculator-page.theme-light .slot-card.active,
@@ -1361,8 +1360,7 @@
   color: #344054 !important;
 }
 
-[data-theme='light'] .equip-picker-modal .chip.active,
-[data-theme='light'] .equip-picker-modal .chip.highlight {
+[data-theme='light'] .equip-picker-modal .chip.active {
   border-color: #c9a55c !important;
   background: #fff8eb !important;
   color: #1c212a !important;
@@ -1993,8 +1991,7 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #344054 !important;
 }
 
-[data-theme='light'] .unified-modal .chip.active,
-[data-theme='light'] .unified-modal .chip.highlight {
+[data-theme='light'] .unified-modal .chip.active {
   border-color: #c9a55c !important;
   background: #fff8eb !important;
   color: #1c212a !important;
@@ -2294,4 +2291,11 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-style: dashed !important;
   border-color: #d5dae3 !important;
   background: #fafbfc !important;
+}
+
+/* chip.highlight = 系统职业匹配提示（蓝虚线），必须与 active 视觉区分；覆盖 light 三处；无论是否 active 都强制蓝虚线 */
+.calculator-page.theme-light .chip.highlight,
+[data-theme='light'] .equip-picker-modal .chip.highlight,
+[data-theme='light'] .unified-modal .chip.highlight {
+  border: 1px dashed #4a90d9 !important;
 }
