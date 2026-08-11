@@ -385,7 +385,7 @@ function ensureOptimalConvertPartial(
   }
   const next = {
     ...defaultConvertPartialForAgent(agentId, requiredAttrs),
-    ...(existing ?? {}),
+    ...existing,
   }
   optimalConvertSlotPanels[agentId] = next
   return next
@@ -393,7 +393,7 @@ function ensureOptimalConvertPartial(
 
 function updateOptimalConvertSlotAttr(agentId: string, key: CharacterAttrKey, value: number) {
   optimalConvertSlotPanels[agentId] = {
-    ...(optimalConvertSlotPanels[agentId] ?? {}),
+    ...optimalConvertSlotPanels[agentId],
     [key]: value,
   }
 }
@@ -443,7 +443,7 @@ function ensureAnomalySlotPanel(agentId: string): PanelStats {
 
 function updateAnomalySlotPanel(agentId: string, key: keyof PanelStats, value: number) {
   emit('update:anomalySlotPanels', {
-    ...(props.anomalySlotPanels ?? {}),
+    ...props.anomalySlotPanels,
     [agentId]: {
       ...ensureAnomalySlotPanel(agentId),
       [key]: value,
@@ -457,7 +457,7 @@ function ensureConvertSlotPartial(agentId: string): Partial<Record<CharacterAttr
 
 function updateConvertSlotAttr(agentId: string, key: CharacterAttrKey, value: number) {
   emit('update:convertSlotPanels', {
-    ...(props.convertSlotPanels ?? {}),
+    ...props.convertSlotPanels,
     [agentId]: {
       ...ensureConvertSlotPartial(agentId),
       [key]: value,

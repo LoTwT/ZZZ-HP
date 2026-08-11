@@ -14,11 +14,6 @@ interface PixelRect {
   h: number
 }
 
-interface NamedItem {
-  id: string
-  name: string
-}
-
 const REFERENCE_WIDTH = 613
 const REFERENCE_HEIGHT = 1024
 const REFERENCE_ASPECT = REFERENCE_WIDTH / REFERENCE_HEIGHT
@@ -118,8 +113,8 @@ function cropToContent(source: HTMLCanvasElement): HTMLCanvasElement {
     const i = (y * w + x) * 4
     return 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!
   }
-  const colHas = new Array<number>(w).fill(0)
-  const rowHas = new Array<number>(h).fill(0)
+  const colHas = Array<number>(w).fill(0)
+  const rowHas = Array<number>(h).fill(0)
   const stepX = Math.max(1, Math.floor(w / 800))
   const stepY = Math.max(1, Math.floor(h / 800))
   let sampledCols = 0
@@ -340,17 +335,6 @@ async function ocrRegionAsDetections(
   })
 }
 
-function normalizeOcrText(text: string): string {
-  let out = text.replace(/\s+/g, '')
-  out = out.replace(/[·•|｜,，.。:：;；"'“”‘’\[\]【】%％]/g, '')
-  out = out.replace(/[a-zA-Z]/g, '')
-  let fixed = ''
-  for (const ch of out) fixed += OCR_CHAR_FIX[ch] ?? ch
-  return fixed
-    .replace(/蓝凋/g, '蓝调')
-    .replace(/法厄同之哥/g, '法厄同之歌')
-}
-
 function normalizeForStats(text: string): string {
   let s = text.replace(/[a-zA-Z]/g, ' ')
   s = s.replace(/[^\u4e00-\u9fff\d.%]+/g, ' ')
@@ -537,74 +521,6 @@ function mergePanelStats(...parts: Partial<PanelStats>[]): Partial<PanelStats> {
   return out
 }
 
-function similarity(a: string, b: string): number {
-  if (!a || !b) return 0
-  if (a === b) return 1
-  if (a.includes(b) || b.includes(a)) {
-    return Math.min(a.length, b.length) / Math.max(a.length, b.length)
-  }
-  const rows = a.length + 1
-  const cols = b.length + 1
-  const matrix = Array.from({ length: rows }, () => Array<number>(cols).fill(0))
-  for (let i = 0; i < rows; i++) matrix[i]![0] = i
-  for (let j = 0; j < cols; j++) matrix[0]![j] = j
-  for (let i = 1; i < rows; i++) {
-    for (let j = 1; j < cols; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      matrix[i]![j] = Math.min(
-        matrix[i - 1]![j]! + 1,
-        matrix[i]![j - 1]! + 1,
-        matrix[i - 1]![j - 1]! + cost,
-      )
-    }
-  }
-  return 1 - matrix[rows - 1]![cols - 1]! / Math.max(a.length, b.length)
-}
-
-function findBestNameInText(text: string, items: NamedItem[]): NamedItem | null {
-  const normalized = normalizeOcrText(text)
-  if (!normalized) return null
-  // 爱莲 / 艾莲 常见混读
-  const variants = [normalized]
-  if (normalized.includes('爱莲')) variants.push(normalized.replace(/爱莲/g, '艾莲'))
-  if (normalized.includes('艾莲')) variants.push(normalized.replace(/艾莲/g, '爱莲'))
-
-  let best: { item: NamedItem; score: number } | null = null
-  for (const variant of variants) {
-    for (const item of items) {
-      const name = normalizeOcrText(item.name)
-      if (!name) continue
-      if (variant.includes(name)) {
-        const score = 10 + name.length
-        if (!best || score > best.score) best = { item, score }
-        continue
-      }
-      if (name.length < 2) continue
-      if (name.length === 2 && variant.length <= 6) {
-        const score = similarity(variant.slice(0, 2), name)
-        if (score >= 0.5 && (!best || score > best.score)) best = { item, score }
-      }
-      if (name.length >= 3) {
-        for (let i = 0; i <= variant.length - name.length; i++) {
-          const window = variant.slice(i, i + name.length)
-          const score = similarity(window, name)
-          // 首尾字锚定（如「云…光」）时放宽阈值：应对中间字被误读（霓→宵、弧→孤）
-          const anchored =
-            name.length >= 4 &&
-            window[0] === name[0] &&
-            window[window.length - 1] === name[name.length - 1]
-          const threshold = anchored ? 0.5 : 0.72
-          if (score >= threshold) {
-            const effective = anchored ? score + 0.15 : score
-            if (!best || effective > best.score) best = { item, score: effective }
-          }
-        }
-      }
-    }
-  }
-  return best?.item ?? null
-}
-
 function detectMindscapeRank(text: string): number | null {
   const digits = text.replace(/\s+/g, '').match(/[0-6]/)
   if (!digits) return null
@@ -722,216 +638,6 @@ function detectRefinementStars(canvas: HTMLCanvasElement): number {
     if (total > 0 && hit / total > 0.035) lit++
   }
   return Math.min(5, Math.max(1, lit || 1))
-}
-
-/** 每格套装名：在格子顶部标题行（[n] 右侧的套装名），不是图标旁 */
-function discNameRects(frame: PixelRect): PixelRect[] {
-  const padX = frame.w * 0.015
-  const padY = frame.h * 0.04
-  const cellW = (frame.w - padX * 2) / 3
-  const cellH = (frame.h - padY * 2) / 2
-  const rects: PixelRect[] = []
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 3; col++) {
-      rects.push({
-        x: frame.x + padX + col * cellW + cellW * 0.14,
-        y: frame.y + padY + row * cellH + cellH * 0.02,
-        w: cellW * 0.7,
-        h: cellH * 0.24,
-      })
-    }
-  }
-  return rects
-}
-
-/** 不重叠地统计关键词出现次数（长词优先） */
-function countKeywordHits(text: string, keys: string[]): number {
-  const covered = new Array<boolean>(text.length).fill(false)
-  let count = 0
-  const sorted = [...keys].filter((k) => k.length >= 2).sort((a, b) => b.length - a.length)
-  for (const key of sorted) {
-    if (key === '电音' || key === '爵士') continue
-    let from = 0
-    while (from < text.length) {
-      const idx = text.indexOf(key, from)
-      if (idx === -1) break
-      let overlap = false
-      for (let i = idx; i < idx + key.length; i++) {
-        if (covered[i]) {
-          overlap = true
-          break
-        }
-      }
-      if (!overlap) {
-        count++
-        for (let i = idx; i < idx + key.length; i++) covered[i] = true
-      }
-      from = idx + key.length
-    }
-  }
-  return count
-}
-
-/** 套装名 OCR 关键词（长词优先，避免短词串套） */
-function discNameKeywords(name: string): string[] {
-  const n = normalizeOcrText(name)
-  const extra: string[] = []
-  if (n.includes('啄木鸟')) extra.push('啄木鸟电音', '啄木鸟', '啄木')
-  if (n.includes('河豚')) extra.push('河豚电音', '河豚')
-  if (n.includes('自由蓝调') || (n.includes('自由') && n.includes('蓝'))) {
-    extra.push('自由蓝调', '自由蓝', '蓝调')
-  }
-  if (n.includes('法厄同')) extra.push('法厄同之歌', '法厄同', '法厄')
-  if (n.includes('原始朋克') || n.includes('朋克')) extra.push('原始朋克', '朋克')
-  if (n.includes('摇摆')) extra.push('摇摆爵士', '摇摆')
-  if (n.includes('混沌')) extra.push('混沌爵士', '混沌')
-  if (n.includes('沧浪')) extra.push('沧浪行歌', '沧浪')
-  if (n.includes('折枝')) extra.push('折枝剑歌', '折枝', '剑歌')
-  if (n.includes('如影')) extra.push('如影随行', '如影')
-  if (n.includes('激素')) extra.push('激素朋克', '激素')
-  const base = [n, n.length >= 4 ? n.slice(0, 4) : '', n.length >= 3 ? n.slice(0, 3) : ''].filter(
-    Boolean,
-  )
-  return [...new Set([...extra, ...base])].sort((a, b) => b.length - a.length)
-}
-
-function findBestDiscName(text: string, driveDiscs: DriveDiscBuffDoc[]): DriveDiscBuffDoc | null {
-  const normalized = normalizeOcrText(text)
-  if (!normalized || normalized.length < 2) return null
-  let best: { disc: DriveDiscBuffDoc; score: number } | null = null
-  for (const disc of driveDiscs) {
-    if (disc.id === 'none' || !disc.name) continue
-    const name = normalizeOcrText(disc.name)
-    if (!name) continue
-    for (const key of discNameKeywords(name)) {
-      if (key.length < 2 || key === '电音' || key === '爵士' || key === '行歌' || key === '剑歌') {
-        continue
-      }
-      if (!normalized.includes(key)) continue
-      const score = key.length * 3 + (key === name ? 10 : 0)
-      if (!best || score > best.score) best = { disc, score }
-      break
-    }
-    if (name.length >= 4) {
-      const slice = normalized.slice(0, Math.min(normalized.length, name.length))
-      const score = similarity(slice, name) * 10
-      if (score >= 7.0 && (!best || score > best.score)) best = { disc, score }
-    }
-  }
-  return best?.disc ?? null
-}
-
-/**
- * 先认完 6 格套装名并计数，最后再按数量决定谁是 2 件 / 4 件。
- * （识别过程中不提前判定 2/4）
- */
-async function matchDriveDiscsByOcrOnly(
-  source: HTMLCanvasElement,
-  lowerFrame: PixelRect,
-  driveDiscs: DriveDiscBuffDoc[],
-  lowerText: string,
-): Promise<{ twoPiece: DriveDiscBuffDoc | null; fourPiece: DriveDiscBuffDoc | null }> {
-  const slotNames: (DriveDiscBuffDoc | null)[] = []
-
-  for (const rect of discNameRects(lowerFrame)) {
-    const crop = cropPixels(source, rect, 3.5)
-    const textA = await ocrImage(crop, { psm: '7' })
-    const textB = await ocrImage(crop, { psm: '6' })
-    slotNames.push(findBestDiscName(`${textA}\n${textB}`, driveDiscs))
-  }
-
-  // 整框文本仅用于补「尚未认出」的格子，不覆盖已认出的格
-  const normalizedLower = normalizeOcrText(lowerText)
-  if (slotNames.some((d) => d == null) && normalizedLower) {
-    // 按出现顺序粗略补漏：统计整框各套装名，只填空槽
-    const catalogHits = driveDiscs
-      .filter((d) => d.id !== 'none' && d.name)
-      .map((disc) => ({
-        disc,
-        keys: discNameKeywords(disc.name),
-      }))
-    for (let i = 0; i < slotNames.length; i++) {
-      if (slotNames[i]) continue
-      // 对该空槽，用邻近 OCR 失败；尝试从整框里找还没被占满的套装名
-      // 简化：整框关键词命中后，按剩余名额填空槽
-    }
-    const need = slotNames.filter((d) => d == null).length
-    if (need > 0) {
-      const already = new Map<string, number>()
-      for (const d of slotNames) {
-        if (!d) continue
-        already.set(d.id, (already.get(d.id) ?? 0) + 1)
-      }
-      const pool: DriveDiscBuffDoc[] = []
-      for (const { disc, keys } of catalogHits) {
-        const totalHits = Math.min(6, countKeywordHits(normalizedLower, keys))
-        const used = already.get(disc.id) ?? 0
-        for (let k = 0; k < Math.max(0, totalHits - used); k++) pool.push(disc)
-      }
-      let pi = 0
-      for (let i = 0; i < slotNames.length && pi < pool.length; i++) {
-        if (slotNames[i] == null) {
-          slotNames[i] = pool[pi++]!
-        }
-      }
-    }
-  }
-
-  // —— 到这里 6 格已尽量认完，开始计数 ——
-  const counts = new Map<string, { disc: DriveDiscBuffDoc; count: number }>()
-  for (const disc of slotNames) {
-    if (!disc) continue
-    const prev = counts.get(disc.id)
-    if (prev) prev.count += 1
-    else counts.set(disc.id, { disc, count: 1 })
-  }
-
-  return assignDriveDiscPiecesByCount([...counts.values()])
-}
-
-/**
- * 全部计数完成后：数量多的 → 4 件套，数量少的 → 2 件套。
- */
-function assignDriveDiscPiecesByCount(
-  entries: { disc: DriveDiscBuffDoc; count: number }[],
-): { twoPiece: DriveDiscBuffDoc | null; fourPiece: DriveDiscBuffDoc | null } {
-  const ranked = [...entries]
-    .filter((e) => e.count > 0)
-    .sort((a, b) => b.count - a.count || b.disc.name.length - a.disc.name.length)
-
-  if (!ranked.length) return { twoPiece: null, fourPiece: null }
-
-  if (ranked.length === 1) {
-    const only = ranked[0]!
-    if (only.count >= 6) return { twoPiece: only.disc, fourPiece: only.disc }
-    if (only.count >= 4) return { twoPiece: null, fourPiece: only.disc }
-    // 只认出一套且不足 4，先记为 2 件，4 件留空
-    if (only.count >= 2) return { twoPiece: only.disc, fourPiece: null }
-    return { twoPiece: null, fourPiece: null }
-  }
-
-  // 两套及以上：件数多的是 4，次多的是 2（不再中途判定）
-  return {
-    fourPiece: ranked[0]!.disc,
-    twoPiece: ranked[1]!.disc,
-  }
-}
-
-/** 整框套装名计数兜底（同样：先计数，最后再分 2/4） */
-function matchDriveDiscsByNameOcr(
-  text: string,
-  driveDiscs: DriveDiscBuffDoc[],
-): { twoPiece: DriveDiscBuffDoc | null; fourPiece: DriveDiscBuffDoc | null } {
-  const normalized = normalizeOcrText(text)
-  const counts = driveDiscs
-    .filter((d) => d.id !== 'none' && d.name)
-    .map((disc) => ({
-      disc,
-      count: Math.min(6, countKeywordHits(normalized, discNameKeywords(disc.name))),
-    }))
-    .filter((e) => e.count > 0)
-
-  return assignDriveDiscPiecesByCount(counts)
 }
 
 export async function recognizePanelScreenshot(

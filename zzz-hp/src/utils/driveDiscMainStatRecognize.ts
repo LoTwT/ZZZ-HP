@@ -31,7 +31,7 @@ interface OcrPoint {
 function normalize(text: string): string {
   return text
     .replace(/\s+/g, '')
-    .replace(/[·•|｜,，.。:：;；"'“”‘’\[\]【】]/g, '')
+    .replace(/[·•|｜,，.。:：;；"'“”‘’[\]【】]/g, '')
     .replace(/％/g, '%')
 }
 

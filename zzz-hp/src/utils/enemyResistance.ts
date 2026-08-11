@@ -1,5 +1,3 @@
-import type { AgentElement } from '@/utils/calculatorUi'
-
 export type EnemyResistanceType = 'weak' | 'normal' | 'res20' | 'res40'
 
 /** 可单独配置抗性的属性（不含流明） */
@@ -65,7 +63,7 @@ export function normalizeDamageEnemyInput(
 ): DamageEnemyInput {
   const fallbackType = input?.resistanceType ?? 'normal'
   const base = createDefaultElementResistance()
-  const merged = { ...base, ...(input?.elementResistance ?? {}) }
+  const merged = { ...base, ...input?.elementResistance }
   if (input?.resistanceType && !input?.elementResistance) {
     for (const el of ENEMY_RESISTANCE_ELEMENTS) {
       merged[el] = input.resistanceType

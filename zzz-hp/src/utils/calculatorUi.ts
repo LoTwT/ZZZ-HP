@@ -13,7 +13,7 @@ import {
   packFromEffects,
   wrapEffectsAsBlocks,
 } from '@/utils/buffEffect'
-import { normalizeBuffMultFactorDelta, normalizePanelMultFactorPercent } from '@/utils/multFactorPercent'
+import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
 
 export const AGENT_ROLES = ['强攻', '击破', '异常', '支援', '防护', '命破'] as const
 export const AGENT_ELEMENTS = ['风', '火', '电', '物理', '以太', '冰', '流明'] as const

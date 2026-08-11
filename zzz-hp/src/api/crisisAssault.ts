@@ -358,7 +358,7 @@ export function resolvePhaseFromInput(
     if (found) return found
   }
 
-  const separatedMatch = input.match(/^([\d.]+)[\-_.](\d+)$/)
+  const separatedMatch = input.match(/^([\d.]+)[-_.](\d+)$/)
   if (separatedMatch) {
     const found = findChartPointByVersionPhase(points, separatedMatch[1]!, separatedMatch[2]!)
     if (found) return found

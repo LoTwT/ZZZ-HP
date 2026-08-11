@@ -12,7 +12,7 @@ const QUOTE_TOKEN_REGEX =
 
 function sanitizeQuotePart(value: string, maxLen: number) {
   return String(value || '')
-    .replace(/[\[\]|]/g, '')
+    .replace(/[[\]|]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLen)

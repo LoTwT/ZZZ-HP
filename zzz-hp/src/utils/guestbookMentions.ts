@@ -1,6 +1,6 @@
 import type { GuestbookSocialUser } from '@/api/guestbook'
 
-export const MENTION_TOKEN_REGEX = /@\[([^\[\]\n]{1,40})\]\((\d{1,10})\)/g
+export const MENTION_TOKEN_REGEX = /@\[([^[\]\n]{1,40})\]\((\d{1,10})\)/g
 
 const mentionAvatarCache = new Map<number, string>()
 
@@ -18,14 +18,14 @@ export function buildMentionToken(
   avatar?: string,
 ) {
   cacheMentionAvatar(userId, avatar)
-  const safeName = (name || '绳网旅人').slice(0, 40).replace(/[\[\]\n]/g, '')
+  const safeName = (name || '绳网旅人').slice(0, 40).replace(/[[\]\n]/g, '')
   return `@[${safeName}](${userId})`
 }
 
 export function parseMentionQuery(text: string, caret: number) {
   const before = text.slice(0, caret)
   if (/@\[[^\]]*$/.test(before)) return null
-  const match = before.match(/@([^\s@\[\]]{0,20})$/)
+  const match = before.match(/@([^\s@[\]]{0,20})$/)
   if (!match) return null
   return match[1] || ''
 }

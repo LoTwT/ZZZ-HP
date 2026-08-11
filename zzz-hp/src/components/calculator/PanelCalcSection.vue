@@ -556,7 +556,7 @@ function ensureConvertSlotPartial(agentId: string): Partial<Record<CharacterAttr
 
 function updateConvertSlotAttr(agentId: string, key: CharacterAttrKey, value: number) {
   emit('update:convertSlotPanels', {
-    ...(props.convertSlotPanels ?? {}),
+    ...props.convertSlotPanels,
     [agentId]: {
       ...ensureConvertSlotPartial(agentId),
       [key]: value,
@@ -571,7 +571,7 @@ function emitConvertSlotPanel(
 ) {
   if (!keys.length) return
   emit('update:convertSlotPanels', {
-    ...(props.convertSlotPanels ?? {}),
+    ...props.convertSlotPanels,
     [agentId]: externalPanelToConvertPartial(panel, keys),
   })
 }
@@ -584,7 +584,7 @@ function ensureAnomalySlotPanel(agentId: string): PanelStats {
 
 function updateAnomalySlotPanel(agentId: string, key: keyof PanelStats, value: number) {
   const next = {
-    ...(props.anomalySlotPanels ?? {}),
+    ...props.anomalySlotPanels,
     [agentId]: {
       ...ensureAnomalySlotPanel(agentId),
       [key]: value,
@@ -595,7 +595,7 @@ function updateAnomalySlotPanel(agentId: string, key: keyof PanelStats, value: n
 
 function emitAnomalySlotPanel(agentId: string, panel: PanelStats) {
   emit('update:anomalySlotPanels', {
-    ...(props.anomalySlotPanels ?? {}),
+    ...props.anomalySlotPanels,
     [agentId]: { ...panel },
   })
 }

@@ -116,16 +116,11 @@ export async function sendPhoneCode({ userId, phone, purpose = 'bind' }) {
   codes[key] = { code, sentAt: now, expiresAt: now + CODE_TTL_MS }
   writeCodes(codes)
 
-  // 暂未接入短信网关：仅非生产或显式 SMS_MOCK=1 时回传/打印验证码
-  const exposeCode =
-    process.env.SMS_MOCK === '1' ||
-    (process.env.SMS_MOCK !== '0' && process.env.NODE_ENV !== 'production')
+  // 未接入短信网关：仅显式设置 SMS_MOCK=1 时才回传验证码（fail-closed，默认不泄露）
+  const exposeCode = process.env.SMS_MOCK === '1'
 
-  if (exposeCode) {
-    console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} code=${code}`)
-  } else {
-    console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} sent`)
-  }
+  // 验证码永不写日志；仅记录发送事件
+  console.info(`[phone-code] user=${id} phone=${normalized} purpose=${purpose} sent`)
 
   return {
     ok: true,

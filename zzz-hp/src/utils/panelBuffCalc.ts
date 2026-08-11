@@ -13,11 +13,7 @@ import type {
   WengineBuffDoc,
 } from '@/types/calculator'
 import { createDefaultExternalPanel, type PanelStats } from '@/types/calculatorPanel'
-import {
-  combineMultFactorPercent,
-  normalizeBuffMultFactorDelta,
-  normalizePanelMultFactorPercent,
-} from '@/utils/multFactorPercent'
+import { combineMultFactorPercent } from '@/utils/multFactorPercent'
 import {
   cloneEffectInstance,
   collectBlockEntriesFromPack,
@@ -253,7 +249,7 @@ export function setBuffEffectEnabled(
     }
     return
   }
-  store.manualTouchedIds = { ...(store.manualTouchedIds ?? {}), [effectId]: true }
+  store.manualTouchedIds = { ...store.manualTouchedIds, [effectId]: true }
 }
 
 /**
@@ -682,7 +678,7 @@ export function omitAgentFromConvertSlotPanels(
   panels: ConvertSlotPanels | undefined,
   agentId: string,
 ): ConvertSlotPanels {
-  if (!panels?.[agentId]) return { ...(panels ?? {}) }
+  if (!panels?.[agentId]) return { ...panels }
   const next = { ...panels }
   delete next[agentId]
   return next
@@ -943,24 +939,6 @@ export function collectTeamDriveDiscMods(
   })
 
   return total
-}
-
-function driveDiscSourceLabel(
-  driveDiscs: DriveDiscBuffDoc[],
-  selection: DriveDiscSelection,
-): string {
-  const fourDisc =
-    selection.fourPieceId !== 'none'
-      ? driveDiscs.find((item) => item.id === selection.fourPieceId)
-      : undefined
-  const twoDisc =
-    selection.twoPieceId !== 'none'
-      ? driveDiscs.find((item) => item.id === selection.twoPieceId)
-      : undefined
-  const parts: string[] = []
-  if (fourDisc) parts.push(`4件：${fourDisc.name}`)
-  if (twoDisc && twoDisc.id !== fourDisc?.id) parts.push(`2件：${twoDisc.name}`)
-  return parts.join(' · ')
 }
 
 export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {

@@ -200,7 +200,7 @@ function pickLatestPublicOptionId<T extends { id: string; isHidden?: boolean }>(
 function findFifthFrontierId(frontiers: { id: string; title: string }[]) {
   const byTitle = frontiers.find((frontier) => /第五防线/.test(frontier.title))
   if (byTitle) return byTitle.id
-  const byId = frontiers.find((frontier) => /05$/.test(frontier.id))
+  const byId = frontiers.find((frontier) => frontier.id.endsWith('05'))
   return byId?.id ?? frontiers[0]?.id ?? ''
 }
 

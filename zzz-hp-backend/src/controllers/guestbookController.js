@@ -91,13 +91,19 @@ function readIsSiteAdmin(req) {
 }
 
 async function resolveGuestbookStaff(req, res) {
-  const authUser = await resolveAuthUser(req)
-  const isSiteAdmin = readIsSiteAdmin(req)
-  let isModerator = false
-  if (authUser?.mihoyoAid) {
-    isModerator = await isGuestbookModerator(authUser.mihoyoAid, authUser.mihoyoMid || '')
+  try {
+    const authUser = await resolveAuthUser(req)
+    const isSiteAdmin = readIsSiteAdmin(req)
+    let isModerator = false
+    if (authUser?.mihoyoAid) {
+      isModerator = await isGuestbookModerator(authUser.mihoyoAid, authUser.mihoyoMid || '')
+    }
+    return { authUser, isSiteAdmin, isModerator, canManagePosts: isSiteAdmin || isModerator }
+  } catch (err) {
+    // DB 抖动时兜底，避免 try 外 await 触发 unhandled rejection
+    fail(res, '身份校验失败，请稍后重试', 500, { error: err?.message })
+    return null
   }
-  return { authUser, isSiteAdmin, isModerator, canManagePosts: isSiteAdmin || isModerator }
 }
 
 function actorFromUser(user) {
@@ -332,6 +338,7 @@ export async function editGuestbookEntry(req, res) {
 
   const staff = await resolveGuestbookStaff(req, res)
   if (!staff) return
+  if (failIfBannedPost(res, staff.authUser)) return
   const payload = normalizePostPayload(req.body, staff.authUser, {
     canManagePosts: staff.canManagePosts,
   })

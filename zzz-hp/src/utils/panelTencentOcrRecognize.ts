@@ -86,7 +86,7 @@ export function extractTencentDetections(raw: unknown): TencentOcrDetection[] {
 function normalizeName(text: string): string {
   return text
     .replace(/\s+/g, '')
-    .replace(/[·•|｜,，.。:：;；"'“”‘’\[\]【】%％★☆✦✧]/g, '')
+    .replace(/[·•|｜,，.。:：;；"'“”‘’[\]【】%％★☆✦✧]/g, '')
     .replace(/[a-zA-Z0-9]/g, '')
 }
 
@@ -154,13 +154,6 @@ function extractNumbersFromText(text: string): number[] {
     if (Number.isFinite(n)) out.push(Math.abs(n))
   }
   return out
-}
-
-function parseNumberToken(text: string): number | null {
-  const nums = extractNumbersFromText(text)
-  if (!nums.length) return null
-  // 粘连多段时默认取最大（生命总值通常更大）
-  return Math.max(...nums)
 }
 
 function sameRow(a: OcrToken, b: OcrToken, tol = 28): boolean {

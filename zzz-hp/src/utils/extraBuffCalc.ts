@@ -16,7 +16,7 @@ import {
   effectMatchesTeamProfessionGate,
   resolveIsFollowUp,
 } from '@/utils/buffEffect'
-import { eventNeedsAnomalyProducer, mapEventKindToCalc } from '@/utils/damageEvent'
+import { mapEventKindToCalc } from '@/utils/damageEvent'
 import { resolveEventOwnerAgentId } from '@/utils/damageEventOwner'
 import { createEmptyBuffStatModifiers, mergeBuffStatModifiers } from '@/utils/calculatorUi'
 export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
@@ -51,7 +51,6 @@ export function buildSkillContextFromDamageEvent(
   },
 ): SkillCalcContext {
   const { damageKind, anomalySubKind } = mapEventKindToCalc(event.kind)
-  const needsTrigger = eventNeedsAnomalyProducer(event.kind)
   const skillBound = event.skillBound !== false || damageKind === 'direct'
   const ownerElement = options.resolveBuffElement(options.ownerAgentId)
 

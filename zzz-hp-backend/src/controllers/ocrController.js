@@ -86,25 +86,29 @@ export async function recognizePanel(req, res) {
 
     const ctx = ocrContext(req)
 
-    let quota
-    try {
-      quota = consumeOcrQuota(1, ctx)
-    } catch (quotaErr) {
-      if (
-        quotaErr?.code === 'OCR_QUOTA_EXCEEDED' ||
-        quotaErr?.code === 'OCR_USER_QUOTA_EXCEEDED' ||
-        quotaErr?.code === 'OCR_GLOBAL_QUOTA_EXCEEDED' ||
-        quotaErr?.code === 'OCR_CLIENT_REQUIRED'
-      ) {
-        return fail(res, quotaErr.message, 429, {
-          code: quotaErr.code,
-          quota: quotaErr.quota,
-        })
+    // 先只读预检配额；识别成功后才真正扣减，避免腾讯侧失败白扣用户次数
+    const peek = getOcrQuota(ctx)
+    if ((peek?.remaining ?? 0) <= 0) {
+      try {
+        consumeOcrQuota(1, ctx)
+      } catch (quotaErr) {
+        if (
+          quotaErr?.code === 'OCR_QUOTA_EXCEEDED' ||
+          quotaErr?.code === 'OCR_USER_QUOTA_EXCEEDED' ||
+          quotaErr?.code === 'OCR_GLOBAL_QUOTA_EXCEEDED' ||
+          quotaErr?.code === 'OCR_CLIENT_REQUIRED'
+        ) {
+          return fail(res, quotaErr.message, 429, {
+            code: quotaErr.code,
+            quota: quotaErr.quota,
+          })
+        }
+        throw quotaErr
       }
-      throw quotaErr
     }
 
     const ocr = await recognizePanelImageAccurate(req.file.buffer)
+    const quota = consumeOcrQuota(1, ctx)
     return success(res, {
       Response: ocr,
       TextDetections: ocr?.TextDetections ?? [],

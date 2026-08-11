@@ -329,7 +329,7 @@ export function outPercentLabel(isMb: boolean) {
   return isMb ? '局外大生命' : '局外大攻击'
 }
 
-export function affixKeyLabel(key: OptimalAffixKey, isMb: boolean): string {
+export function affixKeyLabel(key: OptimalAffixKey, _isMb: boolean): string {
   switch (key) {
     case 'atkFlat':
       return '攻击力'
@@ -567,10 +567,6 @@ function resolveExternalForAgent(
   const partial = ctx.panelContext.convertSlotPanels?.[agentId]
   if (partial) return convertSlotPartialToExternalPanel(partial)
   return createDefaultExternalPanel()
-}
-
-function resolveProducerExternal(ctx: OptimalEvalContext, agentId: string): PanelStats {
-  return ctx.panelContext.anomalySlotPanels?.[agentId] ?? createDefaultExternalPanel()
 }
 
 function resolveProducerAgentLevel(_ctx: OptimalEvalContext, agentId: string | null | undefined): number {
