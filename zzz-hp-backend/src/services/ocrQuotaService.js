@@ -8,7 +8,7 @@ const DATA_FILE = path.join(__dirname, '../../data/ocr-quota.json')
 /** 全站每月云识别上限（腾讯云总配额） */
 export const OCR_MONTHLY_LIMIT = Number(process.env.OCR_MONTHLY_LIMIT) || 1000
 
-/** 普通用户每人每月上传识别次数 */
+/** 普通用户每人每月上传识别次数（按 clientId 与 IP 分别计数，取更严者） */
 export const OCR_USER_MONTHLY_LIMIT = Number(process.env.OCR_USER_MONTHLY_LIMIT) || 50
 
 function monthKey(date = new Date()) {
@@ -80,9 +80,9 @@ function syncMonth(store) {
   return store
 }
 
-function getUserUsed(store, clientId) {
-  if (!clientId) return 0
-  return Math.max(0, Number(store.users[clientId]) || 0)
+function getUserUsed(store, key) {
+  if (!key) return 0
+  return Math.max(0, Number(store.users[key]) || 0)
 }
 
 function buildGlobalQuota(store) {
@@ -92,12 +92,35 @@ function buildGlobalQuota(store) {
   return { month: store.month, limit, used, remaining }
 }
 
-function buildUserQuota(store, clientId) {
+function normalizeIpKey(ip) {
+  const raw = String(ip || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('ip:')) return raw.slice(0, 128)
+  return `ip:${raw}`.slice(0, 128)
+}
+
+/**
+ * 个人配额键：clientId 与 IP 分开计数；若 clientId 本身已是 ip: 前缀则只计一次。
+ * @param {{ clientId?: string, ip?: string }} options
+ */
+export function resolveOcrQuotaKeys({ clientId = '', ip = '' } = {}) {
+  const clientKey = typeof clientId === 'string' ? clientId.trim().slice(0, 128) : ''
+  const ipKey = normalizeIpKey(ip)
+  const keys = []
+  if (clientKey) keys.push(clientKey)
+  if (ipKey && ipKey !== clientKey) keys.push(ipKey)
+  return keys
+}
+
+function buildUserQuota(store, keys) {
   const global = buildGlobalQuota(store)
   const userLimit = OCR_USER_MONTHLY_LIMIT
-  const userUsed = Math.min(userLimit, getUserUsed(store, clientId))
+  let userUsed = 0
+  for (const key of keys) {
+    userUsed = Math.max(userUsed, getUserUsed(store, key))
+  }
+  userUsed = Math.min(userLimit, userUsed)
   const userRemaining = Math.max(0, userLimit - userUsed)
-  // 个人可用 = min(个人剩余, 全站剩余)；全站用尽后即使个人还有次数也不能识别
   const remaining = Math.min(userRemaining, global.remaining)
   return {
     month: store.month,
@@ -113,11 +136,11 @@ function buildUserQuota(store, clientId) {
 }
 
 /**
- * @param {{ clientId?: string, isAdmin?: boolean }} options
+ * @param {{ clientId?: string, ip?: string, isAdmin?: boolean }} options
  */
 export function getOcrQuota(options = {}) {
   const store = syncMonth(readStore())
-  const { clientId, isAdmin = false } = options
+  const { isAdmin = false } = options
 
   if (isAdmin) {
     const global = buildGlobalQuota(store)
@@ -129,61 +152,64 @@ export function getOcrQuota(options = {}) {
     }
   }
 
-  return buildUserQuota(store, clientId)
+  return buildUserQuota(store, resolveOcrQuotaKeys(options))
 }
 
-function quotaExceededError(code, message, store, clientId, isAdmin) {
+function quotaExceededError(code, message, store, options) {
   const err = new Error(message)
   err.code = code
-  err.quota = getOcrQuota({ clientId, isAdmin })
+  err.quota = getOcrQuota(options)
   return err
 }
 
 /**
  * 占用云识别额度：先扣全站，再扣个人（管理员仅扣全站）。
+ * 个人侧同时累加 clientId 与 IP 桶，换 clientId 无法绕过同 IP 限额。
  * @param {number} count
- * @param {{ clientId?: string, isAdmin?: boolean }} options
+ * @param {{ clientId?: string, ip?: string, isAdmin?: boolean }} options
  */
 export function consumeOcrQuota(count = 1, options = {}) {
-  const { clientId, isAdmin = false } = options
+  const { isAdmin = false } = options
   const store = syncMonth(readStore())
   const globalLimit = OCR_MONTHLY_LIMIT
   const userLimit = OCR_USER_MONTHLY_LIMIT
+  const keys = resolveOcrQuotaKeys(options)
 
   if (store.globalUsed + count > globalLimit) {
     throw quotaExceededError(
       'OCR_GLOBAL_QUOTA_EXCEEDED',
       `本月全站云识别次数已用尽（上限 ${globalLimit} 次）`,
       store,
-      clientId,
-      isAdmin,
+      options,
     )
   }
 
   if (!isAdmin) {
-    if (!clientId) {
+    if (!keys.length) {
       throw quotaExceededError(
         'OCR_CLIENT_REQUIRED',
         '缺少识别客户端标识，请刷新页面后重试',
         store,
-        clientId,
-        false,
+        options,
       )
     }
-    const userUsed = getUserUsed(store, clientId)
-    if (userUsed + count > userLimit) {
-      throw quotaExceededError(
-        'OCR_USER_QUOTA_EXCEEDED',
-        `您本月云识别次数已用尽（每人 ${userLimit} 次）`,
-        store,
-        clientId,
-        false,
-      )
+    for (const key of keys) {
+      const userUsed = getUserUsed(store, key)
+      if (userUsed + count > userLimit) {
+        throw quotaExceededError(
+          'OCR_USER_QUOTA_EXCEEDED',
+          `您本月云识别次数已用尽（每人 ${userLimit} 次）`,
+          store,
+          options,
+        )
+      }
     }
-    store.users[clientId] = userUsed + count
+    for (const key of keys) {
+      store.users[key] = getUserUsed(store, key) + count
+    }
   }
 
   store.globalUsed += count
   writeStore(store)
-  return getOcrQuota({ clientId, isAdmin })
+  return getOcrQuota(options)
 }

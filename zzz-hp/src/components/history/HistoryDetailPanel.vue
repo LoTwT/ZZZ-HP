@@ -9,6 +9,7 @@ import {
 import { historyData } from '@/data/historyData'
 import { modeTitles, type ModeKey, type PhaseData } from '@/types/history'
 import { formatHp, formatHpDelta, formatHpExpansionPercent, parseHpString, splitBuffLines } from '@/utils/gameData'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admin'
 import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 }>()
 
 const crisisPhases = ref<PhaseData[]>([])
+const crisisLoadEpoch = createRequestEpoch()
 const loading = ref(false)
 const loadError = ref('')
 
@@ -379,6 +381,7 @@ function phaseSelectionKey(phase: PhaseData) {
 }
 
 async function loadCrisisAssaultData() {
+  const token = crisisLoadEpoch.next()
   if (props.mode !== 'crisis-assault') return
 
   loading.value = true
@@ -386,7 +389,9 @@ async function loadCrisisAssaultData() {
   const previousKey =
     props.adminMode && currentPhase.value ? phaseSelectionKey(currentPhase.value) : null
   try {
-    crisisPhases.value = await fetchCrisisAssaultPhases()
+    const data = await fetchCrisisAssaultPhases()
+    if (!crisisLoadEpoch.isCurrent(token)) return
+    crisisPhases.value = data
     if (props.chartPoint) {
       applyChartPointSelection()
     } else if (previousKey) {
@@ -399,9 +404,11 @@ async function loadCrisisAssaultData() {
       currentIndex.value = defaultPublicPhaseIndex(crisisPhases.value)
     }
   } catch (error) {
+    if (!crisisLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     crisisPhases.value = []
   } finally {
+    if (!crisisLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

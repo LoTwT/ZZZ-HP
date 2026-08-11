@@ -133,6 +133,23 @@ export function revokeAllSessionsForUser(userId, { markBanned = false } = {}) {
   return removed
 }
 
+/** 改密等场景：吊销该用户除当前 token 外的全部会话 */
+export function revokeOtherSessionsForUser(userId, keepToken) {
+  const uid = Number(userId)
+  if (!Number.isFinite(uid) || uid <= 0) return 0
+  const keep = typeof keepToken === 'string' ? keepToken.trim() : ''
+  const store = readStore()
+  let removed = 0
+  for (const [token, session] of Object.entries(store.sessions)) {
+    if (Number(session?.userId) !== uid) continue
+    if (keep && token === keep) continue
+    delete store.sessions[token]
+    removed += 1
+  }
+  if (removed) writeStore(store)
+  return removed
+}
+
 /** 被封禁踢下线的 token 标记（用于提示封禁原因） */
 export function getBanKickMark(token) {
   if (typeof token !== 'string' || !token.trim()) return null

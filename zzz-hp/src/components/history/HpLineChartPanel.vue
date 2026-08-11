@@ -9,6 +9,7 @@ import {
 } from '@/api/crisisAssault'
 import { usePhaseDetailModal } from '@/composables/usePhaseDetailModal'
 import { modeTitles, type ModeKey } from '@/types/history'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const props = defineProps<{
   mode: ModeKey
@@ -16,6 +17,7 @@ const props = defineProps<{
 
 const hpMode = ref<CrisisHpChartMode>('normal')
 const points = ref<HpChartPoint[]>([])
+const chartLoadEpoch = createRequestEpoch()
 const loading = ref(false)
 const loadError = ref('')
 const { visible: detailVisible, point: detailPoint, open: openPhaseDetail, close: closePhaseDetail } =
@@ -35,16 +37,21 @@ const panelDesc = computed(() =>
 )
 
 async function loadChartData() {
+  const token = chartLoadEpoch.next()
   if (props.mode !== 'crisis-assault') return
 
   loading.value = true
   loadError.value = ''
   try {
-    points.value = await fetchCrisisAssaultHpChart(hpMode.value)
+    const data = await fetchCrisisAssaultHpChart(hpMode.value)
+    if (!chartLoadEpoch.isCurrent(token)) return
+    points.value = data
   } catch (error) {
+    if (!chartLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     points.value = []
   } finally {
+    if (!chartLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

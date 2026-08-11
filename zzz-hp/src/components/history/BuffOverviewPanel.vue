@@ -8,6 +8,7 @@ import { useDefenseCompareStore } from '@/stores/defenseCompare'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type BuffInfo, type ModeKey, type PhaseData } from '@/types/history'
 import { defenseSeasonsToPhaseData } from '@/utils/defenseCompare'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 type BuffViewMode = 'horizontal' | 'card'
 
@@ -52,6 +53,7 @@ const defenseVariant = computed<DefenseVariant>(() =>
 )
 
 const phases = ref<PhaseData[]>([])
+const phasesLoadEpoch = createRequestEpoch()
 const loading = ref(false)
 const loadError = ref('')
 const viewMode = ref<BuffViewMode>('card')
@@ -118,21 +120,27 @@ const searchResultGroups = computed<SearchResultGroup[]>(() => {
 })
 
 async function loadPhases() {
+  const token = phasesLoadEpoch.next()
   loading.value = true
   loadError.value = ''
   try {
+    let data: PhaseData[] = []
     if (props.mode === 'defense') {
       const seasons = await fetchDefenseSeasons(defenseVariant.value)
-      phases.value = defenseSeasonsToPhaseData(seasons)
+      if (!phasesLoadEpoch.isCurrent(token)) return
+      data = defenseSeasonsToPhaseData(seasons)
     } else if (props.mode === 'crisis-assault') {
-      phases.value = await fetchCrisisAssaultPhases()
-    } else {
-      phases.value = []
+      data = await fetchCrisisAssaultPhases()
+      if (!phasesLoadEpoch.isCurrent(token)) return
     }
+    if (!phasesLoadEpoch.isCurrent(token)) return
+    phases.value = data
   } catch (error) {
+    if (!phasesLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     phases.value = []
   } finally {
+    if (!phasesLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

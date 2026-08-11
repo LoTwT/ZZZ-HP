@@ -13,6 +13,7 @@ import type { HpChartPoint } from '@/api/crisisAssault'
 import type { DefenseSeason, DefenseVariant } from '@/types/defense'
 import { usePhaseDetailModal } from '@/composables/usePhaseDetailModal'
 import { getDefenseHpOptionKey } from '@/utils/defenseHp'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const route = useRoute()
 
@@ -25,6 +26,7 @@ const pageTitle = computed(() =>
 )
 
 const seasons = ref<DefenseSeason[]>([])
+const seasonsLoadEpoch = createRequestEpoch()
 const seasonsLoading = ref(false)
 const seasonsError = ref('')
 const selectedOptionKey = ref('')
@@ -81,16 +83,21 @@ function initOptions() {
 }
 
 async function loadSeasons() {
+  const token = seasonsLoadEpoch.next()
   seasonsLoading.value = true
   seasonsError.value = ''
   try {
-    seasons.value = await fetchDefenseSeasons(defenseVariant.value)
+    const data = await fetchDefenseSeasons(defenseVariant.value)
+    if (!seasonsLoadEpoch.isCurrent(token)) return
+    seasons.value = data
     initOptions()
   } catch (error) {
+    if (!seasonsLoadEpoch.isCurrent(token)) return
     seasonsError.value = error instanceof Error ? error.message : '加载失败'
     seasons.value = []
     points.value = []
   } finally {
+    if (!seasonsLoadEpoch.isCurrent(token)) return
     seasonsLoading.value = false
   }
 }

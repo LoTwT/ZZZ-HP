@@ -59,6 +59,11 @@ import {
 } from '@/utils/environmentBuffCalc'
 import type { EnvironmentBuffFilterMode } from '@/components/calculator/EnvironmentBuffFilterBar.vue'
 import { mapBossInfoToDamageEnemyInput } from '@/utils/enemyInputFromBoss'
+import {
+  DEFAULT_ENEMY_STAGGER_MULTIPLIER,
+  normalizeDamageEnemyInput,
+  type DamageEnemyInput,
+} from '@/utils/enemyResistance'
 import { resolveIsFollowUp } from '@/utils/buffEffect'
 import { canSelectTurbulenceDamageEvent } from '@/utils/damageEvent'
 import { collectParticipantAgentIds, mergeDamageEventAgentOptions } from '@/utils/damageEventOwner'
@@ -113,6 +118,15 @@ const activeSlot = ref(0)
 const selectedBangbooId = ref('none')
 const bangbooRefine = ref(1)
 const panelCalcMode = ref<PanelCalcMode>('panel')
+const enemyInput = ref<DamageEnemyInput>(
+  normalizeDamageEnemyInput({
+    defense: 953,
+    vulnerableMultiplier: 1,
+    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
+    specialMultiplier: 1,
+    level: 60,
+  }),
+)
 const historyEntries = ref<DamageCalcHistoryEntry[]>(listDamageCalcHistory())
 const activeHistoryId = ref('')
 const historyMessage = ref('')
@@ -385,12 +399,11 @@ async function applyEnemyBossByName(bossName: string, meta?: { version?: string;
   try {
     const info = await lookupBossInfo(name)
     if (!info) return
-    const current = panelCalcSectionRef.value?.enemyInput
-    const next = mapBossInfoToDamageEnemyInput(info, current ?? undefined)
+    const next = mapBossInfoToDamageEnemyInput(info, enemyInput.value)
     if (meta?.version && meta?.phase) {
       next.bossRecordLabel = `${meta.version} 第${meta.phase}期 · ${name}`
     }
-    panelCalcSectionRef.value?.applyEnemyInput(next)
+    Object.assign(enemyInput.value, normalizeDamageEnemyInput(next))
   } finally {
     syncingEnemyFromEnv = false
   }
@@ -913,7 +926,7 @@ watch(
       const sourceKey = [...enabledBossFieldKeys][0]!
       const entry = catalog.find((item) => item.sourceKey === sourceKey)
       const bossName = entry?.bossName ?? parseBossFieldBossName(sourceKey)
-      const currentBoss = panelCalcSectionRef.value?.enemyInput?.bossName
+      const currentBoss = enemyInput.value.bossName
       if (bossName && bossName !== currentBoss) {
         await applyEnemyBossByName(bossName, {
           version: entry?.version,
@@ -946,7 +959,7 @@ watch(
     if (!defenseKey) return
     const defenseEntry = catalog.find((entry) => entry.sourceKey === defenseKey)
     const roomBoss = defenseEntry?.roomBosses?.[0]
-    const currentBoss = panelCalcSectionRef.value?.enemyInput?.bossName
+    const currentBoss = enemyInput.value.bossName
     if (roomBoss?.name && roomBoss.name !== currentBoss) {
       await applyEnemyBossByName(roomBoss.name, {
         version: defenseEntry?.version,
@@ -958,7 +971,7 @@ watch(
 )
 
 watch(
-  () => panelCalcSectionRef.value?.enemyInput?.bossName,
+  () => enemyInput.value.bossName,
   (bossName) => {
     if (syncingEnemyFromEnv || syncingBossFieldBuff) return
     const effects = collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value))
@@ -1383,6 +1396,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :stagger-phase="staggerPhase"
       :damage-events="damageEvents"
       :environment-buffs="activeEnvironmentBuffs"
+      v-model:enemy-input="enemyInput"
       v-model:extra-gains="extraGains"
       @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"
       @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
@@ -1411,6 +1425,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
         :stagger-phase="staggerPhase"
         :damage-events="damageEvents"
         :environment-buffs="activeEnvironmentBuffs"
+        v-model:enemy-input="enemyInput"
         v-model:extra-gains="extraGains"
         :convert-slot-panels="convertSlotPanels"
         @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"

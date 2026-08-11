@@ -69,15 +69,11 @@ import {
 } from '@/utils/panelBuffCalc'
 import { computeDamageResult, type DamageCalcInput } from '@/utils/damageCalc'
 import {
-  ENEMY_RESISTANCE_ELEMENTS,
-  ENEMY_RESISTANCE_OPTIONS,
   normalizeDamageEnemyInput,
-  DEFAULT_ENEMY_STAGGER_MULTIPLIER,
   resolveEnemyResistanceForElement,
   resistanceTypeLabel,
   type DamageEnemyInput,
   type EnemyResistanceElement,
-  type EnemyResistanceType,
 } from '@/utils/enemyResistance'
 import {
   eventNeedsAnomalyProducer,
@@ -290,25 +286,13 @@ function buildExtraModsForMainPanel(): BuffStatModifiers {
 
 const extraMods = computed(() => buildExtraModsForMainPanel())
 
-const enemyInput = reactive<DamageEnemyInput>(
-  normalizeDamageEnemyInput({
-    defense: 953,
-    vulnerableMultiplier: 1,
-    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
-    specialMultiplier: 1,
-    level: 60,
-  }),
-)
+const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
 
 function ensureElementResistanceMap() {
-  if (!enemyInput.elementResistance) {
-    enemyInput.elementResistance = normalizeDamageEnemyInput(enemyInput).elementResistance
+  if (!enemyInput.value.elementResistance) {
+    enemyInput.value.elementResistance = normalizeDamageEnemyInput(enemyInput.value).elementResistance
   }
-  return enemyInput.elementResistance!
-}
-
-function setElementResistance(element: EnemyResistanceElement, value: EnemyResistanceType) {
-  ensureElementResistanceMap()[element] = value
+  return enemyInput.value.elementResistance!
 }
 
 const mainSlotIndex = computed(() => {
@@ -516,7 +500,7 @@ function getAttrDefaultsForSlot(slotIndex: number) {
   const level =
     partial?.level ??
     (slotIndex === mainSlotIndex.value
-      ? enemyInput.level
+      ? enemyInput.value.level
       : agentId
         ? resolveAgentLevel(agentId)
         : 60)
@@ -638,7 +622,7 @@ const triggerAgent = computed(() =>
 
 function resolveAgentLevel(agentId: string | null | undefined): number {
   if (!agentId || agentId === mainAgent.value?.id) {
-    return enemyInput.level
+    return enemyInput.value.level
   }
   const saved = props.convertSlotPanels?.[agentId]?.level
   return typeof saved === 'number' && saved >= 1 ? saved : 60
@@ -1010,7 +994,7 @@ const calcParts = computed(() =>
     piercePower: piercePower.value,
     baseDamageSource: effectiveBaseDamageSource.value,
     isMbMainAgent: isMbMainAgent.value,
-    enemyInput,
+    enemyInput: enemyInput.value,
     combatVulnerable: panelBreakdown.value.combatMods.vulnerable,
     combatGlobalStaggerVulnerable: panelBreakdown.value.combatMods.globalStaggerVulnerable,
     combatStaggerVulnerable: panelBreakdown.value.combatMods.staggerVulnerable,
@@ -1033,8 +1017,8 @@ const calcParts = computed(() =>
     triggerPiercePower: triggerPiercePower.value,
     triggerIsMb: triggerAgent.value?.profession === MB_PROFESSION,
     skillSubcategory: resolvedSkillSubcategory.value,
-    mainAgentLevel: enemyInput.level,
-    ownerAgentLevel: enemyInput.level,
+    mainAgentLevel: enemyInput.value.level,
+    ownerAgentLevel: enemyInput.value.level,
     triggerAgentLevel: triggerAgentLevel.value,
     mainCFinalPanel: finalPanel.value,
     mutationZone: luminousTeamModifiers.value.mutationZone,
@@ -1294,7 +1278,7 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     piercePower: evtPierce,
     baseDamageSource: evtBaseDamageSource,
     isMbMainAgent: evtOwnerIsMb,
-    enemyInput,
+    enemyInput: enemyInput.value,
     combatVulnerable: evtBreakdown.combatMods.vulnerable,
     combatGlobalStaggerVulnerable: evtBreakdown.combatMods.globalStaggerVulnerable,
     combatStaggerVulnerable: evtBreakdown.combatMods.staggerVulnerable,
@@ -1744,7 +1728,7 @@ const valueTips = computed(() => {
   const external = effectiveExternalPanel.value
   const sources = panelBreakdown.value.sources
   const combat = panelBreakdown.value.combatMods
-  const enemy = enemyInput
+  const enemy = enemyInput.value
   const pierceMod = panelBreakdown.value.totalMods.pierce
 
   const remielInTeam = p.remielSelfRadianceActive
@@ -2840,7 +2824,7 @@ function getSnapshot(): DamageCalcPanelSnapshot {
     affixDriveDiscMainStats: { ...affixDriveDiscMainStats },
     extraMods: { ...extraMods.value },
     extraGains: extraGains.value.map((item) => ({ ...item })),
-    enemyInput: { ...enemyInput },
+    enemyInput: { ...enemyInput.value },
   }
 }
 
@@ -2878,9 +2862,9 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
       }),
     )
   }
-  Object.assign(enemyInput, normalizeDamageEnemyInput(snapshot.enemyInput))
-  if (!Number.isFinite(enemyInput.level) || enemyInput.level < 1) {
-    enemyInput.level = 60
+  Object.assign(enemyInput.value, normalizeDamageEnemyInput(snapshot.enemyInput))
+  if (!Number.isFinite(enemyInput.value.level) || enemyInput.value.level < 1) {
+    enemyInput.value.level = 60
   }
 }
 
@@ -2953,7 +2937,7 @@ defineExpose({
   getPanelSourceValuesForSlot,
   enemyInput,
   applyEnemyInput(next: import('@/utils/enemyResistance').DamageEnemyInput) {
-    Object.assign(enemyInput, normalizeDamageEnemyInput(next))
+    Object.assign(enemyInput.value, normalizeDamageEnemyInput(next))
   },
 })
 </script>

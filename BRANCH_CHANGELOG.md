@@ -113,6 +113,7 @@
 | | · 脚手架死代码删除；oxlint 清零类清理；腾讯 OCR SDK / body-parser 升级 |
 | | · 背景拼贴 v4（去期数编号、危险条纹 / 微注记 / QR 点缀） |
 | | · 交接待办 `TODO-FOR-OWNER.md`（P0/P1/P2） |
+| | · **P1 施工（本分支继续）**：共享 enemyInput；fetch 竞态令牌；OCR 双桶配额；封禁/改密撤 session；站管授标收窄；删帖清图；`/health` 探 DB；绑定手机事务 |
 | **刻意保留（不覆盖）** | |
 | | · **不**引入 handoff 的 `zzz_full_dump.sql` |
 | | · 本地 `scripts/check-no-secrets.ps1`、上传魔数 / 鉴权前置、路径白名单加固 |

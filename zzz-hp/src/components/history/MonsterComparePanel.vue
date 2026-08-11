@@ -15,6 +15,7 @@ import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type ModeKey } from '@/types/history'
 import type { DefenseCompareMonsterCategory } from '@/utils/defenseCompare'
 import { resolveAssetUrl } from '@/utils/gameData'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const props = defineProps<{
   mode: ModeKey
@@ -26,6 +27,8 @@ const selectedBoss = ref('')
 const selectedCategory = ref<DefenseCompareMonsterCategory>('elite')
 const crisisRoomType = ref<'normal' | 'hard'>('normal')
 const points = ref<HpChartPoint[]>([])
+const bossListLoadEpoch = createRequestEpoch()
+const bossChartLoadEpoch = createRequestEpoch()
 const listLoading = ref(false)
 const chartLoading = ref(false)
 const listError = ref('')
@@ -57,29 +60,33 @@ const selectedBossInfo = computed(() =>
 const categoryLabel = computed(() => (selectedCategory.value === 'elite' ? '精英' : 'Boss'))
 
 async function loadBossList() {
+  const token = bossListLoadEpoch.next()
   if (props.mode !== 'crisis-assault' && props.mode !== 'defense') return
 
   listLoading.value = true
   listError.value = ''
   try {
-    if (isDefenseMode.value) {
-      bossList.value = await fetchDefenseBossList(defenseVariant.value, selectedCategory.value)
-    } else {
-      bossList.value = await fetchBossList(crisisRoomType.value)
-    }
+    const list = isDefenseMode.value
+      ? await fetchDefenseBossList(defenseVariant.value, selectedCategory.value)
+      : await fetchBossList(crisisRoomType.value)
+    if (!bossListLoadEpoch.isCurrent(token)) return
 
+    bossList.value = list
     if (bossList.value.some((boss) => boss.boss_name === selectedBoss.value)) return
     selectedBoss.value = bossList.value[0]?.boss_name ?? ''
   } catch (error) {
+    if (!bossListLoadEpoch.isCurrent(token)) return
     listError.value = error instanceof Error ? error.message : '加载怪物列表失败'
     bossList.value = []
     selectedBoss.value = ''
   } finally {
+    if (!bossListLoadEpoch.isCurrent(token)) return
     listLoading.value = false
   }
 }
 
 async function loadBossChart() {
+  const token = bossChartLoadEpoch.next()
   if (!selectedBoss.value) {
     points.value = []
     return
@@ -88,19 +95,21 @@ async function loadBossChart() {
   chartLoading.value = true
   chartError.value = ''
   try {
-    if (isDefenseMode.value) {
-      points.value = await fetchDefenseBossChart(
-        defenseVariant.value,
-        selectedBoss.value,
-        selectedCategory.value,
-      )
-    } else {
-      points.value = await fetchBossChart(selectedBoss.value, crisisRoomType.value)
-    }
+    const chartPoints = isDefenseMode.value
+      ? await fetchDefenseBossChart(
+          defenseVariant.value,
+          selectedBoss.value,
+          selectedCategory.value,
+        )
+      : await fetchBossChart(selectedBoss.value, crisisRoomType.value)
+    if (!bossChartLoadEpoch.isCurrent(token)) return
+    points.value = chartPoints
   } catch (error) {
+    if (!bossChartLoadEpoch.isCurrent(token)) return
     chartError.value = error instanceof Error ? error.message : '加载折线图失败'
     points.value = []
   } finally {
+    if (!bossChartLoadEpoch.isCurrent(token)) return
     chartLoading.value = false
   }
 }

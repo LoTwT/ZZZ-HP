@@ -8,6 +8,7 @@ import { useDefenseCompareStore } from '@/stores/defenseCompare'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type BuffInfo, type ModeKey, type PhaseData } from '@/types/history'
 import { defenseSeasonsToPhaseData } from '@/utils/defenseCompare'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const QUICK_ADD_ROW_LIMIT = 10
 
@@ -36,6 +37,7 @@ const defenseVariant = computed<DefenseVariant>(() =>
 )
 
 const allPhases = ref<PhaseData[]>([])
+const phasesLoadEpoch = createRequestEpoch()
 
 const selectedIds = computed({
   get() {
@@ -176,21 +178,27 @@ function matchesEntry(entry: BuffEntry, query: string) {
 }
 
 async function loadPhases() {
+  const token = phasesLoadEpoch.next()
   loading.value = true
   loadError.value = ''
   try {
+    let data: PhaseData[] = []
     if (props.mode === 'defense') {
       const seasons = await fetchDefenseSeasons(defenseVariant.value)
-      allPhases.value = defenseSeasonsToPhaseData(seasons)
+      if (!phasesLoadEpoch.isCurrent(token)) return
+      data = defenseSeasonsToPhaseData(seasons)
     } else if (props.mode === 'crisis-assault') {
-      allPhases.value = await fetchCrisisAssaultPhases()
-    } else {
-      allPhases.value = []
+      data = await fetchCrisisAssaultPhases()
+      if (!phasesLoadEpoch.isCurrent(token)) return
     }
+    if (!phasesLoadEpoch.isCurrent(token)) return
+    allPhases.value = data
   } catch (error) {
+    if (!phasesLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     allPhases.value = []
   } finally {
+    if (!phasesLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

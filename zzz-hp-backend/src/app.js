@@ -19,6 +19,7 @@ import siteInfoRoutes from './routes/siteInfoRoutes.js'
 import guestbookRoutes from './routes/guestbookRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import seasonDateRoutes from './routes/seasonDateRoutes.js'
+import pool from './config/db.js'
 import { fail } from './utils/response.js'
 
 dotenv.config()
@@ -98,8 +99,13 @@ app.use('/wengine', express.static(path.join(__dirname, '../wengine')))
 app.use('/drive_disc', express.static(path.join(__dirname, '../drive_disc')))
 app.use('/bangboo', express.static(path.join(__dirname, '../bangboo')))
 
-app.get('/health', (_req, res) => {
-  res.json({ code: 200, message: 'ok', data: null })
+app.get('/health', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1')
+    res.json({ code: 200, message: 'ok', data: { db: 'up' } })
+  } catch {
+    res.status(503).json({ code: 503, message: 'db unavailable', data: { db: 'down' } })
+  }
 })
 
 app.use('/api/admin/login', authWriteLimiter)

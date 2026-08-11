@@ -8,6 +8,7 @@ import {
 import { notifyMentionedUsers, resolveMentionUserIds } from './guestbookMentionService.js'
 import { getBlockClause, listModeratorUserIds } from './guestbookSocialService.js'
 import { awardGuestbookExp } from './guestbookExpService.js'
+import { unlinkGuestbookImages } from '../utils/guestbookImageFiles.js'
 
 let ensured = false
 
@@ -279,6 +280,40 @@ function normalizeModerationMessage(value, action) {
 async function permanentlyDeleteGuestbook(id) {
   const pid = Number(id)
   if (!Number.isFinite(pid) || pid <= 0) return false
+
+  const imageUrls = []
+  try {
+    const [postRows] = await pool.query(
+      `SELECT cover, images_json FROM guestbook WHERE id = ? LIMIT 1`,
+      [pid],
+    )
+    const post = postRows[0]
+    if (post?.cover) imageUrls.push(post.cover)
+    if (post?.images_json) {
+      try {
+        const parsed = JSON.parse(post.images_json)
+        if (Array.isArray(parsed)) imageUrls.push(...parsed)
+      } catch {
+        /* ignore */
+      }
+    }
+    const [commentRowsForImages] = await pool.query(
+      `SELECT images_json FROM guestbook_comment WHERE post_id = ?`,
+      [pid],
+    )
+    for (const row of commentRowsForImages) {
+      if (!row?.images_json) continue
+      try {
+        const parsed = JSON.parse(row.images_json)
+        if (Array.isArray(parsed)) imageUrls.push(...parsed)
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* 删库优先，清图失败不阻断 */
+  }
+  unlinkGuestbookImages(imageUrls)
 
   const [commentRows] = await pool.query(
     `SELECT id FROM guestbook_comment WHERE post_id = ?`,

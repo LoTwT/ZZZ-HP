@@ -14,6 +14,7 @@ import {
 } from '@/utils/defenseHp'
 import { findDefenseSeasonIndexFromChartPoint } from '@/utils/defenseCompare'
 import { formatHpDelta } from '@/utils/gameData'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const props = defineProps<{
   embedded?: boolean
@@ -37,6 +38,7 @@ const defenseVariant = computed<DefenseVariant>(() =>
 )
 
 const seasons = ref<DefenseSeason[]>([])
+const seasonsLoadEpoch = createRequestEpoch()
 const loading = ref(false)
 const loadError = ref('')
 const currentIndex = ref(0)
@@ -57,6 +59,7 @@ function seasonSelectionKey(season: DefenseSeason) {
 }
 
 async function loadSeasons() {
+  const token = seasonsLoadEpoch.next()
   loading.value = true
   loadError.value = ''
   const previousKey =
@@ -64,6 +67,7 @@ async function loadSeasons() {
   const previousRoomHpIndex = props.adminMode ? roomHpIndex.value : 0
   try {
     const data = await fetchDefenseSeasons(defenseVariant.value)
+    if (!seasonsLoadEpoch.isCurrent(token)) return
     seasons.value = data
     if (props.chartPoint) {
       applyChartPointSelection()
@@ -80,10 +84,12 @@ async function loadSeasons() {
       roomHpIndex.value = 0
     }
   } catch (error) {
+    if (!seasonsLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     seasons.value = []
     currentIndex.value = 0
   } finally {
+    if (!seasonsLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

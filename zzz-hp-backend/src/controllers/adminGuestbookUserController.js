@@ -8,13 +8,19 @@ import { isValidAdminSession } from '../services/adminSessionService.js'
 import { extractBearerToken, getUserByToken } from '../services/userAuthService.js'
 import { fail, success } from '../utils/response.js'
 
-async function readIsSiteAdmin(req) {
+async function readIsPasswordAdmin(req) {
   const headerToken = req.headers['x-admin-token']
   if (typeof headerToken === 'string' && isValidAdminSession(headerToken.trim())) {
     return true
   }
   const bearer = extractBearerToken(req)
   if (bearer && isValidAdminSession(bearer)) return true
+  return false
+}
+
+async function readIsSiteAdmin(req) {
+  if (await readIsPasswordAdmin(req)) return true
+  const bearer = extractBearerToken(req)
   if (bearer) {
     try {
       const user = await getUserByToken(bearer)
@@ -71,6 +77,10 @@ export async function editGuestbookUser(req, res) {
     patch.profileShowTabs = req.body.profileShowTabs
   }
   if (typeof req.body?.isSiteAdmin === 'boolean') {
+    // 授标 / 撤标仅允许密码管理员会话，防止 is_site_admin 用户自我复制权限
+    if (!(await readIsPasswordAdmin(req))) {
+      return fail(res, '修改站点管理员标记需要密码管理员权限', 403)
+    }
     patch.isSiteAdmin = req.body.isSiteAdmin
   }
 

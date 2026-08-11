@@ -35,6 +35,16 @@ function sanitizeClientId(value) {
   return trimmed
 }
 
+function readClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for']
+  const ip =
+    (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '') ||
+    req.socket?.remoteAddress ||
+    req.ip ||
+    ''
+  return String(ip || '').trim().slice(0, 128)
+}
+
 function readOcrClientId(req) {
   const fromHeader = sanitizeClientId(req.headers['x-ocr-client-id'])
   if (fromHeader) return fromHeader
@@ -45,12 +55,7 @@ function readOcrClientId(req) {
   const fromBody = sanitizeClientId(req.body?.clientId)
   if (fromBody) return fromBody
 
-  const forwarded = req.headers['x-forwarded-for']
-  const ip =
-    (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '') ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    ''
+  const ip = readClientIp(req)
   if (ip) return sanitizeClientId(`ip:${ip}`) || `ip:${ip}`.slice(0, 128)
   return ''
 }
@@ -71,6 +76,7 @@ function readIsAdmin(req) {
 function ocrContext(req) {
   return {
     clientId: readOcrClientId(req),
+    ip: readClientIp(req),
     isAdmin: readIsAdmin(req),
   }
 }

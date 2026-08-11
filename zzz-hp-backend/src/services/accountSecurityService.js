@@ -155,13 +155,27 @@ export async function bindPhone({ userId, phone, code }) {
   await ensureUserSecurityColumns()
   const normalized = consumePhoneCode({ userId, phone, purpose: 'bind', code })
 
-  const [taken] = await pool.query(
-    `SELECT id FROM guestbook_user WHERE phone = ? AND id <> ? LIMIT 1`,
-    [normalized, userId],
-  )
-  if (taken[0]) throw new Error('该手机号已被其他账号绑定')
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [taken] = await conn.query(
+      `SELECT id FROM guestbook_user WHERE phone = ? AND id <> ? LIMIT 1 FOR UPDATE`,
+      [normalized, userId],
+    )
+    if (taken[0]) throw new Error('该手机号已被其他账号绑定')
 
-  await pool.query(`UPDATE guestbook_user SET phone = ? WHERE id = ?`, [normalized, userId])
+    await conn.query(`UPDATE guestbook_user SET phone = ? WHERE id = ?`, [normalized, userId])
+    await conn.commit()
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  } finally {
+    conn.release()
+  }
   return getSecurityByUserId(userId)
 }
 

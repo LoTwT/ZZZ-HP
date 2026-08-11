@@ -8,6 +8,7 @@ import {
   logoutByToken,
   updateUserProfile,
 } from '../services/userAuthService.js'
+import { revokeOtherSessionsForUser } from '../services/userSessionService.js'
 import {
   bindPhone,
   getSecurityByUserId,
@@ -179,6 +180,9 @@ export async function setPasswordHandler(req, res) {
       code,
       phone,
     })
+    // 改密后踢掉其它设备会话，保留当前 token
+    const token = extractBearerToken(req)
+    revokeOtherSessionsForUser(current.id, token)
     return success(res, data, '密码已保存')
   } catch (err) {
     const msg = err.message || '设置密码失败'

@@ -17,6 +17,7 @@ import { useCrisisAssaultCompareStore } from '@/stores/crisisAssaultCompare'
 import { useDefenseCompareStore } from '@/stores/defenseCompare'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type ModeKey } from '@/types/history'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const QUICK_ADD_ROW_LIMIT = 10
 
@@ -34,6 +35,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const allPoints = ref<HpChartPoint[]>([])
+const chartLoadEpoch = createRequestEpoch()
 const crisisCompareStore = useCrisisAssaultCompareStore()
 const defenseCompareStore = useDefenseCompareStore()
 const phaseSearchInput = ref('')
@@ -118,20 +120,24 @@ function formatPhaseDisplay(point: HpChartPoint) {
 }
 
 async function loadChartData() {
+  const token = chartLoadEpoch.next()
   loading.value = true
   loadError.value = ''
   try {
+    let data: HpChartPoint[] = []
     if (props.mode === 'defense') {
-      allPoints.value = await fetchDefensePhaseCompareChart(defenseVariant.value)
+      data = await fetchDefensePhaseCompareChart(defenseVariant.value)
     } else if (props.mode === 'crisis-assault') {
-      allPoints.value = await fetchCrisisAssaultHpChart(crisisHpMode.value)
-    } else {
-      allPoints.value = []
+      data = await fetchCrisisAssaultHpChart(crisisHpMode.value)
     }
+    if (!chartLoadEpoch.isCurrent(token)) return
+    allPoints.value = data
   } catch (error) {
+    if (!chartLoadEpoch.isCurrent(token)) return
     loadError.value = error instanceof Error ? error.message : '加载失败'
     allPoints.value = []
   } finally {
+    if (!chartLoadEpoch.isCurrent(token)) return
     loading.value = false
   }
 }

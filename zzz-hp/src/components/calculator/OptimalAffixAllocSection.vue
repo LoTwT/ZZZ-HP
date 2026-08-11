@@ -44,11 +44,7 @@ import {
 } from '@/utils/calculatorUi'
 import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 import type { DamageCalcResult } from '@/utils/damageCalc'
-import {
-  normalizeDamageEnemyInput,
-  DEFAULT_ENEMY_STAGGER_MULTIPLIER,
-  type DamageEnemyInput,
-} from '@/utils/enemyResistance'
+import { type DamageEnemyInput } from '@/utils/enemyResistance'
 import {
   ANOMALY_CONSTRAINTS,
   BENEFIT_CURVE_MAX_ADDED,
@@ -224,15 +220,7 @@ const damageKind = computed(() => props.damageKind ?? 'direct')
 const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
 const baseDamageSource = ref<BaseDamageSource>('atk')
 const driveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
-const enemyInput = reactive<DamageEnemyInput>(
-  normalizeDamageEnemyInput({
-    defense: 953,
-    vulnerableMultiplier: 1,
-    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
-    specialMultiplier: 1,
-    level: 60,
-  }),
-)
+const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
 
 const directAlloc = reactive<DirectAllocState>({
   flatStat: 0,
@@ -478,7 +466,7 @@ const evalCtx = computed(() =>
     driveDiscs: props.driveDiscs,
     mainSlotIndex: mainSlotIndex.value,
     driveDiscMainStats: { ...driveDiscMainStats },
-    enemyInput: { ...enemyInput },
+    enemyInput: { ...enemyInput.value },
     baseDamageSource: isMb.value ? 'pierce' : baseDamageSource.value,
     extraGains: extraGains.value.map((item) => ({ ...item })),
     skillContext: {

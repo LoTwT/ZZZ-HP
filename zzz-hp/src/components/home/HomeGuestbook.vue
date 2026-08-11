@@ -44,6 +44,7 @@ import {
   type GuestbookSocialUser,
 } from '@/api/guestbook'
 import { resolveAssetUrl } from '@/utils/gameData'
+import { createRequestEpoch } from '@/utils/requestEpoch'
 import { formatBodyText } from '@/utils/formatBody'
 import { parseMentionQuery, applyMention } from '@/utils/guestbookMentions'
 import {
@@ -245,6 +246,7 @@ const drawerStyle = computed(() =>
   isCompactDrawer.value ? { width: '100vw' } : { width: `${drawerWidth.value}px` },
 )
 const entries = ref<GuestbookEntry[]>([])
+const entriesLoadEpoch = createRequestEpoch()
 const loading = ref(false)
 const submitting = ref(false)
 const uploading = ref(false)
@@ -758,6 +760,7 @@ function resetCreateForm() {
 }
 
 async function loadEntries() {
+  const token = entriesLoadEpoch.next()
   loading.value = true
   error.value = ''
   try {
@@ -770,17 +773,21 @@ async function loadEntries() {
       return
     }
     const { startDate } = resolveDateFilter(dateRange.value)
-    entries.value = await fetchGuestbook({
+    const data = await fetchGuestbook({
       category: !isFollowing && activeCategory.value ? activeCategory.value : undefined,
       following: isFollowing || undefined,
       q: searchKeyword.value.trim() || undefined,
       startDate,
     })
+    if (!entriesLoadEpoch.isCurrent(token)) return
+    entries.value = data
     filtersApplied.value = Boolean(searchKeyword.value.trim() || dateRange.value)
     loadedOnce.value = true
   } catch (err) {
+    if (!entriesLoadEpoch.isCurrent(token)) return
     error.value = err instanceof Error ? err.message : '加载留言失败'
   } finally {
+    if (!entriesLoadEpoch.isCurrent(token)) return
     loading.value = false
     void nextTick(() => bindMasonryObserver())
   }

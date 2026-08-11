@@ -6,6 +6,7 @@ import {
 } from './userAuthService.js'
 import { isGuestbookModerator } from './guestbookModeratorService.js'
 import { notifyUserBanned } from './guestbookBanService.js'
+import { revokeAllSessionsForUser } from './userSessionService.js'
 
 function sanitizeKeyword(value) {
   return String(value || '')
@@ -196,6 +197,7 @@ export async function setGuestbookUserBanned(
       [banUntil, banReason, uid],
     )
     await notifyUserBanned(uid, { reason: banReason, banUntil })
+    revokeAllSessionsForUser(uid, { markBanned: true })
   } else {
     await pool.query(
       `UPDATE guestbook_user
