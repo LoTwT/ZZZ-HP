@@ -10,6 +10,10 @@ import { convertHpToDefense953, roundConvertedHp } from '../utils/defenseHpConve
 import { isCrisisHardRoom, isSeasonPubliclyVisible, isSeasonUnreleased } from '../utils/crisisRoom.js'
 import { getSeasonDateMap } from './seasonDateService.js'
 import {
+  getSeasonContentTrashMap,
+  seasonTrashKey,
+} from './seasonContentTrashService.js'
+import {
   ensureEnvironmentBuffSchema,
   parseEffectBlocksJson,
 } from '../utils/environmentBuffSchema.js'
@@ -176,6 +180,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   const bossRows = bossRowsRaw.filter((boss) => isCrisisBossId(boss.id))
   const buffRows = buffRowsRaw.filter((buff) => isCrisisBuffId(buff.id))
   const dateMap = await getSeasonDateMap('crisis')
+  const trashMap = await getSeasonContentTrashMap('crisis')
   const [idRows] = await pool.execute('SELECT id, tid FROM id_table')
   const baseHpByName = await loadCrisisBaseHpMap()
   const fieldBuffByName = await loadBossFieldBuffMap()
@@ -233,6 +238,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
       const startDate = formatDateValue(dateInfo?.start_date)
       const listed = isSeasonPubliclyVisible(startDate)
       const isHidden = isSeasonUnreleased(startDate)
+      const trash = trashMap.get(seasonTrashKey('crisis', item.version, item.phase))
 
       return {
         id: `ca-${item.version}-${item.phase}`,
@@ -243,6 +249,8 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
         endDate: formatDateValue(dateInfo?.end_date),
         isHidden,
         listed,
+        pendingCleanup: Boolean(trash),
+        deletedAt: trash?.deletedAt ?? null,
         totalHp: sumHp(normalBosses, 'hp'),
         totalHpConverted953: sumHp(normalBosses, 'hp_converted_953'),
         hardTotalHp: sumHp(hardBosses, 'hp'),
@@ -259,6 +267,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
       }
     })
     .filter((item) => {
+      if (item.pendingCleanup && !includeHidden) return false
       if (item.bosses.length > 0) return includeHidden || item.listed
       return includeHidden
     })
@@ -308,6 +317,7 @@ export async function getBossChartHistory(
   if (!bossRows.length) return []
 
   const dateMap = await getSeasonDateMap('crisis')
+  const trashMap = await getSeasonContentTrashMap('crisis')
   const baseHpByName = await loadCrisisBaseHpMap()
 
   return bossRows
@@ -330,6 +340,7 @@ export async function getBossChartHistory(
       const startDate = formatDateValue(dateInfo?.start_date)
       const listed = isSeasonPubliclyVisible(startDate)
       const isHidden = isSeasonUnreleased(startDate)
+      const trash = trashMap.get(seasonTrashKey('crisis', boss.version, boss.phase))
       return {
         label: `${boss.version}第${boss.phase}期`,
         dateRange: formatDateRangeValue(dateInfo?.start_date, dateInfo?.end_date),
@@ -343,10 +354,14 @@ export async function getBossChartHistory(
         startDate,
         isHidden,
         listed,
+        pendingCleanup: Boolean(trash),
         roomType: enriched.is_hard_room ? 'hard' : 'normal',
       }
     })
-    .filter((item) => includeHidden || item.listed)
+    .filter((item) => {
+      if (item.pendingCleanup && !includeHidden) return false
+      return includeHidden || item.listed
+    })
     .map(({ listed: _listed, ...item }) => item)
 }
 

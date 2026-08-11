@@ -586,9 +586,213 @@ export async function deleteDefenseSeasonData(version, phase) {
   return {
     version: versionStr,
     phase: phaseStr,
+    scheme: 'defense',
     bossesDeleted: bossResult.affectedRows,
     buffsDeleted: buffResult.affectedRows,
   }
+}
+
+/** 危局：同 version/phase，且排除防卫战专用 ID 长度（boss 9 位 / buff 7 位） */
+export async function deleteCrisisSeasonData(version, phase) {
+  const versionStr = String(version).trim()
+  const phaseStr = String(phase).trim()
+  if (!versionStr || !phaseStr) {
+    throw new Error('version 与 phase 为必填项')
+  }
+
+  const [bossResult] = await pool.execute(
+    `DELETE FROM boss
+     WHERE version = ? AND phase = ? AND CHAR_LENGTH(CAST(id AS CHAR)) <> 9`,
+    [versionStr, phaseStr],
+  )
+  const [buffResult] = await pool.execute(
+    `DELETE FROM buff
+     WHERE version = ? AND phase = ? AND CHAR_LENGTH(CAST(id AS CHAR)) <> 7`,
+    [versionStr, phaseStr],
+  )
+
+  return {
+    version: versionStr,
+    phase: phaseStr,
+    scheme: 'crisis',
+    bossesDeleted: bossResult.affectedRows,
+    buffsDeleted: buffResult.affectedRows,
+  }
+}
+
+/**
+ * @param {'defense'|'crisis'} scheme
+ */
+export async function previewSeasonContent(scheme, version, phase) {
+  const versionStr = String(version).trim()
+  const phaseStr = String(phase).trim().replace(/\D/g, '') || String(phase).trim()
+  if (!versionStr || !phaseStr) {
+    throw new Error('version 与 phase 为必填项')
+  }
+  const mode = scheme === 'defense' ? 'defense' : 'crisis'
+
+  const bossFilter =
+    mode === 'defense'
+      ? 'CHAR_LENGTH(CAST(id AS CHAR)) = 9'
+      : 'CHAR_LENGTH(CAST(id AS CHAR)) <> 9'
+  const buffFilter =
+    mode === 'defense'
+      ? 'CHAR_LENGTH(CAST(id AS CHAR)) = 7'
+      : 'CHAR_LENGTH(CAST(id AS CHAR)) <> 7'
+
+  const [[bossCount]] = await pool.execute(
+    `SELECT COUNT(*) AS cnt FROM boss WHERE version = ? AND phase = ? AND ${bossFilter}`,
+    [versionStr, phaseStr],
+  )
+  const [[buffCount]] = await pool.execute(
+    `SELECT COUNT(*) AS cnt FROM buff WHERE version = ? AND phase = ? AND ${buffFilter}`,
+    [versionStr, phaseStr],
+  )
+  const [[dateCount]] = await pool.execute(
+    mode === 'defense'
+      ? `SELECT COUNT(*) AS cnt FROM \`date\`
+         WHERE mode = 'defense' AND version = ? AND phase = ?`
+      : `SELECT COUNT(*) AS cnt FROM \`date\`
+         WHERE version = ? AND phase = ?
+           AND (mode = 'crisis' OR mode IS NULL OR mode = '')`,
+    [versionStr, phaseStr],
+  )
+
+  const { getSeasonContentTrashEntry } = await import('./seasonContentTrashService.js')
+  const trash = await getSeasonContentTrashEntry(mode, versionStr, phaseStr)
+
+  const bossN = Number(bossCount?.cnt || 0)
+  const buffN = Number(buffCount?.cnt || 0)
+  const dateN = Number(dateCount?.cnt || 0)
+
+  const warnings = []
+  if (bossN > 0 || buffN > 0) {
+    warnings.push(`将标记删除怪物 ${bossN} 条、Buff ${buffN} 条（数据会保留，直到执行清理）。`)
+  }
+  if (dateN > 0) {
+    warnings.push(`本期有 ${dateN} 条版本日期；软删除后前台不再展示，清理时才会真正删掉日期。`)
+  }
+  if (bossN === 0 && buffN === 0 && dateN > 0) {
+    warnings.push('怪物/Buff 已空，但仍有版本日期或空骨架。软删除后显示「已删除未清理」，清理后本期消失。')
+  }
+  if (trash) {
+    warnings.push('本期已处于「已删除未清理」状态，可恢复，或清理永久删除。')
+  }
+
+  return {
+    version: versionStr,
+    phase: phaseStr,
+    scheme: mode,
+    bossCount: bossN,
+    buffCount: buffN,
+    dateCount: dateN,
+    pendingCleanup: Boolean(trash),
+    deletedAt: trash?.deletedAt ?? null,
+    warnings,
+    canSoftDelete: !trash && (bossN > 0 || buffN > 0 || dateN > 0),
+    canRestore: Boolean(trash),
+    canCleanup: Boolean(trash) || bossN > 0 || buffN > 0 || dateN > 0,
+  }
+}
+
+/** 软删除：写入回收标记，不立刻删库内容 */
+export async function softDeleteSeasonContent(scheme, version, phase) {
+  const preview = await previewSeasonContent(scheme, version, phase)
+  if (preview.pendingCleanup) {
+    return {
+      ...preview,
+      action: 'already_soft_deleted',
+    }
+  }
+  if (!preview.canSoftDelete) {
+    throw new Error('没有可标记删除的内容')
+  }
+
+  const { softDeleteSeasonContent: markTrash } = await import('./seasonContentTrashService.js')
+  const trash = await markTrash(preview.scheme, preview.version, preview.phase, {
+    bossCount: preview.bossCount,
+    buffCount: preview.buffCount,
+    dateCount: preview.dateCount,
+    note: 'admin soft delete',
+  })
+
+  return {
+    version: preview.version,
+    phase: preview.phase,
+    scheme: preview.scheme,
+    action: 'soft_deleted',
+    bossCount: preview.bossCount,
+    buffCount: preview.buffCount,
+    dateCount: preview.dateCount,
+    pendingCleanup: true,
+    deletedAt: trash?.deletedAt ?? null,
+  }
+}
+
+/** 恢复：移除回收标记，前台重新可见 */
+export async function restoreSeasonContent(scheme, version, phase) {
+  const preview = await previewSeasonContent(scheme, version, phase)
+  if (!preview.pendingCleanup) {
+    throw new Error('本期不在「已删除未清理」状态，无需恢复')
+  }
+
+  const { removeSeasonContentTrashEntry } = await import('./seasonContentTrashService.js')
+  await removeSeasonContentTrashEntry(preview.scheme, preview.version, preview.phase)
+
+  return {
+    version: preview.version,
+    phase: preview.phase,
+    scheme: preview.scheme,
+    action: 'restored',
+    bossCount: preview.bossCount,
+    buffCount: preview.buffCount,
+    dateCount: preview.dateCount,
+    pendingCleanup: false,
+    deletedAt: null,
+  }
+}
+
+/** 清理：永久删除 boss/buff/日期，并移除回收标记 */
+export async function cleanupSeasonContent(scheme, version, phase, options = {}) {
+  const alsoDeleteDates = options.alsoDeleteDates !== false
+  const mode = scheme === 'defense' ? 'defense' : 'crisis'
+  const versionStr = String(version).trim()
+  const phaseStr = String(phase).trim().replace(/\D/g, '') || String(phase).trim()
+
+  const content =
+    mode === 'defense'
+      ? await deleteDefenseSeasonData(versionStr, phaseStr)
+      : await deleteCrisisSeasonData(versionStr, phaseStr)
+
+  let datesDeleted = 0
+  if (alsoDeleteDates) {
+    const [dateResult] = await pool.execute(
+      mode === 'defense'
+        ? `DELETE FROM \`date\` WHERE mode = 'defense' AND version = ? AND phase = ?`
+        : `DELETE FROM \`date\`
+           WHERE version = ? AND phase = ?
+             AND (mode = 'crisis' OR mode IS NULL OR mode = '')`,
+      [content.version, content.phase],
+    )
+    datesDeleted = dateResult.affectedRows
+  }
+
+  const { removeSeasonContentTrashEntry } = await import('./seasonContentTrashService.js')
+  await removeSeasonContentTrashEntry(mode, content.version, content.phase)
+
+  return {
+    ...content,
+    datesDeleted,
+    alsoDeleteDates,
+    action: 'cleaned',
+  }
+}
+
+/**
+ * @deprecated 兼容旧调用：改为软删除
+ */
+export async function purgeSeasonContent(scheme, version, phase, _options = {}) {
+  return softDeleteSeasonContent(scheme, version, phase)
 }
 
 export async function deleteAllDefenseData() {

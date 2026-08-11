@@ -115,6 +115,7 @@
 | | · 交接待办 `TODO-FOR-OWNER.md`（P0/P1/P2） |
 | | · **P1 施工（本分支继续）**：共享 enemyInput；fetch 竞态令牌；OCR 双桶配额；封禁/改密撤 session；站管授标收窄；删帖清图；`/health` 探 DB；绑定手机事务 |
 | | · **P1 收尾**：toggle/拉黑事务与手机号唯一；孤儿图扫描 `--orphans [--apply]`；启动 `ensureRuntimeSchema` |
+| | · **管理端**：整期「软删除 → 恢复 / 清理」；确认提醒；「已删除未清理」徽章；防卫战不再用危局日期生成空期骨架 |
 | **刻意保留（不覆盖）** | |
 | | · **不**引入 handoff 的 `zzz_full_dump.sql` |
 | | · 本地 `scripts/check-no-secrets.ps1`、上传魔数 / 鉴权前置、路径白名单加固 |

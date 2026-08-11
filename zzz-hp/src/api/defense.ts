@@ -43,6 +43,8 @@ function normalizeSeason(season: DefenseSeason): DefenseSeason {
   return {
     ...season,
     isHidden: Boolean(season.isHidden),
+    pendingCleanup: Boolean(season.pendingCleanup),
+    deletedAt: season.deletedAt ?? null,
     frontiers: season.frontiers.map((frontier) => ({
       ...frontier,
       rooms: frontier.rooms.map((room) => ({

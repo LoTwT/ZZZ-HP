@@ -72,6 +72,9 @@ export interface PhaseData {
   hardTotalHpConverted953?: number
   /** 开始日期晚于今天，仅管理员可见 */
   isHidden?: boolean
+  /** 管理端软删除：已删除未清理 */
+  pendingCleanup?: boolean
+  deletedAt?: string | null
   buffs: BuffInfo[]
   enemies: EnemySlot[]
 }

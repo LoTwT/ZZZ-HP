@@ -5,9 +5,11 @@
 import { ensureUserSecurityColumns } from '../services/userAuthService.js'
 import { ensureGuestbookSchema } from '../services/guestbookService.js'
 import { ensureGuestbookSocialSchema } from '../services/guestbookSocialService.js'
+import { ensureSeasonContentTrashTable } from '../services/seasonContentTrashService.js'
 
 export async function ensureRuntimeSchema() {
   await ensureUserSecurityColumns()
   await ensureGuestbookSchema()
   await ensureGuestbookSocialSchema()
+  await ensureSeasonContentTrashTable()
 }

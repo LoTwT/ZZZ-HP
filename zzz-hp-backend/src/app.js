@@ -19,6 +19,7 @@ import siteInfoRoutes from './routes/siteInfoRoutes.js'
 import guestbookRoutes from './routes/guestbookRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import seasonDateRoutes from './routes/seasonDateRoutes.js'
+import seasonContentRoutes from './routes/seasonContentRoutes.js'
 import pool from './config/db.js'
 import { ensureRuntimeSchema } from './bootstrap/ensureRuntimeSchema.js'
 import { fail } from './utils/response.js'
@@ -125,6 +126,7 @@ app.use('/api/upload/guestbook', guestbookUploadLimiter)
 app.use('/api/auth/me/avatar', guestbookUploadLimiter)
 
 app.use('/api/admin', adminAuthRoutes)
+app.use('/api/admin/season-content', seasonContentRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/ocr', ocrRoutes)

@@ -365,7 +365,18 @@ function onAdminDeleteBuff(buff: PhaseData['buffs'][number]) {
   emit('admin-delete-buff', buff.recordId, buff.name)
 }
 
-defineExpose({ reload: loadCrisisAssaultData })
+defineExpose({
+  reload: loadCrisisAssaultData,
+  getCurrentMeta: () => {
+    const phase = currentPhase.value
+    if (!phase?.version) return null
+    const phaseNum = String(phase.phase ?? '').replace(/\D/g, '') || String(phase.phase ?? '')
+    return {
+      version: String(phase.version),
+      phase: phaseNum,
+    }
+  },
+})
 
 function defaultPublicPhaseIndex(list: { isHidden?: boolean }[]): number {
   if (!list.length) return 0
@@ -564,7 +575,8 @@ function onPickerWheel(event: WheelEvent) {
               <button type="button" class="phase-btn" @click="openPhasePicker">
                 <span class="phase-version">
                   {{ currentPhase.version }} {{ currentPhase.phase }}
-                  <span v-if="currentPhase.isHidden" class="phase-hidden-badge">未公开</span>
+                  <span v-if="currentPhase.pendingCleanup" class="phase-trash-badge">已删除未清理</span>
+                  <span v-else-if="currentPhase.isHidden" class="phase-hidden-badge">未公开</span>
                 </span>
                 <span class="phase-date">{{ currentPhase.dateRange }}</span>
                 <span class="phase-id">ID: {{ currentPhase.tid }}</span>
@@ -678,12 +690,17 @@ function onPickerWheel(event: WheelEvent) {
                       :key="phase.id"
                       type="button"
                       class="phase-card"
-                      :class="{ active: index === currentIndex, 'phase-card--hidden': phase.isHidden }"
+                      :class="{
+                        active: index === currentIndex,
+                        'phase-card--hidden': phase.isHidden,
+                        'phase-card--trash': phase.pendingCleanup,
+                      }"
                       :data-index="index"
                     >
                       <span class="phase-card-version">
                         {{ phase.version }} {{ phase.phase }}
-                        <span v-if="phase.isHidden" class="phase-hidden-badge">未公开</span>
+                        <span v-if="phase.pendingCleanup" class="phase-trash-badge">已删除未清理</span>
+                        <span v-else-if="phase.isHidden" class="phase-hidden-badge">未公开</span>
                       </span>
                       <span class="phase-card-date">{{ phase.dateRange }}</span>
                       <span class="phase-card-id">ID: {{ phase.tid }}</span>
@@ -1313,6 +1330,19 @@ function onPickerWheel(event: WheelEvent) {
   border: 1px solid color-mix(in srgb, #f5c451 45%, transparent);
 }
 
+.phase-trash-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #e85d4c;
+  background: color-mix(in srgb, #e85d4c 18%, transparent);
+  border: 1px solid color-mix(in srgb, #e85d4c 45%, transparent);
+}
+
 .phase-date,
 .phase-id {
   font-size: clamp(0.72rem, 1.35vw, 0.82rem);
@@ -1435,6 +1465,12 @@ function onPickerWheel(event: WheelEvent) {
 .phase-card--hidden {
   border-style: dashed;
   border-color: color-mix(in srgb, #f5c451 55%, var(--color-border));
+}
+
+.phase-card--trash {
+  border-style: dashed;
+  border-color: color-mix(in srgb, #e85d4c 55%, var(--color-border));
+  opacity: 0.92;
 }
 
 .phase-card-version {

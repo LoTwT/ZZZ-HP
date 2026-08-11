@@ -12,6 +12,10 @@ import {
   ensureEnvironmentBuffSchema,
   parseEffectBlocksJson,
 } from '../utils/environmentBuffSchema.js'
+import {
+  getSeasonContentTrashMap,
+  seasonTrashKey,
+} from './seasonContentTrashService.js'
 
 const CHINESE_STAGE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
@@ -328,10 +332,12 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
      FROM buff
      ORDER BY version, CAST(phase AS UNSIGNED), id`,
   )
-  const [dateRows] = await pool.execute(
-    `SELECT version, phase, start_date, end_date FROM \`date\` WHERE mode = 'defense'
-     UNION ALL
-     SELECT version, phase, start_date, end_date FROM \`date\`
+  // 仅「防卫战日期」可生成空期骨架；危局日期只用于给已有防卫内容补 dateRange，避免 2.4 等无防卫数据期清不掉
+  const [defenseDateRows] = await pool.execute(
+    `SELECT version, phase, start_date, end_date FROM \`date\` WHERE mode = 'defense'`,
+  )
+  const [legacyDateRows] = await pool.execute(
+    `SELECT version, phase, start_date, end_date FROM \`date\`
      WHERE (mode = 'crisis' OR mode IS NULL OR mode = '')
        AND NOT EXISTS (
          SELECT 1 FROM \`date\` d2
@@ -341,9 +347,16 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
        )`,
   )
 
-  const dateMap = new Map(
-    dateRows.map((row) => [seasonKey(row.version, row.phase), row]),
+  const defenseDateMap = new Map(
+    defenseDateRows.map((row) => [seasonKey(row.version, row.phase), row]),
   )
+  const legacyDateMap = new Map(
+    legacyDateRows.map((row) => [seasonKey(row.version, row.phase), row]),
+  )
+  const resolveDateInfo = (version, phase) => {
+    const key = seasonKey(version, phase)
+    return defenseDateMap.get(key) ?? legacyDateMap.get(key)
+  }
 
   const seasons = new Map()
 
@@ -360,7 +373,7 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
 
     const key = seasonKey(boss.version, boss.phase)
     if (!seasons.has(key)) {
-      seasons.set(key, buildSeasonSkeleton(boss.version, boss.phase, dateMap.get(key)))
+      seasons.set(key, buildSeasonSkeleton(boss.version, boss.phase, resolveDateInfo(boss.version, boss.phase)))
     }
     const season = seasons.get(key)
 
@@ -433,7 +446,7 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
     applyRoomBuffFallback(room, buff, decoded)
   }
 
-  for (const [key, dateInfo] of dateMap.entries()) {
+  for (const [key, dateInfo] of defenseDateMap.entries()) {
     if (!matchesVariant(dateInfo.version, variant)) continue
     if (!seasons.has(key)) {
       seasons.set(key, buildSeasonSkeleton(dateInfo.version, dateInfo.phase, dateInfo))
@@ -448,10 +461,21 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
     }
   }
 
+  const trashMap = await getSeasonContentTrashMap('defense')
+
   return [...seasons.values()]
     .sort(compareSeason)
-    .map((season) => finalizeSeason(season))
+    .map((season) => {
+      const finalized = finalizeSeason(season)
+      const trash = trashMap.get(seasonTrashKey('defense', season.version, season.phaseNum))
+      return {
+        ...finalized,
+        pendingCleanup: Boolean(trash),
+        deletedAt: trash?.deletedAt ?? null,
+      }
+    })
     .filter((season) => {
+      if (season.pendingCleanup && !includeHidden) return false
       if (season.totalHp > 0) return includeHidden || season.listed
       return includeHidden
     })

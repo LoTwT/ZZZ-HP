@@ -513,7 +513,18 @@ function onAdminDeleteBuff(recordId: number, label: string) {
   emit('admin-delete-buff', recordId, label)
 }
 
-defineExpose({ reload: loadSeasons })
+defineExpose({
+  reload: loadSeasons,
+  getCurrentMeta: () => {
+    const season = currentSeason.value
+    if (!season?.version) return null
+    const phaseNum = String(season.phase ?? '').replace(/\D/g, '') || String(season.phase ?? '')
+    return {
+      version: String(season.version),
+      phase: phaseNum,
+    }
+  },
+})
 
 function formatEnemyResistance(value?: string) {
   if (!value?.trim() || value.trim() === '无') return ''
@@ -573,7 +584,8 @@ function formatEnemyResistance(value?: string) {
               <button type="button" class="phase-btn" @click="showPicker = true">
                 <span class="phase-version">
                   {{ currentSeason.version }} {{ currentSeason.phase }}
-                  <span v-if="currentSeason.isHidden" class="phase-hidden-badge">未公开</span>
+                  <span v-if="currentSeason.pendingCleanup" class="phase-trash-badge">已删除未清理</span>
+                  <span v-else-if="currentSeason.isHidden" class="phase-hidden-badge">未公开</span>
                 </span>
                 <span class="phase-date">{{ currentSeason.dateRange }}</span>
                 <span class="phase-id">ID: {{ currentSeason.seasonId }} · {{ currentSeason.nodeType }}</span>
@@ -645,12 +657,17 @@ function formatEnemyResistance(value?: string) {
                       :key="season.id"
                       type="button"
                       class="phase-card"
-                      :class="{ active: index === currentIndex, 'phase-card--hidden': season.isHidden }"
+                      :class="{
+                        active: index === currentIndex,
+                        'phase-card--hidden': season.isHidden,
+                        'phase-card--trash': season.pendingCleanup,
+                      }"
                       @click="selectSeason(index)"
                     >
                       <span class="phase-card-version">
                         {{ season.version }} {{ season.phase }}
-                        <span v-if="season.isHidden" class="phase-hidden-badge">未公开</span>
+                        <span v-if="season.pendingCleanup" class="phase-trash-badge">已删除未清理</span>
+                        <span v-else-if="season.isHidden" class="phase-hidden-badge">未公开</span>
                       </span>
                       <span class="phase-card-date">{{ season.dateRange }}</span>
                       <span class="phase-card-id">ID: {{ season.seasonId }}</span>
@@ -1106,6 +1123,19 @@ function formatEnemyResistance(value?: string) {
   border: 1px solid color-mix(in srgb, #f5c451 45%, transparent);
 }
 
+.phase-trash-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #e85d4c;
+  background: color-mix(in srgb, #e85d4c 18%, transparent);
+  border: 1px solid color-mix(in srgb, #e85d4c 45%, transparent);
+}
+
 .phase-date,
 .phase-id {
   font-size: clamp(0.82rem, 1.6vw, 0.92rem);
@@ -1344,6 +1374,12 @@ function formatEnemyResistance(value?: string) {
 .phase-card--hidden {
   border-style: dashed;
   border-color: color-mix(in srgb, #f5c451 55%, var(--color-border));
+}
+
+.phase-card--trash {
+  border-style: dashed;
+  border-color: color-mix(in srgb, #e85d4c 55%, var(--color-border));
+  opacity: 0.92;
 }
 
 .phase-card-version {

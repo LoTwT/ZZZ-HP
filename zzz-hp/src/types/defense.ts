@@ -72,6 +72,9 @@ export interface DefenseSeason {
   seasonId: string
   nodeType: string
   isHidden?: boolean
+  /** 管理端软删除：已删除未清理 */
+  pendingCleanup?: boolean
+  deletedAt?: string | null
   rawHp: string
   aoeHp?: string
   altHp?: string

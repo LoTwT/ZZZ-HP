@@ -334,3 +334,128 @@ export async function deleteSeasonDate(id: number) {
   })
   return parseResponse<{ id: number }>(response)
 }
+
+export interface SeasonContentPreview {
+  version: string
+  phase: string
+  scheme: RecordScheme
+  bossCount: number
+  buffCount: number
+  dateCount: number
+  pendingCleanup?: boolean
+  deletedAt?: string | null
+  warnings?: string[]
+  canSoftDelete?: boolean
+  canRestore?: boolean
+  canCleanup?: boolean
+}
+
+export interface SeasonContentSoftDeleteResult {
+  version: string
+  phase: string
+  scheme: RecordScheme
+  action: 'soft_deleted' | 'already_soft_deleted'
+  bossCount: number
+  buffCount: number
+  dateCount: number
+  pendingCleanup: boolean
+  deletedAt?: string | null
+}
+
+export interface SeasonContentRestoreResult {
+  version: string
+  phase: string
+  scheme: RecordScheme
+  action: 'restored'
+  bossCount: number
+  buffCount: number
+  dateCount: number
+  pendingCleanup: boolean
+  deletedAt?: string | null
+}
+
+export interface SeasonContentCleanupResult {
+  version: string
+  phase: string
+  scheme: RecordScheme
+  bossesDeleted: number
+  buffsDeleted: number
+  datesDeleted: number
+  alsoDeleteDates: boolean
+  action: 'cleaned'
+}
+
+/** @deprecated 兼容旧调用 */
+export type SeasonContentPurgeResult = SeasonContentSoftDeleteResult | SeasonContentCleanupResult
+
+export async function previewSeasonContent(payload: {
+  scheme: RecordScheme
+  version: string
+  phase: string
+}) {
+  const response = await fetch('/api/admin/season-content/preview', {
+    method: 'POST',
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+  return parseResponse<SeasonContentPreview>(response)
+}
+
+export async function softDeleteSeasonContent(payload: {
+  scheme: RecordScheme
+  version: string
+  phase: string
+  confirmText: string
+}) {
+  const response = await fetch('/api/admin/season-content/soft-delete', {
+    method: 'POST',
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+  return parseResponse<SeasonContentSoftDeleteResult>(response)
+}
+
+export async function restoreSeasonContent(payload: {
+  scheme: RecordScheme
+  version: string
+  phase: string
+  confirmText: string
+}) {
+  const response = await fetch('/api/admin/season-content/restore', {
+    method: 'POST',
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+  return parseResponse<SeasonContentRestoreResult>(response)
+}
+
+export async function cleanupSeasonContent(payload: {
+  scheme: RecordScheme
+  version: string
+  phase: string
+  alsoDeleteDates?: boolean
+  confirmText: string
+}) {
+  const response = await fetch('/api/admin/season-content/cleanup', {
+    method: 'POST',
+    headers: withAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+  return parseResponse<SeasonContentCleanupResult>(response)
+}
+
+/** @deprecated 请改用 softDeleteSeasonContent */
+export async function purgeSeasonContent(payload: {
+  scheme: RecordScheme
+  version: string
+  phase: string
+  alsoDeleteDates?: boolean
+  confirmText: string
+}) {
+  return softDeleteSeasonContent({
+    scheme: payload.scheme,
+    version: payload.version,
+    phase: payload.phase,
+    confirmText: payload.confirmText,
+  })
+}

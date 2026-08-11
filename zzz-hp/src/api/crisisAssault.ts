@@ -54,6 +54,8 @@ interface ApiPhase {
   startDate: string | null
   endDate: string | null
   isHidden?: boolean
+  pendingCleanup?: boolean
+  deletedAt?: string | null
   totalHp: number
   totalHpConverted953?: number
   hardTotalHp?: number
@@ -198,6 +200,8 @@ function toPhaseData(phase: ApiPhase): PhaseData {
     dateRange: formatDateRange(phase.startDate, phase.endDate),
     tid: phase.tid != null ? String(phase.tid) : '—',
     isHidden: Boolean(phase.isHidden),
+    pendingCleanup: Boolean(phase.pendingCleanup),
+    deletedAt: phase.deletedAt ?? null,
     rawHp: formatHp(phase.totalHp),
     totalHp: phase.totalHp,
     rawHpConverted953: formatHp(phase.totalHpConverted953 ?? phase.totalHp),
