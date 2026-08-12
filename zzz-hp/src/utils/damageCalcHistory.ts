@@ -34,6 +34,15 @@ function schemeKey(folder: string, name: string): string {
   return SCHEME_KEY_PREFIX + schemePath(folder, name)
 }
 
+/** 把带前缀的 scheme key 还原为路径（兼容多层 s: 前缀污染，用于导入/旧数据迁移） */
+function schemeKeyToPath(key: string): string {
+  let p = key || ''
+  while (p.startsWith(SCHEME_KEY_PREFIX)) p = p.slice(SCHEME_KEY_PREFIX.length)
+  // 清掉路径中因历史污染残留的 s: 段（如 /s:/父/名 -> /父/名）
+  p = p.replace(/\/?s:\/?/g, '/')
+  return p
+}
+
 function parentFolder(path: string): string {
   path = String(path || '')
   const i = path.lastIndexOf('/')
@@ -272,20 +281,32 @@ function readStore(): SchemeStore {
       dirs: (o.dirs as Record<string, SchemeFolderMeta>) || {},
       schemes: (o.schemes as Record<string, DamageCalcHistoryEntry>) || {},
     }
-    // 旧数据迁移：方案 key 统一为 schemeKey（前缀 + 路径），与目录路径解耦，允许同名
+    // 迁移 + 清理：
+    // 1) 任意 key（未前缀 / 多层 s: 前缀污染）统一还原为正确 schemeKey
+    // 2) 修复历史上把 s: 前缀误当目录路径导致的 folder=「/s:/...」脏数据
     for (const key of Object.keys(store.schemes)) {
       const entry = store.schemes[key]!
-      const correctKey = schemeKey(entry.folder || '', entry.name || '')
-      if (key !== correctKey) {
-        store.schemes[correctKey] = entry
-        entry.id = correctKey
+      // 还原路径（schemeKeyToPath 内部已处理多层 s: 前缀污染）
+      const realPath = schemeKeyToPath(key)
+      const folderContaminated = /^\/?s:($|\/)/.test(entry.folder || '')
+      const folder = normFolder(folderContaminated ? parentFolder(realPath) : (entry.folder || parentFolder(realPath)))
+      const name = entry.name || baseName(realPath)
+      const correctKey = schemeKey(folder, name)
+      if (correctKey !== key) {
+        if (!store.schemes[correctKey]) {
+          entry.folder = folder
+          entry.name = name
+          entry.id = correctKey
+          store.schemes[correctKey] = entry
+        }
         delete store.schemes[key]
       }
     }
-    // 当前高亮方案 id 同步到新 key
+    // 当前高亮方案 id 同步到新 key（兼容多层 s: 前缀污染）
     const loaded = getLoadedSchemeId()
     if (loaded && !store.schemes[loaded]) {
-      const alt = schemeKey(parentFolder(loaded), baseName(loaded))
+      const loadedPath = schemeKeyToPath(loaded)
+      const alt = schemeKey(parentFolder(loadedPath), baseName(loadedPath))
       if (store.schemes[alt]) setLoadedSchemeId(alt)
     }
     ensureOrders(store)
@@ -818,13 +839,15 @@ export function importDamageCalcHistory(
       skipped++
       continue
     }
-    if (mode === 'merge' && current.schemes[p]) {
+    // 兼容旧版未前缀 key（/父/名）与新版已前缀 key（s:/父/名）
+    const rawPath = schemeKeyToPath(p)
+    const folder = normFolder(v.folder || parentFolder(rawPath))
+    const name = v.name || baseName(rawPath)
+    const key = schemeKey(folder, name)
+    if (mode === 'merge' && current.schemes[key]) {
       skipped++
       continue
     }
-    const folder = normFolder(v.folder || parentFolder(p))
-    const name = v.name || baseName(p)
-    const key = schemeKey(folder, name)
     current.schemes[key] = {
       ...v,
       id: key,
