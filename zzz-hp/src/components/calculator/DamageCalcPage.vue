@@ -1153,6 +1153,12 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
   anomalyEvents.value = entry.anomalyEvents
     ? JSON.parse(JSON.stringify(entry.anomalyEvents))
     : []
+  // 切方案时断开旧模式绑定：弹窗 watch(events) 会自动 persistCurrentCustom，
+  // 若 modeId 还挂着上个方案的，会把当前方案事件按旧 modeId 写回全局模式库、覆盖同名模式。
+  directEventModeId.value = null
+  directEventModeName.value = ''
+  anomalyEventModeId.value = null
+  anomalyEventModeName.value = ''
   damageKind.value = entry.damageKind ?? 'direct'
   staggerPhase.value = entry.staggerPhase ?? 'stagger'
   const restoredBuff = entry.multiSlotBuffSelection
