@@ -1147,18 +1147,19 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
   panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
   applyAnomalySlotPanels(entry.anomalySlotPanels)
   applyConvertSlotPanels(entry.convertSlotPanels)
+  // 切方案时先断开旧模式绑定（须在设置 events 前清）：
+  // 弹窗 watch(events, deep) 会自动 persistCurrentCustom，若 modeId 还挂着上个方案的，
+  // 会把当前方案事件按旧 modeId 写回全局模式库、覆盖同名模式。
+  directEventModeId.value = null
+  directEventModeName.value = ''
+  anomalyEventModeId.value = null
+  anomalyEventModeName.value = ''
   directEvents.value = entry.directEvents
     ? JSON.parse(JSON.stringify(entry.directEvents))
     : []
   anomalyEvents.value = entry.anomalyEvents
     ? JSON.parse(JSON.stringify(entry.anomalyEvents))
     : []
-  // 切方案时断开旧模式绑定：弹窗 watch(events) 会自动 persistCurrentCustom，
-  // 若 modeId 还挂着上个方案的，会把当前方案事件按旧 modeId 写回全局模式库、覆盖同名模式。
-  directEventModeId.value = null
-  directEventModeName.value = ''
-  anomalyEventModeId.value = null
-  anomalyEventModeName.value = ''
   damageKind.value = entry.damageKind ?? 'direct'
   staggerPhase.value = entry.staggerPhase ?? 'stagger'
   const restoredBuff = entry.multiSlotBuffSelection
