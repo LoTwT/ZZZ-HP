@@ -220,13 +220,16 @@ function createEmptyStore(): SchemeStore {
 }
 
 /**
- * 一次性迁移（可独立废弃）：把全局自定义事件模式库
- * （zzz-hp-custom-damage-event-modes）里的所有事件，按类型复制进
- * 每个方案条目。仅旧版升级时需要——旧版方案不存事件，新版事件跟方案走。
+ * @temporary 临时迁移代码，预计大版本 4 后移除（已列入待办）。
+ *   移除时：删本函数 + readStore 中 2 处调用点 + SchemeStore.customEventsMigrated 字段。
+ *
+ * 一次性迁移：把全局自定义事件模式库（zzz-hp-custom-damage-event-modes）
+ * 里的所有事件，按类型复制进每个方案条目。仅旧版升级时需要——旧版方案不存事件，
+ * 新版事件跟方案走。
  * - modeType='anomaly' 的 events → 方案 anomalyEvents
  * - modeType='direct' 的 events → 方案 directEvents
  * 仅在方案对应数组为空时填入（不覆盖用户后来手动配的）；damageKind 缺失时补默认值。
- * 置 customEventsMigrated=true 防重复。后续版本可直接删除本函数与 readStore 中的调用点。
+ * 置 customEventsMigrated=true 防重复。全局模式库只读不写、不清空。
  */
 function migrateLegacyGlobalEvents(store: SchemeStore): void {
   if (store.customEventsMigrated) return
