@@ -554,10 +554,11 @@ export function copyFolderTree(srcPath: string, targetFolder: string): DamageCal
   if (!store.dirs[src]) return listAllDamageCalcHistory()
   const target = normFolder(targetFolder)
   const base = baseName(src)
-  let dstBase = base + '-复制'
+  let dstBase = base
   let i = 2
   while (store.dirs[schemePath(target, dstBase)]) {
-    dstBase = base + '-复制' + i
+    // 仅当目标目录内已存在同名（含源目录自身）时才加 -复制 后缀，否则保持原名
+    dstBase = i === 2 ? base + '-复制' : base + '-复制' + i
     i++
   }
   const dst = schemePath(target, dstBase)
