@@ -132,6 +132,16 @@ const enemyInput = ref<DamageEnemyInput>(
 const historyEntries = ref<DamageCalcHistoryEntry[]>(listAllDamageCalcHistory())
 const activeHistoryId = ref('')
 const historyMessage = ref('')
+const historySectionRef = ref<{
+  openModal?: () => void
+  openModalWithHint?: (hint: string) => void
+} | null>(null)
+
+const activeSchemeEntry = computed(() =>
+  historyEntries.value.find((item) => item.id === activeHistoryId.value) ?? null,
+)
+const hasActiveScheme = computed(() => Boolean(activeSchemeEntry.value))
+const activeSchemeName = computed(() => activeSchemeEntry.value?.name ?? '')
 
 const damageKind = ref<DamageCalcKind>('direct')
 const staggerPhase = ref<StaggerPhase>('stagger')
@@ -375,7 +385,9 @@ watch(defenseFrontierOptions, (options) => {
 
 onMounted(() => {
   void loadEnvironmentBuffCatalogs()
-  activeHistoryId.value = getLoadedSchemeId()
+  // 不默认加载任何方案（含「上次加载」与列表第一位）；仅用户点「加载」后才套用配置与事件
+  activeHistoryId.value = ''
+  setLoadedSchemeId('')
 })
 
 function disableCollectedEffects(
@@ -1126,6 +1138,8 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
     anomalyEvents: anomalyEvents.value.length
       ? JSON.parse(JSON.stringify(anomalyEvents.value))
       : [],
+    directEventModeName: directEventModeName.value || null,
+    anomalyEventModeName: anomalyEventModeName.value || null,
     damageKind: damageKind.value,
     staggerPhase: staggerPhase.value,
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
@@ -1147,19 +1161,21 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
   panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
   applyAnomalySlotPanels(entry.anomalySlotPanels)
   applyConvertSlotPanels(entry.convertSlotPanels)
-  // 切方案时先断开旧模式绑定（须在设置 events 前清）：
-  // 弹窗 watch(events, deep) 会自动 persistCurrentCustom，若 modeId 还挂着上个方案的，
-  // 会把当前方案事件按旧 modeId 写回全局模式库、覆盖同名模式。
+  // 切方案时先断开全局模式绑定，再恢复方案内事件与展示名
   directEventModeId.value = null
-  directEventModeName.value = ''
   anomalyEventModeId.value = null
-  anomalyEventModeName.value = ''
   directEvents.value = entry.directEvents
     ? JSON.parse(JSON.stringify(entry.directEvents))
     : []
   anomalyEvents.value = entry.anomalyEvents
     ? JSON.parse(JSON.stringify(entry.anomalyEvents))
     : []
+  directEventModeName.value =
+    (entry.directEventModeName && String(entry.directEventModeName).trim()) ||
+    (directEvents.value.length ? '方案事件' : '')
+  anomalyEventModeName.value =
+    (entry.anomalyEventModeName && String(entry.anomalyEventModeName).trim()) ||
+    (anomalyEvents.value.length ? '方案事件' : '')
   damageKind.value = entry.damageKind ?? 'direct'
   staggerPhase.value = entry.staggerPhase ?? 'stagger'
   const restoredBuff = entry.multiSlotBuffSelection
@@ -1203,18 +1219,60 @@ function overwriteHistoryEntry(id: string) {
     anomalyEvents: anomalyEvents.value.length
       ? JSON.parse(JSON.stringify(anomalyEvents.value))
       : [],
+    directEventModeName: directEventModeName.value || null,
+    anomalyEventModeName: anomalyEventModeName.value || null,
     damageKind: damageKind.value,
     staggerPhase: staggerPhase.value,
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
   }
   historyEntries.value = saveDamageCalcHistory(updated)
   activeHistoryId.value = updated.id
+  setLoadedSchemeId(updated.id)
   historyMessage.value = `已用当前配置覆盖「${updated.name}」`
 }
 
 /** 方案库内部直接改了 localStorage（复制/重命名/删除/批量/目录/导入），在此刷新列表（全量） */
 function onSchemeLibraryChanged() {
   historyEntries.value = listAllDamageCalcHistory()
+  if (
+    activeHistoryId.value &&
+    !historyEntries.value.some((item) => item.id === activeHistoryId.value)
+  ) {
+    activeHistoryId.value = ''
+    setLoadedSchemeId('')
+  }
+}
+
+/** 取消当前已加载方案绑定（不删库、不重置计算页） */
+function clearLoadedSchemeBinding() {
+  activeHistoryId.value = ''
+  setLoadedSchemeId('')
+  historyMessage.value = '已取消当前方案，现为未加载状态'
+}
+
+/** 事件弹窗：跟随当前方案保存 */
+function saveEventsToActiveScheme() {
+  const id = activeHistoryId.value
+  if (!id || !activeSchemeEntry.value) {
+    requestCreateSchemeForEvents(
+      '当前没有已记录的方案。请先新建方案；或改用「存为全局自定义」。',
+    )
+    return
+  }
+  overwriteHistoryEntry(id)
+  historyMessage.value = `已将当前事件写入方案「${activeSchemeEntry.value.name}」`
+}
+
+/** 事件弹窗：无方案时引导新建 */
+function requestCreateSchemeForEvents(hint: string) {
+  historyMessage.value = hint
+  historySectionRef.value?.openModalWithHint?.(hint)
+  void nextTick(() => {
+    document.getElementById('damage-calc-history')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  })
 }
 
 const pageRootRef = ref<HTMLElement | null>(null)
@@ -1257,6 +1315,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
 <template>
   <div ref="pageRootRef" class="damage-page">
     <DamageCalcHistorySection
+      ref="historySectionRef"
       :entries="historyEntries"
       :agents="agents"
       :active-entry-id="activeHistoryId"
@@ -1264,6 +1323,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @save="saveHistoryEntry"
       @overwrite="overwriteHistoryEntry"
       @load="loadHistoryEntry"
+      @clear-loaded="clearLoadedSchemeBinding"
       @changed="onSchemeLibraryChanged"
     />
 
@@ -1342,6 +1402,10 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
             :resolve-mult-defaults="resolveMultDefaultsForEvent"
             :turbulence-calculable="turbulenceCalculable"
             :main-agent-element="mainAgent?.element"
+            :has-active-scheme="hasActiveScheme"
+            :active-scheme-name="activeSchemeName"
+            @save-to-scheme="saveEventsToActiveScheme"
+            @request-create-scheme="requestCreateSchemeForEvents"
           />
         </div>
       </div>
@@ -1365,6 +1429,10 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
             :resolve-mult-defaults="resolveMultDefaultsForEvent"
             :turbulence-calculable="turbulenceCalculable"
             :main-agent-element="mainAgent?.element"
+            :has-active-scheme="hasActiveScheme"
+            :active-scheme-name="activeSchemeName"
+            @save-to-scheme="saveEventsToActiveScheme"
+            @request-create-scheme="requestCreateSchemeForEvents"
           />
         </div>
       </div>

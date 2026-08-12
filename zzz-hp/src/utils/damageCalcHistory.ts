@@ -1,4 +1,4 @@
-import type { AgentBuffDoc, DamageEvent } from '@/types/calculator'
+import type { AgentBuffDoc } from '@/types/calculator'
 import type {
   DamageCalcHistoryEntry,
   DamageCalcHistoryExport,
@@ -6,7 +6,6 @@ import type {
   SchemeFolderMeta,
   SchemeStore,
 } from '@/types/damageCalcHistory'
-import { loadCustomModes } from './customDamageEventModes'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
@@ -223,39 +222,14 @@ function createEmptyStore(): SchemeStore {
  * @temporary 临时迁移代码，预计大版本 4 后移除（已列入待办）。
  *   移除时：删本函数 + readStore 中 2 处调用点 + SchemeStore.customEventsMigrated 字段。
  *
- * 一次性迁移：把全局自定义事件模式库（zzz-hp-custom-damage-event-modes）
- * 里的所有事件，按类型复制进每个方案条目。仅旧版升级时需要——旧版方案不存事件，
- * 新版事件跟方案走。
- * - modeType='anomaly' 的 events → 方案 anomalyEvents
- * - modeType='direct' 的 events → 方案 directEvents
- * 仅在方案对应数组为空时填入（不覆盖用户后来手动配的）；damageKind 缺失时补默认值。
- * 置 customEventsMigrated=true 防重复。全局模式库只读不写、不清空。
+ * 一次性标记：旧版全局自定义模式库仍保留在 localStorage 作模板，
+ * **不再**把多模式事件合并灌进每个空方案（避免「固定 N 条」污染）。
+ * 方案事件以各方案自己保存的 directEvents / anomalyEvents 为准。
  */
 function migrateLegacyGlobalEvents(store: SchemeStore): void {
   if (store.customEventsMigrated) return
   store.customEventsMigrated = true
-  const modes = loadCustomModes()
-  if (modes.length === 0) return
-  const anomalyEvents: DamageEvent[] = []
-  const directEvents: DamageEvent[] = []
-  for (const mode of modes) {
-    const target = mode.modeType === 'anomaly' ? anomalyEvents : directEvents
-    for (const e of mode.events) target.push(e)
-  }
-  if (anomalyEvents.length === 0 && directEvents.length === 0) return
-  for (const key of Object.keys(store.schemes)) {
-    const entry = store.schemes[key]
-    if (!entry) continue
-    if (anomalyEvents.length > 0 && (!entry.anomalyEvents || entry.anomalyEvents.length === 0)) {
-      entry.anomalyEvents = anomalyEvents.map((e) => ({ ...e }))
-    }
-    if (directEvents.length > 0 && (!entry.directEvents || entry.directEvents.length === 0)) {
-      entry.directEvents = directEvents.map((e) => ({ ...e }))
-    }
-    if (!entry.damageKind) {
-      entry.damageKind = anomalyEvents.length > 0 ? 'anomaly' : 'direct'
-    }
-  }
+  // 有意不调用 loadCustomModes 灌方案：全局库仅作可选模板。
 }
 
 function isValidEntry(item: unknown): item is DamageCalcHistoryEntry {

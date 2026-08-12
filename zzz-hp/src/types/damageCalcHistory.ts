@@ -76,6 +76,10 @@ export interface DamageCalcHistoryEntry {
   directEvents?: DamageEvent[]
   /** 招式事件（异常伤害） */
   anomalyEvents?: DamageEvent[]
+  /** 直伤事件展示名（跟方案；不绑定全局自动写回） */
+  directEventModeName?: string | null
+  /** 异常事件展示名（跟方案） */
+  anomalyEventModeName?: string | null
   /** 伤害类型（direct / anomaly） */
   damageKind?: DamageCalcKind
   /** 失衡阶段（stagger / normal） */

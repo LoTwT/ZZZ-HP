@@ -45,6 +45,7 @@ const emit = defineEmits<{
   save: [payload: { name: string; folder: string }]
   overwrite: [path: string]
   load: [entry: DamageCalcHistoryEntry]
+  'clear-loaded': []
   changed: []
 }>()
 
@@ -128,6 +129,8 @@ const loadedId = ref('')
 const modalOpen = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const formMessage = ref('')
+/** 从伤害事件弹窗「新建方案」打开时为 true：保存成功后自动关闭方案库 */
+const openedForEventSave = ref(false)
 
 // ============ localStorage 占用提示（常驻显示，接近上限时弹窗顶部额外红字，不干涉保存）============
 const STORAGE_LIMIT_MB = 5
@@ -158,7 +161,8 @@ watch(
   () => props.entries,
   () => {
     revision.value++
-    loadedId.value = getLoadedSchemeId()
+    // 以父组件当前方案为准，避免空状态时回落到上次 localStorage 高亮
+    loadedId.value = props.activeEntryId || ''
   },
 )
 
@@ -181,19 +185,20 @@ const renamingFolderValue = ref('')
 watch(
   () => props.activeEntryId,
   (id) => {
-    loadedId.value = id || getLoadedSchemeId()
+    loadedId.value = id || ''
   },
   { immediate: true },
 )
 
 function initLoaded() {
-  loadedId.value = props.activeEntryId || getLoadedSchemeId()
+  loadedId.value = props.activeEntryId || ''
 }
 
 // ============ 打开 / 关闭 ============
 function openModal() {
   modalOpen.value = true
   formMessage.value = ''
+  openedForEventSave.value = false
 }
 
 function closeModal() {
@@ -201,6 +206,7 @@ function closeModal() {
   draftName.value = ''
   searchQuery.value = ''
   formMessage.value = ''
+  openedForEventSave.value = false
   manageMode.value = false
   selectedIds.value = []
   clipboard.value = null
@@ -217,9 +223,14 @@ function saveCurrent() {
     formMessage.value = '请先输入方案命名'
     return
   }
+  const fromEventSave = openedForEventSave.value
   formMessage.value = ''
   emit('save', { name, folder: currentFolder.value })
   draftName.value = ''
+  if (fromEventSave) {
+    // 从事件弹窗引导新建：保存后关掉方案库，让出事件窗继续编辑
+    closeModal()
+  }
 }
 
 // ============ 加载 / 覆盖 ============
@@ -266,7 +277,8 @@ function deleteEntry(path: string) {
     () => {
       batchDeleteSchemes([path])
       selectedIds.value = selectedIds.value.filter((x) => x !== path)
-      loadedId.value = getLoadedSchemeId()
+      if (getLoadedSchemeId() === path) setLoadedSchemeId('')
+      loadedId.value = props.activeEntryId === path ? '' : props.activeEntryId || ''
       emit('changed')
     },
   )
@@ -511,9 +523,11 @@ function batchDelete() {
     },
     () => {
       batchDeleteSchemes(selectedIds.value)
+      const loaded = getLoadedSchemeId()
+      if (loaded && selectedIds.value.includes(loaded)) setLoadedSchemeId('')
       selectedIds.value = []
       clipboard.value = null
-      loadedId.value = getLoadedSchemeId()
+      loadedId.value = props.activeEntryId || ''
       emit('changed')
     },
   )
@@ -577,6 +591,25 @@ function jumpToLoadedFolder() {
   if (e) currentFolder.value = normFolder(e.folder || '')
 }
 
+/** 取消「当前已加载方案」标记，回到未加载状态（不删方案库条目，也不重置计算页配置） */
+function clearLoadedScheme() {
+  if (!loadedId.value) return
+  confirmThen(
+    {
+      title: '取消当前方案',
+      message:
+        '确认取消当前已加载方案？计算页配置与事件会保留，仅不再绑定「当前方案」。之后可重新加载或新建。',
+      confirmText: '取消当前方案',
+    },
+    () => {
+      loadedId.value = ''
+      setLoadedSchemeId('')
+      emit('clear-loaded')
+      formMessage.value = '已取消当前方案，现为未加载状态'
+    },
+  )
+}
+
 // ============ 导出 / 导入 ============
 function exportAll() {
   confirmThen(
@@ -637,18 +670,30 @@ function dirStats(path: string) {
 
 // ============ 键盘 ============
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && modalOpen.value) {
-    if (pendingConfirm.value) closeConfirm()
-    else closeModal()
+  if (event.key !== 'Escape') return
+  if (pendingConfirm.value) {
+    closeConfirm()
+    return
   }
+  if (modalOpen.value) closeModal()
 }
 
 watch(
   () => modalOpen.value,
   (isOpen) => {
-    document.body.style.overflow = isOpen ? 'hidden' : ''
+    if (!pendingConfirm.value) {
+      document.body.style.overflow = isOpen ? 'hidden' : ''
+    }
   },
 )
+
+watch(pendingConfirm, (pending) => {
+  if (pending) {
+    document.body.style.overflow = 'hidden'
+    return
+  }
+  document.body.style.overflow = modalOpen.value ? 'hidden' : ''
+})
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
@@ -659,11 +704,33 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   document.body.style.overflow = ''
 })
+
+defineExpose({
+  openModal,
+  closeModal,
+  /** 打开方案库并带提示（例如：请先新建方案再保存事件）；层级高于事件弹窗 */
+  openModalWithHint(hint: string) {
+    modalOpen.value = true
+    openedForEventSave.value = true
+    formMessage.value = hint
+    void nextTick(() => {
+      const el = document.querySelector<HTMLInputElement>('.scheme-save-row .field-input')
+      el?.focus()
+      el?.scrollIntoView({ block: 'nearest' })
+    })
+  },
+})
 </script>
 
 <template>
   <section id="damage-calc-history" class="history-section damage-anchor">
-    <button type="button" class="history-trigger" @click="openModal">
+    <div
+      class="history-trigger"
+      role="button"
+      tabindex="0"
+      @click="openModal"
+      @keydown.enter.prevent="openModal"
+    >
       <header class="history-header">
         <div>
           <h2>方案库</h2>
@@ -671,14 +738,29 @@ onUnmounted(() => {
         </div>
         <span class="history-open-hint" aria-hidden="true">›</span>
       </header>
-      <p class="history-summary">
-        <template v-if="loadedEntry()">
-          当前方案：{{ loadedEntry()?.name }} @ {{ loadedEntry()?.folder ? loadedEntry()?.folder : '根目录' }}
-        </template>
-        <template v-else>共 {{ props.entries.length }} 个方案</template>
-      </p>
-    </button>
-    <p v-if="message" class="history-inline-message">{{ message }}</p>
+      <div class="history-summary-bar">
+        <div class="history-summary-text">
+          <span class="history-summary-main">
+            <template v-if="loadedEntry()">
+              当前方案：{{ loadedEntry()?.name }} @ {{ loadedEntry()?.folder ? loadedEntry()?.folder : '根目录' }}
+            </template>
+            <template v-else>共 {{ props.entries.length }} 个方案</template>
+          </span>
+          <span v-if="loadedId" class="history-summary-hint">
+            取消「当前方案」绑定，不删除方案库中的条目
+          </span>
+          <span v-if="message" class="history-summary-status">{{ message }}</span>
+        </div>
+        <button
+          v-if="loadedId"
+          type="button"
+          class="loaded-clear"
+          @click.stop="clearLoadedScheme"
+        >
+          取消当前方案
+        </button>
+      </div>
+    </div>
   </section>
 
   <Teleport to="body">
@@ -822,15 +904,20 @@ onUnmounted(() => {
         </nav>
 
         <!-- 当前方案指示 -->
-        <p v-if="loadedId" class="scheme-loaded-indicator">
-          当前方案：<b>{{ loadedEntry()?.name }}</b>
-          <span class="loaded-folder">
-            @ {{ loadedEntry()?.folder ? loadedEntry()?.folder : '根目录' }}
-          </span>
-          <button v-if="loadedEntry()" type="button" class="loaded-jump" @click="jumpToLoadedFolder">
-            [跳转到目录]
+        <div v-if="loadedId" class="scheme-loaded-indicator">
+          <div class="scheme-loaded-main">
+            当前方案：<b>{{ loadedEntry()?.name }}</b>
+            <span class="loaded-folder">
+              @ {{ loadedEntry()?.folder ? loadedEntry()?.folder : '根目录' }}
+            </span>
+            <button v-if="loadedEntry()" type="button" class="loaded-jump" @click="jumpToLoadedFolder">
+              [跳转到目录]
+            </button>
+          </div>
+          <button type="button" class="loaded-clear" @click="clearLoadedScheme">
+            取消当前方案
           </button>
-        </p>
+        </div>
 
         <!-- 卡片网格 -->
         <div class="scheme-grid-wrap">
@@ -939,26 +1026,32 @@ onUnmounted(() => {
             </li>
           </ul>
         </div>
+      </div>
+    </div>
+  </Teleport>
 
-        <!-- 自定义确认弹窗（嵌套在方案库内，替代浏览器原生 confirm） -->
-        <div v-if="pendingConfirm" class="scheme-confirm-overlay" @click.self="closeConfirm">
-          <div class="scheme-confirm" :class="{ danger: pendingConfirm.danger }">
-            <div v-if="pendingConfirm.title" class="scheme-confirm-title">{{ pendingConfirm.title }}</div>
-            <p class="scheme-confirm-msg" v-html="confirmMessageHtml()"></p>
-            <div class="scheme-confirm-btns">
-              <button type="button" class="scheme-confirm-cancel" @click="closeConfirm">
-                {{ pendingConfirm.cancelText || '取消' }}
-              </button>
-              <button
-                type="button"
-                class="scheme-confirm-ok"
-                :class="{ danger: pendingConfirm.danger }"
-                @click="runConfirm"
-              >
-                {{ pendingConfirm.confirmText || '确认' }}
-              </button>
-            </div>
-          </div>
+  <!-- 确认框独立 Teleport：外层「取消当前方案」时方案库未打开也能看见 -->
+  <Teleport to="body">
+    <div
+      v-if="pendingConfirm"
+      class="scheme-confirm-overlay"
+      @click.self="closeConfirm"
+    >
+      <div class="scheme-confirm" :class="{ danger: pendingConfirm.danger }">
+        <div v-if="pendingConfirm.title" class="scheme-confirm-title">{{ pendingConfirm.title }}</div>
+        <p class="scheme-confirm-msg" v-html="confirmMessageHtml()"></p>
+        <div class="scheme-confirm-btns">
+          <button type="button" class="scheme-confirm-cancel" @click="closeConfirm">
+            {{ pendingConfirm.cancelText || '取消' }}
+          </button>
+          <button
+            type="button"
+            class="scheme-confirm-ok"
+            :class="{ danger: pendingConfirm.danger }"
+            @click="runConfirm"
+          >
+            {{ pendingConfirm.confirmText || '确认' }}
+          </button>
         </div>
       </div>
     </div>
@@ -1017,12 +1110,28 @@ onUnmounted(() => {
   margin-top: 0.15rem;
 }
 
-.history-summary {
-  margin: 0.65rem 0 0;
-  padding: 0.5rem 0.65rem;
+/* 与伤害事件 mode-summary-bar 同结构：一条底框，左文案、右操作钮 */
+.history-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid #2d323a;
   border-radius: 10px;
   background: #0f1217;
+}
+
+.history-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.history-summary-main {
   font-size: 0.8rem;
   color: #b7c0cd;
   white-space: nowrap;
@@ -1030,17 +1139,22 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
-.history-inline-message {
-  margin: 0;
-  padding: 0 1rem 0.75rem;
-  font-size: 0.76rem;
-  color: #d8c39a;
+.history-summary-hint,
+.history-summary-status {
+  font-size: 0.72rem;
+  color: #8f96a3;
+  line-height: 1.35;
+}
+
+.history-summary-status {
+  color: #9aa3b0;
 }
 
 .history-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  /* 高于伤害事件弹窗（1200），避免从事件流打开方案库时被挡住 */
+  z-index: 1400;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1232,7 +1346,7 @@ onUnmounted(() => {
   margin: 0;
   max-width: 100%;
   font-size: 0.78rem;
-  color: #d8c39a;
+  color: #9aa3b0;
   line-height: 1.35rem;
   white-space: nowrap;
   overflow: hidden;
@@ -1371,9 +1485,21 @@ onUnmounted(() => {
 }
 
 .scheme-loaded-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin: 0.55rem 0 0;
   font-size: 0.8rem;
   color: #9fd6a0;
+}
+
+.scheme-loaded-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scheme-loaded-indicator .loaded-folder {
@@ -1393,6 +1519,31 @@ onUnmounted(() => {
 
 .loaded-jump:hover {
   color: #8fabdf;
+}
+
+.loaded-clear {
+  flex-shrink: 0;
+  margin-left: 0;
+  border: 1px solid #343a44;
+  border-radius: 8px;
+  background: #12161d;
+  color: #d5dae4;
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.history-summary-bar .loaded-clear {
+  /* 嵌在摘要条内时与 mode-summary-hint 一致，避免另起一层白底造成色差 */
+  background: #12161d;
+}
+
+.loaded-clear:hover {
+  border-color: #c9a55c;
+  color: #f0d7a2;
 }
 
 .scheme-grid-wrap {
@@ -1687,18 +1838,31 @@ onUnmounted(() => {
   font-size: 0.8rem;
 }
 
-/* 自定义确认弹窗（嵌套在方案库内，替代浏览器原生 confirm） */
+@media (max-width: 720px) {
+  .scheme-list {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .scheme-list {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<!-- 确认框 Teleport 到 body，样式必须非 scoped，否则方案库关闭时可能看不见 -->
+<style>
 .scheme-confirm-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 1500;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px);
-  border-radius: 14px;
 }
 
 .scheme-confirm {
@@ -1779,17 +1943,5 @@ onUnmounted(() => {
 .scheme-confirm-ok.danger:hover {
   border-color: #d88a8a;
   background: #341a1a;
-}
-
-@media (max-width: 720px) {
-  .scheme-list {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  }
-}
-
-@media (max-width: 480px) {
-  .scheme-list {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

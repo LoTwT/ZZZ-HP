@@ -69,7 +69,7 @@
 .calculator-page.theme-light .section-desc,
 .calculator-page.theme-light .calc-mode-desc,
 .calculator-page.theme-light .history-desc,
-.calculator-page.theme-light .history-summary,
+.calculator-page.theme-light .history-summary-main,
 .calculator-page.theme-light .helper-text,
 .calculator-page.theme-light .upload-hint,
 .calculator-page.theme-light .upload-label,
@@ -508,17 +508,46 @@
   color: var(--calc-text) !important;
 }
 
-/* 鈥斺€?鍘嗗彶鍏ュ彛鍐呰仈鎽樿 鈥斺€?*/
-.calculator-page.theme-light .history-summary,
+/* —— 历史入口内联摘要（对齐 mode-summary-bar） —— */
+.calculator-page.theme-light .history-summary-bar {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+
+.calculator-page.theme-light .history-trigger:hover .history-summary-bar {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+}
+
+.calculator-page.theme-light .history-summary-main {
+  color: #475467 !important;
+}
+
+.calculator-page.theme-light .history-summary-hint,
+.calculator-page.theme-light .history-summary-status {
+  color: #667085 !important;
+}
+
 .calculator-page.theme-light .history-open-hint {
-  border-color: var(--calc-border) !important;
-  background: var(--calc-surface-2) !important;
+  border: none !important;
+  background: transparent !important;
   color: var(--calc-muted) !important;
 }
 
-.calculator-page.theme-light .history-inline-message,
-.calculator-page.theme-light .history-message {
-  color: #8a6d2e !important;
+.calculator-page.theme-light .history-summary-bar .loaded-clear,
+[data-theme='light'] .history-summary-bar .loaded-clear,
+body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #344054 !important;
+}
+
+.calculator-page.theme-light .history-summary-bar .loaded-clear:hover,
+[data-theme='light'] .history-summary-bar .loaded-clear:hover,
+body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #5c4818 !important;
 }
 
 /* 鈥斺€?灞€鍐呭鐩婃眹鎬?鈥斺€?*/
@@ -1123,7 +1152,7 @@
 }
 
 [data-theme='light'] .history-message {
-  color: #8a6d2e !important;
+  color: #667085 !important;
 }
 
 [data-theme='light'] .history-warn {
@@ -1189,6 +1218,16 @@
 
 [data-theme='light'] .scheme-loaded-indicator {
   color: #2e7d4f !important;
+  border: 1px solid #d5dae3 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  padding: 0.55rem 0.75rem !important;
+}
+
+[data-theme='light'] .scheme-loaded-indicator .loaded-clear {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #344054 !important;
 }
 
 [data-theme='light'] .scheme-loaded-indicator .loaded-folder {
@@ -1201,6 +1240,29 @@
 
 [data-theme='light'] .scheme-loaded-indicator .loaded-jump:hover {
   color: #1c212a !important;
+}
+
+/* Teleport 到 body 的「取消当前方案」也要亮色（不能只靠 .calculator-page 后代） */
+[data-theme='light'] .loaded-clear,
+body:has(.calculator-page.theme-light) .loaded-clear {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #344054 !important;
+}
+
+[data-theme='light'] .loaded-clear:hover,
+body:has(.calculator-page.theme-light) .loaded-clear:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #5c4818 !important;
+}
+
+/* 摘要条内的按钮：与 mode-summary-hint 一致（浅灰底，不落纯白） */
+[data-theme='light'] .history-summary-bar .loaded-clear,
+body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
+.calculator-page.theme-light .history-summary-bar .loaded-clear {
+  background: #f5f7fa !important;
+  color: #344054 !important;
 }
 
 [data-theme='light'] .scheme-batch {
@@ -1356,47 +1418,47 @@
   color: #b42318 !important;
 }
 
-/* 自定义确认弹窗（亮色） */
-[data-theme='light'] .history-modal .scheme-confirm-overlay {
+/* 自定义确认弹窗（亮色；Teleport 到 body，不依赖 .history-modal） */
+[data-theme='light'] .scheme-confirm-overlay {
   background: rgba(15, 23, 42, 0.32) !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm {
+[data-theme='light'] .scheme-confirm {
   border-color: #d5dae3 !important;
   background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%) !important;
   box-shadow: 0 16px 40px rgba(16, 24, 40, 0.16) !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm.danger {
+[data-theme='light'] .scheme-confirm.danger {
   border-color: #fecdca !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-title {
+[data-theme='light'] .scheme-confirm-title {
   color: #1c212a !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-msg {
+[data-theme='light'] .scheme-confirm-msg {
   color: #475467 !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-hl {
+[data-theme='light'] .scheme-confirm-hl {
   color: #b42318 !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-cancel {
+[data-theme='light'] .scheme-confirm-cancel {
   border-color: #d5dae3 !important;
   background: #ffffff !important;
   color: #1c212a !important;
   color-scheme: light;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-ok {
+[data-theme='light'] .scheme-confirm-ok {
   border-color: #c9d4b8 !important;
   background: #f3f7ee !important;
   color: #3d4f2f !important;
 }
 
-[data-theme='light'] .history-modal .scheme-confirm-ok.danger {
+[data-theme='light'] .scheme-confirm-ok.danger {
   border-color: #fecdca !important;
   background: #fef3f2 !important;
   color: #b42318 !important;
@@ -1729,6 +1791,52 @@
 
 [data-theme='light'] .mode-message {
   color: #2f7a5a !important;
+}
+
+/* 「新建或加载方案」去向选择（Teleport 在 mode-overlay 内） */
+[data-theme='light'] .save-dest-choice-overlay {
+  background: rgba(15, 23, 42, 0.32) !important;
+}
+
+[data-theme='light'] .save-dest-choice {
+  border-color: #d5dae3 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%) !important;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.16) !important;
+}
+
+[data-theme='light'] .save-dest-choice-title {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .save-dest-choice-msg {
+  color: #475467 !important;
+}
+
+[data-theme='light'] .save-dest-choice-cancel,
+[data-theme='light'] .save-dest-choice-secondary {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .save-dest-choice-cancel:hover,
+[data-theme='light'] .save-dest-choice-secondary:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #5c4818 !important;
+}
+
+[data-theme='light'] .save-dest-choice-ok {
+  border-color: #c9d4b8 !important;
+  background: #f3f7ee !important;
+  color: #3d4f2f !important;
+}
+
+[data-theme='light'] .save-dest-choice-ok:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #5c4818 !important;
 }
 
 .calculator-page.theme-light .damage-event-editor {
