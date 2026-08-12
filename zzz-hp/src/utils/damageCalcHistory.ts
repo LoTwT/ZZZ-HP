@@ -360,7 +360,7 @@ export function createHistoryEntryId(): string {
 }
 
 /** 目录内无冲突命名（仅与同目录下的「方案」去重；目录与方案可同名） */
-function dedupBase(store: SchemeStore, folder: string, desired: string): string {
+function dedupBase(store: SchemeStore, folder: string, desired: string, suffix = '复制'): string {
   const f = normFolder(folder)
   const candidates = new Set<string>()
   for (const p of Object.keys(store.schemes)) {
@@ -368,9 +368,9 @@ function dedupBase(store: SchemeStore, folder: string, desired: string): string 
   }
   if (!candidates.has(desired)) return desired
   let i = 2
-  let cand = desired + '-复制'
+  let cand = desired + '-' + suffix
   while (candidates.has(cand)) {
-    cand = desired + '-复制' + i
+    cand = desired + '-' + suffix + i
     i++
   }
   return cand
@@ -381,7 +381,7 @@ export function copyScheme(path: string): DamageCalcHistoryEntry[] {
   const src = store.schemes[path]
   if (!src) return listAllDamageCalcHistory()
   const folder = src.folder || ''
-  const newName = dedupBase(store, folder, src.name + '-复制')
+  const newName = dedupBase(store, folder, src.name)
   const newKey = schemeKey(folder, newName)
   const copy: DamageCalcHistoryEntry = JSON.parse(JSON.stringify(src))
   copy.id = newKey
@@ -438,7 +438,7 @@ export function moveScheme(path: string, targetFolder: string): DamageCalcHistor
   if (!src) return listAllDamageCalcHistory()
   const folder = normFolder(targetFolder)
   if ((src.folder || '') === folder) return listAllDamageCalcHistory()
-  const newName = dedupBase(store, folder, src.name)
+  const newName = dedupBase(store, folder, src.name, '移动')
   const newKey = schemeKey(folder, newName)
   const entry: DamageCalcHistoryEntry = { ...src, id: newKey, folder, name: newName }
   delete store.schemes[path]
