@@ -1103,13 +1103,9 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
   // 同名保护：「保存当前配置」只用于新建方案，不能覆盖同名方案，也不能与目录重名。
   // 要覆盖已有方案，必须点该方案卡片上的「保存」按钮（走 overwriteHistoryEntry）。
   const name = payload.name.trim()
-  const conflict = nameConflictType(folder, name)
+  const conflict = nameConflictType(folder, name, 'scheme')
   if (conflict === 'scheme') {
     historyMessage.value = `已存在同名方案「${name}」；覆盖请点击该方案上的「保存」按钮`
-    return
-  }
-  if (conflict === 'dir') {
-    historyMessage.value = `名称「${name}」与目录重名，请改用其他名称`
     return
   }
   const entry: DamageCalcHistoryEntry = {

@@ -28,6 +28,12 @@ function schemePath(folder: string, name: string): string {
   return folder + '/' + name
 }
 
+const SCHEME_KEY_PREFIX = 's:'
+/** 方案的存储 key：前缀 + 路径，与目录路径命名空间解耦，允许「目录与方案同名」 */
+function schemeKey(folder: string, name: string): string {
+  return SCHEME_KEY_PREFIX + schemePath(folder, name)
+}
+
 function parentFolder(path: string): string {
   path = String(path || '')
   const i = path.lastIndexOf('/')
@@ -79,17 +85,23 @@ export function pathType(
 }
 
 /**
- * 检测 folder 下 name 是否与已有「目录」或「方案」重名。
- * 目录与方案共用同一套路径命名空间（都形如 /父/名），不可同名，否则渲染会撞 key。
+ * 检测 folder 下 name 是否与已有项重名。
+ * 目录与方案现已解耦（方案 key 带 s: 前缀），可「目录与方案同名」。
+ * 因此默认仍按 type 区分：type='dir' 只查目录冲突，type='scheme' 只查方案冲突；
+ * 不传 type 则两者都查（向后兼容）。
  * 返回 'dir' | 'scheme' 表示冲突类型，null 表示无冲突。
  */
-export function nameConflictType(folder: string, name: string): 'dir' | 'scheme' | null {
+export function nameConflictType(
+  folder: string,
+  name: string,
+  type?: 'dir' | 'scheme',
+): 'dir' | 'scheme' | null {
   const trimmed = (name || '').trim()
   if (!trimmed || trimmed.includes('/')) return null
-  const p = schemePath(normFolder(folder), trimmed)
   const store = readStore()
-  if (store.dirs[p]) return 'dir'
-  if (store.schemes[p]) return 'scheme'
+  const sp = schemePath(normFolder(folder), trimmed)
+  if (type !== 'scheme' && store.dirs[sp]) return 'dir'
+  if (type !== 'dir' && store.schemes[schemeKey(normFolder(folder), trimmed)]) return 'scheme'
   return null
 }
 
@@ -218,22 +230,22 @@ function migrateFromLegacyArray(list: unknown[]): SchemeStore {
     const name = (raw.name || '').trim() || baseName(raw.id)
     if (!name) continue
     // 同路径去重：自动加后缀
-    let path = schemePath(folder, name)
+    let key = schemeKey(folder, name)
     let cand = name
     let i = 2
-    while (store.schemes[path]) {
+    while (store.schemes[key]) {
       cand = name + '-' + i
-      path = schemePath(folder, cand)
+      key = schemeKey(folder, cand)
       i++
     }
     const entry: DamageCalcHistoryEntry = {
       ...raw,
-      id: path,
+      id: key,
       name: cand,
       folder,
       order: 0,
     }
-    store.schemes[path] = entry
+    store.schemes[key] = entry
   }
   ensureOrders(store)
   return store
@@ -259,6 +271,22 @@ function readStore(): SchemeStore {
       version: 2,
       dirs: (o.dirs as Record<string, SchemeFolderMeta>) || {},
       schemes: (o.schemes as Record<string, DamageCalcHistoryEntry>) || {},
+    }
+    // 旧数据迁移：方案 key 统一为 schemeKey（前缀 + 路径），与目录路径解耦，允许同名
+    for (const key of Object.keys(store.schemes)) {
+      const entry = store.schemes[key]!
+      const correctKey = schemeKey(entry.folder || '', entry.name || '')
+      if (key !== correctKey) {
+        store.schemes[correctKey] = entry
+        entry.id = correctKey
+        delete store.schemes[key]
+      }
+    }
+    // 当前高亮方案 id 同步到新 key
+    const loaded = getLoadedSchemeId()
+    if (loaded && !store.schemes[loaded]) {
+      const alt = schemeKey(parentFolder(loaded), baseName(loaded))
+      if (store.schemes[alt]) setLoadedSchemeId(alt)
     }
     ensureOrders(store)
     try {
@@ -306,16 +334,16 @@ export function saveDamageCalcHistory(entry: DamageCalcHistoryEntry): DamageCalc
   const folder = normFolder(entry.folder || '')
   const name = (entry.name || '').trim()
   if (!name) return listAllDamageCalcHistory()
-  const path = schemePath(folder, name)
+  const key = schemeKey(folder, name)
   const normalized: DamageCalcHistoryEntry = {
     ...entry,
-    id: path,
+    id: key,
     folder,
     name,
     order: entry.order ?? 0,
   }
-  store.schemes[path] = normalized
-  assignOrderFront(store, 'scheme', folder, path)
+  store.schemes[key] = normalized
+  assignOrderFront(store, 'scheme', folder, key)
   writeStore(store)
   return listAllDamageCalcHistory()
 }
@@ -331,14 +359,13 @@ export function createHistoryEntryId(): string {
   return `damage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** 目录内无冲突命名 */
+/** 目录内无冲突命名（仅与同目录下的「方案」去重；目录与方案可同名） */
 function dedupBase(store: SchemeStore, folder: string, desired: string): string {
   const f = normFolder(folder)
   const candidates = new Set<string>()
   for (const p of Object.keys(store.schemes)) {
     if ((store.schemes[p]?.folder || '') === f) candidates.add(baseName(p))
   }
-  for (const d of childFolders(store, f)) candidates.add(baseName(d))
   if (!candidates.has(desired)) return desired
   let i = 2
   let cand = desired + '-复制'
@@ -355,15 +382,15 @@ export function copyScheme(path: string): DamageCalcHistoryEntry[] {
   if (!src) return listAllDamageCalcHistory()
   const folder = src.folder || ''
   const newName = dedupBase(store, folder, src.name + '-复制')
-  const newPath = schemePath(folder, newName)
+  const newKey = schemeKey(folder, newName)
   const copy: DamageCalcHistoryEntry = JSON.parse(JSON.stringify(src))
-  copy.id = newPath
+  copy.id = newKey
   copy.folder = folder
   copy.name = newName
   copy.savedAt = Date.now()
   copy.order = 0
-  store.schemes[newPath] = copy
-  assignOrderFront(store, 'scheme', folder, newPath)
+  store.schemes[newKey] = copy
+  assignOrderFront(store, 'scheme', folder, newKey)
   writeStore(store)
   return listAllDamageCalcHistory()
 }
@@ -375,15 +402,15 @@ export function duplicateSchemeToFolder(path: string, targetFolder: string): Dam
   if (!src) return listAllDamageCalcHistory()
   const folder = normFolder(targetFolder)
   const newName = dedupBase(store, folder, src.name)
-  const newPath = schemePath(folder, newName)
+  const newKey = schemeKey(folder, newName)
   const copy: DamageCalcHistoryEntry = JSON.parse(JSON.stringify(src))
-  copy.id = newPath
+  copy.id = newKey
   copy.folder = folder
   copy.name = newName
   copy.savedAt = Date.now()
   copy.order = 0
-  store.schemes[newPath] = copy
-  assignOrderFront(store, 'scheme', folder, newPath)
+  store.schemes[newKey] = copy
+  assignOrderFront(store, 'scheme', folder, newKey)
   writeStore(store)
   return listAllDamageCalcHistory()
 }
@@ -395,14 +422,12 @@ export function renameScheme(path: string, name: string, folder?: string): boole
   if (!store.schemes[path]) return false
   const src = store.schemes[path]!
   const targetFolder = folder !== undefined ? normFolder(folder) : src.folder || ''
-  const newPath = schemePath(targetFolder, trimmed)
-  if (newPath !== path && store.schemes[newPath]) return false
-  // 也检查与目录重名
-  if (newPath !== path && store.dirs[newPath]) return false
-  const entry: DamageCalcHistoryEntry = { ...src, id: newPath, name: trimmed, folder: targetFolder }
+  const newKey = schemeKey(targetFolder, trimmed)
+  if (newKey !== path && store.schemes[newKey]) return false
+  const entry: DamageCalcHistoryEntry = { ...src, id: newKey, name: trimmed, folder: targetFolder }
   delete store.schemes[path]
-  store.schemes[newPath] = entry
-  assignOrderFront(store, 'scheme', targetFolder, newPath)
+  store.schemes[newKey] = entry
+  assignOrderFront(store, 'scheme', targetFolder, newKey)
   writeStore(store)
   return true
 }
@@ -414,11 +439,11 @@ export function moveScheme(path: string, targetFolder: string): DamageCalcHistor
   const folder = normFolder(targetFolder)
   if ((src.folder || '') === folder) return listAllDamageCalcHistory()
   const newName = dedupBase(store, folder, src.name)
-  const newPath = schemePath(folder, newName)
-  const entry: DamageCalcHistoryEntry = { ...src, id: newPath, folder, name: newName }
+  const newKey = schemeKey(folder, newName)
+  const entry: DamageCalcHistoryEntry = { ...src, id: newKey, folder, name: newName }
   delete store.schemes[path]
-  store.schemes[newPath] = entry
-  assignOrderFront(store, 'scheme', folder, newPath)
+  store.schemes[newKey] = entry
+  assignOrderFront(store, 'scheme', folder, newKey)
   writeStore(store)
   return listAllDamageCalcHistory()
 }
@@ -500,8 +525,6 @@ export function createFolder(folderPath: string): boolean {
   if (baseName(fp).includes('/')) return false
   const store = readStore()
   if (store.dirs[fp]) return false
-  // 也检查方案占用同名路径
-  if (store.schemes[fp]) return false
   store.dirs[fp] = { createdAt: Date.now(), order: 0 }
   assignOrderFront(store, 'dir', parentFolder(fp), fp)
   writeStore(store)
@@ -533,7 +556,7 @@ export function copyFolderTree(srcPath: string, targetFolder: string): DamageCal
   const base = baseName(src)
   let dstBase = base + '-复制'
   let i = 2
-  while (store.dirs[schemePath(target, dstBase)] || store.schemes[schemePath(target, dstBase)]) {
+  while (store.dirs[schemePath(target, dstBase)]) {
     dstBase = base + '-复制' + i
     i++
   }
@@ -557,10 +580,10 @@ export function copyFolderTree(srcPath: string, targetFolder: string): DamageCal
       const nf = dst + (f ? f.slice(src.length) : '')
       const copy: DamageCalcHistoryEntry = JSON.parse(JSON.stringify(s))
       copy.folder = nf
-      const newPath = schemePath(nf, s.name)
-      copy.id = newPath
-      store.schemes[newPath] = copy
-      copied.push({ path: newPath, folder: nf })
+      const newKey = schemeKey(nf, s.name)
+      copy.id = newKey
+      store.schemes[newKey] = copy
+      copied.push({ path: newKey, folder: nf })
     }
   }
   for (let k = copied.length - 1; k >= 0; k--) {
@@ -581,7 +604,7 @@ export function moveFolderTree(srcPath: string, targetFolder: string): DamageCal
   const base = baseName(src)
   let dstBase = base
   let i = 2
-  while (store.dirs[schemePath(target, dstBase)] || store.schemes[schemePath(target, dstBase)]) {
+  while (store.dirs[schemePath(target, dstBase)]) {
     dstBase = base + '-移动' + i
     i++
   }
@@ -602,7 +625,7 @@ export function moveFolderTree(srcPath: string, targetFolder: string): DamageCal
     if (f === src || f.indexOf(src + '/') === 0) {
       const nf = dst + (f ? f.slice(src.length) : '')
       s.folder = nf
-      s.id = schemePath(nf, s.name)
+      s.id = schemeKey(nf, s.name)
       store.schemes[s.id] = s
       if (s.id !== p) delete store.schemes[p]
     }
@@ -619,7 +642,7 @@ export function renameFolder(oldPath: string, newName: string): boolean {
   if (!store.dirs[op]) return false
   const parent = parentFolder(op)
   const np = schemePath(parent, trimmed)
-  if (np !== op && (store.dirs[np] || store.schemes[np])) return false
+  if (np !== op && store.dirs[np]) return false
 
   // 重命名 dirs 树
   const dirsToRename = Object.keys(store.dirs).filter(
@@ -641,10 +664,10 @@ export function renameFolder(oldPath: string, newName: string): boolean {
     const s = store.schemes[p]!
     const nf = np + (s.folder ? s.folder.slice(op.length) : '')
     s.folder = nf
-    const newPath = schemePath(nf, s.name)
-    s.id = newPath
-    store.schemes[newPath] = s
-    if (newPath !== p) delete store.schemes[p]
+    const newKey = schemeKey(nf, s.name)
+    s.id = newKey
+    store.schemes[newKey] = s
+    if (newKey !== p) delete store.schemes[p]
   }
   writeStore(store)
   return true
@@ -800,10 +823,10 @@ export function importDamageCalcHistory(
     }
     const folder = normFolder(v.folder || parentFolder(p))
     const name = v.name || baseName(p)
-    const path = schemePath(folder, name)
-    current.schemes[path] = {
+    const key = schemeKey(folder, name)
+    current.schemes[key] = {
       ...v,
-      id: path,
+      id: key,
       folder,
       name,
       order: typeof v.order === 'number' ? v.order : 0,

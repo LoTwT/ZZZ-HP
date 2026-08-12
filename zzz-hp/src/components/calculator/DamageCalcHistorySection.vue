@@ -301,10 +301,10 @@ function commitRenameScheme() {
     emit('changed')
     return
   }
-  const conflict = nameConflictType(parentFolder(path), name)
+  const entry = props.entries.find((e) => e.id === path)
+  const conflict = nameConflictType(entry?.folder || parentFolder(path), name, 'scheme')
   if (conflict) {
-    const label = conflict === 'dir' ? '目录' : '方案'
-    formMessage.value = `当前目录下已存在同名${label}「${name}」，请使用其他名称`
+    formMessage.value = `当前目录下已存在同名方案「${name}」，请使用其他名称`
     emit('changed')
     return
   }
@@ -382,14 +382,10 @@ function commitNewFolder() {
     formMessage.value = '目录名不能包含 "/"'
     return
   }
-  // 同名保护：目录与方案共用路径命名空间，不可重名（与已有目录或方案冲突都要拦截）
-  const conflict = nameConflictType(currentFolder.value, name)
+  // 同名保护：目录仅与目录冲突拦截（与方案可同名）
+  const conflict = nameConflictType(currentFolder.value, name, 'dir')
   if (conflict === 'dir') {
     formMessage.value = `目录「${name}」已存在，不能重名`
-    return
-  }
-  if (conflict === 'scheme') {
-    formMessage.value = `名称「${name}」与已有方案重名，目录不能重名`
     return
   }
   const path = schemePath(currentFolder.value, name)
@@ -450,10 +446,9 @@ function commitRenameFolder() {
     emit('changed')
     return
   }
-  const conflict = nameConflictType(parentFolder(path), name)
-  if (conflict) {
-    const label = conflict === 'dir' ? '目录' : '方案'
-    formMessage.value = `当前目录下已存在同名${label}「${name}」，请使用其他名称`
+  const conflict = nameConflictType(parentFolder(path), name, 'dir')
+  if (conflict === 'dir') {
+    formMessage.value = `当前目录下已存在同名目录「${name}」，请使用其他名称`
     emit('changed')
     return
   }
