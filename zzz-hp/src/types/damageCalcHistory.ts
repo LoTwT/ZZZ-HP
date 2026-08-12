@@ -99,6 +99,8 @@ export interface SchemeStore {
   version: 2
   dirs: Record<string, SchemeFolderMeta>
   schemes: Record<string, DamageCalcHistoryEntry>
+  /** 是否已把全局自定义事件模式库迁移进各方案（一次性，防重复注入） */
+  customEventsMigrated?: boolean
 }
 
 /** 导出包结构 */

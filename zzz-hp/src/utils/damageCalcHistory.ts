@@ -1,4 +1,4 @@
-import type { AgentBuffDoc } from '@/types/calculator'
+import type { AgentBuffDoc, DamageEvent } from '@/types/calculator'
 import type {
   DamageCalcHistoryEntry,
   DamageCalcHistoryExport,
@@ -6,6 +6,7 @@ import type {
   SchemeFolderMeta,
   SchemeStore,
 } from '@/types/damageCalcHistory'
+import { loadCustomModes } from './customDamageEventModes'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
@@ -218,6 +219,42 @@ function createEmptyStore(): SchemeStore {
   return { version: 2, dirs: {}, schemes: {} }
 }
 
+/**
+ * 一次性迁移（可独立废弃）：把全局自定义事件模式库
+ * （zzz-hp-custom-damage-event-modes）里的所有事件，按类型复制进
+ * 每个方案条目。仅旧版升级时需要——旧版方案不存事件，新版事件跟方案走。
+ * - modeType='anomaly' 的 events → 方案 anomalyEvents
+ * - modeType='direct' 的 events → 方案 directEvents
+ * 仅在方案对应数组为空时填入（不覆盖用户后来手动配的）；damageKind 缺失时补默认值。
+ * 置 customEventsMigrated=true 防重复。后续版本可直接删除本函数与 readStore 中的调用点。
+ */
+function migrateLegacyGlobalEvents(store: SchemeStore): void {
+  if (store.customEventsMigrated) return
+  store.customEventsMigrated = true
+  const modes = loadCustomModes()
+  if (modes.length === 0) return
+  const anomalyEvents: DamageEvent[] = []
+  const directEvents: DamageEvent[] = []
+  for (const mode of modes) {
+    const target = mode.modeType === 'anomaly' ? anomalyEvents : directEvents
+    for (const e of mode.events) target.push(e)
+  }
+  if (anomalyEvents.length === 0 && directEvents.length === 0) return
+  for (const key of Object.keys(store.schemes)) {
+    const entry = store.schemes[key]
+    if (!entry) continue
+    if (anomalyEvents.length > 0 && (!entry.anomalyEvents || entry.anomalyEvents.length === 0)) {
+      entry.anomalyEvents = anomalyEvents.map((e) => ({ ...e }))
+    }
+    if (directEvents.length > 0 && (!entry.directEvents || entry.directEvents.length === 0)) {
+      entry.directEvents = directEvents.map((e) => ({ ...e }))
+    }
+    if (!entry.damageKind) {
+      entry.damageKind = anomalyEvents.length > 0 ? 'anomaly' : 'direct'
+    }
+  }
+}
+
 function isValidEntry(item: unknown): item is DamageCalcHistoryEntry {
   if (!item || typeof item !== 'object') return false
   const c = item as Record<string, unknown>
@@ -267,6 +304,7 @@ function readStore(): SchemeStore {
     const parsed = JSON.parse(raw) as unknown
     if (Array.isArray(parsed)) {
       const store = migrateFromLegacyArray(parsed)
+      migrateLegacyGlobalEvents(store)
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
       } catch {
@@ -310,6 +348,7 @@ function readStore(): SchemeStore {
       if (store.schemes[alt]) setLoadedSchemeId(alt)
     }
     ensureOrders(store)
+    migrateLegacyGlobalEvents(store)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
     } catch {
