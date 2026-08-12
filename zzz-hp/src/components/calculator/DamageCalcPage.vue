@@ -33,9 +33,11 @@ import { lookupBossInfo } from '@/api/bossInfo'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import {
   createHistoryEntryId,
-  listDamageCalcHistory,
-  removeDamageCalcHistory,
+  getLoadedSchemeId,
+  listAllDamageCalcHistory,
+  nameConflictType,
   saveDamageCalcHistory,
+  setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
 import {
   buildDefaultBuffSelection,
@@ -127,7 +129,7 @@ const enemyInput = ref<DamageEnemyInput>(
     level: 60,
   }),
 )
-const historyEntries = ref<DamageCalcHistoryEntry[]>(listDamageCalcHistory())
+const historyEntries = ref<DamageCalcHistoryEntry[]>(listAllDamageCalcHistory())
 const activeHistoryId = ref('')
 const historyMessage = ref('')
 
@@ -373,6 +375,7 @@ watch(defenseFrontierOptions, (options) => {
 
 onMounted(() => {
   void loadEnvironmentBuffCatalogs()
+  activeHistoryId.value = getLoadedSchemeId()
 })
 
 function disableCollectedEffects(
@@ -1088,7 +1091,7 @@ function applyConvertSlotPanels(panels?: ConvertSlotPanels) {
   Object.assign(convertSlotPanels, JSON.parse(JSON.stringify(panels)))
 }
 
-function saveHistoryEntry(name: string) {
+function saveHistoryEntry(payload: { name: string; folder: string }) {
   if (panelCalcMode.value === 'optimal') {
     historyMessage.value = '最优词条分配模式暂不支持写入历史，请切换到面板/词条计算后再保存'
     return
@@ -1096,9 +1099,22 @@ function saveHistoryEntry(name: string) {
   const panelState = panelCalcSectionRef.value?.getSnapshot()
   if (!panelState) return
 
+  const folder = payload.folder?.trim() || ''
+  // 同名保护：「保存当前配置」只用于新建方案，不能覆盖同名方案，也不能与目录重名。
+  // 要覆盖已有方案，必须点该方案卡片上的「保存」按钮（走 overwriteHistoryEntry）。
+  const name = payload.name.trim()
+  const conflict = nameConflictType(folder, name)
+  if (conflict === 'scheme') {
+    historyMessage.value = `已存在同名方案「${name}」；覆盖请点击该方案上的「保存」按钮`
+    return
+  }
+  if (conflict === 'dir') {
+    historyMessage.value = `名称「${name}」与目录重名，请改用其他名称`
+    return
+  }
   const entry: DamageCalcHistoryEntry = {
     id: createHistoryEntryId(),
-    name,
+    name: payload.name,
     savedAt: Date.now(),
     teamSlots: cloneTeamSlots(),
     activeSlot: activeSlot.value,
@@ -1108,11 +1124,23 @@ function saveHistoryEntry(name: string) {
     panelState,
     anomalySlotPanels: cloneAnomalySlotPanels(),
     convertSlotPanels: cloneConvertSlotPanels(),
+    directEvents: directEvents.value.length
+      ? JSON.parse(JSON.stringify(directEvents.value))
+      : [],
+    anomalyEvents: anomalyEvents.value.length
+      ? JSON.parse(JSON.stringify(anomalyEvents.value))
+      : [],
+    damageKind: damageKind.value,
+    staggerPhase: staggerPhase.value,
+    multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
+    folder,
+    order: Date.now(),
   }
 
   historyEntries.value = saveDamageCalcHistory(entry)
   activeHistoryId.value = entry.id
-  historyMessage.value = `已保存「${name}」`
+  setLoadedSchemeId(entry.id)
+  historyMessage.value = `已保存「${payload.name}」${folder ? `（${folder}）` : ''}`
 }
 
 function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
@@ -1123,19 +1151,67 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
   panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
   applyAnomalySlotPanels(entry.anomalySlotPanels)
   applyConvertSlotPanels(entry.convertSlotPanels)
+  directEvents.value = entry.directEvents
+    ? JSON.parse(JSON.stringify(entry.directEvents))
+    : []
+  anomalyEvents.value = entry.anomalyEvents
+    ? JSON.parse(JSON.stringify(entry.anomalyEvents))
+    : []
+  damageKind.value = entry.damageKind ?? 'direct'
+  staggerPhase.value = entry.staggerPhase ?? 'stagger'
+  const restoredBuff = entry.multiSlotBuffSelection
+    ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
+    : createEmptyMultiSlotBuffSelection()
+  multiSlotBuffSelection.team = restoredBuff.team
+  multiSlotBuffSelection.bySlot = restoredBuff.bySlot
   void nextTick(() => {
     panelCalcSectionRef.value?.loadSnapshot(entry.panelState)
   })
   activeHistoryId.value = entry.id
+  setLoadedSchemeId(entry.id)
   historyMessage.value = `已加载「${entry.name}」`
 }
 
-function removeHistoryEntry(id: string) {
-  historyEntries.value = removeDamageCalcHistory(id)
-  if (activeHistoryId.value === id) {
-    activeHistoryId.value = ''
-    historyMessage.value = ''
+/** 用当前页面配置覆盖指定方案（保留其 id / 名称 / 目录） */
+function overwriteHistoryEntry(id: string) {
+  if (panelCalcMode.value === 'optimal') {
+    historyMessage.value = '最优词条分配模式暂不支持写入，请切换到面板/词条计算后再保存'
+    return
   }
+  const panelState = panelCalcSectionRef.value?.getSnapshot()
+  if (!panelState) return
+  const existing = historyEntries.value.find((item) => item.id === id)
+  if (!existing) return
+  const updated: DamageCalcHistoryEntry = {
+    ...existing,
+    savedAt: Date.now(),
+    order: Date.now(),
+    teamSlots: cloneTeamSlots(),
+    activeSlot: activeSlot.value,
+    selectedBangbooId: selectedBangbooId.value,
+    bangbooRefine: bangbooRefine.value,
+    panelCalcMode: panelCalcMode.value,
+    panelState,
+    anomalySlotPanels: cloneAnomalySlotPanels(),
+    convertSlotPanels: cloneConvertSlotPanels(),
+    directEvents: directEvents.value.length
+      ? JSON.parse(JSON.stringify(directEvents.value))
+      : [],
+    anomalyEvents: anomalyEvents.value.length
+      ? JSON.parse(JSON.stringify(anomalyEvents.value))
+      : [],
+    damageKind: damageKind.value,
+    staggerPhase: staggerPhase.value,
+    multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
+  }
+  historyEntries.value = saveDamageCalcHistory(updated)
+  activeHistoryId.value = updated.id
+  historyMessage.value = `已用当前配置覆盖「${updated.name}」`
+}
+
+/** 方案库内部直接改了 localStorage（复制/重命名/删除/批量/目录/导入），在此刷新列表（全量） */
+function onSchemeLibraryChanged() {
+  historyEntries.value = listAllDamageCalcHistory()
 }
 
 const pageRootRef = ref<HTMLElement | null>(null)
@@ -1183,8 +1259,9 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :active-entry-id="activeHistoryId"
       :message="historyMessage"
       @save="saveHistoryEntry"
+      @overwrite="overwriteHistoryEntry"
       @load="loadHistoryEntry"
-      @remove="removeHistoryEntry"
+      @changed="onSchemeLibraryChanged"
     />
 
     <PanelScreenshotUploadSection
