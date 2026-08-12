@@ -321,6 +321,7 @@ function readStore(): SchemeStore {
       version: 2,
       dirs: (o.dirs as Record<string, SchemeFolderMeta>) || {},
       schemes: (o.schemes as Record<string, DamageCalcHistoryEntry>) || {},
+      customEventsMigrated: o.customEventsMigrated ?? false,
     }
     // 迁移 + 清理：
     // 1) 任意 key（未前缀 / 多层 s: 前缀污染）统一还原为正确 schemeKey
