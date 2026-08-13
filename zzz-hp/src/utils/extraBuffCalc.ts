@@ -4,9 +4,7 @@ import type {
   BuffScope,
   BuffSkillTarget,
   BuffStatModifiers,
-  DamageEvent,
   SkillCalcContext,
-  SkillSubcategory,
   StaggerPhase,
 } from '@/types/calculator'
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
@@ -14,11 +12,9 @@ import {
   countTeamProfession,
   effectMatchesContext,
   effectMatchesTeamProfessionGate,
-  resolveIsFollowUp,
 } from '@/utils/buffEffect'
-import { mapEventKindToCalc } from '@/utils/damageEvent'
-import { resolveEventOwnerAgentId } from '@/utils/damageEventOwner'
 import { createEmptyBuffStatModifiers, mergeBuffStatModifiers } from '@/utils/calculatorUi'
+
 export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
   return {
     id: gain.id,
@@ -36,40 +32,6 @@ export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
     kind: 'fixed',
     stat: gain.stat,
     value: gain.value,
-  }
-}
-
-export function buildSkillContextFromDamageEvent(
-  event: DamageEvent,
-  options: {
-    ownerAgentId: string
-    agents: Array<{ id: string; element?: string | null }>
-    skillSubcategories: SkillSubcategory[]
-    followUpSkillRules: Parameters<typeof resolveIsFollowUp>[0]['followUpSkillRules']
-    resolveBuffElement: (ownerAgentId: string) => string | undefined
-    resolveTriggerElement: (event: DamageEvent) => string | undefined
-  },
-): SkillCalcContext {
-  const { damageKind, anomalySubKind } = mapEventKindToCalc(event.kind)
-  const skillBound = event.skillBound !== false || damageKind === 'direct'
-  const ownerElement = options.resolveBuffElement(options.ownerAgentId)
-
-  return {
-    damageKind,
-    categoryId: skillBound ? event.categoryId : 'basic',
-    subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-    element: ownerElement,
-    staggerPhase: event.staggerPhase,
-    isFollowUp: skillBound
-      ? resolveIsFollowUp({
-          agentId: options.ownerAgentId,
-          categoryId: event.categoryId,
-          subcategoryId: event.skillSubcategoryId,
-          skillSubcategories: options.skillSubcategories,
-          followUpSkillRules: options.followUpSkillRules,
-        })
-      : false,
-    anomalySubKind,
   }
 }
 
@@ -117,7 +79,6 @@ export function resolveExtraGainValue(
 
 export function mergeExtraModsForEvent(
   gains: ExtraBuffGain[],
-  event: DamageEvent,
   skillCtx: SkillCalcContext,
   options: {
     /** 当前正在汇总面板的 agentId */
@@ -150,13 +111,6 @@ export function mergeExtraModsForEvent(
     total = mergeBuffStatModifiers(total, next)
   }
   return total
-}
-
-export function resolveOwnerAgentIdForEvent(
-  event: DamageEvent,
-  mainAgentId: string,
-): string {
-  return resolveEventOwnerAgentId(event, mainAgentId)
 }
 
 export function scopeLabel(scope: BuffScope | undefined): string {

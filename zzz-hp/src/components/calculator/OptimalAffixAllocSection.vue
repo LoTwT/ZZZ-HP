@@ -85,16 +85,14 @@ import {
   teamHasConvertSupportSlots,
   type ConvertSlotPanels,
 } from '@/utils/panelBuffCalc'
-import { collectParticipantAgentIds, resolveEventOwnerAgentId, summarizeDamageByOwner } from '@/utils/damageEventOwner'
+import { summarizeDamageByOwner } from '@/utils/damageEventOwner'
 import DamageOwnerShareBlock from '@/components/calculator/DamageOwnerShareBlock.vue'
 import {
   DAMAGE_EVENT_CRIT_MODE_OPTIONS,
   DAMAGE_EVENT_KIND_OPTIONS,
   eventNeedsAnomalyProducer,
-  formatDamageEventDisplayName,
-  getDamageEventSkipReason,
 } from '@/utils/damageEvent'
-import { TRIGGER_AGENT_AT_CALC } from '@/types/calculator'
+import { getHitSkipReason } from '@/utils/resolvedHit'
 
 const MB_PROFESSION = '命破'
 
@@ -191,7 +189,7 @@ const props = defineProps<{
   buffSelection?: import('@/utils/panelBuffCalc').BuffSelectionState | null
   slotBuffSelections?: import('@/utils/panelBuffCalc').MultiSlotBuffSelection | null
   staggerPhase?: import('@/types/calculator').StaggerPhase
-  damageEvents?: import('@/types/calculator').DamageEvent[]
+  hits?: import('@/utils/resolvedHit').ResolvedHit[]
   environmentBuffs?: import('@/utils/environmentBuffCalc').EnvironmentBuffEntry[]
 }>()
 
@@ -276,10 +274,15 @@ const selectedBangboo = computed(
 
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
-  const participantIds = collectParticipantAgentIds(props.damageEvents ?? [], mainId)
+  const participantIds = new Set<string>()
+  for (const hit of props.hits ?? []) {
+    for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      if (id && id !== mainId) participantIds.add(id)
+    }
+  }
   return props.teamSlots
     .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => Boolean(slot.agentId && participantIds.includes(slot.agentId)))
+    .filter(({ slot }) => Boolean(slot.agentId && participantIds.has(slot.agentId)))
 })
 
 function buildBasePanelCalcContext() {
@@ -483,7 +486,7 @@ const evalCtx = computed(() =>
     anomalySlotPanels: effectiveAnomalySlotPanels.value,
     convertSlotPanels: evalConvertSlotPanels.value,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
-    damageEvents: props.damageEvents,
+    hits: props.hits,
     resolveSubcategory: (id) => skillSubcategories.value.find((item) => item.id === id) ?? null,
     skillSubcategories: skillSubcategories.value,
     followUpSkillRules: followUpSkillRules.value,
@@ -511,7 +514,7 @@ const sweepNeedsCommit = ref(true)
 /** 已提交配置后，仅词条分配变化会自动重算柱状图 */
 const sweepCommitted = ref(false)
 
-const hasEventMode = computed(() => (props.damageEvents?.length ?? 0) > 0)
+const hasEventMode = computed(() => (props.hits?.length ?? 0) > 0)
 
 let sweepTimer: ReturnType<typeof setTimeout> | null = null
 let diffTimer: ReturnType<typeof setTimeout> | null = null
@@ -572,7 +575,7 @@ watch(
     () => props.slotBuffSelections,
     () => props.teamSlots,
     () => props.triggerAnomalyAgentId,
-    () => props.damageEvents,
+    () => props.hits,
     () => props.staggerPhase,
     () => props.bangbooRefine,
     selectedBangboo,
@@ -623,12 +626,11 @@ const chartEventReferencePoint = computed(() => {
   return sweepPoints.value[0] ?? null
 })
 
-function resolveChartEventProducerLabel(event: import('@/types/calculator').DamageEvent) {
-  if (!eventNeedsAnomalyProducer(event.kind)) return null
-  const raw = event.triggerAgentId ?? props.triggerAnomalyAgentId
-  if (!raw || raw === TRIGGER_AGENT_AT_CALC) return null
-  const agent = props.agents.find((item) => item.id === raw)
-  return agent?.name ?? raw
+function resolveChartEventProducerLabel(hit: import('@/utils/resolvedHit').ResolvedHit) {
+  if (!eventNeedsAnomalyProducer(hit.skill.damageType)) return null
+  const raw = hit.anomalyPowerAgentId
+  if (!raw) return null
+  return props.agents.find((item) => item.id === raw)?.name ?? raw
 }
 
 function resolveChartEventCritLabel(critMode: import('@/types/calculator').DamageEventCritMode) {
@@ -639,20 +641,20 @@ const chartEventOptions = computed(() => {
   const reference = chartEventReferencePoint.value
   const referenceLines = reference?.eventLines ?? sweepPoints.value[0]?.eventLines ?? []
   return referenceLines.map((line) => {
-    const event = props.damageEvents?.find((item) => item.id === line.eventId)
+    const hit = props.hits?.find((item) => item.id === line.eventId)
     const kindLabel =
       DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === line.kind)?.label ?? line.kind
     const refLine = referenceLines.find((item) => item.eventId === line.eventId)
     const total = refLine?.total ?? line.total
     const perHit = refLine?.perHit ?? line.perHit
     const metaParts: string[] = [kindLabel]
-    if (event) {
-      const producer = resolveChartEventProducerLabel(event)
+    if (hit) {
+      const producer = resolveChartEventProducerLabel(hit)
       if (producer) metaParts.push(producer)
-      metaParts.push(resolveChartEventCritLabel(event.critMode))
-      if (event.count > 1) metaParts.push(`×${event.count}`)
+      metaParts.push(resolveChartEventCritLabel(hit.critMode))
+      if (hit.count > 1) metaParts.push(`×${hit.count}`)
       metaParts.push(`期望 ${formatNumber(total)}`)
-      if (event.count > 1) metaParts.push(`单次 ${formatNumber(perHit)}`)
+      if (hit.count > 1) metaParts.push(`单次 ${formatNumber(perHit)}`)
     } else {
       metaParts.push(`期望 ${formatNumber(total)}`)
     }
@@ -745,7 +747,7 @@ const eventTotalBarSeries = computed(() => {
 const selectedProcessEventId = ref<string | null>(null)
 
 interface ProcessEventRow {
-  event: import('@/types/calculator').DamageEvent
+  hit: import('@/utils/resolvedHit').ResolvedHit
   eventId: string
   displayName: string
   detail: OptimalEventEvalDetail | null
@@ -756,37 +758,29 @@ const processEventRows = computed((): ProcessEventRow[] => {
   if (detailTab.value !== 'process' || !hasEventMode.value) return []
   const counts = analysisCounts.value
   if (!counts) return []
-  const mainId = mainAgent.value?.id ?? ''
   const external =
     analysisEval.value?.external ?? evaluateAffixCounts(evalCtx.value, counts).external
   const selectedIds = new Set(selectedChartEventIds.value)
-  return (props.damageEvents ?? [])
-    .filter((event) => !selectedIds.size || selectedIds.has(event.id))
-    .map((event) => {
-    const ownerName = props.agents.find(
-      (item) => item.id === resolveEventOwnerAgentId(event, mainId),
-    )?.name
-    const displayName = formatDamageEventDisplayName(
-      event,
-      (id) => skillSubcategories.value.find((item) => item.id === id) ?? null,
-      ownerName,
-    )
-    const skipReason = getDamageEventSkipReason(event, {
-      teamSlots: props.teamSlots,
-      agents: props.agents,
-      mainAgentId: mainId,
+  return (props.hits ?? [])
+    .filter((hit) => !selectedIds.size || selectedIds.has(hit.id))
+    .map((hit) => {
+      const ownerName = props.agents.find((item) => item.id === hit.ownerAgentId)?.name
+      const displayName = `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}`
+      const skipReason = getHitSkipReason(hit, {
+        teamSlots: props.teamSlots,
+        agents: props.agents,
+      })
+      const detail = skipReason
+        ? null
+        : evaluateOptimalEventDetail(evalCtx.value, external, hit)
+      return {
+        hit,
+        eventId: hit.id,
+        displayName,
+        detail,
+        skipReason,
+      }
     })
-    const detail = skipReason
-      ? null
-      : evaluateOptimalEventDetail(evalCtx.value, external, event)
-    return {
-      event,
-      eventId: event.id,
-      displayName,
-      detail,
-      skipReason,
-    }
-  })
 })
 
 watch(
@@ -815,12 +809,11 @@ const processOwnerShareSummary = computed(() => {
   if (!rows.length) return null
   return summarizeDamageByOwner(
     rows.map((row) => ({
-      event: row.event,
+      ownerAgentId: row.hit.ownerAgentId,
       eventId: row.eventId,
       displayName: row.displayName,
       total: row.detail!.total,
     })),
-    mainAgent.value?.id ?? '',
     (id) => props.agents.find((item) => item.id === id),
   )
 })
@@ -2162,8 +2155,8 @@ watch(
               >
                 <span class="event-summary-name">
                   {{ row.displayName }}
-                  <span v-if="row.event.count > 1" class="event-summary-count">
-                    ×{{ row.event.count }}
+                  <span v-if="row.hit.count > 1" class="event-summary-count">
+                    ×{{ row.hit.count }}
                   </span>
                 </span>
                 <span v-if="row.detail" class="event-summary-damage">

@@ -82,16 +82,15 @@ export interface DamageOwnerShareSummary {
 }
 
 export interface DamageOwnerShareInput {
-  event: DamageEvent
+  ownerAgentId: string
   eventId: string
   displayName: string
   total: number
 }
 
-/** 按事件产生角色（owner）汇总可计算事件伤害占比 */
+/** 按归属者汇总可计算招式的伤害占比 */
 export function summarizeDamageByOwner(
   items: DamageOwnerShareInput[],
-  mainAgentId: string,
   resolveAgent: (id: string) => { id: string; name: string } | undefined,
 ): DamageOwnerShareSummary {
   const bucket = new Map<
@@ -104,9 +103,8 @@ export function summarizeDamageByOwner(
   >()
   let grandTotal = 0
   for (const item of items) {
-    const { event, eventId, displayName, total } = item
+    const { ownerAgentId: ownerId, eventId, displayName, total } = item
     if (!(total > 0)) continue
-    const ownerId = resolveEventOwnerAgentId(event, mainAgentId)
     const agent = resolveAgent(ownerId)
     const agentName = agent?.name?.trim() || ownerId
     const prev = bucket.get(ownerId) ?? { agentName, total: 0, events: [] }

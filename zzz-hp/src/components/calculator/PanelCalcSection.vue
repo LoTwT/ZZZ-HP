@@ -19,6 +19,7 @@ import type {
   DamageEventKind,
   DamageEventMultOverrides,
   DriveDiscBuffDoc,
+  SkillCalcContext,
   SkillSubcategory,
   WengineBuffDoc,
 } from '@/types/calculator'
@@ -76,20 +77,24 @@ import {
   type EnemyResistanceElement,
 } from '@/utils/enemyResistance'
 import {
-  eventNeedsAnomalyProducer,
-  getDamageEventSkipReason,
   isTurbulenceTeamCompositionOk,
   mapEventKindToCalc,
   pickEventDamage,
-  summarizeDamageEvents,
   applyOwnerPanelMultOverrides,
   applyRadianceBonusMultOverrides,
   resolveRadianceBonusMultDefaults,
-  type DamageEventLine,
 } from '@/utils/damageEvent'
-import { collectParticipantAgentIds, resolveEventOwnerAgentId, summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
 import {
-  buildSkillContextFromDamageEvent,
+  buildSkillContextFromHit,
+  getHitSkipReason,
+  skillNeedsDualAgents,
+  applyHitPanelMods,
+  summarizeHits,
+  type HitLine,
+  type ResolvedHit,
+} from '@/utils/resolvedHit'
+import { summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
+import {
   extraGainMatchesProfession,
   resolveExtraGainValue,
   mergeExtraModsForEvent,
@@ -208,7 +213,8 @@ const props = defineProps<{
   skillSubcategoryId?: string | null
   slotBuffSelections?: MultiSlotBuffSelection | null
   staggerPhase?: import('@/types/calculator').StaggerPhase
-  damageEvents?: DamageEvent[]
+  /** 流程展开后的结算列表，来自 resolveFlow */
+  hits?: ResolvedHit[]
   /** 为 true 时跳过伤害事件汇总等非必要重算（如最优词条模式） */
   calcSuspended?: boolean
   /** 场地 / 环境 Buff（危局全局、Boss 场地、防卫房间） */
@@ -229,25 +235,13 @@ const externalPanel = reactive<PanelStats>(createDefaultExternalPanel())
 const affixCounts = reactive(createEmptyAffixCounts())
 const affixDriveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
 
-function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
+function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const mainId = mainAgent.value?.id ?? ''
-  const ownerAgentId = resolveEventOwnerAgentId(event, mainId)
-  const skillCtx = buildSkillContextFromDamageEvent(event, {
-    ownerAgentId,
-    agents: props.agents,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-    resolveBuffElement: (agentId) => {
-      const agent = props.agents.find((item) => item.id === agentId)
-      return agent?.element
-    },
-    resolveTriggerElement: resolveEventTriggerElement,
-  })
-  return mergeExtraModsForEvent(extraGains.value, event, skillCtx, {
+  const ownerElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  return mergeExtraModsForEvent(extraGains.value, buildSkillContextFromHit(hit, ownerElement), {
     slotAgentId,
-    ownerAgentId,
-    staggerPhase: props.staggerPhase ?? 'stagger',
+    ownerAgentId: hit.ownerAgentId,
+    staggerPhase: hit.staggerPhase,
     resolveAgentProfession: (agentId) =>
       props.agents.find((item) => item.id === agentId)?.profession,
     teamSlots: props.teamSlots,
@@ -255,11 +249,11 @@ function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
   })
 }
 
-/** 主 C 局内面板汇总用的额外 Buff（无事件时全量；有事件时按首条主 C 事件或首条事件上下文匹配 scope） */
+/** 主 C 局内面板汇总用的额外 Buff（无流程时全量；有流程时按首条主 C 招式或首条招式上下文匹配 scope） */
 function buildExtraModsForMainPanel(): BuffStatModifiers {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
   const phase = props.staggerPhase ?? 'stagger'
-  if (!props.damageEvents?.length) {
+  if (!props.hits?.length) {
     let total = createEmptyBuffStatModifiers()
     const mainId = mainAgent.value?.id ?? ''
     const mainProfession = props.agents.find((item) => item.id === mainId)?.profession
@@ -277,11 +271,8 @@ function buildExtraModsForMainPanel(): BuffStatModifiers {
     return total
   }
   const mainId = mainAgent.value?.id ?? ''
-  const ownedEvent = props.damageEvents.find(
-    (event) => resolveEventOwnerAgentId(event, mainId) === mainId,
-  )
-  const proxyEvent = ownedEvent ?? props.damageEvents[0]!
-  return buildExtraModsForEvent(proxyEvent, mainId)
+  const ownedHit = props.hits.find((hit) => hit.ownerAgentId === mainId)
+  return buildExtraModsForHit(ownedHit ?? props.hits[0]!, mainId)
 }
 
 const extraMods = computed(() => buildExtraModsForMainPanel())
@@ -388,13 +379,18 @@ const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(
   panelToConvertAttrValues(effectiveExternalPanel.value, { level: 60, pierceMod: 0 }),
 )
 
-/** 伤害事件参与者（非主 C 的 owner / 异常产生角色） */
+/** 流程参与者（非主 C 的归属者 / 异常强度提供者 / 异常类触发者） */
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
-  const participantIds = collectParticipantAgentIds(props.damageEvents ?? [], mainId)
+  const participantIds = new Set<string>()
+  for (const hit of props.hits ?? []) {
+    for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      if (id && id !== mainId) participantIds.add(id)
+    }
+  }
   return props.teamSlots
     .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => Boolean(slot.agentId && participantIds.includes(slot.agentId)))
+    .filter(({ slot }) => Boolean(slot.agentId && participantIds.has(slot.agentId)))
 })
 
 function resolveExternalPanelForSlotIndex(slotIndex: number): PanelStats {
@@ -1020,7 +1016,7 @@ const calcParts = computed(() =>
     mainAgentLevel: enemyInput.value.level,
     ownerAgentLevel: enemyInput.value.level,
     triggerAgentLevel: triggerAgentLevel.value,
-    mainCFinalPanel: finalPanel.value,
+    anomalyTriggerPanel: finalPanel.value,
     mutationZone: luminousTeamModifiers.value.mutationZone,
     remielRadianceResPen:
       (props.anomalySubKind ?? 'anomaly') === 'radiance'
@@ -1036,66 +1032,28 @@ const disorderDamageLabel = computed(() =>
   calcParts.value.hasPolarDisorder ? '极性紊乱' : '紊乱伤害',
 )
 
-function resolveEventTriggerElement(event: DamageEvent): string | undefined {
-  const rawTriggerId = event.triggerAgentId ?? props.triggerAnomalyAgentId
-  const triggerId =
-    rawTriggerId && rawTriggerId !== '__at_calc__' ? rawTriggerId : null
-  if (!triggerId) return undefined
-  return props.agents.find((agent) => agent.id === triggerId)?.element
+function resolveHitPowerElement(hit: ResolvedHit): string | undefined {
+  if (!hit.anomalyPowerAgentId) return undefined
+  return props.agents.find((agent) => agent.id === hit.anomalyPowerAgentId)?.element
 }
 
-function buildEventSkillContext(event: DamageEvent) {
-  const mainId = mainAgent.value?.id ?? ''
-  const ownerAgentId = resolveEventOwnerAgentId(event, mainId)
-  const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === ownerAgentId)
-  const effectiveOwnerSlotIndex = ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value
-
-  const { damageKind: evtDamageKind, anomalySubKind: evtAnomalySubKind } = mapEventKindToCalc(
-    event.kind,
-  )
-  const eventNeedsTrigger = eventNeedsAnomalyProducer(event.kind)
-  const triggerElement = resolveEventTriggerElement(event)
-  const skillBound = event.skillBound !== false || evtDamageKind === 'direct'
-  const evtIsFollowUp = skillBound
-    ? resolveIsFollowUp({
-        agentId: ownerAgentId,
-        categoryId: event.categoryId,
-        subcategoryId: event.skillSubcategoryId,
-        skillSubcategories: skillSubcategories.value,
-        followUpSkillRules: followUpSkillRules.value,
-      })
-    : false
-
-  const ownerBuffElement = props.agents.find((item) => item.id === ownerAgentId)?.element
-
+function buildHitSkillContext(hit: ResolvedHit) {
+  const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === hit.ownerAgentId)
+  const ownerBuffElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return {
-    skillCtx: {
-      damageKind: evtDamageKind,
-      categoryId: skillBound ? event.categoryId : ('basic' as const),
-      subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-      element: ownerBuffElement,
-      staggerPhase: event.staggerPhase,
-      isFollowUp: evtIsFollowUp,
-      anomalySubKind: evtAnomalySubKind,
-    },
-    eventNeedsTrigger,
-    triggerElement,
-    skillBound,
-    evtDamageKind,
-    evtAnomalySubKind,
-    ownerAgentId,
-    ownerSlotIndex: effectiveOwnerSlotIndex,
+    skillCtx: buildSkillContextFromHit(hit, ownerBuffElement),
+    ownerSlotIndex: ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
   }
 }
 
-function buildEventPanelCalcContext(
-  skillCtx: ReturnType<typeof buildEventSkillContext>['skillCtx'],
+function buildHitPanelCalcContext(
+  skillCtx: SkillCalcContext,
   ownerSlotIndex: number,
-  event: DamageEvent,
+  hit: ResolvedHit,
 ) {
   const ownerId = props.teamSlots[ownerSlotIndex]?.agentId ?? ''
   return {
-    ...buildPanelCalcContextForSlot(ownerSlotIndex, buildExtraModsForEvent(event, ownerId)),
+    ...buildPanelCalcContextForSlot(ownerSlotIndex, buildExtraModsForHit(hit, ownerId)),
     skillContext: skillCtx,
   }
 }
@@ -1105,55 +1063,61 @@ function resolveOwnerExternalPanel(ownerSlotIndex: number, ownerAgentId: string)
   return ensureAnomalySlotPanel(ownerAgentId)
 }
 
-function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
-  if (
-    getDamageEventSkipReason(event, {
-      teamSlots: props.teamSlots,
-      agents: props.agents,
-      mainAgentId: mainAgent.value?.id ?? '',
-    })
-  ) {
+/** 计算某角色在本条招式上下文下的局内最终面板 */
+function computeHitPanelForAgent(hit: ResolvedHit, agentId: string): PanelStats | null {
+  const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
+  if (slotIndex < 0) return null
+  const external =
+    slotIndex === mainSlotIndex.value
+      ? effectiveExternalPanel.value
+      : ensureAnomalySlotPanel(agentId)
+  const element = props.agents.find((item) => item.id === agentId)?.element
+  return computeFinalPanel(external, {
+    ...buildPanelCalcContextForSlot(slotIndex, buildExtraModsForHit(hit, agentId)),
+    skillContext: buildSkillContextFromHit(hit, element),
+  }).finalPanel
+}
+
+function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
+  if (getHitSkipReason(hit, { teamSlots: props.teamSlots, agents: props.agents })) {
     return null
   }
 
-  const {
-    skillCtx: evtSkillCtx,
-    eventNeedsTrigger,
-    triggerElement: evtTriggerElement,
-    skillBound,
-    evtDamageKind,
-    evtAnomalySubKind,
-    ownerAgentId,
-    ownerSlotIndex,
-  } = buildEventSkillContext(event)
+  const { skillCtx: evtSkillCtx, ownerSlotIndex } = buildHitSkillContext(hit)
+  const ownerAgentId = hit.ownerAgentId
+  const evtAnomalySubKind = hit.anomalySubKind
+  const damageType = hit.skill.damageType
+  const needsPowerAgent = skillNeedsDualAgents(damageType)
 
   const ownerAgent = props.agents.find((item) => item.id === ownerAgentId)
   const evtOwnerIsMb = ownerAgent?.profession === MB_PROFESSION
   const evtBaseDamageSource: BaseDamageSource = evtOwnerIsMb ? 'pierce' : baseDamageSource.value
 
-  const rawTriggerId = event.triggerAgentId ?? props.triggerAnomalyAgentId
-  const evtTriggerAgentId =
-    rawTriggerId && rawTriggerId !== '__at_calc__' ? rawTriggerId : null
-  if (eventNeedsTrigger && !evtTriggerAgentId) return null
+  const evtPowerAgentId = hit.anomalyPowerAgentId
+  if (needsPowerAgent && !evtPowerAgentId) return null
 
+  const evtPowerElement = resolveHitPowerElement(hit)
   const tAgent =
-    eventNeedsTrigger && evtTriggerAgentId
-      ? props.agents.find((a) => a.id === evtTriggerAgentId)
+    needsPowerAgent && evtPowerAgentId
+      ? props.agents.find((a) => a.id === evtPowerAgentId)
       : undefined
   const evtTriggerIsMb = tAgent?.profession === MB_PROFESSION
 
   const ownerExternal = resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId)
-  const evtPanelCtx = buildEventPanelCalcContext(evtSkillCtx, ownerSlotIndex, event)
+  const evtPanelCtx = buildHitPanelCalcContext(evtSkillCtx, ownerSlotIndex, hit)
   const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx)
 
-  const overrides = event.multOverrides
-  let evtFinalPanel = applyOwnerPanelMultOverrides(evtBreakdown.finalPanel, overrides)
+  const overrides = hit.multOverrides
+  let evtFinalPanel = applyHitPanelMods(
+    applyOwnerPanelMultOverrides(evtBreakdown.finalPanel, overrides),
+    hit.panelMods,
+  )
 
-  if (event.kind === 'anomalyRelease') {
+  if (damageType === 'anomalyRelease') {
     const releaseFields = resolveMainCAnomalyReleaseMultFields(
       ownerExternal,
       evtPanelCtx,
-      evtTriggerElement,
+      evtPowerElement,
     )
     if (overrides?.anomalyReleaseMult == null) {
       evtFinalPanel.anomalyReleaseMult = releaseFields.anomalyReleaseMult
@@ -1171,35 +1135,21 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
 
   let evtTriggerFinalPanel: PanelStats | undefined
   let evtTriggerPierce: number | undefined
-  if (eventNeedsTrigger && evtTriggerAgentId) {
-    const tSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === evtTriggerAgentId)
+  if (needsPowerAgent && evtPowerAgentId) {
+    const tSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === evtPowerAgentId)
     if (tSlotIndex < 0) return null
 
-    if (evtTriggerAgentId === ownerAgentId) {
+    if (evtPowerAgentId === ownerAgentId) {
       evtTriggerFinalPanel = evtFinalPanel
       evtTriggerPierce = evtPierce
     } else {
-      const tExternal = ensureAnomalySlotPanel(evtTriggerAgentId)
+      const tExternal = ensureAnomalySlotPanel(evtPowerAgentId)
       const tBreakdown = computeFinalPanel(tExternal, {
         ...buildPanelCalcContextForSlot(
           tSlotIndex,
-          buildExtraModsForEvent(event, evtTriggerAgentId),
+          buildExtraModsForHit(hit, evtPowerAgentId),
         ),
-        skillContext: {
-          damageKind: 'anomaly',
-          categoryId: skillBound ? event.categoryId : 'basic',
-          subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-          element: tAgent?.element,
-          staggerPhase: event.staggerPhase,
-          isFollowUp: resolveIsFollowUp({
-            agentId: tAgent?.id,
-            categoryId: skillBound ? event.categoryId : 'basic',
-            subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-            skillSubcategories: skillSubcategories.value,
-            followUpSkillRules: followUpSkillRules.value,
-          }),
-          anomalySubKind: evtAnomalySubKind,
-        },
+        skillContext: buildSkillContextFromHit(hit, tAgent?.element),
       })
       evtTriggerFinalPanel = tBreakdown.finalPanel
       evtTriggerPierce = computePiercePower(
@@ -1209,11 +1159,11 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
       )
     }
 
-    // 紊乱/乱流倍率取产生角色最终面板（未覆写时）
-    // 异放倍率留在主 C 面板：按产生角色属性从主 C 增益筛选
+    // 紊乱/乱流倍率取异常强度提供者最终面板（未覆写时）
+    // 异放倍率留在异常类触发者面板：按提供者属性从触发者增益筛选
     if (evtTriggerFinalPanel) {
       const o = overrides
-      if (event.kind === 'disorder') {
+      if (damageType === 'disorder') {
         if (o?.disorderBaseMult == null) {
           evtFinalPanel.disorderBaseMult = evtTriggerFinalPanel.disorderBaseMult
         }
@@ -1223,7 +1173,7 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
         if (o?.disorderCompMult == null) {
           evtFinalPanel.disorderCompMult = evtTriggerFinalPanel.disorderCompMult
         }
-      } else if (event.kind === 'turbulence') {
+      } else if (damageType === 'turbulence') {
         if (o?.turbulenceBaseMult == null) {
           evtFinalPanel.turbulenceBaseMult = evtTriggerFinalPanel.turbulenceBaseMult
         }
@@ -1237,8 +1187,8 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     }
   }
 
-  const sub =
-    skillBound ? resolveSubcategoryById(event.skillSubcategoryId) : null
+  // 增益锚点即旧招式小类，小类倍率仍作为未填倍率时的兜底
+  const sub = resolveSubcategoryById(hit.skill.buffAnchorId ?? null)
   const effectiveSub =
     sub && overrides
       ? {
@@ -1257,24 +1207,22 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
   const luminousMods = resolveLuminousTeamModifiers()
 
   const actualMainId = mainAgent.value?.id ?? ''
-  let mainCFinalPanel =
-    ownerAgentId === actualMainId
-      ? evtFinalPanel
-      : computeFinalPanel(
-          effectiveExternalPanel.value,
-          buildPanelCalcContextForSlot(mainSlotIndex.value),
-        ).finalPanel
+  // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
+  let anomalyTriggerPanel =
+    hit.triggerAgentId && hit.triggerAgentId !== ownerAgentId
+      ? (computeHitPanelForAgent(hit, hit.triggerAgentId) ?? evtFinalPanel)
+      : evtFinalPanel
 
-  if (event.kind === 'radiance') {
-    mainCFinalPanel = applyRadianceBonusMultOverrides(mainCFinalPanel, overrides)
-    if (ownerAgentId === actualMainId) {
-      evtFinalPanel = mainCFinalPanel
+  if (damageType === 'radiance') {
+    anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, overrides)
+    if (hit.triggerAgentId === ownerAgentId || !hit.triggerAgentId) {
+      evtFinalPanel = anomalyTriggerPanel
     }
   }
 
   return {
     finalPanel: evtFinalPanel,
-    mainCFinalPanel,
+    anomalyTriggerPanel,
     piercePower: evtPierce,
     baseDamageSource: evtBaseDamageSource,
     isMbMainAgent: evtOwnerIsMb,
@@ -1285,57 +1233,56 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     combatStaggerVulnerableOnly: evtBreakdown.combatMods.staggerVulnerableOnly ?? 0,
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
-    staggerPhase: event.staggerPhase,
+    staggerPhase: hit.staggerPhase,
     mainAgentElement: mainAgent.value?.element ?? '',
     ...resolveDamageCalcResistanceElements(
       props.teamSlots,
       props.agents,
       mainSlotIndex.value,
-      evtTriggerAgentId,
+      evtPowerAgentId,
     ),
     mainAgentId: actualMainId,
     mainAgentName: mainAgent.value?.name ?? '',
     anomalySubKind: evtAnomalySubKind,
     triggerFinalPanel: evtTriggerFinalPanel,
-    triggerAgentElement: evtTriggerElement,
+    triggerAgentElement: evtPowerElement,
     triggerPiercePower: evtTriggerPierce,
     triggerIsMb: evtTriggerIsMb,
     skillSubcategory: effectiveSub,
     mainAgentLevel: resolveAgentLevel(actualMainId),
     ownerAgentLevel: resolveAgentLevel(ownerAgentId),
-    triggerAgentLevel: evtTriggerAgentId
-      ? resolveAgentLevel(evtTriggerAgentId)
+    triggerAgentLevel: evtPowerAgentId
+      ? resolveAgentLevel(evtPowerAgentId)
       : resolveAgentLevel(ownerAgentId),
     mutationZone: luminousMods.mutationZone,
-    remielRadianceResPen: event.kind === 'radiance' ? luminousMods.radianceResPen : 0,
-    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForTrigger(evtTriggerAgentId),
+    remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
+    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForTrigger(evtPowerAgentId),
   }
 }
 
 const damageEventSummary = computed(() => {
-  if (props.calcSuspended || !props.damageEvents?.length) return null
-  return summarizeDamageEvents(
-    props.damageEvents,
-    buildEventCalcFull,
-    resolveSubcategoryById,
-    (event) => props.agents.find((item) => item.id === resolveEventOwnerAgentId(event, mainAgent.value?.id ?? ''))?.name,
+  if (props.calcSuspended || !props.hits?.length) return null
+  return summarizeHits(
+    props.hits,
+    buildHitCalcInput,
+    (hit) => props.agents.find((item) => item.id === hit.ownerAgentId)?.name,
   )
 })
 
-const hasDamageEvents = computed(() => (props.damageEvents?.length ?? 0) > 0)
+const hasDamageEvents = computed(() => (props.hits?.length ?? 0) > 0)
 
-const selectedEventDetailLine = computed((): DamageEventLine | null => {
+const selectedEventDetailLine = computed((): HitLine | null => {
   const base = selectedDamageEventLine.value
   if (!base) return null
-  const input = buildEventCalcFull(base.event)
+  const input = buildHitCalcInput(base.hit)
   if (!input) return base
   const result = computeDamageResult(input)
-  const perHit = pickEventDamage(result, base.event.kind, base.event.critMode)
+  const perHit = pickEventDamage(result, base.hit.skill.damageType, base.hit.critMode)
   return {
     ...base,
     result,
     perHit,
-    total: perHit * Math.max(0, base.event.count),
+    total: perHit * base.hit.count,
   }
 })
 
@@ -1350,18 +1297,12 @@ const displayCalcParts = computed(
 )
 
 const damageEventSkipHints = computed(() => {
-  if (!props.damageEvents?.length) return [] as string[]
+  if (!props.hits?.length) return [] as string[]
   const hints: string[] = []
-  const ctx = {
-    teamSlots: props.teamSlots,
-    agents: props.agents,
-    mainAgentId: mainAgent.value?.id ?? '',
-  }
-  for (const event of props.damageEvents) {
-    const reason = getDamageEventSkipReason(event, ctx)
-    if (reason) {
-      hints.push(`${event.kind}：${reason}`)
-    }
+  const ctx = { teamSlots: props.teamSlots, agents: props.agents }
+  for (const hit of props.hits) {
+    const reason = getHitSkipReason(hit, ctx)
+    if (reason) hints.push(`${hit.skill.name}：${reason}`)
   }
   return hints
 })
@@ -1375,12 +1316,11 @@ const damageOwnerShareSummary = computed(() => {
   if (!lines?.length) return null
   return summarizeDamageByOwner(
     lines.map((line) => ({
-      event: line.event,
-      eventId: line.event.id,
+      ownerAgentId: line.hit.ownerAgentId,
+      eventId: line.hit.id,
       displayName: line.displayName,
       total: line.total,
     })),
-    mainAgent.value?.id ?? '',
     (id) => props.agents.find((item) => item.id === id),
   )
 })
@@ -1396,7 +1336,7 @@ const damageEventTotalLabel = computed(() =>
 
 const selectedDamageEventLine = computed(
   () =>
-    damageEventSummary.value?.lines.find((line) => line.event.id === selectedDamageEventId.value) ??
+    damageEventSummary.value?.lines.find((line) => line.hit.id === selectedDamageEventId.value) ??
     null,
 )
 
@@ -1405,7 +1345,7 @@ function toggleDamageEventSelection(eventId: string) {
 }
 
 watch(
-  () => props.damageEvents,
+  () => props.hits,
   () => {
     selectedDamageEventId.value = null
   },
@@ -1603,24 +1543,26 @@ const alignedDirectFormula = computed(() => buildAlignedDirectFormula(calcParts.
 
 const selectedEventDirectFormula = computed(() => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind !== 'direct') return null
+  if (!line || line.hit.skill.damageType !== 'direct') return null
   return buildAlignedDirectFormula(line.result, formatNumber(line.perHit))
 })
 
 const selectedEventAnomalyTitle = computed(() => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind === 'direct') return ''
-  if (line.event.kind === 'disorder') {
+  if (!line) return ''
+  const damageType = line.hit.skill.damageType
+  if (damageType === 'direct') return ''
+  if (damageType === 'disorder') {
     return `${line.displayName} · ${line.result.hasPolarDisorder ? '极性紊乱' : '紊乱'}期望伤害`
   }
-  if (line.event.kind === 'turbulence') return `${line.displayName} · 乱流期望伤害`
-  if (line.event.kind === 'anomalyRelease') return `${line.displayName} · 异放期望伤害`
-  if (line.event.kind === 'radiance') return `${line.displayName} · 耀变期望伤害`
+  if (damageType === 'turbulence') return `${line.displayName} · 乱流期望伤害`
+  if (damageType === 'anomalyRelease') return `${line.displayName} · 异放期望伤害`
+  if (damageType === 'radiance') return `${line.displayName} · 耀变期望伤害`
   return `${line.displayName} · 异常期望伤害`
 })
 
 function resolveAnomalyFormulaLabels(
-  event?: DamageEvent,
+  hit?: ResolvedHit,
   sub?: AnomalyDamageSubKind,
 ): AnomalyFormulaAgentLabels {
   const mainName = mainAgent.value?.name
@@ -1629,21 +1571,17 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === remiel.id)?.name
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
-  if (event) {
-    const mainId = mainAgent.value?.id ?? ''
-    const ownerName = props.agents.find(
-      (item) => item.id === resolveEventOwnerAgentId(event, mainId),
-    )?.name
-    const rawTrigger = event.triggerAgentId ?? props.triggerAnomalyAgentId
-    const triggerId = rawTrigger && rawTrigger !== '__at_calc__' ? rawTrigger : null
-    const triggerName = triggerId
-      ? props.agents.find((item) => item.id === triggerId)?.name
-      : undefined
+  if (hit) {
+    const nameOf = (id: string | null) =>
+      id ? props.agents.find((item) => item.id === id)?.name : undefined
+    const ownerName = nameOf(hit.ownerAgentId)
+    const powerName = nameOf(hit.anomalyPowerAgentId)
+    const triggerName = nameOf(hit.triggerAgentId)
     return {
-      baseAgent: eventNeedsAnomalyProducer(event.kind)
-        ? (triggerName ?? ownerName ?? mainName)
+      baseAgent: skillNeedsDualAgents(hit.skill.damageType)
+        ? (powerName ?? ownerName ?? mainName)
         : (ownerName ?? mainName),
-      bonusAgent: ownerName ?? mainName,
+      bonusAgent: triggerName ?? ownerName ?? mainName,
       mutationAgent: remielName,
     }
   }
@@ -1651,7 +1589,7 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === props.triggerAnomalyAgentId)?.name
     : undefined
   return {
-    baseAgent: eventNeedsAnomalyProducer(effectiveSub as DamageEventKind) ? triggerName : mainName,
+    baseAgent: (props.damageKind === 'anomaly' ? triggerName : mainName) ?? mainName,
     bonusAgent: mainName,
     mutationAgent: remielName,
   }
@@ -1684,14 +1622,14 @@ const alignedAnomalyFormulas = computed((): AlignedFormulaGroup[] =>
 
 const selectedEventAnomalyFormulas = computed((): AlignedFormulaGroup[] | null => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind === 'direct') return null
-  const { anomalySubKind } = mapEventKindToCalc(line.event.kind)
+  if (!line || line.hit.skill.damageType === 'direct') return null
+  const anomalySubKind = line.hit.anomalySubKind
   const disorderLabel = line.result.hasPolarDisorder ? '极性紊乱' : '紊乱伤害'
   return buildAlignedAnomalyFormulasFor(
     line.result,
     anomalySubKind,
     disorderLabel,
-    resolveAnomalyFormulaLabels(line.event, anomalySubKind),
+    resolveAnomalyFormulaLabels(line.hit, anomalySubKind),
   )
 })
 
@@ -1714,12 +1652,9 @@ function withTotal(groups: StatSourceGroup[], totalText: string, processItems?: 
 const selectedEventOwnerBreakdown = computed(() => {
   const line = selectedEventDetailLine.value
   if (!line) return null
-  const { skillCtx, ownerAgentId, ownerSlotIndex } = buildEventSkillContext(line.event)
-  const external = resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId)
-  return computeFinalPanel(
-    external,
-    buildEventPanelCalcContext(skillCtx, ownerSlotIndex, line.event),
-  )
+  const { skillCtx, ownerSlotIndex } = buildHitSkillContext(line.hit)
+  const external = resolveOwnerExternalPanel(ownerSlotIndex, line.hit.ownerAgentId)
+  return computeFinalPanel(external, buildHitPanelCalcContext(skillCtx, ownerSlotIndex, line.hit))
 })
 
 const valueTips = computed(() => {
@@ -1761,16 +1696,17 @@ const valueTips = computed(() => {
 
   const eventLine = selectedEventDetailLine.value
   const ownerBreakdown = selectedEventOwnerBreakdown.value
-  const eventOwnerCtx = eventLine ? buildEventSkillContext(eventLine.event) : null
+  const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
   const usesOwnerBonusPanel = Boolean(
     eventLine &&
       ownerBreakdown &&
       eventOwnerCtx &&
-      (eventLine.event.kind === 'turbulence' || eventLine.event.kind === 'disorder'),
+      (eventLine.hit.skill.damageType === 'turbulence' ||
+        eventLine.hit.skill.damageType === 'disorder'),
   )
   const bonusPanel = usesOwnerBonusPanel ? ownerBreakdown!.finalPanel : panel
   const bonusExternal = usesOwnerBonusPanel
-    ? resolveOwnerExternalPanel(eventOwnerCtx!.ownerSlotIndex, eventOwnerCtx!.ownerAgentId)
+    ? resolveOwnerExternalPanel(eventOwnerCtx!.ownerSlotIndex, eventLine!.hit.ownerAgentId)
     : external
   const bonusSources = usesOwnerBonusPanel ? ownerBreakdown!.sources : sources
 
@@ -2736,10 +2672,7 @@ const selectedEventDmgMultiplierTips = computed(() => {
   const breakdown = selectedEventOwnerBreakdown.value
   const p = displayCalcParts.value
   if (!breakdown) return [] as StatSourceGroup[]
-  const ownerId = resolveEventOwnerAgentId(
-    selectedEventDetailLine.value!.event,
-    mainAgent.value?.id ?? '',
-  )
+  const ownerId = selectedEventDetailLine.value!.hit.ownerAgentId
   const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === ownerId)
   const external = resolveOwnerExternalPanel(
     ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
@@ -2868,28 +2801,31 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
   }
 }
 
-/** 事件倍率默认值：异常取主 C 最终面板；紊乱/乱流取产生角色最终面板；异放倍率取主 C（按产生角色属性筛选增益） */
+/**
+ * 招式倍率的面板默认值，供准备阶段预填。
+ * 异常取归属者面板；紊乱/乱流取异常强度提供者；异放/耀变取异常类触发者。
+ */
 function resolveMultDefaultsForEvent(
-  event: DamageEvent,
+  hit: ResolvedHit,
 ): Partial<Record<keyof DamageEventMultOverrides, number>> {
   const result: Partial<Record<keyof DamageEventMultOverrides, number>> = {}
+  const damageType = hit.skill.damageType
 
-  if (event.kind === 'anomalyRelease') {
-    const { skillCtx, triggerElement, ownerSlotIndex, ownerAgentId } = buildEventSkillContext(event)
+  if (damageType === 'anomalyRelease') {
+    const { skillCtx, ownerSlotIndex } = buildHitSkillContext(hit)
     const fields = resolveMainCAnomalyReleaseMultFields(
-      resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId),
-      buildEventPanelCalcContext(skillCtx, ownerSlotIndex, event),
-      triggerElement,
+      resolveOwnerExternalPanel(ownerSlotIndex, hit.ownerAgentId),
+      buildHitPanelCalcContext(skillCtx, ownerSlotIndex, hit),
+      resolveHitPowerElement(hit),
     )
     result.anomalyReleaseMult = fields.anomalyReleaseMult
     result.anomalyReleaseMultFactor = fields.anomalyReleaseMultFactor
     return result
   }
 
-  const probe: DamageEvent = { ...event, multOverrides: null }
-  const input = buildEventCalcFull(probe)
+  const input = buildHitCalcInput({ ...hit, multOverrides: null })
 
-  if (event.kind === 'direct') {
+  if (damageType === 'direct') {
     const panel = input?.finalPanel ?? finalPanel.value
     result.directDmgMult = panel.directDmgMult
     result.settlementDmgMult = panel.settlementDmgMult
@@ -2897,27 +2833,29 @@ function resolveMultDefaultsForEvent(
     return result
   }
 
-  if (event.kind === 'anomaly') {
+  if (damageType === 'anomaly') {
     const panel = input?.finalPanel ?? finalPanel.value
     result.anomalyMult = panel.anomalyMult
     result.anomalyMultFactor = panel.anomalyMultFactor
     return result
   }
 
-  if (event.kind === 'radiance') {
-    const bonusPanel = input?.mainCFinalPanel ?? finalPanel.value
-    Object.assign(result, resolveRadianceBonusMultDefaults(bonusPanel))
+  if (damageType === 'radiance') {
+    Object.assign(
+      result,
+      resolveRadianceBonusMultDefaults(input?.anomalyTriggerPanel ?? finalPanel.value),
+    )
     return result
   }
 
   const panel = input?.triggerFinalPanel
   if (!panel) return result
 
-  if (event.kind === 'disorder') {
+  if (damageType === 'disorder') {
     result.disorderBaseMult = panel.disorderBaseMult
     result.disorderBaseMultFactor = panel.disorderBaseMultFactor
     result.disorderCompMult = panel.disorderCompMult
-  } else if (event.kind === 'turbulence') {
+  } else if (damageType === 'turbulence') {
     result.turbulenceBaseMult = panel.turbulenceBaseMult
     result.turbulenceBaseMultFactor = panel.turbulenceBaseMultFactor
     result.turbulenceCompMult = panel.turbulenceCompMult
@@ -3293,18 +3231,18 @@ defineExpose({
       <ul class="event-summary-list">
         <li
           v-for="line in damageEventSummary!.lines"
-          :key="line.event.id"
+          :key="line.hit.id"
           class="event-summary-item"
-          :class="{ 'event-summary-item--active': selectedDamageEventId === line.event.id }"
+          :class="{ 'event-summary-item--active': selectedDamageEventId === line.hit.id }"
           role="button"
           tabindex="0"
-          @click="toggleDamageEventSelection(line.event.id)"
-          @keydown.enter.prevent="toggleDamageEventSelection(line.event.id)"
-          @keydown.space.prevent="toggleDamageEventSelection(line.event.id)"
+          @click="toggleDamageEventSelection(line.hit.id)"
+          @keydown.enter.prevent="toggleDamageEventSelection(line.hit.id)"
+          @keydown.space.prevent="toggleDamageEventSelection(line.hit.id)"
         >
           <span class="event-summary-name">
             {{ line.displayName }}
-            <span v-if="line.event.count > 1" class="event-summary-count">×{{ line.event.count }}</span>
+            <span v-if="line.hit.count > 1" class="event-summary-count">×{{ line.hit.count }}</span>
           </span>
           <span class="event-summary-damage">
             单次 {{ formatNumber(line.perHit) }} · 合计 {{ formatNumber(line.total) }}
@@ -3399,7 +3337,7 @@ defineExpose({
             :groups="valueTips.directDamageExpected"
           />
         </p>
-        <p v-if="selectedEventDetailLine.event.count > 1" class="result-total">
+        <p v-if="selectedEventDetailLine.hit.count > 1" class="result-total">
           合计伤害：
           <span>{{ formatNumber(selectedEventDetailLine.total) }}</span>
         </p>
@@ -3453,7 +3391,7 @@ defineExpose({
         <p class="result-total">
           单次期望：{{ formatNumber(selectedEventDetailLine.perHit) }}
         </p>
-        <p v-if="selectedEventDetailLine.event.count > 1" class="result-total">
+        <p v-if="selectedEventDetailLine.hit.count > 1" class="result-total">
           合计伤害：{{ formatNumber(selectedEventDetailLine.total) }}
         </p>
       </div>

@@ -70,8 +70,13 @@ export interface DamageCalcInput {
   ownerAgentLevel?: number
   /** 产生角色等级（异常基础等级区）；缺省与 mainAgentLevel 相同 */
   triggerAgentLevel?: number
-  /** 主 C 局内最终面板（紊乱/乱流/异放/耀变：减防/无视防御与异常增伤等乘区） */
-  mainCFinalPanel?: PanelStats
+  /**
+   * 异常类触发者的局内最终面板：紊乱/乱流/异放/耀变的异常增伤，
+   * 以及异常基础的减防/无视防御。
+   *
+   * 旧架构此处取主 C，与「谁触发的异常」不是一回事；新架构由用户在准备阶段指定。
+   */
+  anomalyTriggerPanel?: PanelStats
   /** 队伍有蕾米埃尔时的异化系数乘区（预计算） */
   mutationZone?: number
   /** 耀变：蕾米埃尔耀变抗性穿透（非本人耀变时并入产生角色抗性区） */
@@ -380,11 +385,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const mainAgentLevel = input.mainAgentLevel ?? input.enemyInput.level
   const ownerAgentLevel = input.ownerAgentLevel ?? mainAgentLevel
   const triggerAgentLevel = input.triggerAgentLevel ?? mainAgentLevel
-  const mainCPanel = input.mainCFinalPanel ?? panel
-  /** 异放/耀变增伤与倍率取主 C；紊乱/乱流增伤与暴击取 owner；异常基础取产生角色 */
+  const triggerAgentPanel = input.anomalyTriggerPanel ?? panel
+  /** 异放/耀变增伤与倍率取异常类触发者；紊乱/乱流增伤与暴击取 owner；异常基础取异常强度提供者 */
   const bonusPanel =
     useTriggerBase && (subKind === 'anomalyRelease' || subKind === 'radiance')
-      ? mainCPanel
+      ? triggerAgentPanel
       : panel
 
   const skillMults = input.skillSubcategory
@@ -432,12 +437,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
           input.triggerAgentElement ??
           input.mainAgentResistanceElement ??
           input.mainAgentElement,
-        // 异常基础防御区：穿透率/穿透值取产生角色，减防/无视防御取主 C
+        // 异常基础防御区：穿透率/穿透值取异常强度提供者，减防/无视防御取异常类触发者
         defensePanel: {
           penRate: triggerPanel.penRate,
           pen: triggerPanel.pen,
-          ignoreDefense: mainCPanel.ignoreDefense,
-          reduceDefense: mainCPanel.reduceDefense,
+          ignoreDefense: triggerAgentPanel.ignoreDefense,
+          reduceDefense: triggerAgentPanel.reduceDefense,
         },
         extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
       })
@@ -494,8 +499,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       defensePanel: {
         penRate: remielSelf.penRate,
         pen: remielSelf.pen,
-        ignoreDefense: mainCPanel.ignoreDefense,
-        reduceDefense: mainCPanel.reduceDefense,
+        ignoreDefense: triggerAgentPanel.ignoreDefense,
+        reduceDefense: triggerAgentPanel.reduceDefense,
       },
       isMb: remielSelf.isMb,
       enemyDefense: input.enemyInput.defense,

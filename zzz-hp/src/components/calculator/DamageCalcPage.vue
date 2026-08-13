@@ -5,22 +5,20 @@ import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.v
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
 import EnvironmentBuffFilterBar from '@/components/calculator/EnvironmentBuffFilterBar.vue'
 import DamageCalcHistorySection from '@/components/calculator/DamageCalcHistorySection.vue'
-import DamageEventModeModal from '@/components/calculator/DamageEventModeModal.vue'
+import SkillFlowSection from '@/components/calculator/SkillFlowSection.vue'
 import OptimalAffixAllocSection from '@/components/calculator/OptimalAffixAllocSection.vue'
 import PanelCalcSection from '@/components/calculator/PanelCalcSection.vue'
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import PanelScreenshotUploadSection from '@/components/calculator/PanelScreenshotUploadSection.vue'
 import TeamBuilderSection from '@/components/calculator/TeamBuilderSection.vue'
 import type { DamageCalcSectionId } from '@/constants/damageCalcNav'
-import type { DamageCalcHistoryEntry } from '@/types/damageCalcHistory'
+import type { DamageCalcHistoryEntry, SchemeSlot } from '@/types/damageCalcHistory'
 import type { PanelCalcMode } from '@/types/calculatorPanel'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import type {
   AnomalyDamageSubKind,
   BangbooBuffDoc,
   DamageCalcKind,
-  DamageEvent,
-  DamageEventMultOverrides,
   StaggerPhase,
 } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
@@ -67,10 +65,11 @@ import {
   type DamageEnemyInput,
 } from '@/utils/enemyResistance'
 import { resolveIsFollowUp } from '@/utils/buffEffect'
-import { canSelectTurbulenceDamageEvent } from '@/utils/damageEvent'
-import { collectParticipantAgentIds, mergeDamageEventAgentOptions } from '@/utils/damageEventOwner'
-import { findLuminousAgentInTeam } from '@/utils/remielUtils'
 import { createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils/calculatorUi'
+import {
+  ensureSchemeSlots,
+  resolveFlow,
+} from '@/utils/resolvedHit'
 
 export interface TeamSlot {
   agentId: string
@@ -83,7 +82,7 @@ export interface TeamSlot {
 }
 
 const calculatorBuffStore = useCalculatorBuffStore()
-const { agents, wengines, bangboos, driveDiscs, skillSubcategories, followUpSkillRules, damageEventModes } =
+const { agents, wengines, bangboos, driveDiscs, skillSubcategories, followUpSkillRules } =
   storeToRefs(calculatorBuffStore)
 
 const teamSlots = reactive<TeamSlot[]>([
@@ -133,41 +132,30 @@ const historyEntries = ref<DamageCalcHistoryEntry[]>(listAllDamageCalcHistory())
 const activeHistoryId = ref('')
 const historyMessage = ref('')
 
-const damageKind = ref<DamageCalcKind>('direct')
 const staggerPhase = ref<StaggerPhase>('stagger')
 const anomalySlotPanels = reactive<Record<string, PanelStats>>({})
 const convertSlotPanels = reactive<ConvertSlotPanels>({})
 const extraGains = ref<ExtraBuffGain[]>([])
-const directEventModeId = ref<string | null>(null)
-const directEventModeName = ref('')
-const directEventModalOpen = ref(false)
-const directEvents = ref<DamageEvent[]>([])
-const anomalyEventModeId = ref<string | null>(null)
-const anomalyEventModeName = ref('')
-const anomalyEventModalOpen = ref(false)
-const anomalyEvents = ref<DamageEvent[]>([])
-
-const anomalySubKind = computed<AnomalyDamageSubKind>(() => {
-  const first = anomalyEvents.value[0]
-  if (!first) return 'anomaly'
-  if (first.kind === 'disorder') return 'disorder'
-  if (first.kind === 'turbulence') return 'turbulence'
-  if (first.kind === 'anomalyRelease') return 'anomalyRelease'
-  if (first.kind === 'radiance') return 'radiance'
-  return 'anomaly'
-})
-const triggerAnomalyAgentId = computed(() => {
-  const withTrigger = anomalyEvents.value.find(
-    (e) => e.triggerAgentId && e.triggerAgentId !== '__at_calc__',
-  )
-  return withTrigger?.triggerAgentId ?? null
-})
-
-const damageEvents = computed(() =>
-  damageKind.value === 'direct' ? directEvents.value : anomalyEvents.value,
+const schemeSlots = ref<SchemeSlot[]>(ensureSchemeSlots([], 3))
+const resolvedFlow = computed(() =>
+  resolveFlow({
+    slots: schemeSlots.value,
+    teamSlots,
+    findSkill: (id) => calculatorBuffStore.findSkill(id),
+    skillSubcategories: skillSubcategories.value,
+    followUpSkillRules: followUpSkillRules.value,
+  }),
 )
-const skillCategoryId = computed(() => damageEvents.value[0]?.categoryId ?? 'basic')
-const skillSubcategoryId = computed(() => damageEvents.value[0]?.skillSubcategoryId ?? null)
+const hits = computed(() => resolvedFlow.value.hits)
+const firstHit = computed(() => hits.value[0] ?? null)
+
+const anomalySubKind = computed<AnomalyDamageSubKind>(
+  () => firstHit.value?.anomalySubKind ?? 'anomaly',
+)
+const triggerAnomalyAgentId = computed(() => firstHit.value?.anomalyPowerAgentId ?? null)
+const damageKind = computed<DamageCalcKind>(() => firstHit.value?.damageKind ?? 'direct')
+const skillCategoryId = computed(() => firstHit.value?.coords[0]?.category ?? 'basic')
+const skillSubcategoryId = computed(() => firstHit.value?.coords[0]?.subcategoryId ?? null)
 
 const buffPickerOpen = ref(false)
 const buffPickerViewSlotIndex = ref(0)
@@ -412,68 +400,14 @@ async function applyEnemyBossByName(bossName: string, meta?: { version?: string;
   }
 }
 
-const anomalyTriggerOptions = computed(() =>
-  teamSlots
-    .map((slot) => {
-      const agent = agents.value.find((item) => item.id === slot.agentId)
-      if (!agent) return null
-      return {
-        id: agent.id,
-        label: `${agent.name}·${agent.element}`,
-        element: agent.element,
-      }
-    })
-    .filter((item): item is { id: string; label: string; element: string } => Boolean(item)),
-)
-
-const teamHasRemiel = computed(() => Boolean(findLuminousAgentInTeam(teamSlots, agents.value)))
-
-const mainAgentIdForEvents = computed(
-  () => teamSlots.find((slot) => slot.isMainC)?.agentId ?? '',
-)
-
-const allDamageEvents = computed(() => [...directEvents.value, ...anomalyEvents.value])
-
-const teamAgentIdSet = computed(() => {
-  const ids = new Set<string>()
-  for (const slot of teamSlots) {
-    if (slot.agentId) ids.add(slot.agentId)
-  }
-  return ids
-})
-
-/** 队内优先，并始终带上全角色表，保证产生者下拉始终有选项可显示 */
-const ownerAgentOptionsForEditor = computed(() => {
-  const teamIds = teamAgentIdSet.value
-  const teamOptions = teamSlots
-    .map((slot) => {
-      const agent = agents.value.find((item) => item.id === slot.agentId)
-      if (!agent) return null
-      return { id: agent.id, name: agent.name, element: agent.element }
-    })
-    .filter((item): item is { id: string; name: string; element: string } => Boolean(item))
-
-  const merged = mergeDamageEventAgentOptions(
-    teamOptions,
-    agents.value,
-    allDamageEvents.value,
-    mainAgentIdForEvents.value,
-  )
-  const seen = new Set(merged.map((item) => item.id))
-  for (const agent of agents.value) {
-    if (seen.has(agent.id)) continue
-    merged.push({
-      id: agent.id,
-      name: teamIds.has(agent.id) ? agent.name : `${agent.name}（未上阵）`,
-      element: agent.element,
-    })
-    seen.add(agent.id)
-  }
-  return merged
-})
-
 function getParticipantAgentIds(): string[] {
-  return collectParticipantAgentIds(allDamageEvents.value, mainAgentIdForEvents.value)
+  const ids = new Set<string>()
+  for (const hit of hits.value) {
+    for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      if (id) ids.add(id)
+    }
+  }
+  return [...ids]
 }
 
 function ensureAnomalySlotPanel(agentId: string) {
@@ -506,81 +440,14 @@ function ensureAnomalySlotPanel(agentId: string) {
   anomalySlotPanels[agentId] = panel
 }
 
-const triggerAgentOptionsForEditor = computed(() => {
-  const teamIds = teamAgentIdSet.value
-  const teamOptions = anomalyTriggerOptions.value.map((opt) => ({
-    id: opt.id,
-    name: opt.label,
-    element: opt.element,
-  }))
-  const merged = mergeDamageEventAgentOptions(
-    teamOptions,
-    agents.value,
-    allDamageEvents.value,
-    mainAgentIdForEvents.value,
-    (agent, offTeam) =>
-      offTeam
-        ? `${agent.name}·${agent.element ?? ''}（未上阵）`
-        : `${agent.name}·${agent.element ?? ''}`,
-  )
-  const seen = new Set(merged.map((item) => item.id))
-  for (const agent of agents.value) {
-    if (seen.has(agent.id)) continue
-    merged.push({
-      id: agent.id,
-      name: teamIds.has(agent.id)
-        ? `${agent.name}·${agent.element}`
-        : `${agent.name}·${agent.element}（未上阵）`,
-      element: agent.element,
-    })
-    seen.add(agent.id)
-  }
-  return merged.map((opt) => ({ id: opt.id, name: opt.name }))
-})
-
-function syncStaggerPhaseToEvents(phase: StaggerPhase) {
-  for (const event of directEvents.value) {
-    event.staggerPhase = phase
-  }
-  for (const event of anomalyEvents.value) {
-    event.staggerPhase = phase
-  }
-}
-
-watch(staggerPhase, (phase) => {
-  syncStaggerPhaseToEvents(phase)
-})
-
 watch(
   () =>
-    [
-      ...directEvents.value.map((event) => event.id),
-      ...anomalyEvents.value.map((event) => event.id),
-    ].join(','),
-  () => {
-    syncStaggerPhaseToEvents(staggerPhase.value)
-  },
-)
-
-/** 仅清掉计算页不应保留的「计算时选择」哨兵；已选产生者/触发者不因下阵而清空 */
-watch(
-  () => anomalyEvents.value.map((event) => event.triggerAgentId).join(','),
-  () => {
-    for (const event of anomalyEvents.value) {
-      if (event.triggerAgentId === '__at_calc__') {
-        event.triggerAgentId = null
-      }
-    }
-  },
-)
-watch(
-  () =>
-    [
-      ...getParticipantAgentIds(),
-      ...anomalyEvents.value.map(
-        (event) => `${event.id}:${event.kind}:${event.triggerAgentId ?? ''}`,
-      ),
-    ].join(','),
+    hits.value
+      .map(
+        (hit) =>
+          `${hit.id}:${hit.ownerAgentId}:${hit.anomalyPowerAgentId ?? ''}:${hit.triggerAgentId ?? ''}`,
+      )
+      .join(','),
   () => {
     for (const agentId of getParticipantAgentIds()) {
       ensureAnomalySlotPanel(agentId)
@@ -618,10 +485,6 @@ const mainSlotIndex = computed(() => {
 
 const mainAgent = computed(() =>
   agents.value.find((item) => item.id === teamSlots[mainSlotIndex.value]?.agentId),
-)
-
-const turbulenceCalculable = computed(() =>
-  canSelectTurbulenceDamageEvent(teamSlots, agents.value, mainAgent.value?.element),
 )
 
 const selectedBangboo = computed(
@@ -791,12 +654,6 @@ watch(
   },
   { immediate: true, deep: true },
 )
-
-function resolveMultDefaultsForEvent(
-  event: DamageEvent,
-): Partial<Record<keyof DamageEventMultOverrides, number>> {
-  return panelCalcSectionRef.value?.resolveMultDefaultsForEvent?.(event) ?? {}
-}
 
 function syncBuffDefaultsForSlot(slotIndex: number) {
   const effects = collectAllBuffEffects(buildBuffCollectContext(slotIndex))
@@ -1120,13 +977,7 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
     panelState,
     anomalySlotPanels: cloneAnomalySlotPanels(),
     convertSlotPanels: cloneConvertSlotPanels(),
-    directEvents: directEvents.value.length
-      ? JSON.parse(JSON.stringify(directEvents.value))
-      : [],
-    anomalyEvents: anomalyEvents.value.length
-      ? JSON.parse(JSON.stringify(anomalyEvents.value))
-      : [],
-    damageKind: damageKind.value,
+    slots: JSON.parse(JSON.stringify(schemeSlots.value)),
     staggerPhase: staggerPhase.value,
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
     folder,
@@ -1147,20 +998,7 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
   panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
   applyAnomalySlotPanels(entry.anomalySlotPanels)
   applyConvertSlotPanels(entry.convertSlotPanels)
-  // 切方案时先断开旧模式绑定（须在设置 events 前清）：
-  // 弹窗 watch(events, deep) 会自动 persistCurrentCustom，若 modeId 还挂着上个方案的，
-  // 会把当前方案事件按旧 modeId 写回全局模式库、覆盖同名模式。
-  directEventModeId.value = null
-  directEventModeName.value = ''
-  anomalyEventModeId.value = null
-  anomalyEventModeName.value = ''
-  directEvents.value = entry.directEvents
-    ? JSON.parse(JSON.stringify(entry.directEvents))
-    : []
-  anomalyEvents.value = entry.anomalyEvents
-    ? JSON.parse(JSON.stringify(entry.anomalyEvents))
-    : []
-  damageKind.value = entry.damageKind ?? 'direct'
+  schemeSlots.value = ensureSchemeSlots(entry.slots, 3)
   staggerPhase.value = entry.staggerPhase ?? 'stagger'
   const restoredBuff = entry.multiSlotBuffSelection
     ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
@@ -1197,13 +1035,7 @@ function overwriteHistoryEntry(id: string) {
     panelState,
     anomalySlotPanels: cloneAnomalySlotPanels(),
     convertSlotPanels: cloneConvertSlotPanels(),
-    directEvents: directEvents.value.length
-      ? JSON.parse(JSON.stringify(directEvents.value))
-      : [],
-    anomalyEvents: anomalyEvents.value.length
-      ? JSON.parse(JSON.stringify(anomalyEvents.value))
-      : [],
-    damageKind: damageKind.value,
+    slots: JSON.parse(JSON.stringify(schemeSlots.value)),
     staggerPhase: staggerPhase.value,
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
   }
@@ -1230,7 +1062,7 @@ async function scrollToSection(sectionId: DamageCalcSectionId) {
     sectionId === 'damage-calc-panel' ||
     sectionId === 'damage-calc-affix' ||
     sectionId === 'damage-calc-optimal'
-      ? 'damage-kind-context'
+      ? 'skill-flow'
       : sectionId
   const target = pageRootRef.value?.querySelector<HTMLElement>(`#${anchorId}`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1296,82 +1128,16 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @update:refine="bangbooRefine = $event"
     />
 
-    <section id="damage-kind-context" class="calc-mode-section damage-anchor">
-      <header class="calc-mode-header">
-        <h2>伤害类型与招式上下文</h2>
-        <p class="calc-mode-desc">
-          直伤/异常在此切换；招式与「当前属性异常的产生角色」在伤害事件中按条配置。最优词条跟随事件总伤。
-        </p>
-      </header>
-      <div class="calc-mode-tabs" role="tablist" aria-label="伤害类型">
-        <button
-          type="button"
-          class="calc-mode-tab"
-          :class="{ active: damageKind === 'direct' }"
-          @click="damageKind = 'direct'"
-        >
-          直伤
-        </button>
-        <button
-          type="button"
-          class="calc-mode-tab"
-          :class="{ active: damageKind === 'anomaly' }"
-          @click="damageKind = 'anomaly'"
-        >
-          异常
-        </button>
-      </div>
+    <SkillFlowSection
+      :team-slots="teamSlots"
+      :agents="agents"
+      v-model:slots="schemeSlots"
+    />
 
-      <div v-if="damageKind === 'direct'" class="skill-context-row event-mode-row">
-        <div class="event-mode-block">
-          <span class="event-mode-label">直伤事件模式</span>
-          <DamageEventModeModal
-            v-model:open="directEventModalOpen"
-            v-model:events="directEvents"
-            v-model:mode-id="directEventModeId"
-            v-model:mode-name="directEventModeName"
-            mode-type="direct"
-            :agent-id="mainAgent?.id"
-            :agent-name="mainAgent?.name"
-            :preset-modes="damageEventModes"
-            :skill-subcategories="skillSubcategories"
-            :main-agent-id="mainAgent?.id"
-            :owner-agent-options="ownerAgentOptionsForEditor"
-            :team-has-remiel="teamHasRemiel"
-            :trigger-agent-options="triggerAgentOptionsForEditor"
-            :resolve-mult-defaults="resolveMultDefaultsForEvent"
-            :turbulence-calculable="turbulenceCalculable"
-            :main-agent-element="mainAgent?.element"
-          />
-        </div>
-      </div>
-      <div v-else class="skill-context-row event-mode-row">
-        <div class="event-mode-block">
-          <span class="event-mode-label">异常事件模式</span>
-          <DamageEventModeModal
-            v-model:open="anomalyEventModalOpen"
-            v-model:events="anomalyEvents"
-            v-model:mode-id="anomalyEventModeId"
-            v-model:mode-name="anomalyEventModeName"
-            mode-type="anomaly"
-            :agent-id="mainAgent?.id"
-            :agent-name="mainAgent?.name"
-            :preset-modes="damageEventModes"
-            :skill-subcategories="skillSubcategories"
-            :main-agent-id="mainAgent?.id"
-            :owner-agent-options="ownerAgentOptionsForEditor"
-            :team-has-remiel="teamHasRemiel"
-            :trigger-agent-options="triggerAgentOptionsForEditor"
-            :resolve-mult-defaults="resolveMultDefaultsForEvent"
-            :turbulence-calculable="turbulenceCalculable"
-            :main-agent-element="mainAgent?.element"
-          />
-        </div>
-      </div>
-
+    <section class="calc-mode-section">
       <div class="skill-context-row">
         <label>
-          <span>失衡状态</span>
+          <span>默认失衡状态（无流程条目时的 Buff 判定）</span>
           <select v-model="staggerPhase">
             <option value="stagger">失衡期</option>
             <option value="normal">非失衡期</option>
@@ -1474,7 +1240,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :skill-subcategory-id="skillSubcategoryId"
       :slot-buff-selections="multiSlotBuffSelection"
       :stagger-phase="staggerPhase"
-      :damage-events="damageEvents"
+      :hits="hits"
       :environment-buffs="activeEnvironmentBuffs"
       v-model:enemy-input="enemyInput"
       v-model:extra-gains="extraGains"
@@ -1503,7 +1269,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
         :buff-selection="mainSlotBuffSelection"
         :slot-buff-selections="multiSlotBuffSelection"
         :stagger-phase="staggerPhase"
-        :damage-events="damageEvents"
+        :hits="hits"
         :environment-buffs="activeEnvironmentBuffs"
         v-model:enemy-input="enemyInput"
         v-model:extra-gains="extraGains"

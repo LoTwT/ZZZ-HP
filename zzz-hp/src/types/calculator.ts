@@ -4,7 +4,7 @@ export type AdminCalculatorPanel =
   | 'bangboo'
   | 'drive-disc'
   | 'skill-subcategory'
-  | 'damage-event'
+  | 'skill-library'
 
 export type SupportStatNeed =
   | 'hp'
