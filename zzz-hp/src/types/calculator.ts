@@ -421,10 +421,25 @@ export interface DamageEventMode {
   events: DamageEvent[]
 }
 
+/**
+ * 招式在 Buff 限定体系里的一个坐标。
+ * 新架构一条招式可有多个招式类型 + 一个增益锚点，故需要多坐标。
+ */
+export interface SkillMatchCoord {
+  category: SkillCategoryId
+  subcategoryId: string | null
+}
+
 export interface SkillCalcContext {
   damageKind: DamageCalcKind
   categoryId: SkillCategoryId
   subcategoryId: string | null
+  /**
+   * 多坐标匹配，Buff 命中任意一个坐标即生效。
+   * - 不提供：回落 categoryId + subcategoryId 单坐标（旧行为）
+   * - 提供空数组：该招式无任何招式类型（异常类），招式限定 Buff 一律不命中
+   */
+  coords?: SkillMatchCoord[]
   element?: string
   staggerPhase?: StaggerPhase
   /** 当前招式是否视为追加攻击 */
