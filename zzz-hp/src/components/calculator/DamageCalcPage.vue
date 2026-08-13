@@ -1246,7 +1246,6 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :hit-damages="hitDamages"
       :hit-calc-results="hitCalcResults"
       v-model:slots="schemeSlots"
-      v-model:active-slot="activeSlot"
     />
 
     <section class="calc-mode-section">
