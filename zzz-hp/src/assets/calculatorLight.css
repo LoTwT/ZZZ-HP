@@ -2608,10 +2608,11 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #fafbfc !important;
 }
 
-/* chip.highlight = 系统职业匹配提示（蓝虚线），必须与 active 视觉区分；覆盖 light 三处；无论是否 active 都强制蓝虚线 */
+/* chip.highlight = 系统职业匹配提示（蓝虚线），必须与 active 视觉区分；覆盖 light；无论是否 active 都强制蓝虚线 */
 .calculator-page.theme-light .chip.highlight,
 [data-theme='light'] .equip-picker-modal .chip.highlight,
-[data-theme='light'] .unified-modal .chip.highlight {
+[data-theme='light'] .unified-modal .chip.highlight,
+[data-theme='light'] .skill-flow-modal .chip.highlight {
   border: 1px dashed #4a90d9 !important;
 }
 
@@ -2631,58 +2632,73 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .skill-flow-modal-header h2 {
   color: #1c212a !important;
 }
-[data-theme='light'] .close-btn {
+[data-theme='light'] .skill-flow-modal .close-btn {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
   color: #667085 !important;
 }
-[data-theme='light'] .close-btn:hover {
+[data-theme='light'] .skill-flow-modal .close-btn:hover {
+  border-color: #c9a55c !important;
   color: #1c212a !important;
 }
-[data-theme='light'] .modal-tabs {
+[data-theme='light'] .skill-flow-modal .modal-tabs {
   border-color: #eef1f5 !important;
   background: #ffffff !important;
 }
-[data-theme='light'] .modal-tab {
+[data-theme='light'] .skill-flow-modal .modal-tab {
   color: #667085 !important;
 }
-[data-theme='light'] .modal-tab:hover {
+[data-theme='light'] .skill-flow-modal .modal-tab:hover {
   color: #1c212a !important;
 }
-[data-theme='light'] .modal-tab.active {
-  border-color: #c9a55c !important;
+[data-theme='light'] .skill-flow-modal .modal-tab.active {
+  border-bottom-color: #c9a55c !important;
   color: #8a6a1f !important;
-}
-[data-theme='light'] .modal-empty {
-  color: #667085 !important;
 }
 [data-theme='light'] .flow-summary-counts {
   color: #667085 !important;
 }
 
-[data-theme='light'] .modal-agent-row {
+[data-theme='light'] .skill-flow-modal .modal-agent-row {
   background: #ffffff !important;
 }
-[data-theme='light'] .modal-agent-tab {
+[data-theme='light'] .skill-flow-modal .modal-agent-tab {
   border-color: #d5dae3 !important;
   background: #f5f7fa !important;
   color: #1c212a !important;
 }
-[data-theme='light'] .modal-agent-tab.active {
+[data-theme='light'] .skill-flow-modal .modal-agent-tab.active {
   border-color: #c9a55c !important;
   background: #fff8eb !important;
   color: #8a6a1f !important;
 }
 
-[data-theme='light'] .skill-flow-modal .flow-col h3 {
+[data-theme='light'] .skill-flow-modal .col-head h3 {
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .skill-row,
-[data-theme='light'] .skill-flow-modal .skill-card {
+[data-theme='light'] .skill-flow-modal .col-desc,
+[data-theme='light'] .skill-flow-modal .empty-hint,
+[data-theme='light'] .skill-flow-modal .list-empty,
+[data-theme='light'] .skill-flow-modal .modal-empty,
+[data-theme='light'] .sf-card .sf-meta {
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-card {
   border-color: #d5dae3 !important;
   background: #f5f7fa !important;
+}
+[data-theme='light'] .sf-card--skip {
+  border-color: #d9a3a3 !important;
+}
+[data-theme='light'] .sf-card .sf-name {
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .skill-card--skip {
-  border-color: #d9a3a3 !important;
+[data-theme='light'] .sf-card .sf-hint {
+  color: #b42318 !important;
+}
+[data-theme='light'] .sf-card .sf-index {
+  background: rgba(201, 165, 92, 0.16) !important;
+  color: #8a6a1f !important;
 }
 [data-theme='light'] .skill-flow-modal .mini-btn {
   border-color: #d5dae3 !important;
@@ -2691,14 +2707,6 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 }
 [data-theme='light'] .skill-flow-modal .mini-btn.danger {
   border-color: #e4b4b4 !important;
-  color: #b42318 !important;
-}
-[data-theme='light'] .skill-flow-modal .meta,
-[data-theme='light'] .skill-flow-modal .empty-hint,
-[data-theme='light'] .skill-flow-modal .missing {
-  color: #667085 !important;
-}
-[data-theme='light'] .skill-flow-modal .warn-hint {
   color: #b42318 !important;
 }
 [data-theme='light'] .skill-flow-modal input:not([type='checkbox']):not([type='radio']),
@@ -2717,7 +2725,8 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #fff8eb !important;
   color: #8a6a1f !important;
 }
-[data-theme='light'] .skill-flow-modal .flow-index {
-  background: rgba(201, 165, 92, 0.16) !important;
-  color: #8a6a1f !important;
+[data-theme='light'] .skill-flow-modal .agent-row label,
+[data-theme='light'] .skill-flow-modal .custom-form label,
+[data-theme='light'] .skill-flow-modal .type-checks {
+  color: #667085 !important;
 }

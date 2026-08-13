@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
 import type { FlowEntry, PreparedSkill, SchemeSlot } from '@/types/damageCalcHistory'
+import SkillFlowCard from '@/components/calculator/SkillFlowCard.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
 import {
@@ -97,6 +98,11 @@ function skillTypesLabel(skill: Skill) {
   return skill.skillTypes
     .map((id) => SKILL_TYPE_OPTIONS.find((item) => item.id === id)?.label ?? id)
     .join(' / ')
+}
+
+function skillMeta(skill: Skill) {
+  const source = skill.source === 'preset' ? '预设' : '自定义'
+  return `${damageTypeLabel(skill.damageType)} · ${skillTypesLabel(skill)} · ${source}`
 }
 
 function preparedSkill(prepared: PreparedSkill): Skill | null {
@@ -384,7 +390,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
     <div v-if="modalOpen" class="skill-flow-overlay" @click.self="modalOpen = false">
       <div class="skill-flow-modal" role="dialog" aria-modal="true" aria-label="招式流程">
         <header class="skill-flow-modal-header">
-          <h2>招式流程</h2>
+          <h2>招式流程 · {{ currentTeamSlotLabel }}</h2>
           <button type="button" class="close-btn" aria-label="关闭" @click="modalOpen = false">×</button>
         </header>
 
@@ -422,239 +428,256 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
           </button>
         </div>
 
-        <p v-if="!currentAgentId" class="empty-hint modal-empty">请先在编队里选择角色。</p>
+        <div class="modal-body">
+          <p v-if="!currentAgentId" class="empty-hint modal-empty">请先在编队里选择角色。</p>
 
-        <div v-else class="flow-grid" :class="`tab-${modalTab}`">
-          <!-- Col 1: 招式库 (仅 准备阶段 tab) -->
-          <div v-show="modalTab === 'prep'" class="flow-col flow-col--library">
-            <h3>招式库</h3>
-            <input v-model="libraryQuery" class="search-input" placeholder="搜索招式名" />
-            <div class="filter-row">
-              <button
-                type="button"
-                class="chip"
-                :class="{ active: libraryFilter === 'all' }"
-                @click="libraryFilter = 'all'"
-              >
-                全部
-              </button>
-              <button
-                type="button"
-                class="chip"
-                :class="{ active: libraryFilter === 'publicAnomaly' }"
-                @click="libraryFilter = 'publicAnomaly'"
-              >
-                仅公共异常
-              </button>
-            </div>
-            <button
-              type="button"
-              class="mini-btn"
-              :disabled="!unpreparedFilteredCount"
-              @click="addFilteredToPrepared"
-            >
-              将筛选结果全部加入准备
-              <template v-if="unpreparedFilteredCount">（{{ unpreparedFilteredCount }}）</template>
-            </button>
-            <ul class="skill-list library-list">
-              <li v-for="skill in librarySkills" :key="skill.id" class="skill-row">
-                <div class="skill-row-main">
-                  <strong>{{ skill.name }}</strong>
-                  <span class="meta">
-                    {{ damageTypeLabel(skill.damageType) }} · {{ skillTypesLabel(skill) }}
-                    · {{ skill.source === 'preset' ? '预设' : '自定义' }}
-                  </span>
-                </div>
-                <div class="card-actions">
-                  <button type="button" class="mini-btn" @click="addPrepared(skill)">
-                    {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入准备' }}
-                  </button>
+          <div v-else class="flow-grid" :class="`tab-${modalTab}`">
+            <div v-show="modalTab === 'prep'" class="flow-col">
+              <div class="col-head">
+                <h3>招式库</h3>
+                <input v-model="libraryQuery" class="search-input" placeholder="搜索招式名" />
+                <div class="filter-row">
                   <button
-                    v-if="skill.source === 'custom'"
-                    type="button"
-                    class="mini-btn danger"
-                    @click="deleteCustomSkill(skill)"
-                  >
-                    删除
-                  </button>
-                </div>
-              </li>
-            </ul>
-            <p v-if="!librarySkills.length" class="empty-hint">
-              该角色还没有招式。可先新建自定义，或到管理端录入预设。
-            </p>
-            <button type="button" class="mini-btn" @click="showCustomForm = !showCustomForm">
-              {{ showCustomForm ? '收起新建' : '新建自定义招式' }}
-            </button>
-            <div v-if="showCustomForm" class="custom-form">
-              <label>
-                <span>名称</span>
-                <input v-model="customDraft.name" placeholder="显示名称" />
-              </label>
-              <label>
-                <span>伤害类型</span>
-                <select v-model="customDraft.damageType">
-                  <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
-                    {{ opt.label }}
-                  </option>
-                </select>
-              </label>
-              <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
-                <span>招式类型（可多选，可空）</span>
-                <div class="chip-row">
-                  <button
-                    v-for="opt in SKILL_TYPE_OPTIONS"
-                    :key="opt.id"
                     type="button"
                     class="chip"
-                    :class="{ active: customDraft.skillTypes.includes(opt.id) }"
-                    @click="toggleCustomSkillType(opt.id)"
+                    :class="{ active: libraryFilter === 'all' }"
+                    @click="libraryFilter = 'all'"
                   >
-                    {{ opt.label }}
+                    全部
+                  </button>
+                  <button
+                    type="button"
+                    class="chip"
+                    :class="{ active: libraryFilter === 'publicAnomaly' }"
+                    @click="libraryFilter = 'publicAnomaly'"
+                  >
+                    仅公共异常
                   </button>
                 </div>
+                <button
+                  type="button"
+                  class="mini-btn"
+                  :disabled="!unpreparedFilteredCount"
+                  @click="addFilteredToPrepared"
+                >
+                  将筛选结果全部加入准备（{{ unpreparedFilteredCount }}）
+                </button>
               </div>
-              <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
-              <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
-                <span>增益锚点（仅本角色）</span>
-                <select v-model="customDraft.buffAnchorId">
-                  <option value="">无</option>
-                  <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label>
-                <span>基础倍率%</span>
-                <input v-model.number="customDraft.baseMult" type="number" />
-              </label>
-              <label v-if="customDraft.damageType === 'direct'">
-                <span>决算倍率%</span>
-                <input v-model.number="customDraft.settlementMult" type="number" />
-              </label>
-              <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
+              <ul class="sf-list">
+                <SkillFlowCard
+                  v-for="skill in librarySkills"
+                  :key="skill.id"
+                  :name="skill.name"
+                  :meta="skillMeta(skill)"
+                >
+                  <template #actions>
+                    <button type="button" class="mini-btn" @click="addPrepared(skill)">
+                      {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入准备' }}
+                    </button>
+                    <button
+                      v-if="skill.source === 'custom'"
+                      type="button"
+                      class="mini-btn danger"
+                      @click="deleteCustomSkill(skill)"
+                    >
+                      删除
+                    </button>
+                  </template>
+                </SkillFlowCard>
+                <li v-if="!librarySkills.length" class="list-empty">
+                  该角色还没有招式。可先新建自定义，或到管理端录入预设。
+                </li>
+              </ul>
+              <div class="col-foot">
+                <button type="button" class="mini-btn" @click="showCustomForm = !showCustomForm">
+                  {{ showCustomForm ? '收起新建' : '新建自定义招式' }}
+                </button>
+                <div v-if="showCustomForm" class="custom-form">
+                  <label>
+                    <span>名称</span>
+                    <input v-model="customDraft.name" placeholder="显示名称" />
+                  </label>
+                  <label>
+                    <span>伤害类型</span>
+                    <select v-model="customDraft.damageType">
+                      <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
+                        {{ opt.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
+                    <span>招式类型（可多选，可空）</span>
+                    <div class="chip-row">
+                      <button
+                        v-for="opt in SKILL_TYPE_OPTIONS"
+                        :key="opt.id"
+                        type="button"
+                        class="chip"
+                        :class="{ active: customDraft.skillTypes.includes(opt.id) }"
+                        @click="toggleCustomSkillType(opt.id)"
+                      >
+                        {{ opt.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
+                  <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
+                    <span>增益锚点（仅本角色）</span>
+                    <select v-model="customDraft.buffAnchorId">
+                      <option value="">无</option>
+                      <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
+                        {{ item.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>基础倍率%</span>
+                    <input v-model.number="customDraft.baseMult" type="number" />
+                  </label>
+                  <label v-if="customDraft.damageType === 'direct'">
+                    <span>决算倍率%</span>
+                    <input v-model.number="customDraft.settlementMult" type="number" />
+                  </label>
+                  <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <!-- Col 2: 准备招式（两 tab 共用同一份数据） -->
-          <div class="flow-col flow-col--prepared">
-            <h3>{{ modalTab === 'prep' ? '准备招式' : '准备招式（加入流程）' }}</h3>
-            <p v-if="!currentSlot.prepared.length" class="empty-hint">
-              {{
-                modalTab === 'prep'
-                  ? '从左侧招式库加入。异常类必须选定双代理人才能出伤。'
-                  : '先在准备阶段加入招式，才能排进流程。'
-              }}
-            </p>
-            <ul class="skill-list">
-              <li v-for="(prepared, preparedIndex) in currentSlot.prepared" :key="prepared.id" class="skill-card">
-                <template v-if="preparedSkill(prepared)">
-                  <div class="card-head">
-                    <strong>{{ preparedSkill(prepared)!.name }}</strong>
-                    <span class="meta">{{ damageTypeLabel(preparedSkill(prepared)!.damageType) }}</span>
-                  </div>
-                  <p v-if="dualAgentHint(prepared, preparedSkill(prepared)!)" class="warn-hint">
-                    {{ dualAgentHint(prepared, preparedSkill(prepared)!) }}
-                  </p>
-                  <div
-                    v-if="skillNeedsDualAgents(preparedSkill(prepared)!.damageType)"
-                    class="agent-row"
+            <div class="flow-col">
+              <div class="col-head">
+                <h3>{{ modalTab === 'prep' ? '准备招式' : '准备招式（加入流程）' }}</h3>
+                <p class="col-desc">
+                  {{
+                    modalTab === 'prep'
+                      ? '从左侧招式库加入。异常类必须选定双代理人才能出伤。'
+                      : '先在准备阶段加入招式，才能排进流程。'
+                  }}
+                </p>
+              </div>
+              <ul class="sf-list">
+                <template v-for="(prepared, preparedIndex) in currentSlot.prepared" :key="prepared.id">
+                  <SkillFlowCard
+                    v-if="preparedSkill(prepared)"
+                    :name="preparedSkill(prepared)!.name"
+                    :meta="skillMeta(preparedSkill(prepared)!)"
+                    :hint="dualAgentHint(prepared, preparedSkill(prepared)!)"
+                    :skip="Boolean(dualAgentHint(prepared, preparedSkill(prepared)!))"
                   >
-                    <label>
-                      <span>异常强度提供者</span>
-                      <select
-                        :value="prepared.anomalyPowerAgentId ?? ''"
-                        @change="
-                          updatePrepared(prepared.id, {
-                            anomalyPowerAgentId:
-                              ($event.target as HTMLSelectElement).value || null,
-                          })
-                        "
-                      >
-                        <option value="">未选</option>
-                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                          {{ agent.name }}
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>异常类触发者</span>
-                      <select
-                        :value="prepared.triggerAgentId ?? ''"
-                        @change="
-                          updatePrepared(prepared.id, {
-                            triggerAgentId: ($event.target as HTMLSelectElement).value || null,
-                          })
-                        "
-                      >
-                        <option value="">未选</option>
-                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                          {{ agent.name }}
-                        </option>
-                      </select>
-                    </label>
-                  </div>
-                  <div class="card-actions">
-                    <template v-if="modalTab === 'prep'">
-                      <button
-                        type="button"
-                        class="mini-btn"
-                        :disabled="preparedIndex === 0"
-                        @click="movePrepared(prepared.id, -1)"
-                      >
-                        上移
+                    <div
+                      v-if="skillNeedsDualAgents(preparedSkill(prepared)!.damageType)"
+                      class="agent-row"
+                    >
+                      <label>
+                        <span>异常强度提供者</span>
+                        <select
+                          :value="prepared.anomalyPowerAgentId ?? ''"
+                          @change="
+                            updatePrepared(prepared.id, {
+                              anomalyPowerAgentId:
+                                ($event.target as HTMLSelectElement).value || null,
+                            })
+                          "
+                        >
+                          <option value="">未选</option>
+                          <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                            {{ agent.name }}
+                          </option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>异常类触发者</span>
+                        <select
+                          :value="prepared.triggerAgentId ?? ''"
+                          @change="
+                            updatePrepared(prepared.id, {
+                              triggerAgentId: ($event.target as HTMLSelectElement).value || null,
+                            })
+                          "
+                        >
+                          <option value="">未选</option>
+                          <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                            {{ agent.name }}
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+                    <template #actions>
+                      <template v-if="modalTab === 'prep'">
+                        <button
+                          type="button"
+                          class="mini-btn"
+                          :disabled="preparedIndex === 0"
+                          @click="movePrepared(prepared.id, -1)"
+                        >
+                          上移
+                        </button>
+                        <button
+                          type="button"
+                          class="mini-btn"
+                          :disabled="preparedIndex === currentSlot.prepared.length - 1"
+                          @click="movePrepared(prepared.id, 1)"
+                        >
+                          下移
+                        </button>
+                        <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
+                          移除
+                        </button>
+                      </template>
+                      <button v-else type="button" class="mini-btn" @click="addToFlow(prepared)">
+                        加入流程
                       </button>
-                      <button
-                        type="button"
-                        class="mini-btn"
-                        :disabled="preparedIndex === currentSlot.prepared.length - 1"
-                        @click="movePrepared(prepared.id, 1)"
-                      >
-                        下移
-                      </button>
+                    </template>
+                  </SkillFlowCard>
+                  <SkillFlowCard
+                    v-else
+                    name="招式已删除"
+                    meta="不参与结算"
+                    hint="招式已从库中删除，不参与结算"
+                    skip
+                  >
+                    <template #actions>
                       <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
                         移除
                       </button>
                     </template>
-                    <template v-else>
-                      <button type="button" class="mini-btn" @click="addToFlow(prepared)">加入流程</button>
-                    </template>
-                  </div>
+                  </SkillFlowCard>
                 </template>
-                <template v-else>
-                  <span class="missing">招式已从库中删除，不参与结算</span>
-                  <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
-                    移除
-                  </button>
-                </template>
-              </li>
-            </ul>
-          </div>
+                <li v-if="!currentSlot.prepared.length" class="list-empty">
+                  {{
+                    modalTab === 'prep'
+                      ? '还没有准备招式。'
+                      : '先在准备阶段加入招式，才能排进流程。'
+                  }}
+                </li>
+              </ul>
+            </div>
 
-          <!-- Col 3: 流程 (仅 流程 tab，右侧先留框架) -->
-          <div v-show="modalTab === 'flow'" class="flow-col flow-col--flow">
-            <h3>流程</h3>
-            <p class="empty-hint">次数、失衡、顺序稍后在这里编排。</p>
-            <p v-if="!currentSlot.flow.length" class="empty-hint">还没有流程条目。从左侧把准备招式加进来。</p>
-            <ul class="skill-list">
-              <li
-                v-for="(entry, index) in currentSlot.flow"
-                :key="entry.id"
-                class="skill-card"
-                :class="{ 'skill-card--skip': Boolean(flowSkipReason(entry)) }"
-              >
-                <div class="card-head">
-                  <span class="flow-index">{{ index + 1 }}</span>
-                  <strong>{{ flowSkillName(entry) }}</strong>
-                </div>
-                <p v-if="flowSkipReason(entry)" class="warn-hint">{{ flowSkipReason(entry) }}</p>
-                <div class="card-actions">
-                  <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
-                    移除
-                  </button>
-                </div>
-              </li>
-            </ul>
+            <div v-show="modalTab === 'flow'" class="flow-col">
+              <div class="col-head">
+                <h3>流程</h3>
+                <p class="col-desc">次数、失衡、顺序稍后在这里编排。</p>
+              </div>
+              <ul class="sf-list">
+                <SkillFlowCard
+                  v-for="(entry, index) in currentSlot.flow"
+                  :key="entry.id"
+                  :index="index + 1"
+                  :name="flowSkillName(entry)"
+                  meta="流程条目"
+                  :hint="flowSkipReason(entry)"
+                  :skip="Boolean(flowSkipReason(entry))"
+                >
+                  <template #actions>
+                    <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
+                      移除
+                    </button>
+                  </template>
+                </SkillFlowCard>
+                <li v-if="!currentSlot.flow.length" class="list-empty">
+                  还没有流程条目。从左侧把准备招式加进来。
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -663,22 +686,198 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
 </template>
 
 <style scoped>
-.flow-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+.flow-summary {
+  display: flex;
+  align-items: center;
   gap: 0.85rem;
-  margin-top: 0.85rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
 }
-.flow-col h3 {
+.flow-summary-counts {
+  color: #9aa3b0;
+  font-size: 0.85rem;
+}
+.primary-btn {
+  margin-left: auto;
+  border: 1px solid #c9a55c;
+  background: linear-gradient(180deg, #d8b56a, #b88d3a);
+  color: #1a1407;
+  font-weight: 600;
+  padding: 0.4rem 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.primary-btn:hover {
+  filter: brightness(1.05);
+}
+
+.skill-flow-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(7, 10, 16, 0.62);
+}
+.skill-flow-modal {
+  --sf-card-h: 9.1rem;
+  box-sizing: border-box;
+  width: min(1080px, 100%);
+  height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #14181f;
+  border: 1px solid #2a3038;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.skill-flow-modal-header,
+.modal-agent-row,
+.modal-tabs {
+  flex: 0 0 auto;
+}
+
+.skill-flow-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #2a3038;
+  background: #181d27;
+}
+.skill-flow-modal-header h2 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.05rem;
+  color: #e8edf5;
+}
+.close-btn {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #2d323a;
+  border-radius: 8px;
+  background: #0f1217;
+  color: #d5dae4;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.close-btn:hover {
+  border-color: #c9a55c;
+  color: #e8edf5;
+}
+
+.modal-agent-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.65rem 1rem 0.4rem;
+  background: #14181f;
+}
+.modal-agent-tab {
+  border: 1px solid #2d323a;
+  border-radius: 999px;
+  background: #0f1217;
+  color: #d5dae4;
+  padding: 0.35rem 0.95rem;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.modal-agent-tab.active {
+  border-color: #c9a55c;
+  background: rgba(201, 165, 92, 0.14);
+  color: #f0d7a2;
+  font-weight: 600;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1rem;
+  border-bottom: 1px solid #2a3038;
+  background: #14181f;
+}
+.modal-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa3b0;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.modal-tab:hover {
+  color: #dce4f0;
+}
+.modal-tab.active {
+  border-bottom-color: #c9a55c;
+  color: #f0d7a2;
+}
+
+.modal-body {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 1rem 1rem;
+}
+.modal-empty {
+  margin: auto;
+  text-align: center;
+}
+
+.flow-grid {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: stretch;
+}
+.flow-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.col-head,
+.col-foot {
+  flex: 0 0 auto;
+}
+.col-head h3 {
   margin: 0 0 0.4rem;
   font-size: 0.92rem;
   color: #e8edf5;
 }
+.col-desc,
+.empty-hint,
+.list-empty {
+  margin: 0;
+  color: #9aa3b0;
+  font-size: 0.78rem;
+}
+.col-desc {
+  min-height: 1.2rem;
+  line-height: 1.2rem;
+  margin-bottom: 0.45rem;
+}
 .search-input,
 .custom-form input,
 .custom-form select,
-.skill-card input,
-.skill-card select {
+.agent-row select {
   border: 1px solid #2d323a;
   border-radius: 8px;
   background: #0f1217;
@@ -686,103 +885,52 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   padding: 0.3rem 0.45rem;
 }
 .search-input {
+  box-sizing: border-box;
   width: 100%;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.45rem;
 }
-.skill-list {
-  list-style: none;
-  margin: 0 0 0.6rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.library-list {
-  max-height: 28rem;
-  overflow: auto;
-}
-.skill-row,
-.skill-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #2a3038;
-  border-radius: 8px;
-  background: #141820;
-}
-.skill-row {
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-.skill-row-main {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-.skill-card--skip {
-  border-color: #6b3a3a;
-}
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-.flow-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 999px;
-  background: rgba(201, 165, 92, 0.16);
-  color: #f0d7a2;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-.meta,
-.empty-hint,
-.missing {
-  color: #9aa3b0;
-  font-size: 0.78rem;
-}
-.warn-hint,
-.missing {
-  margin: 0;
-  color: #c07a7a;
-  font-size: 0.76rem;
-}
-.mini-btn {
-  border: 1px solid #3a4150;
-  border-radius: 8px;
-  background: #1a2030;
-  color: #dce4f0;
-  padding: 0.2rem 0.55rem;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-.mini-btn.danger {
-  border-color: #6b3a3a;
-  color: #f0c0c0;
-}
-.mini-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.agent-row,
-.extra-row,
-.flow-fields,
-.card-actions {
+.filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem 0.7rem;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
 }
-.agent-row label,
-.extra-row label,
-.flow-fields label,
+.col-head > .mini-btn {
+  width: 100%;
+  margin-bottom: 0.45rem;
+}
+
+.sf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.2rem 0 0;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  align-content: start;
+}
+.list-empty {
+  padding: 0.85rem 0.4rem;
+}
+
+.col-foot {
+  margin-top: 0.5rem;
+}
+.custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  max-height: 14rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
 .custom-form label,
 .type-checks {
   display: flex;
@@ -810,177 +958,60 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   background: rgba(201, 165, 92, 0.14);
   color: #f0d7a2;
 }
-.custom-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin: 0.5rem 0 0.75rem;
-}
-@media (max-width: 1100px) {
-  .flow-grid {
-    grid-template-columns: 1fr;
-  }
-  .library-list {
-    max-height: 16rem;
-  }
+.chip.highlight {
+  border-color: #4a90d9 !important;
+  border-style: dashed !important;
 }
 
-/* 页面 section 摘要 */
-.flow-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  flex-wrap: wrap;
-  margin-top: 0.6rem;
-}
-.flow-summary-counts {
-  color: #9aa3b0;
-  font-size: 0.85rem;
-}
-.primary-btn {
-  margin-left: auto;
-  border: 1px solid #c9a55c;
-  background: linear-gradient(180deg, #d8b56a, #b88d3a);
-  color: #1a1407;
-  font-weight: 600;
-  padding: 0.4rem 0.95rem;
+.mini-btn {
+  border: 1px solid #3a4150;
   border-radius: 8px;
+  background: #1a2030;
+  color: #dce4f0;
+  padding: 0.2rem 0.55rem;
   cursor: pointer;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
-.primary-btn:hover {
-  filter: brightness(1.05);
+.mini-btn.danger {
+  border-color: #6b3a3a;
+  color: #f0c0c0;
+}
+.mini-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
-/* 弹窗：覆盖层 + 对话框 */
-.skill-flow-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(7, 10, 16, 0.62);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
+.agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem;
+  height: 100%;
 }
-.skill-flow-modal {
-  width: min(1280px, 100%);
-  max-height: calc(100vh - 3rem);
+.agent-row label {
   display: flex;
   flex-direction: column;
-  background: #14181f;
-  border: 1px solid #2a3038;
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-}
-.skill-flow-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.7rem 1rem;
-  border-bottom: 1px solid #2a3038;
-  background: #181d27;
-}
-.skill-flow-modal-header h2 {
-  margin: 0;
-  font-size: 1.05rem;
-  color: #e8edf5;
-}
-.close-btn {
-  border: none;
-  background: transparent;
+  gap: 0.12rem;
+  min-width: 0;
+  font-size: 0.7rem;
   color: #9aa3b0;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 0.4rem;
 }
-.close-btn:hover {
-  color: #e8edf5;
+.agent-row select {
+  min-width: 0;
+  width: 100%;
 }
 
-/* 角色层：胶囊（与下面阶段 tab 的下划线明显区分） */
-.modal-agent-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  padding: 0.65rem 1rem 0.35rem;
-  background: #14181f;
-}
-.modal-agent-tab {
-  border: 1px solid #2d323a;
-  border-radius: 999px;
-  background: #0f1217;
-  color: #d5dae4;
-  padding: 0.35rem 0.95rem;
-  font-size: 0.84rem;
-  cursor: pointer;
-}
-.modal-agent-tab.active {
-  border-color: #c9a55c;
-  background: rgba(201, 165, 92, 0.14);
-  color: #f0d7a2;
-  font-weight: 600;
-}
-
-.filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.5rem;
-}
-.flow-col--library > .mini-btn {
-  margin-bottom: 0.5rem;
-}
-
-/* 弹窗内的阶段 tab：用下划线（与角色胶囊明显区分） */
-.modal-tabs {
-  display: flex;
-  gap: 0;
-  padding: 0 1rem;
-  border-bottom: 1px solid #2a3038;
-  background: #14181f;
-}
-.modal-tab {
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: #9aa3b0;
-  padding: 0.6rem 1.1rem;
-  font-size: 0.92rem;
-  cursor: pointer;
-  margin-bottom: -1px;
-}
-.modal-tab:hover {
-  color: #dce4f0;
-}
-.modal-tab.active {
-  border-bottom-color: #c9a55c;
-  color: #f0d7a2;
-}
-
-.modal-empty {
-  margin: 1rem;
-}
-
-/* 弹窗内的 flow-grid 调整列数：1 + 2 或 2 + 3 */
-.skill-flow-modal .flow-grid {
-  margin-top: 0;
-  padding: 0.85rem 1rem 1rem;
-  overflow: auto;
-  align-items: stretch;
-}
-.skill-flow-modal .flow-grid.tab-prep {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-}
-.skill-flow-modal .flow-grid.tab-flow {
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-}
-
-/* 卡片外壳统一：库 / 准备 / 流程高度对齐（具体内容风格待定） */
-.skill-flow-modal .skill-row,
-.skill-flow-modal .skill-card {
-  min-height: 4rem;
+@media (max-width: 800px) {
+  .skill-flow-modal {
+    height: min(92vh, 820px);
+  }
+  .flow-grid {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+  .flow-col {
+    min-height: 18rem;
+  }
 }
 </style>
