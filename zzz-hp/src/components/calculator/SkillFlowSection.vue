@@ -192,7 +192,7 @@ function agentPairTitle(prepared: PreparedSkill, skill: Skill) {
 }
 
 function formatDamage(value: number | undefined) {
-  if (value == null || !Number.isFinite(value) || value <= 0) return ''
+  if (value == null || !Number.isFinite(value) || value < 0) return ''
   return Math.round(value).toLocaleString('en-US')
 }
 
