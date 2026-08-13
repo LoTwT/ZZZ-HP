@@ -803,7 +803,7 @@ defineExpose({ expand })
                         preparedBlockReason(skill) === 'name'
                           ? '已有同名'
                           : preparedBlockReason(skill)
-                            ? '已加入'
+                            ? '已加'
                             : '加入'
                       }}
                     </button>
@@ -874,19 +874,21 @@ defineExpose({ expand })
                       <template v-if="modalTab === 'prep'">
                         <button
                           type="button"
-                          class="mini-btn"
+                          class="order-btn"
+                          title="上移"
                           :disabled="preparedIndex === 0"
                           @click="movePrepared(prepared.id, -1)"
                         >
-                          上
+                          ▲
                         </button>
                         <button
                           type="button"
-                          class="mini-btn"
+                          class="order-btn"
+                          title="下移"
                           :disabled="preparedIndex === currentSlot.prepared.length - 1"
                           @click="movePrepared(prepared.id, 1)"
                         >
-                          下
+                          ▼
                         </button>
                         <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
                           移除
@@ -1347,6 +1349,27 @@ defineExpose({ expand })
   color: #f0c0c0;
 }
 .mini-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.order-btn {
+  width: 1.6rem;
+  height: 1.25rem;
+  line-height: 1;
+  border: 1px solid #3a4a31;
+  border-radius: 5px;
+  background: #161a20;
+  color: #d8e8c8;
+  font-size: 0.7rem;
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+}
+.order-btn:hover:not(:disabled) {
+  border-color: #c9a55c;
+}
+.order-btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
