@@ -1208,10 +1208,15 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
 
   const actualMainId = mainAgent.value?.id ?? ''
   // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
-  let anomalyTriggerPanel =
-    hit.triggerAgentId && hit.triggerAgentId !== ownerAgentId
-      ? (computeHitPanelForAgent(hit, hit.triggerAgentId) ?? evtFinalPanel)
-      : evtFinalPanel
+  let anomalyTriggerPanel = evtFinalPanel
+  if (needsPowerAgent) {
+    if (!hit.triggerAgentId) return null
+    if (hit.triggerAgentId !== ownerAgentId) {
+      const trigPanel = computeHitPanelForAgent(hit, hit.triggerAgentId)
+      if (!trigPanel) return null
+      anomalyTriggerPanel = trigPanel
+    }
+  }
 
   if (damageType === 'radiance') {
     anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, overrides)

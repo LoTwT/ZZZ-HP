@@ -46,7 +46,7 @@ const sortedList = computed(() =>
 
 const anchorOptions = computed(() =>
   skillSubcategories.value.filter(
-    (item) => !item.agentId || !form.value.agentId || item.agentId === form.value.agentId,
+    (item) => Boolean(item.agentId) && (!form.value.agentId || item.agentId === form.value.agentId),
   ),
 )
 
@@ -115,7 +115,7 @@ async function saveItem() {
       source: 'preset',
       damageType: form.value.damageType,
       skillTypes: anomaly ? [] : [...form.value.skillTypes],
-      buffAnchorId: form.value.buffAnchorId || null,
+      buffAnchorId: anomaly ? null : form.value.buffAnchorId || null,
       baseMult: Number(form.value.baseMult) || 0,
       baseMultFactor: Number(form.value.baseMultFactor) || 100,
       settlementMult: Number(form.value.settlementMult) || 0,
@@ -221,8 +221,8 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
               {{ opt.label }}
             </label>
           </div>
-          <label class="field">
-            <span class="field-label">增益锚点</span>
+          <label v-if="!skillNeedsDualAgents(form.damageType)" class="field">
+            <span class="field-label">增益锚点（仅本角色）</span>
             <select v-model="form.buffAnchorId" class="field-input">
               <option value="">无</option>
               <option v-for="item in anchorOptions" :key="item.id" :value="item.id">

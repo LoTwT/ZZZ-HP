@@ -22,6 +22,7 @@ function normalizeSkill(raw: Record<string, unknown>): Skill | null {
   const id = String(raw.id ?? '').trim()
   if (!id) return null
   const damageType = String(raw.damageType ?? 'direct') as SkillDamageType
+  const isAnomaly = damageType !== 'direct'
   const skillTypes = Array.isArray(raw.skillTypes)
     ? raw.skillTypes.map((item) => String(item) as SkillTypeId)
     : []
@@ -32,8 +33,8 @@ function normalizeSkill(raw: Record<string, unknown>): Skill | null {
     agentId: String(raw.agentId ?? ''),
     source: 'custom',
     damageType,
-    skillTypes,
-    buffAnchorId: anchor == null || anchor === '' ? null : String(anchor),
+    skillTypes: isAnomaly ? [] : skillTypes,
+    buffAnchorId: isAnomaly ? null : anchor == null || anchor === '' ? null : String(anchor),
     baseMult: Number(raw.baseMult) || 0,
     baseMultFactor: Number.isFinite(Number(raw.baseMultFactor))
       ? Number(raw.baseMultFactor)
@@ -129,18 +130,18 @@ function eventToSkill(
   subcategories: SkillSubcategory[],
 ): Skill {
   const isDirect = event.kind === 'direct'
-  const boundToSkill = isDirect || event.skillBound === true
-  const anchorId = boundToSkill ? (event.skillSubcategoryId ?? null) : null
-
-  // 选了公共小类 = 其实是在选类型，还原成类型而非锚点
-  const publicType = skillTypeFromLegacyPublicSubcategory(anchorId)
+  // 异常类一律不带招式类型 / 锚点（§11.2），即使旧事件勾了 skillBound
+  const rawAnchorId = isDirect ? (event.skillSubcategoryId ?? null) : null
+  const publicType = skillTypeFromLegacyPublicSubcategory(rawAnchorId)
   const skillTypes: SkillTypeId[] = []
-  if (boundToSkill) {
+  if (isDirect) {
     if (publicType) skillTypes.push(publicType)
     else skillTypes.push(skillTypeFromLegacyCategory(event.categoryId))
   }
+  const anchorId = publicType ? null : rawAnchorId
 
-  const sub = anchorId ? subcategories.find((item) => item.id === anchorId) : null
+  const nameSubId = event.skillSubcategoryId
+  const sub = nameSubId ? subcategories.find((item) => item.id === nameSubId) : null
   const kindLabel =
     DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === event.kind)?.label ?? event.kind
   const { baseMult, baseMultFactor } = readBaseMult(event)
@@ -152,7 +153,7 @@ function eventToSkill(
     source: 'custom',
     damageType: event.kind,
     skillTypes,
-    buffAnchorId: publicType ? null : anchorId,
+    buffAnchorId: anchorId,
     baseMult,
     baseMultFactor,
     settlementMult:
@@ -211,16 +212,26 @@ export function migrateLegacyModesToSkills(options: {
     }
   }
 
-  // 同名不同参：追加序号，避免列表里一堆重名
-  const nameCount = new Map<string, number>()
-  for (const skill of existing) {
-    const base = skill.name
-    const n = (nameCount.get(base) ?? 0) + 1
-    nameCount.set(base, n)
-    if (n > 1) skill.name = `${base} ${n}`
-  }
-
+  uniquifyNewSkillNames(existing, added)
   saveCustomSkills(existing)
   localStorage.setItem(MODES_MIGRATED_KEY, '1')
   return { added, merged }
+}
+
+/** 只给本次新写入的招式加序号，不改用户已经在库里的名字 */
+function uniquifyNewSkillNames(all: Skill[], addedCount: number): void {
+  if (addedCount <= 0) return
+  const added = all.slice(-addedCount)
+  const used = new Set(all.slice(0, all.length - addedCount).map((item) => item.name))
+  for (const skill of added) {
+    const base = skill.name
+    if (!used.has(base)) {
+      used.add(base)
+      continue
+    }
+    let n = 2
+    while (used.has(`${base} ${n}`)) n += 1
+    skill.name = `${base} ${n}`
+    used.add(skill.name)
+  }
 }

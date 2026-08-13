@@ -356,6 +356,14 @@ export function getHitSkipReason(
   if (!hit.anomalyPowerAgentId) return '未选异常强度提供者'
   if (!hit.triggerAgentId) return '未选异常类触发者'
 
+  const teamAgentIds = new Set(ctx.teamSlots.map((slot) => slot.agentId).filter(Boolean))
+  if (!teamAgentIds.has(hit.anomalyPowerAgentId)) {
+    return '异常强度提供者不在当前队伍（换人后不会自动改成新角色）'
+  }
+  if (!teamAgentIds.has(hit.triggerAgentId)) {
+    return '异常类触发者不在当前队伍（换人后不会自动改成新角色）'
+  }
+
   const provider = ctx.agents.find((item) => item.id === hit.anomalyPowerAgentId)
   if (!canAgentBeAnomalyProducerForKind(provider, damageType)) {
     return '异常强度提供者须为队内代理人'

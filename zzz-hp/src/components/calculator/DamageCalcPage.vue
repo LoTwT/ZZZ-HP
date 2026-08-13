@@ -1131,6 +1131,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
     <SkillFlowSection
       :team-slots="teamSlots"
       :agents="agents"
+      :hits="hits"
       v-model:slots="schemeSlots"
     />
 

@@ -764,11 +764,13 @@ export function evaluateOptimalEventDetail(
 
   // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
   let anomalyTriggerPanel = evtFinalPanel
-  if (hit.triggerAgentId && hit.triggerAgentId !== ownerAgentId) {
-    const trigSlotIndex = ctx.panelContext.teamSlots.findIndex(
-      (slot) => slot.agentId === hit.triggerAgentId,
-    )
-    if (trigSlotIndex >= 0) {
+  if (eventNeedsTrigger) {
+    if (!hit.triggerAgentId) return null
+    if (hit.triggerAgentId !== ownerAgentId) {
+      const trigSlotIndex = ctx.panelContext.teamSlots.findIndex(
+        (slot) => slot.agentId === hit.triggerAgentId,
+      )
+      if (trigSlotIndex < 0) return null
       const trigExternal = resolveExternalForAgent(
         ctx,
         hit.triggerAgentId,

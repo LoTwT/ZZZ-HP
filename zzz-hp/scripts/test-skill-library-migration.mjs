@@ -172,5 +172,65 @@ console.log('=== 8. 幂等：标记已迁移后不再重复 ===')
 }
 
 console.log('')
+console.log('=== 9. 异常类即使 skillBound=true 也不带类型/锚点 ===')
+{
+  const { skills } = run([
+    mode(
+      [
+        event({
+          id: 'e9',
+          kind: 'anomalyRelease',
+          skillBound: true,
+          categoryId: 'special',
+          skillSubcategoryId: 'yixuan-special-1',
+        }),
+      ],
+      { modeType: 'anomaly' },
+    ),
+  ])
+  check('招式类型为空', skills[0]?.skillTypes, [])
+  check('锚点为空', skills[0]?.buffAnchorId, null)
+  check('名称仍可用小类名识别', skills[0]?.name, '强化特殊技：凝云术')
+  check('伤害类型保留', skills[0]?.damageType, 'anomalyRelease')
+}
+
+console.log('')
+console.log('=== 10. 不改用户已有自定义招式的名字 ===')
+{
+  store.clear()
+  store.set(
+    'zzz-hp-skill-library-custom',
+    JSON.stringify([
+      {
+        id: 'mine-1',
+        name: '紊乱',
+        agentId: 'yixuan',
+        source: 'custom',
+        damageType: 'disorder',
+        skillTypes: [],
+        buffAnchorId: null,
+        baseMult: 1,
+      },
+    ]),
+  )
+  store.set(
+    'zzz-hp-custom-damage-event-modes',
+    JSON.stringify([mode([event({ id: 'e10', kind: 'disorder', skillBound: false })], { modeType: 'anomaly' })]),
+  )
+  migrateLegacyModesToSkills({ subcategories })
+  const skills = loadCustomSkills()
+  check(
+    '原有名字不动',
+    skills.find((s) => s.id === 'mine-1')?.name,
+    '紊乱',
+  )
+  check(
+    '新迁入的同名加序号',
+    skills.find((s) => s.id === 'skill-mig-e10')?.name,
+    '紊乱 2',
+  )
+}
+
+console.log('')
 console.log(failed === 0 ? '全部通过' : `${failed} 项失败`)
 process.exit(failed === 0 ? 0 : 1)
