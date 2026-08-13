@@ -440,6 +440,11 @@ export interface Skill {
   name: string
   /** 空 = 公共招式（全部角色可见）；有值 = 该角色专属 */
   agentId: string
+  /**
+   * 公共招式绑定的元素。空 = 不按元素过滤；有值时只对同属性角色展示。
+   * 公共属性异常用这个字段按当前角色 `element` 拆条。
+   */
+  element?: string
   source: SkillSource
   damageType: SkillDamageType
   /** 招式类型，多选。异常类留空 → 招式限定 Buff 一律不命中 */

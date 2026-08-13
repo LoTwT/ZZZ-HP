@@ -5,6 +5,7 @@ import AgentFuzzySelect from '@/components/admin/calculator/AgentFuzzySelect.vue
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type { Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
 import { DAMAGE_EVENT_KIND_OPTIONS } from '@/utils/damageEvent'
+import { PUBLIC_ANOMALY_ELEMENTS } from '@/utils/publicAnomalySkills'
 import { skillNeedsDualAgents } from '@/utils/resolvedHit'
 import { SKILL_TYPE_OPTIONS } from '@/utils/skillTypes'
 
@@ -27,6 +28,7 @@ const form = ref({
   baseMult: 0,
   baseMultFactor: 100,
   settlementMult: 0,
+  element: '',
 })
 
 const sortedList = computed(() =>
@@ -70,6 +72,7 @@ function resetForm() {
     baseMult: 0,
     baseMultFactor: 100,
     settlementMult: 0,
+    element: '',
   }
   selectedId.value = ''
   message.value = ''
@@ -88,6 +91,7 @@ function selectItem(item: Skill) {
     baseMult: item.baseMult,
     baseMultFactor: item.baseMultFactor ?? 100,
     settlementMult: item.settlementMult ?? 0,
+    element: item.element ?? '',
   }
 }
 
@@ -119,6 +123,7 @@ async function saveItem() {
       baseMult: Number(form.value.baseMult) || 0,
       baseMultFactor: Number(form.value.baseMultFactor) || 100,
       settlementMult: Number(form.value.settlementMult) || 0,
+      element: form.value.element,
     })
     selectedId.value = saved.id
     form.value.id = saved.id
@@ -150,7 +155,7 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
     <header class="panel-header">
       <h1 class="panel-title">招式库</h1>
       <p class="panel-desc">
-        预设招式存在数据库。角色留空即为公共招式。异常类请把招式类型留空。增益锚点对应旧招式小类，供 Buff 精确命中。
+        预设招式存在数据库。角色留空即为公共招式。公共属性异常用「元素」按当前角色过滤。异常类请把招式类型留空。增益锚点对应旧招式小类，供 Buff 精确命中。
       </p>
     </header>
 
@@ -175,7 +180,8 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
           >
             <span class="list-name">{{ item.name }}</span>
             <span class="list-meta">
-              {{ agentName(item.agentId) }} · {{ damageTypeLabel(item.damageType) }}
+              {{ agentName(item.agentId) }} · {{ damageTypeLabel(item.damageType)
+              }}{{ item.element ? ` · ${item.element}` : '' }}
             </span>
           </button>
         </div>
@@ -208,6 +214,15 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
             <label v-if="form.id" class="field">
               <span class="field-label">ID（自动）</span>
               <input :value="form.id" class="field-input" readonly />
+            </label>
+            <label class="field">
+              <span class="field-label">元素</span>
+              <select v-model="form.element" class="field-input">
+                <option value="">不限定</option>
+                <option v-for="el in PUBLIC_ANOMALY_ELEMENTS" :key="el" :value="el">
+                  {{ el }}
+                </option>
+              </select>
             </label>
           </div>
           <div v-if="!skillNeedsDualAgents(form.damageType)" class="type-checks">

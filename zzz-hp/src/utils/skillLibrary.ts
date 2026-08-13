@@ -42,6 +42,7 @@ function normalizeSkill(raw: Record<string, unknown>): Skill | null {
     settlementMult: Number.isFinite(Number(raw.settlementMult))
       ? Number(raw.settlementMult)
       : undefined,
+    element: raw.element == null || raw.element === '' ? '' : String(raw.element),
   }
 }
 
@@ -160,6 +161,7 @@ function eventToSkill(
       isDirect && Number.isFinite(Number(event.multOverrides?.settlementDmgMult))
         ? Number(event.multOverrides?.settlementDmgMult)
         : undefined,
+    element: '',
   }
 }
 

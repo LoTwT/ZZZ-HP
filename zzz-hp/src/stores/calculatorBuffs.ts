@@ -45,6 +45,7 @@ import {
   removeCustomSkill,
   upsertCustomSkill,
 } from '@/utils/skillLibrary'
+import { mergePublicAnomalyPresets } from '@/utils/publicAnomalySkills'
 import {
   AGENT_MINDSCAPE_RANKS,
   createEmptyMindscapeBuffs,
@@ -498,7 +499,7 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
           damageEventModes.value = []
         }
         try {
-          presetSkills.value = await fetchPresetSkills()
+          presetSkills.value = mergePublicAnomalyPresets(await fetchPresetSkills())
         } catch {
           presetSkills.value = []
         }
@@ -600,9 +601,14 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     return skills.value.find((item) => item.id === id) ?? null
   }
 
-  /** 招式库对某角色可见的部分：公共招式 + 该角色专属 */
+  /** 招式库对某角色可见的部分：该角色专属 + 公共（有 element 的只给同属性角色） */
   function skillsForAgent(agentId: string): Skill[] {
-    return skills.value.filter((item) => !item.agentId || item.agentId === agentId)
+    const element = agents.value.find((item) => item.id === agentId)?.element ?? ''
+    return skills.value.filter((item) => {
+      if (item.agentId) return item.agentId === agentId
+      if (item.element) return item.element === element
+      return true
+    })
   }
 
   async function upsertPresetSkillDoc(doc: Skill) {

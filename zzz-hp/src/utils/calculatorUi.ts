@@ -16,7 +16,7 @@ import {
 import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
 
 export const AGENT_ROLES = ['强攻', '击破', '异常', '支援', '防护', '命破'] as const
-export const AGENT_ELEMENTS = ['风', '火', '电', '物理', '以太', '冰', '流明'] as const
+export const AGENT_ELEMENTS = ['风', '火', '电', '物理', '以太', '冰', '霜', '流明'] as const
 export const WENGINE_RARITIES = ['S', 'A', 'B'] as const
 export type WengineRarity = (typeof WENGINE_RARITIES)[number]
 
@@ -357,9 +357,10 @@ export const SKILL_BUFF_STAT_FIELDS = BUFF_STAT_FIELDS.filter((field) =>
   SKILL_BUFF_STAT_KEYS.includes(field.key),
 )
 
-/** 异常倍率% 按属性默认值 */
+/** 角色面板异常倍率% 默认值（与公共招式 baseMult 分开；招式侧电×10、火/以太×20） */
 export const ANOMALY_MULT_BY_ELEMENT: Record<AgentElement, number> = {
   冰: 500,
+  霜: 500,
   物理: 713,
   火: 50,
   电: 125,
@@ -383,6 +384,7 @@ export function defaultDisorderCompMultByElement(element: string, agentIdOrName 
   const disorderCompByElement: Record<string, number> = {
     物理: 7.5,
     冰: 7.5,
+    霜: 7.5,
     火: 50,
     电: 125,
     以太: 62.5,
@@ -429,6 +431,7 @@ export function defaultTurbulenceStats(
   const turbulenceBaseByElement: Record<string, number> = {
     物理: 800,
     冰: 1300,
+    霜: 1300,
     火: 900,
     电: 650,
     以太: 650,
@@ -909,6 +912,8 @@ export function elementShort(element: string) {
     物理: '物',
     以太: '以',
     冰: '冰',
+    霜: '霜',
+    流明: '流',
   }
   return map[element] ?? element.slice(0, 1)
 }

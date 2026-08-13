@@ -102,7 +102,7 @@ const librarySkills = computed(() => {
   if (!currentAgentId.value) return [] as Skill[]
   let list = buffStore.skillsForAgent(currentAgentId.value)
   if (libraryFilter.value === 'publicAnomaly') {
-    list = list.filter((skill) => !skill.agentId && skillNeedsDualAgents(skill.damageType))
+    list = list.filter((skill) => !skill.agentId && skill.damageType === 'anomaly')
   }
   const q = libraryQuery.value.trim().toLowerCase()
   if (!q) return list
