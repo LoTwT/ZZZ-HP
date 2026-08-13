@@ -25,6 +25,7 @@ const props = defineProps<{
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
   hits?: ResolvedHit[]
+  hitDamages?: Record<string, number>
 }>()
 
 const slots = defineModel<SchemeSlot[]>('slots', { default: () => ensureSchemeSlots([], 3) })
@@ -38,6 +39,12 @@ const libraryFilter = ref<'all' | 'publicAnomaly'>('all')
 const showCustomForm = ref(false)
 const modalOpen = ref(false)
 const modalTab = ref<'prep' | 'flow'>('prep')
+const detail = ref<
+  | { kind: 'library'; skillId: string }
+  | { kind: 'prepared'; preparedId: string }
+  | { kind: 'flow'; entryId: string }
+  | null
+>(null)
 
 watch(
   () => props.teamSlots.length,
@@ -93,16 +100,126 @@ function damageTypeLabel(type: SkillDamageType) {
   return DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === type)?.label ?? type
 }
 
-function skillTypesLabel(skill: Skill) {
-  if (!skill.skillTypes.length) return '无类型'
+function skillStypeLabels(skill: Skill) {
   return skill.skillTypes
     .map((id) => SKILL_TYPE_OPTIONS.find((item) => item.id === id)?.label ?? id)
-    .join(' / ')
+    .filter(Boolean)
 }
 
-function skillMeta(skill: Skill) {
-  const source = skill.source === 'preset' ? '预设' : '自定义'
-  return `${damageTypeLabel(skill.damageType)} · ${skillTypesLabel(skill)} · ${source}`
+function skillMultText(skill: Skill) {
+  const value = Number(skill.baseMult)
+  return Number.isFinite(value) && value !== 0 ? String(value) : ''
+}
+
+function agentShortName(agentId: string | null | undefined) {
+  if (!agentId) return ''
+  return props.agents.find((item) => item.id === agentId)?.name?.slice(0, 1) || ''
+}
+
+function agentFullName(agentId: string | null | undefined) {
+  if (!agentId) return ''
+  return props.agents.find((item) => item.id === agentId)?.name ?? ''
+}
+
+/** 异常类才有胶囊；未选为空；异放等预设了触发者则显示「→安」 */
+function agentPairText(prepared: PreparedSkill, skill: Skill) {
+  if (!skillNeedsDualAgents(skill.damageType)) return ''
+  const left = agentShortName(prepared.anomalyPowerAgentId)
+  const right = agentShortName(prepared.triggerAgentId)
+  if (!left && !right) return ''
+  if (left && right) return `${left}→${right}`
+  if (right) return `→${right}`
+  return `${left}→`
+}
+
+function agentPairTitle(prepared: PreparedSkill, skill: Skill) {
+  if (!skillNeedsDualAgents(skill.damageType)) return ''
+  const left = agentFullName(prepared.anomalyPowerAgentId)
+  const right = agentFullName(prepared.triggerAgentId)
+  if (!left && !right) return ''
+  return `${left || '未选'} → ${right || '未选'}`
+}
+
+function formatDamage(value: number | undefined) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return ''
+  return Math.round(value).toLocaleString('en-US')
+}
+
+function damageForFlow(entryId: string) {
+  return formatDamage(props.hitDamages?.[entryId])
+}
+
+function damageForPrepared(preparedId: string) {
+  const entry = currentSlot.value.flow.find((item) => item.preparedId === preparedId)
+  return entry ? damageForFlow(entry.id) : ''
+}
+
+function damageForLibrary(skillId: string) {
+  const prepared = currentSlot.value.prepared.find((item) => item.skillId === skillId)
+  return prepared ? damageForPrepared(prepared.id) : ''
+}
+
+function dtypeKind(type: SkillDamageType) {
+  return skillNeedsDualAgents(type) ? 'anomaly' : 'direct'
+}
+
+function clearPrepared() {
+  if (!currentSlot.value.prepared.length) return
+  const ok = window.confirm('清空当前角色的全部准备招式？流程里对应条目也会去掉。')
+  if (!ok) return
+  const next = ensureSchemeSlots(slots.value)
+  const slot = next[activeSlotIndex.value]!
+  slot.prepared = []
+  slot.flow = []
+  slots.value = next
+  detail.value = null
+}
+
+function closeDetail() {
+  detail.value = null
+}
+
+const detailSkill = computed((): Skill | null => {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind === 'library') return buffStore.findSkill(current.skillId)
+  if (current.kind === 'prepared') {
+    const prepared = currentSlot.value.prepared.find((item) => item.id === current.preparedId)
+    return prepared ? preparedSkill(prepared) : null
+  }
+  const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
+  if (!entry) return null
+  const prepared = currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
+  return prepared ? preparedSkill(prepared) : null
+})
+
+const detailPrepared = computed((): PreparedSkill | null => {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind === 'prepared') {
+    return currentSlot.value.prepared.find((item) => item.id === current.preparedId) ?? null
+  }
+  if (current.kind === 'flow') {
+    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
+    if (!entry) return null
+    return currentSlot.value.prepared.find((item) => item.id === entry.preparedId) ?? null
+  }
+  return null
+})
+
+const detailTitle = computed(() => detailSkill.value?.name || '招式详情')
+
+const detailSkipReason = computed(() => {
+  const current = detail.value
+  if (current?.kind !== 'flow') return null
+  const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
+  return entry ? flowSkipReason(entry) : null
+})
+
+function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
+  const prepared = detailPrepared.value
+  if (!prepared) return
+  updatePrepared(prepared.id, { [field]: raw || null })
 }
 
 function preparedSkill(prepared: PreparedSkill): Skill | null {
@@ -326,10 +443,17 @@ function deleteCustomSkill(skill: Skill) {
   buffStore.removeCustomSkillDoc(skill.id)
 }
 
+function flowPrepared(entry: FlowEntry): PreparedSkill | null {
+  return currentSlot.value.prepared.find((item) => item.id === entry.preparedId) ?? null
+}
+
+function flowSkill(entry: FlowEntry): Skill | null {
+  const prepared = flowPrepared(entry)
+  return prepared ? preparedSkill(prepared) : null
+}
+
 function flowSkillName(entry: FlowEntry): string {
-  const prepared = currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
-  if (!prepared) return '未知招式'
-  return preparedSkill(prepared)?.name ?? '招式已删除'
+  return flowSkill(entry)?.name ?? (flowPrepared(entry) ? '招式已删除' : '未知招式')
 }
 
 type ExtraModKey = 'baseMult' | 'settlementMult' | 'dmgBonus' | 'critRate' | 'critDmg'
@@ -348,8 +472,17 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
   })
 }
 
+watch(modalOpen, (open) => {
+  if (!open) detail.value = null
+})
+
 function onModalKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && modalOpen.value) modalOpen.value = false
+  if (event.key !== 'Escape' || !modalOpen.value) return
+  if (detail.value) {
+    closeDetail()
+    return
+  }
+  modalOpen.value = false
 }
 
 onMounted(() => window.addEventListener('keydown', onModalKeydown))
@@ -468,11 +601,19 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                   v-for="skill in librarySkills"
                   :key="skill.id"
                   :name="skill.name"
-                  :meta="skillMeta(skill)"
+                  :mult="skillMultText(skill)"
+                  :dtype="damageTypeLabel(skill.damageType)"
+                  :dtype-kind="dtypeKind(skill.damageType)"
+                  :stypes="skillStypeLabels(skill)"
+                  :source="skill.source === 'preset' ? '预设' : '自定义'"
+                  :damage="damageForLibrary(skill.id)"
                 >
                   <template #actions>
+                    <button type="button" class="mini-btn" @click="detail = { kind: 'library', skillId: skill.id }">
+                      详情
+                    </button>
                     <button type="button" class="mini-btn" @click="addPrepared(skill)">
-                      {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入准备' }}
+                      {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入' }}
                     </button>
                     <button
                       v-if="skill.source === 'custom'"
@@ -546,62 +687,47 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
             <div class="flow-col">
               <div class="col-head">
                 <h3>{{ modalTab === 'prep' ? '准备招式' : '准备招式（加入流程）' }}</h3>
+                <button
+                  v-if="modalTab === 'prep'"
+                  type="button"
+                  class="mini-btn danger"
+                  :disabled="!currentSlot.prepared.length"
+                  @click="clearPrepared"
+                >
+                  清空全部
+                </button>
+                <div v-else class="col-head-spacer" />
                 <p class="col-desc">
                   {{
                     modalTab === 'prep'
-                      ? '从左侧招式库加入。异常类必须选定双代理人才能出伤。'
-                      : '先在准备阶段加入招式，才能排进流程。'
+                      ? '绑定招式库。异常类在详情里选双代理人。'
+                      : '只有准备招式才能加入流程。'
                   }}
                 </p>
+                <div class="col-head-spacer" />
               </div>
               <ul class="sf-list">
                 <template v-for="(prepared, preparedIndex) in currentSlot.prepared" :key="prepared.id">
                   <SkillFlowCard
                     v-if="preparedSkill(prepared)"
                     :name="preparedSkill(prepared)!.name"
-                    :meta="skillMeta(preparedSkill(prepared)!)"
-                    :hint="dualAgentHint(prepared, preparedSkill(prepared)!)"
+                    :mult="skillMultText(preparedSkill(prepared)!)"
+                    :dtype="damageTypeLabel(preparedSkill(prepared)!.damageType)"
+                    :dtype-kind="dtypeKind(preparedSkill(prepared)!.damageType)"
+                    :stypes="skillStypeLabels(preparedSkill(prepared)!)"
+                    :agent-pair="agentPairText(prepared, preparedSkill(prepared)!)"
+                    :agent-title="agentPairTitle(prepared, preparedSkill(prepared)!)"
+                    :damage="damageForPrepared(prepared.id)"
                     :skip="Boolean(dualAgentHint(prepared, preparedSkill(prepared)!))"
                   >
-                    <div
-                      v-if="skillNeedsDualAgents(preparedSkill(prepared)!.damageType)"
-                      class="agent-row"
-                    >
-                      <label>
-                        <span>异常强度提供者</span>
-                        <select
-                          :value="prepared.anomalyPowerAgentId ?? ''"
-                          @change="
-                            updatePrepared(prepared.id, {
-                              anomalyPowerAgentId:
-                                ($event.target as HTMLSelectElement).value || null,
-                            })
-                          "
-                        >
-                          <option value="">未选</option>
-                          <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                            {{ agent.name }}
-                          </option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>异常类触发者</span>
-                        <select
-                          :value="prepared.triggerAgentId ?? ''"
-                          @change="
-                            updatePrepared(prepared.id, {
-                              triggerAgentId: ($event.target as HTMLSelectElement).value || null,
-                            })
-                          "
-                        >
-                          <option value="">未选</option>
-                          <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                            {{ agent.name }}
-                          </option>
-                        </select>
-                      </label>
-                    </div>
                     <template #actions>
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        @click="detail = { kind: 'prepared', preparedId: prepared.id }"
+                      >
+                        详情
+                      </button>
                       <template v-if="modalTab === 'prep'">
                         <button
                           type="button"
@@ -609,7 +735,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                           :disabled="preparedIndex === 0"
                           @click="movePrepared(prepared.id, -1)"
                         >
-                          上移
+                          上
                         </button>
                         <button
                           type="button"
@@ -617,7 +743,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                           :disabled="preparedIndex === currentSlot.prepared.length - 1"
                           @click="movePrepared(prepared.id, 1)"
                         >
-                          下移
+                          下
                         </button>
                         <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
                           移除
@@ -628,13 +754,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                       </button>
                     </template>
                   </SkillFlowCard>
-                  <SkillFlowCard
-                    v-else
-                    name="招式已删除"
-                    meta="不参与结算"
-                    hint="招式已从库中删除，不参与结算"
-                    skip
-                  >
+                  <SkillFlowCard v-else name="招式已删除" skip>
                     <template #actions>
                       <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
                         移除
@@ -655,7 +775,9 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
             <div v-show="modalTab === 'flow'" class="flow-col">
               <div class="col-head">
                 <h3>流程</h3>
-                <p class="col-desc">次数、失衡、顺序稍后在这里编排。</p>
+                <div class="col-head-spacer" />
+                <p class="col-desc">次数、失衡稍后编排。先从左侧加入。</p>
+                <div class="col-head-spacer" />
               </div>
               <ul class="sf-list">
                 <SkillFlowCard
@@ -663,11 +785,22 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                   :key="entry.id"
                   :index="index + 1"
                   :name="flowSkillName(entry)"
-                  meta="流程条目"
-                  :hint="flowSkipReason(entry)"
+                  :mult="flowSkill(entry) ? skillMultText(flowSkill(entry)!) : ''"
+                  :dtype="flowSkill(entry) ? damageTypeLabel(flowSkill(entry)!.damageType) : ''"
+                  :dtype-kind="flowSkill(entry) ? dtypeKind(flowSkill(entry)!.damageType) : 'direct'"
+                  :stypes="flowSkill(entry) ? skillStypeLabels(flowSkill(entry)!) : []"
+                  :agent-pair="
+                    flowSkill(entry) && flowPrepared(entry)
+                      ? agentPairText(flowPrepared(entry)!, flowSkill(entry)!)
+                      : ''
+                  "
+                  :damage="damageForFlow(entry.id)"
                   :skip="Boolean(flowSkipReason(entry))"
                 >
                   <template #actions>
+                    <button type="button" class="mini-btn" @click="detail = { kind: 'flow', entryId: entry.id }">
+                      详情
+                    </button>
                     <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
                       移除
                     </button>
@@ -678,6 +811,77 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                 </li>
               </ul>
             </div>
+          </div>
+        </div>
+
+        <div v-if="detail" class="skill-detail-overlay" @click.self="closeDetail">
+          <div class="skill-detail-panel" role="dialog" aria-modal="true" :aria-label="detailTitle">
+            <header class="skill-detail-head">
+              <h3>招式详情 · {{ detailTitle }}</h3>
+              <button type="button" class="close-btn" aria-label="关闭详情" @click="closeDetail">×</button>
+            </header>
+            <div v-if="detailSkill" class="skill-detail-body">
+              <div class="detail-facts">
+                <span class="sf-dtype" :class="dtypeKind(detailSkill.damageType) === 'direct' ? 'is-direct' : 'is-anomaly'">
+                  {{ damageTypeLabel(detailSkill.damageType) }}
+                </span>
+                <span v-for="item in skillStypeLabels(detailSkill)" :key="item" class="sf-stype">{{ item }}</span>
+                <span class="sf-source">{{ detailSkill.source === 'preset' ? '预设' : '自定义' }}</span>
+              </div>
+              <p class="detail-mult">
+                基础倍率 {{ skillMultText(detailSkill) || '未设' }}
+                <template v-if="detailSkill.damageType === 'direct' && detailSkill.settlementMult">
+                  · 决算倍率 {{ detailSkill.settlementMult }}
+                </template>
+              </p>
+              <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
+              <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
+                <p class="detail-section-title">双代理人</p>
+                <div class="agent-row">
+                  <label>
+                    <span>异常强度提供者</span>
+                    <select
+                      :value="detailPrepared.anomalyPowerAgentId ?? ''"
+                      @change="
+                        setDetailAgent(
+                          'anomalyPowerAgentId',
+                          ($event.target as HTMLSelectElement).value,
+                        )
+                      "
+                    >
+                      <option value="">未选</option>
+                      <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                        {{ agent.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>异常类触发者</span>
+                    <select
+                      :value="detailPrepared.triggerAgentId ?? ''"
+                      @change="
+                        setDetailAgent(
+                          'triggerAgentId',
+                          ($event.target as HTMLSelectElement).value,
+                        )
+                      "
+                    >
+                      <option value="">未选</option>
+                      <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                        {{ agent.name }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <p v-if="dualAgentHint(detailPrepared, detailSkill)" class="warn-hint">
+                  {{ dualAgentHint(detailPrepared, detailSkill) }}
+                </p>
+              </template>
+              <p v-else-if="detail.kind === 'library'" class="empty-hint">
+                招式定义在库里。加入准备后，异常类可在详情里选双代理人。
+              </p>
+            </div>
+            <p v-else class="empty-hint">招式已从库中删除。</p>
           </div>
         </div>
       </div>
@@ -722,10 +926,10 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   background: rgba(7, 10, 16, 0.62);
 }
 .skill-flow-modal {
-  --sf-card-h: 9.1rem;
+  position: relative;
   box-sizing: border-box;
-  width: min(1080px, 100%);
-  height: min(86vh, 820px);
+  width: min(96vw, 1680px);
+  height: min(94vh, 980px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -857,10 +1061,21 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
 .col-foot {
   flex: 0 0 auto;
 }
+.col-head {
+  display: grid;
+  grid-template-rows: 1.6rem 2rem 2rem 2.1rem;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
 .col-head h3 {
-  margin: 0 0 0.4rem;
+  margin: 0;
   font-size: 0.92rem;
   color: #e8edf5;
+  line-height: 1.6rem;
+}
+.col-head-spacer {
+  min-height: 0;
 }
 .col-desc,
 .empty-hint,
@@ -870,9 +1085,8 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   font-size: 0.78rem;
 }
 .col-desc {
-  min-height: 1.2rem;
+  min-height: 0;
   line-height: 1.2rem;
-  margin-bottom: 0.45rem;
 }
 .search-input,
 .custom-form input,
@@ -887,17 +1101,21 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
 .search-input {
   box-sizing: border-box;
   width: 100%;
-  margin-bottom: 0.45rem;
+  height: 2rem;
+  margin: 0;
 }
 .filter-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem;
-  margin-bottom: 0.45rem;
+  margin: 0;
+  min-height: 2rem;
 }
 .col-head > .mini-btn {
   width: 100%;
-  margin-bottom: 0.45rem;
+  height: 2rem;
+  margin: 0;
 }
 
 .sf-list {
@@ -985,8 +1203,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
 .agent-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.35rem;
-  height: 100%;
+  gap: 0.45rem;
 }
 .agent-row label {
   display: flex;
@@ -1001,9 +1218,104 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   width: 100%;
 }
 
+.warn-hint {
+  margin: 0;
+  color: #c07a7a;
+  font-size: 0.76rem;
+}
+
+.skill-detail-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(7, 10, 16, 0.55);
+}
+.skill-detail-panel {
+  width: min(640px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  background: #181d27;
+  border: 1px solid #2a3038;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.skill-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid #2a3038;
+}
+.skill-detail-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #e8edf5;
+}
+.skill-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.85rem 0.9rem 1rem;
+}
+.detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.detail-facts .sf-dtype,
+.detail-facts .sf-stype,
+.detail-facts .sf-source,
+.sf-dtype,
+.sf-stype,
+.sf-source {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sf-dtype.is-anomaly {
+  background: #1a2a38;
+  border: 1px solid #3a6a88;
+  color: #8ec8e8;
+}
+.sf-dtype.is-direct {
+  background: rgba(201, 165, 92, 0.14);
+  border: 1px solid #8a6a1f;
+  color: #f0d7a2;
+}
+.sf-stype {
+  background: #15241f;
+  border: 1px solid #2f5c52;
+  color: #8fd4c4;
+}
+.sf-source {
+  background: #1a1d24;
+  border: 1px solid #3a4150;
+  color: #9aa3b0;
+  font-weight: 600;
+}
+.detail-mult,
+.detail-section-title {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #dce4f0;
+}
+.detail-section-title {
+  font-weight: 700;
+}
+
 @media (max-width: 800px) {
   .skill-flow-modal {
-    height: min(92vh, 820px);
+    height: min(96vh, 980px);
   }
   .flow-grid {
     grid-template-columns: minmax(0, 1fr);

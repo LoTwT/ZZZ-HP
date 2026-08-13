@@ -226,6 +226,7 @@ const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [
 const emit = defineEmits<{
   'update:anomalySlotPanels': [value: Record<string, PanelStats>]
   'update:convertSlotPanels': [value: ConvertSlotPanels]
+  'update:hitDamages': [value: Record<string, number>]
 }>()
 
 const baseDamageSource = ref<BaseDamageSource>('atk')
@@ -1273,6 +1274,18 @@ const damageEventSummary = computed(() => {
     (hit) => props.agents.find((item) => item.id === hit.ownerAgentId)?.name,
   )
 })
+
+watch(
+  damageEventSummary,
+  (summary) => {
+    const map: Record<string, number> = {}
+    for (const line of summary?.lines ?? []) {
+      map[line.hit.id] = line.perHit
+    }
+    emit('update:hitDamages', map)
+  },
+  { immediate: true },
+)
 
 const hasDamageEvents = computed(() => (props.hits?.length ?? 0) > 0)
 

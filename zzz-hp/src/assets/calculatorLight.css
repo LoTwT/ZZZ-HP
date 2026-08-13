@@ -2685,20 +2685,66 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 }
 [data-theme='light'] .sf-card {
   border-color: #d5dae3 !important;
-  background: #f5f7fa !important;
+  background: #ffffff !important;
 }
 [data-theme='light'] .sf-card--skip {
   border-color: #d9a3a3 !important;
 }
-[data-theme='light'] .sf-card .sf-name {
+[data-theme='light'] .sf-card .sf-name,
+[data-theme='light'] .skill-detail-head h3,
+[data-theme='light'] .skill-flow-modal .detail-mult,
+[data-theme='light'] .skill-flow-modal .detail-section-title {
   color: #1c212a !important;
 }
-[data-theme='light'] .sf-card .sf-hint {
-  color: #b42318 !important;
+[data-theme='light'] .sf-card .sf-mult-label,
+[data-theme='light'] .sf-card .sf-source {
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-card .sf-mult {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #1c212a !important;
 }
 [data-theme='light'] .sf-card .sf-index {
   background: rgba(201, 165, 92, 0.16) !important;
   color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-card .sf-damage {
+  color: #6b3fa0 !important;
+}
+[data-theme='light'] .sf-card .sf-agents {
+  background: #f3e8ff !important;
+  border-color: #d4b8f0 !important;
+  color: #6b3fa0 !important;
+}
+[data-theme='light'] .sf-dtype.is-anomaly {
+  background: #e8f4fc !important;
+  border-color: #b3d4ea !important;
+  color: #1d6fa3 !important;
+}
+[data-theme='light'] .sf-dtype.is-direct {
+  background: #fff8eb !important;
+  border-color: #c9a55c !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-stype {
+  background: #e8f6f2 !important;
+  border-color: #b2dfdb !important;
+  color: #1b6b5a !important;
+}
+[data-theme='light'] .skill-detail-overlay {
+  background: rgba(15, 23, 42, 0.28) !important;
+}
+[data-theme='light'] .skill-detail-panel {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+[data-theme='light'] .skill-detail-head {
+  border-color: #eef1f5 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .skill-flow-modal .warn-hint {
+  color: #b42318 !important;
 }
 [data-theme='light'] .skill-flow-modal .mini-btn {
   border-color: #d5dae3 !important;

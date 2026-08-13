@@ -140,6 +140,7 @@ const anomalySlotPanels = reactive<Record<string, PanelStats>>({})
 const convertSlotPanels = reactive<ConvertSlotPanels>({})
 const extraGains = ref<ExtraBuffGain[]>([])
 const schemeSlots = ref<SchemeSlot[]>(ensureSchemeSlots([], 3))
+const hitDamages = ref<Record<string, number>>({})
 const resolvedFlow = computed(() =>
   resolveFlow({
     slots: schemeSlots.value,
@@ -1244,6 +1245,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :team-slots="teamSlots"
       :agents="agents"
       :hits="hits"
+      :hit-damages="hitDamages"
       v-model:slots="schemeSlots"
     />
 
@@ -1359,6 +1361,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       v-model:extra-gains="extraGains"
       @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"
       @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
+      @update:hit-damages="hitDamages = $event"
     />
 
     <KeepAlive>
