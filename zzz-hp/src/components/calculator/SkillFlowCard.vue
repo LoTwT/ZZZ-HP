@@ -15,7 +15,6 @@ withDefaults(
     index?: number
     rowDraggable?: boolean
     dragging?: boolean
-    dropEdge?: 'top' | 'bottom' | null
     agentsClickable?: boolean
   }>(),
   {
@@ -43,8 +42,6 @@ function emitCount(event: Event) {
       'sf-card--skip': skip,
       'sf-card--draggable': rowDraggable,
       'sf-card--dragging': dragging,
-      'sf-card--drop-top': dropEdge === 'top',
-      'sf-card--drop-bottom': dropEdge === 'bottom',
     }"
     :draggable="rowDraggable"
   >
@@ -125,12 +122,6 @@ function emitCount(event: Event) {
 .sf-card--dragging {
   opacity: 0.35;
   cursor: grabbing;
-}
-.sf-card--drop-top {
-  box-shadow: inset 0 3px 0 #c9a55c;
-}
-.sf-card--drop-bottom {
-  box-shadow: inset 0 -3px 0 #c9a55c;
 }
 .sf-lead {
   display: flex;

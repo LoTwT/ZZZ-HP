@@ -45,7 +45,8 @@ const expanded = ref(true)
 const modalTab = ref<'prep' | 'flow'>('prep')
 const flowDragEnabled = ref(false)
 const flowDraggingId = ref<string | null>(null)
-const flowDrop = ref<{ id: string; edge: 'top' | 'bottom' } | null>(null)
+/** 插入位置：0 = 第一条之前，n = 最后一条之后。相邻两行的上/下半边指向同一条缝。 */
+const flowDropIndex = ref<number | null>(null)
 const detail = ref<
   | { kind: 'library'; skillId: string }
   | { kind: 'prepared'; preparedId: string }
@@ -63,13 +64,13 @@ watch(
 
 watch(modalTab, () => {
   flowDraggingId.value = null
-  flowDrop.value = null
+  flowDropIndex.value = null
 })
 
 watch(flowDragEnabled, (on) => {
   if (on) return
   flowDraggingId.value = null
-  flowDrop.value = null
+  flowDropIndex.value = null
 })
 
 watch(
@@ -83,6 +84,16 @@ watch(
 )
 
 const currentSlot = computed(() => slots.value[activeSlotIndex.value] ?? { prepared: [], flow: [] })
+/** 真正会换位时才画线；停在自己原来那条缝上不显示。 */
+const flowInsertIndex = computed(() => {
+  const drop = flowDropIndex.value
+  const draggingId = flowDraggingId.value
+  if (drop == null || !draggingId) return null
+  const from = currentSlot.value.flow.findIndex((item) => item.id === draggingId)
+  if (from < 0) return drop
+  if (drop === from || drop === from + 1) return null
+  return drop
+})
 const currentAgentId = computed(() => props.teamSlots[activeSlotIndex.value]?.agentId ?? '')
 const currentTeamSlotLabel = computed(() => {
   const slot = props.teamSlots[activeSlotIndex.value]
@@ -442,49 +453,64 @@ function onFlowDragStart(entryId: string, event: DragEvent) {
   flowDraggingId.value = entryId
 }
 
+function dropIndexFromCard(entryId: string, event: DragEvent): number | null {
+  const targetIndex = currentSlot.value.flow.findIndex((item) => item.id === entryId)
+  if (targetIndex < 0) return null
+  const el = flowCardEl(event)
+  if (!el) return targetIndex
+  const rect = el.getBoundingClientRect()
+  return event.clientY < rect.top + rect.height / 2 ? targetIndex : targetIndex + 1
+}
+
 function onFlowDragOver(entryId: string, event: DragEvent) {
   if (!flowDragEnabled.value || !flowDraggingId.value) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  const el = flowCardEl(event)
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  flowDrop.value = {
-    id: entryId,
-    edge: event.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom',
-  }
+  const index = dropIndexFromCard(entryId, event)
+  if (index == null) return
+  flowDropIndex.value = index
+}
+
+function onFlowGapDragOver(index: number, event: DragEvent) {
+  if (!flowDragEnabled.value || !flowDraggingId.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  flowDropIndex.value = index
 }
 
 function onFlowDrop(entryId: string, event: DragEvent) {
   if (!flowDragEnabled.value || !flowDraggingId.value) return
   event.preventDefault()
-  const el = flowCardEl(event)
-  const rect = el?.getBoundingClientRect()
-  const insertAfter = rect
-    ? event.clientY > rect.top + rect.height / 2
-    : flowDrop.value?.edge === 'bottom'
-  reorderFlow(flowDraggingId.value, entryId, insertAfter)
+  const index = dropIndexFromCard(entryId, event) ?? flowDropIndex.value
+  if (index != null) reorderFlowToIndex(flowDraggingId.value, index)
   flowDraggingId.value = null
-  flowDrop.value = null
+  flowDropIndex.value = null
+}
+
+function onFlowGapDrop(index: number, event: DragEvent) {
+  if (!flowDragEnabled.value || !flowDraggingId.value) return
+  event.preventDefault()
+  reorderFlowToIndex(flowDraggingId.value, index)
+  flowDraggingId.value = null
+  flowDropIndex.value = null
 }
 
 function onFlowDragEnd() {
   flowDraggingId.value = null
-  flowDrop.value = null
+  flowDropIndex.value = null
 }
 
-function reorderFlow(fromId: string, targetId: string, insertAfter: boolean) {
+function reorderFlowToIndex(fromId: string, toIndex: number) {
   const next = ensureSchemeSlots(slots.value)
   const slot = next[activeSlotIndex.value]!
   const fromIndex = slot.flow.findIndex((item) => item.id === fromId)
-  const targetIndex = slot.flow.findIndex((item) => item.id === targetId)
-  if (fromIndex < 0 || targetIndex < 0) return
-  let toIndex = insertAfter ? targetIndex + 1 : targetIndex
+  if (fromIndex < 0) return
+  let dest = toIndex
   const [item] = slot.flow.splice(fromIndex, 1)
-  if (fromIndex < toIndex) toIndex -= 1
-  if (toIndex < 0) toIndex = 0
-  if (toIndex > slot.flow.length) toIndex = slot.flow.length
-  slot.flow.splice(toIndex, 0, item!)
+  if (fromIndex < dest) dest -= 1
+  if (dest < 0) dest = 0
+  if (dest > slot.flow.length) dest = slot.flow.length
+  slot.flow.splice(dest, 0, item!)
   slots.value = next
 }
 
@@ -1012,61 +1038,75 @@ defineExpose({ expand })
                   }}
                 </p>
               </div>
-              <ul class="sf-list">
-                <SkillFlowCard
-                  v-for="(entry, index) in currentSlot.flow"
-                  :key="entry.id"
-                  :index="index + 1"
-                  :name="flowSkillName(entry)"
-                  :count="entry.count"
-                  :stagger="entry.staggerPhase === 'stagger'"
-                  :dtype="flowSkill(entry) ? damageTypeLabel(flowSkill(entry)!.damageType) : ''"
-                  :dtype-kind="flowSkill(entry) ? dtypeKind(flowSkill(entry)!.damageType) : 'direct'"
-                  :stypes="flowSkill(entry) ? skillStypeLabels(flowSkill(entry)!) : []"
-                  :agent-pair="
-                    flowSkill(entry) && flowPrepared(entry)
-                      ? agentPairText(flowPrepared(entry)!, flowSkill(entry)!)
-                      : ''
-                  "
-                  :agent-title="
-                    flowSkill(entry) && flowPrepared(entry)
-                      ? agentPairTitle(flowPrepared(entry)!, flowSkill(entry)!)
-                      : ''
-                  "
-                  :agents-clickable="false"
-                  :row-draggable="flowDragEnabled"
-                  :dragging="flowDraggingId === entry.id"
-                  :drop-edge="flowDrop?.id === entry.id ? flowDrop.edge : null"
-                  :damage="damageForFlow(entry.id)"
-                  :skip="Boolean(flowSkipReason(entry))"
-                  @update:count="updateFlow(entry.id, { count: $event })"
-                  @update:stagger="
-                    updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
-                  "
-                  @dragstart="onFlowDragStart(entry.id, $event)"
-                  @dragover="onFlowDragOver(entry.id, $event)"
-                  @drop="onFlowDrop(entry.id, $event)"
-                  @dragend="onFlowDragEnd"
-                >
-                  <template #actions>
-                    <button
-                      type="button"
-                      class="mini-btn"
-                      draggable="false"
-                      @click="openFlowDetail(entry.id)"
-                    >
-                      详情
-                    </button>
-                    <button
-                      type="button"
-                      class="mini-btn danger"
-                      draggable="false"
-                      @click="removeFlow(entry.id)"
-                    >
-                      移除
-                    </button>
-                  </template>
-                </SkillFlowCard>
+              <ul class="sf-list sf-list--flow">
+                <template v-for="(entry, index) in currentSlot.flow" :key="entry.id">
+                  <li
+                    class="sf-insert-slot"
+                    :class="{ 'is-active': flowInsertIndex === index }"
+                    aria-hidden="true"
+                    @dragover="onFlowGapDragOver(index, $event)"
+                    @drop="onFlowGapDrop(index, $event)"
+                  />
+                  <SkillFlowCard
+                    :index="index + 1"
+                    :name="flowSkillName(entry)"
+                    :count="entry.count"
+                    :stagger="entry.staggerPhase === 'stagger'"
+                    :dtype="flowSkill(entry) ? damageTypeLabel(flowSkill(entry)!.damageType) : ''"
+                    :dtype-kind="flowSkill(entry) ? dtypeKind(flowSkill(entry)!.damageType) : 'direct'"
+                    :stypes="flowSkill(entry) ? skillStypeLabels(flowSkill(entry)!) : []"
+                    :agent-pair="
+                      flowSkill(entry) && flowPrepared(entry)
+                        ? agentPairText(flowPrepared(entry)!, flowSkill(entry)!)
+                        : ''
+                    "
+                    :agent-title="
+                      flowSkill(entry) && flowPrepared(entry)
+                        ? agentPairTitle(flowPrepared(entry)!, flowSkill(entry)!)
+                        : ''
+                    "
+                    :agents-clickable="false"
+                    :row-draggable="flowDragEnabled"
+                    :dragging="flowDraggingId === entry.id"
+                    :damage="damageForFlow(entry.id)"
+                    :skip="Boolean(flowSkipReason(entry))"
+                    @update:count="updateFlow(entry.id, { count: $event })"
+                    @update:stagger="
+                      updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
+                    "
+                    @dragstart="onFlowDragStart(entry.id, $event)"
+                    @dragover="onFlowDragOver(entry.id, $event)"
+                    @drop="onFlowDrop(entry.id, $event)"
+                    @dragend="onFlowDragEnd"
+                  >
+                    <template #actions>
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        draggable="false"
+                        @click="openFlowDetail(entry.id)"
+                      >
+                        详情
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-btn danger"
+                        draggable="false"
+                        @click="removeFlow(entry.id)"
+                      >
+                        移除
+                      </button>
+                    </template>
+                  </SkillFlowCard>
+                </template>
+                <li
+                  v-if="currentSlot.flow.length"
+                  class="sf-insert-slot"
+                  :class="{ 'is-active': flowInsertIndex === currentSlot.flow.length }"
+                  aria-hidden="true"
+                  @dragover="onFlowGapDragOver(currentSlot.flow.length, $event)"
+                  @drop="onFlowGapDrop(currentSlot.flow.length, $event)"
+                />
                 <li v-if="!currentSlot.flow.length" class="list-empty">
                   还没有流程条目。从左侧把准备招式加进来。
                 </li>
@@ -1473,6 +1513,32 @@ defineExpose({ expand })
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+.sf-list--flow {
+  gap: 0;
+}
+.sf-insert-slot {
+  position: relative;
+  flex: 0 0 auto;
+  height: 0.45rem;
+  list-style: none;
+}
+.sf-insert-slot:first-child,
+.sf-insert-slot:last-child {
+  height: 0.28rem;
+}
+.sf-insert-slot.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0.12rem;
+  right: 0.12rem;
+  top: 50%;
+  height: 2px;
+  background: #c9a55c;
+  border-radius: 1px;
+  transform: translateY(-50%);
+  box-shadow: 0 0 5px rgba(201, 165, 92, 0.85);
+  pointer-events: none;
 }
 .list-empty {
   padding: 0.85rem 0.4rem;
