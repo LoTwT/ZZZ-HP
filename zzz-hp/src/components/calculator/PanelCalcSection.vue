@@ -917,10 +917,7 @@ watch(
     if (isAffixMode.value) return
 
     if (oldId) {
-      const oldAgent = props.agents.find((item) => item.id === oldId)
-      if (oldAgent?.profession === '异常') {
-        emitAnomalySlotPanel(oldId, externalPanel)
-      }
+      emitAnomalySlotPanel(oldId, { ...externalPanel })
       const convertSlot = convertSupportSlots.value.find((item) => item.agentId === oldId)
       if (convertSlot) {
         emitConvertSlotPanel(oldId, convertSlot.requiredAttrs, externalPanel)
@@ -932,23 +929,42 @@ watch(
 
     if (!mainAgent.value || !newId) return
 
+    // 首次挂载不要覆盖方案/草稿里已经灌进编辑器的局外面板。
+    // 真正换人时才把每人自己的面板换上来，避免主 C 标签把攻暴数字挪给另一个角色。
+    if (!oldId) {
+      const savedAnomaly = props.anomalySlotPanels?.[newId]
+      if (savedAnomaly && mainAgent.value.profession === '异常') {
+        Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
+        return
+      }
+      const savedConvert = props.convertSlotPanels?.[newId]
+      if (savedConvert && Object.keys(savedConvert).length > 0) {
+        applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+        applyConvertPartialToExternalPanel(savedConvert, externalPanel)
+        return
+      }
+      applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+      emitAnomalySlotPanel(newId, { ...externalPanel })
+      return
+    }
+
     const savedAnomaly = props.anomalySlotPanels?.[newId]
-    if (savedAnomaly && mainAgent.value.profession === '异常') {
+    if (savedAnomaly) {
       Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
       return
     }
 
     const savedConvert = props.convertSlotPanels?.[newId]
     if (savedConvert && Object.keys(savedConvert).length > 0) {
+      Object.assign(externalPanel, createDefaultExternalPanel())
       applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
       applyConvertPartialToExternalPanel(savedConvert, externalPanel)
       return
     }
 
+    Object.assign(externalPanel, createDefaultExternalPanel())
     applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
-    if (mainAgent.value.profession === '异常') {
-      emitAnomalySlotPanel(newId, externalPanel)
-    }
+    emitAnomalySlotPanel(newId, { ...externalPanel })
   },
   { immediate: true },
 )
@@ -958,9 +974,7 @@ watch(
   () => {
     const id = mainAgent.value?.id
     if (!id || isAffixMode.value) return
-    if (mainAgent.value?.profession === '异常') {
-      emitAnomalySlotPanel(id, externalPanel)
-    }
+    emitAnomalySlotPanel(id, { ...externalPanel })
     const convertSlot = convertSupportSlots.value.find((item) => item.agentId === id)
     if (convertSlot) {
       emitConvertSlotPanel(id, convertSlot.requiredAttrs, externalPanel)
@@ -1063,6 +1077,8 @@ function buildHitPanelCalcContext(
 }
 
 function resolveOwnerExternalPanel(ownerSlotIndex: number, ownerAgentId: string): PanelStats {
+  // 主 C 只表示「面板计算正在编辑谁」。招式结算读该角色自己的局外面板：
+  // 正在编辑的人用 live 编辑器，其他人用各自存好的槽位面板。
   if (ownerSlotIndex === mainSlotIndex.value) return effectiveExternalPanel.value
   return ensureAnomalySlotPanel(ownerAgentId)
 }
