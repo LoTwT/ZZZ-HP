@@ -81,6 +81,19 @@ const preparedSkillIds = computed(
   () => new Set(currentSlot.value.prepared.map((item) => item.skillId)),
 )
 
+const preparedSkillNames = computed(() => {
+  const names = new Set<string>()
+  for (const item of currentSlot.value.prepared) {
+    const name = preparedSkill(item)?.name.trim()
+    if (name) names.add(name)
+  }
+  return names
+})
+
+const flowPreparedIds = computed(
+  () => new Set(currentSlot.value.flow.map((item) => item.preparedId)),
+)
+
 const librarySkills = computed(() => {
   if (!currentAgentId.value) return [] as Skill[]
   let list = buffStore.skillsForAgent(currentAgentId.value)
@@ -92,8 +105,15 @@ const librarySkills = computed(() => {
   return list.filter((skill) => skill.name.toLowerCase().includes(q))
 })
 
+function preparedBlockReason(skill: Skill): 'id' | 'name' | null {
+  if (preparedSkillIds.value.has(skill.id)) return 'id'
+  const name = skill.name.trim()
+  if (name && preparedSkillNames.value.has(name)) return 'name'
+  return null
+}
+
 const unpreparedFilteredCount = computed(
-  () => librarySkills.value.filter((skill) => !preparedSkillIds.value.has(skill.id)).length,
+  () => librarySkills.value.filter((skill) => !preparedBlockReason(skill)).length,
 )
 
 function damageTypeLabel(type: SkillDamageType) {
@@ -234,7 +254,7 @@ function slotLabel(slot: TeamSlot, index: number) {
 
 function addPrepared(skill: Skill) {
   const ownerId = currentAgentId.value
-  if (!ownerId) return
+  if (!ownerId || preparedBlockReason(skill)) return
   const agents = defaultAnomalyAgents(skill.damageType, ownerId)
   const next = ensureSchemeSlots(slots.value)
   const slot = next[activeSlotIndex.value]!
@@ -252,12 +272,15 @@ function addPrepared(skill: Skill) {
 function addFilteredToPrepared() {
   const ownerId = currentAgentId.value
   if (!ownerId) return
-  const existing = new Set(currentSlot.value.prepared.map((item) => item.skillId))
+  const existingIds = new Set(currentSlot.value.prepared.map((item) => item.skillId))
+  const existingNames = new Set(preparedSkillNames.value)
   const next = ensureSchemeSlots(slots.value)
   const slot = next[activeSlotIndex.value]!
   for (const skill of librarySkills.value) {
-    if (existing.has(skill.id)) continue
-    existing.add(skill.id)
+    const name = skill.name.trim()
+    if (existingIds.has(skill.id) || (name && existingNames.has(name))) continue
+    existingIds.add(skill.id)
+    if (name) existingNames.add(name)
     const agents = defaultAnomalyAgents(skill.damageType, ownerId)
     slot.prepared.push({
       id: newLocalId('prep'),
@@ -476,6 +499,52 @@ watch(expanded, (open) => {
   if (!open) detail.value = null
 })
 
+function compactPreparedDuplicates() {
+  const next = ensureSchemeSlots(slots.value)
+  let changed = false
+  for (const slot of next) {
+    const keepBySkill = new Map<string, string>()
+    const remap = new Map<string, string>()
+    const kept: PreparedSkill[] = []
+    for (const item of slot.prepared) {
+      const keepId = keepBySkill.get(item.skillId)
+      if (keepId) {
+        remap.set(item.id, keepId)
+        changed = true
+        continue
+      }
+      keepBySkill.set(item.skillId, item.id)
+      kept.push(item)
+    }
+    if (kept.length === slot.prepared.length) continue
+    slot.prepared = kept
+    slot.flow = slot.flow.map((entry) => {
+      const mapped = remap.get(entry.preparedId)
+      return mapped ? { ...entry, preparedId: mapped } : entry
+    })
+  }
+  if (changed) {
+    slots.value = next
+    if (detail.value?.kind === 'prepared' && remapMissingPrepared(detail.value.preparedId, next)) {
+      detail.value = null
+    }
+  }
+}
+
+function remapMissingPrepared(preparedId: string, nextSlots: SchemeSlot[]) {
+  return nextSlots.every((slot) => !slot.prepared.some((item) => item.id === preparedId))
+}
+
+watch(
+  () => slots.value.map((slot) => slot.prepared.map((item) => item.skillId).join(',')).join('|'),
+  compactPreparedDuplicates,
+  { immediate: true },
+)
+
+function expand() {
+  expanded.value = true
+}
+
 function onModalKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || !detail.value) return
   closeDetail()
@@ -483,6 +552,8 @@ function onModalKeydown(event: KeyboardEvent) {
 
 onMounted(() => window.addEventListener('keydown', onModalKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
+
+defineExpose({ expand })
 </script>
 
 <template>
@@ -589,8 +660,19 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                     <button type="button" class="mini-btn" @click="detail = { kind: 'library', skillId: skill.id }">
                       详情
                     </button>
-                    <button type="button" class="mini-btn" @click="addPrepared(skill)">
-                      {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入' }}
+                    <button
+                      type="button"
+                      class="mini-btn"
+                      :disabled="Boolean(preparedBlockReason(skill))"
+                      @click="addPrepared(skill)"
+                    >
+                      {{
+                        preparedBlockReason(skill) === 'name'
+                          ? '已有同名'
+                          : preparedBlockReason(skill)
+                            ? '已加入'
+                            : '加入'
+                      }}
                     </button>
                     <button
                       v-if="skill.source === 'custom'"
@@ -677,8 +759,8 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                 <p class="col-desc">
                   {{
                     modalTab === 'prep'
-                      ? '绑定招式库。异常类在详情里选双代理人。'
-                      : '只有准备招式才能加入流程。'
+                      ? '每种招式只准备一条。异常类在详情里选双代理人。'
+                      : '同一准备招式可以多次加入流程。'
                   }}
                 </p>
                 <div class="col-head-spacer" />
@@ -727,7 +809,7 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
                         </button>
                       </template>
                       <button v-else type="button" class="mini-btn" @click="addToFlow(prepared)">
-                        加入流程
+                        {{ flowPreparedIds.has(prepared.id) ? '再加一条' : '加入流程' }}
                       </button>
                     </template>
                   </SkillFlowCard>

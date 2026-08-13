@@ -1163,19 +1163,23 @@ watch(
 )
 
 const pageRootRef = ref<HTMLElement | null>(null)
+const skillFlowSectionRef = ref<InstanceType<typeof SkillFlowSection> | null>(null)
 
 async function scrollToSection(sectionId: DamageCalcSectionId) {
   await nextTick()
   if (sectionId === 'damage-calc-panel') panelCalcMode.value = 'panel'
   if (sectionId === 'damage-calc-affix') panelCalcMode.value = 'affix'
   if (sectionId === 'damage-calc-optimal') panelCalcMode.value = 'optimal'
-  // 计算方式及其子项：跳到伤害类型与招式上下文
+  if (sectionId === 'skill-flow') {
+    skillFlowSectionRef.value?.expand()
+    await nextTick()
+  }
   const anchorId =
     sectionId === 'damage-calc-mode' ||
     sectionId === 'damage-calc-panel' ||
     sectionId === 'damage-calc-affix' ||
     sectionId === 'damage-calc-optimal'
-      ? 'skill-flow'
+      ? 'damage-calc-mode'
       : sectionId
   const target = pageRootRef.value?.querySelector<HTMLElement>(`#${anchorId}`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1242,6 +1246,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
     />
 
     <SkillFlowSection
+      ref="skillFlowSectionRef"
       :team-slots="teamSlots"
       :agents="agents"
       :hits="hits"

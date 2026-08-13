@@ -5,6 +5,7 @@ export const DAMAGE_CALC_SECTIONS = [
   { id: 'damage-wengine', label: '音擎选择' },
   { id: 'damage-drive-disc', label: '驱动盘' },
   { id: 'damage-bangboo', label: '邦布' },
+  { id: 'skill-flow', label: '招式流程' },
 ] as const
 
 /** 侧栏「计算方式」下的子项（面板 / 词条 / 最优分配） */
@@ -18,7 +19,6 @@ export type DamageCalcSectionId =
   | (typeof DAMAGE_CALC_SECTIONS)[number]['id']
   | (typeof DAMAGE_CALC_MODE_ITEMS)[number]['id']
   | 'damage-calc-mode'
-  | 'damage-kind-context'
 
 export type DamageCalcNavItem =
   | (typeof DAMAGE_CALC_SECTIONS)[number]
