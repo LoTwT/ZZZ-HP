@@ -200,12 +200,14 @@ const props = defineProps<{
   driveDiscs: DriveDiscBuffDoc[]
   selectedBangbooId: string
   bangbooRefine: number
+  /** 计算页正在编辑的编队槽位；局外面板跟这个人走，与主C无关 */
+  editedSlotIndex: number
   calcMode: PanelCalcMode
   sectionId?: string
   damageKind?: import('@/types/calculator').DamageCalcKind
   anomalySubKind?: AnomalyDamageSubKind
   triggerAnomalyAgentId?: string | null
-  /** 异常非主 C 槽位局外面板，key = agentId */
+  /** 各角色局外面板，key = agentId；当前编辑槽位用 live 编辑器，其余读这里 */
   anomalySlotPanels?: Record<string, PanelStats>
   /** 转模增益角色局外面板（仅转模来源属性），key = agentId */
   convertSlotPanels?: ConvertSlotPanels
@@ -253,7 +255,7 @@ function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   })
 }
 
-/** 主 C 局内面板汇总用的额外 Buff（无流程时全量；有流程时按首条主 C 招式或首条招式上下文匹配 scope） */
+/** 无流程时：额外 Buff 打在当前正在编辑的角色上；有流程时按该角色招式匹配 */
 function buildExtraModsForMainPanel(): BuffStatModifiers {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
   const phase = props.staggerPhase ?? 'stagger'
@@ -290,9 +292,11 @@ function ensureElementResistanceMap() {
   return enemyInput.value.elementResistance!
 }
 
+/** 当前正在编辑的编队槽位（点选代理人卡片），不是主C */
 const mainSlotIndex = computed(() => {
-  const index = props.teamSlots.findIndex((slot) => slot.isMainC)
-  return index >= 0 ? index : 0
+  const index = props.editedSlotIndex
+  if (index >= 0 && index < props.teamSlots.length) return index
+  return 0
 })
 
 const mainSlot = computed(() => props.teamSlots[mainSlotIndex.value]!)
@@ -357,7 +361,7 @@ const mainDriveDiscSummary = computed(() => {
   const parts: string[] = []
   if (fourName) parts.push(`4件：${fourName}`)
   if (twoName && twoName !== fourName) parts.push(`2件：${twoName}`)
-  return parts.length ? parts.join(' · ') : '未选择（请在上方驱动盘区为主C选择）'
+  return parts.length ? parts.join(' · ') : '未选择（请先点选编队槽位并配置驱动盘）'
 })
 
 const effectiveExternalPanel = computed<PanelStats>(() =>
@@ -383,7 +387,7 @@ const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(
   panelToConvertAttrValues(effectiveExternalPanel.value, { level: 60, pierceMod: 0 }),
 )
 
-/** 流程参与者（非主 C 的归属者 / 异常强度提供者 / 异常类触发者） */
+/** 流程参与者里、不是当前正在编辑的槽位 */
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
   const participantIds = new Set<string>()
@@ -477,6 +481,7 @@ function buildPanelCalcContextForSlot(
     bangboo: selectedBangboo.value,
     bangbooRefine: props.bangbooRefine,
     mainSlotIndex: slotIndex,
+    liveExternalSlotIndex: mainSlotIndex.value,
     driveDiscs: props.driveDiscs,
     extraMods: extraModsOverride ?? extraMods.value,
     skillContext: buildSkillContextForSlot(slotIndex),
@@ -2947,7 +2952,7 @@ defineExpose({
           {{
             isAffixMode
               ? '录入副词条条数，由角色/音擎基础属性推导局外面板；局内面板与伤害乘区逻辑与面板计算一致。'
-              : '录入主C局外面板（初始面板），局内面板由队伍增益、音擎、邦布与额外 Buff 自动汇总。'
+              : '录入当前槽位角色的局外面板（初始面板），局内面板由队伍增益、音擎、邦布与额外 Buff 自动汇总。'
           }}
         </p>
       </div>
@@ -2955,7 +2960,7 @@ defineExpose({
 
     <p v-if="teamSummary" class="team-summary">{{ teamSummary }}</p>
     <p v-if="isMbMainAgent" class="mb-hint">
-      当前主C为命破：基础伤害来源固定为贯穿力，防御区固定为 1。
+      当前角色为命破：基础伤害来源固定为贯穿力，防御区固定为 1。
     </p>
 
     <details v-if="teamWengineNotes.length" class="team-notes team-wengine-notes">
@@ -2979,7 +2984,7 @@ defineExpose({
         </select>
       </label>
       <label class="field">
-        <span>主C角色名</span>
+        <span>当前角色</span>
         <input :value="mainAgent?.name ?? '未选择'" type="text" readonly />
       </label>
       <label class="field">
@@ -2996,7 +3001,7 @@ defineExpose({
       <header class="panel-block-header">
         <h3>驱动盘主属性</h3>
         <p>
-          2/4 件套沿用上方主C驱动盘选择（{{ mainDriveDiscSummary }}）；默认 6 盘均为 15 级，1 号
+          2/4 件套沿用上方当前槽位的驱动盘选择（{{ mainDriveDiscSummary }}）；默认 6 盘均为 15 级，1 号
           +{{ AFFIX_DRIVE_DISC_SLOT_1_HP }} 生命、2 号 +{{ AFFIX_DRIVE_DISC_SLOT_2_ATK }} 攻击。请选择
           4/5/6 号盘主属性。
         </p>
@@ -3033,10 +3038,10 @@ defineExpose({
       <header class="panel-block-header">
         <h3>词条数</h3>
         <p>
-          基于主C角色基础面板、音擎与驱动盘属性计算局外面板；每条副词条按固定数值折算（如生命 +112、攻击 +19、穿透 +9、双暴 +2.4%/+4.8%、精通 +9 等）。
+          基于当前角色基础面板、音擎与驱动盘属性计算局外面板；每条副词条按固定数值折算（如生命 +112、攻击 +19、穿透 +9、双暴 +2.4%/+4.8%、精通 +9 等）。
         </p>
       </header>
-      <p v-if="!mainAgent" class="affix-hint">请先选择主C角色，以加载其基础面板。</p>
+      <p v-if="!mainAgent" class="affix-hint">请先在编队中点选要编辑的角色，以加载其基础面板。</p>
       <div class="grid four">
         <label v-for="field in AFFIX_COUNT_FIELDS" :key="field.key" class="field">
           <span>{{ field.label }}（{{ field.unitLabel }}）</span>
@@ -3099,9 +3104,9 @@ defineExpose({
           class="panel-block anomaly-support-panels"
         >
           <header class="panel-block-header">
-            <h3>伤害事件参与者 · 局外面板</h3>
+            <h3>其他参与者 · 局外面板</h3>
             <p>
-              事件产生角色（owner）与异常产生角色若为非主 C，需在此录入局外初始面板；局内最终面板按各自槽位 Buff 勾选汇总。
+              招式持有者 / 异常强度提供者 / 异常类触发者若不是当前正在编辑的槽位，可在此改他们的局外初始面板；也可以点选编队卡片切过去编辑。
             </p>
           </header>
           <details

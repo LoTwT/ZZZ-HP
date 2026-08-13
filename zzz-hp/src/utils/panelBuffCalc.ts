@@ -479,6 +479,7 @@ export interface PanelCalcContext {
   wengines: WengineBuffDoc[]
   bangboo: BangbooBuffDoc
   bangbooRefine: number
+  /** 当前正在汇总面板的槽位（自身 / 队友 的「自身」） */
   mainSlotIndex: number
   driveDiscs: DriveDiscBuffDoc[]
   extraMods?: BuffStatModifiers
@@ -486,7 +487,9 @@ export interface PanelCalcContext {
   buffSelection?: BuffSelectionState | null
   attrValues?: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
-  /** 主 C 局外面板（按槽位转模时用于主槽位） */
+  /** 正在编辑局外面板的槽位（编队点选的「编辑中」）；live 面板跟这个人走，不跟主C勾选走 */
+  liveExternalSlotIndex?: number
+  /** 正在编辑的那份局外面板（live） */
   mainExternalPanel?: PanelStats
   /** 异常产生角色局外面板 */
   anomalySlotPanels?: Record<string, PanelStats>
@@ -557,9 +560,11 @@ export function applyConvertPartialToExternalPanel(
   }
 }
 
-function resolveTeamMainSlotIndex(ctx: PanelCalcContext): number {
-  const idx = ctx.teamSlots.findIndex((slot) => slot.isMainC)
-  return idx >= 0 ? idx : ctx.mainSlotIndex
+function resolveLiveExternalSlotIndex(ctx: PanelCalcContext): number {
+  if (ctx.liveExternalSlotIndex != null && ctx.liveExternalSlotIndex >= 0) {
+    return ctx.liveExternalSlotIndex
+  }
+  return ctx.mainSlotIndex
 }
 
 function resolveExternalPanelForSlot(
@@ -567,8 +572,8 @@ function resolveExternalPanelForSlot(
   ctx: PanelCalcContext,
   currentSlotExternalPanel: PanelStats,
 ): PanelStats {
-  const teamMainIndex = resolveTeamMainSlotIndex(ctx)
-  if (slotIndex === teamMainIndex && ctx.mainExternalPanel) {
+  const liveIndex = resolveLiveExternalSlotIndex(ctx)
+  if (slotIndex === liveIndex && ctx.mainExternalPanel) {
     return ctx.mainExternalPanel
   }
   if (slotIndex === ctx.mainSlotIndex) {
@@ -1730,12 +1735,12 @@ export function computeFinalPanel(
   externalPanel: PanelStats,
   ctx: PanelCalcContext,
 ): PanelBuffBreakdown {
-  const teamMainIndex = resolveTeamMainSlotIndex(ctx)
+  const liveIndex = resolveLiveExternalSlotIndex(ctx)
   const ctxForSources: PanelCalcContext = {
     ...ctx,
     mainExternalPanel:
       ctx.mainExternalPanel ??
-      (ctx.mainSlotIndex === teamMainIndex ? externalPanel : undefined),
+      (ctx.mainSlotIndex === liveIndex ? externalPanel : undefined),
   }
   const panelSourceValuesBySlot = buildAllPanelSourceValuesBySlot(ctxForSources, externalPanel)
   const mainPanelSources = panelSourceValuesBySlot.get(ctx.mainSlotIndex)

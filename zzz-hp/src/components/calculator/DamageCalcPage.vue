@@ -927,11 +927,10 @@ function selectBangboo(bangbooId: string) {
 }
 
 function applyPanelRecognition(result: PanelScreenshotRecognition) {
-  const mainIndex = teamSlots.findIndex((slot) => slot.isMainC)
-  const slot = teamSlots[mainIndex >= 0 ? mainIndex : 0]!
+  const slotIndex = activeSlot.value
+  const slot = teamSlots[slotIndex]!
   if (result.agentId) {
     slot.agentId = result.agentId
-    activeSlot.value = mainIndex >= 0 ? mainIndex : 0
   }
   slot.rank = result.rank
   if (result.wengineId) slot.wengineId = result.wengineId
@@ -1367,6 +1366,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :drive-discs="driveDiscs"
       :selected-bangboo-id="selectedBangbooId"
       :bangboo-refine="bangbooRefine"
+      :edited-slot-index="activeSlot"
       :calc-mode="panelCalcMode"
       :damage-kind="damageKind"
       :anomaly-sub-kind="anomalySubKind"

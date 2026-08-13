@@ -1710,6 +1710,7 @@ export function buildOptimalEvalContext(input: {
       bangboo: input.bangboo,
       bangbooRefine: input.bangbooRefine,
       mainSlotIndex: input.mainSlotIndex,
+      liveExternalSlotIndex: input.mainSlotIndex,
       driveDiscs: input.driveDiscs,
       skillContext: input.skillContext,
       buffSelection: input.buffSelection,
