@@ -45,8 +45,9 @@ const expanded = ref(true)
 const modalTab = ref<'prep' | 'flow'>('prep')
 const flowDragEnabled = ref(false)
 const flowDraggingId = ref<string | null>(null)
-/** 插入位置：0 = 第一条之前，n = 最后一条之后。相邻两行的上/下半边指向同一条缝。 */
+/** n 条招式对应 n+1 条插入缝，拖放只认缝不认行的上/下沿。 */
 const flowDropIndex = ref<number | null>(null)
+const flowListEl = ref<HTMLUListElement | null>(null)
 const detail = ref<
   | { kind: 'library'; skillId: string }
   | { kind: 'prepared'; preparedId: string }
@@ -437,10 +438,29 @@ function isFlowDragIgnoreTarget(event: DragEvent) {
   )
 }
 
-function flowCardEl(event: DragEvent): HTMLElement | null {
-  const fromTarget = event.target instanceof Element ? event.target.closest('.sf-card') : null
-  if (fromTarget instanceof HTMLElement) return fromTarget
-  return event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+function nearestSeamIndex(clientY: number): number | null {
+  const list = flowListEl.value
+  if (!list) return null
+  const cards = list.querySelectorAll<HTMLElement>('.sf-card')
+  const n = cards.length
+  if (!n) return 0
+  const seamY = (i: number) => {
+    if (i <= 0) return cards[0]!.getBoundingClientRect().top
+    if (i >= n) return cards[n - 1]!.getBoundingClientRect().bottom
+    const prev = cards[i - 1]!.getBoundingClientRect()
+    const next = cards[i]!.getBoundingClientRect()
+    return (prev.bottom + next.top) / 2
+  }
+  let best = 0
+  let bestDist = Infinity
+  for (let i = 0; i <= n; i += 1) {
+    const dist = Math.abs(clientY - seamY(i))
+    if (dist < bestDist) {
+      bestDist = dist
+      best = i
+    }
+  }
+  return best
 }
 
 function onFlowDragStart(entryId: string, event: DragEvent) {
@@ -453,44 +473,20 @@ function onFlowDragStart(entryId: string, event: DragEvent) {
   flowDraggingId.value = entryId
 }
 
-function dropIndexFromCard(entryId: string, event: DragEvent): number | null {
-  const targetIndex = currentSlot.value.flow.findIndex((item) => item.id === entryId)
-  if (targetIndex < 0) return null
-  const el = flowCardEl(event)
-  if (!el) return targetIndex
-  const rect = el.getBoundingClientRect()
-  return event.clientY < rect.top + rect.height / 2 ? targetIndex : targetIndex + 1
-}
-
-function onFlowDragOver(entryId: string, event: DragEvent) {
+function onFlowSortDragOver(event: DragEvent) {
   if (!flowDragEnabled.value || !flowDraggingId.value) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  const index = dropIndexFromCard(entryId, event)
+  const index = nearestSeamIndex(event.clientY)
   if (index == null) return
   flowDropIndex.value = index
 }
 
-function onFlowGapDragOver(index: number, event: DragEvent) {
+function onFlowSortDrop(event: DragEvent) {
   if (!flowDragEnabled.value || !flowDraggingId.value) return
   event.preventDefault()
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  flowDropIndex.value = index
-}
-
-function onFlowDrop(entryId: string, event: DragEvent) {
-  if (!flowDragEnabled.value || !flowDraggingId.value) return
-  event.preventDefault()
-  const index = dropIndexFromCard(entryId, event) ?? flowDropIndex.value
+  const index = nearestSeamIndex(event.clientY) ?? flowDropIndex.value
   if (index != null) reorderFlowToIndex(flowDraggingId.value, index)
-  flowDraggingId.value = null
-  flowDropIndex.value = null
-}
-
-function onFlowGapDrop(index: number, event: DragEvent) {
-  if (!flowDragEnabled.value || !flowDraggingId.value) return
-  event.preventDefault()
-  reorderFlowToIndex(flowDraggingId.value, index)
   flowDraggingId.value = null
   flowDropIndex.value = null
 }
@@ -1038,14 +1034,17 @@ defineExpose({ expand })
                   }}
                 </p>
               </div>
-              <ul class="sf-list sf-list--flow">
+              <ul
+                ref="flowListEl"
+                class="sf-list sf-list--flow"
+                @dragover="onFlowSortDragOver"
+                @drop="onFlowSortDrop"
+              >
                 <template v-for="(entry, index) in currentSlot.flow" :key="entry.id">
                   <li
                     class="sf-insert-slot"
                     :class="{ 'is-active': flowInsertIndex === index }"
                     aria-hidden="true"
-                    @dragover="onFlowGapDragOver(index, $event)"
-                    @drop="onFlowGapDrop(index, $event)"
                   />
                   <SkillFlowCard
                     :index="index + 1"
@@ -1075,8 +1074,6 @@ defineExpose({ expand })
                       updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
                     "
                     @dragstart="onFlowDragStart(entry.id, $event)"
-                    @dragover="onFlowDragOver(entry.id, $event)"
-                    @drop="onFlowDrop(entry.id, $event)"
                     @dragend="onFlowDragEnd"
                   >
                     <template #actions>
@@ -1104,8 +1101,6 @@ defineExpose({ expand })
                   class="sf-insert-slot"
                   :class="{ 'is-active': flowInsertIndex === currentSlot.flow.length }"
                   aria-hidden="true"
-                  @dragover="onFlowGapDragOver(currentSlot.flow.length, $event)"
-                  @drop="onFlowGapDrop(currentSlot.flow.length, $event)"
                 />
                 <li v-if="!currentSlot.flow.length" class="list-empty">
                   还没有流程条目。从左侧把准备招式加进来。
