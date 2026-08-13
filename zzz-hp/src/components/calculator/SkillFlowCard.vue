@@ -108,6 +108,8 @@ function emitCount(event: Event) {
   width: 100%;
   min-width: 0;
   height: 2.15rem;
+  overflow: hidden;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 0.35rem;

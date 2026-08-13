@@ -1298,7 +1298,7 @@ watch(
     const map: Record<string, number> = {}
     const results: Record<string, DamageCalcResult> = {}
     for (const line of damageEventSummary.value?.lines ?? []) {
-      map[line.hit.id] = line.perHit
+      map[line.hit.id] = line.total
       results[line.hit.id] = line.result
     }
     for (const line of previewHitSummary.value?.lines ?? []) {

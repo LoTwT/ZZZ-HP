@@ -938,7 +938,6 @@ defineExpose({ expand })
                 >
                   清空全部
                 </button>
-                <div v-else class="col-head-spacer" />
                 <p class="col-desc">
                   {{
                     modalTab === 'prep'
@@ -946,7 +945,6 @@ defineExpose({ expand })
                       : '同一准备招式可以多次加入流程。双代理人请在准备阶段的详情里选。'
                   }}
                 </p>
-                <div class="col-head-spacer" />
               </div>
               <ul class="sf-list">
                 <template v-for="(prepared, preparedIndex) in currentSlot.prepared" :key="prepared.id">
@@ -1411,24 +1409,39 @@ defineExpose({ expand })
 .flow-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.85rem;
-  align-items: start;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  column-gap: 0.85rem;
+  align-items: stretch;
 }
 .flow-col {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: 1 / span 3;
+}
+@supports not (grid-template-rows: subgrid) {
+  .flow-col {
+    display: flex;
+    flex-direction: column;
+    grid-row: auto;
+  }
+  .col-head {
+    min-height: 9.2rem;
+  }
 }
 .col-head,
 .col-foot {
-  flex: 0 0 auto;
+  min-width: 0;
 }
 .col-head {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   align-items: stretch;
-  margin-bottom: 0.45rem;
+  justify-content: flex-start;
+  margin: 0;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid #2a3038;
 }
 .col-head h3 {
   margin: 0;
@@ -1456,9 +1469,6 @@ defineExpose({ expand })
   margin: 0;
   accent-color: #c9a55c;
 }
-.col-head-spacer {
-  min-height: 0;
-}
 .col-desc,
 .empty-hint,
 .list-empty {
@@ -1467,7 +1477,7 @@ defineExpose({ expand })
   font-size: 0.78rem;
 }
 .col-desc {
-  min-height: 0;
+  min-height: 2.4rem;
   line-height: 1.2rem;
 }
 .search-input,
@@ -1503,7 +1513,7 @@ defineExpose({ expand })
 
 .sf-list {
   list-style: none;
-  margin: 0;
+  margin: 0.45rem 0 0;
   padding: 0 0.2rem 0 0;
   display: flex;
   flex-direction: column;
@@ -1520,7 +1530,7 @@ defineExpose({ expand })
 }
 .sf-insert-slot:first-child,
 .sf-insert-slot:last-child {
-  height: 0.28rem;
+  height: 0;
 }
 .sf-insert-slot.is-active::after {
   content: '';

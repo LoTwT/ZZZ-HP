@@ -2695,6 +2695,9 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #8a6a1f !important;
 }
 
+[data-theme='light'] .skill-flow-modal .col-head {
+  border-bottom-color: #d5dae3 !important;
+}
 [data-theme='light'] .skill-flow-modal .col-head h3 {
   color: #1c212a !important;
 }
