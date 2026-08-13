@@ -175,13 +175,12 @@ function damageForFlow(entryId: string) {
 }
 
 function damageForPrepared(preparedId: string) {
-  const entry = currentSlot.value.flow.find((item) => item.preparedId === preparedId)
-  return entry ? damageForFlow(entry.id) : ''
+  return formatDamage(props.hitDamages?.[preparedId])
 }
 
 function damageForLibrary(skillId: string) {
   const prepared = currentSlot.value.prepared.find((item) => item.skillId === skillId)
-  return prepared ? damageForPrepared(prepared.id) : ''
+  return prepared ? damageForPrepared(prepared.id) : formatDamage(props.hitDamages?.[skillId])
 }
 
 function dtypeKind(type: SkillDamageType) {
@@ -258,33 +257,33 @@ const detailPrepared = computed((): PreparedSkill | null => {
 
 const detailTitle = computed(() => detailSkill.value?.name || '招式详情')
 
-const detailFlowEntryId = computed(() => {
+const detailCalcKey = computed(() => {
   const current = detail.value
   if (!current) return null
   if (current.kind === 'flow') return current.entryId
-  if (current.kind === 'prepared') {
-    return currentSlot.value.flow.find((item) => item.preparedId === current.preparedId)?.id ?? null
-  }
-  return (
-    currentSlot.value.flow.find((item) => {
-      const prepared = currentSlot.value.prepared.find((row) => row.id === item.preparedId)
-      return prepared?.skillId === current.skillId
-    })?.id ?? null
-  )
+  if (current.kind === 'prepared') return current.preparedId
+  const prepared = currentSlot.value.prepared.find((item) => item.skillId === current.skillId)
+  return prepared?.id ?? current.skillId
 })
 
 const detailSkipReason = computed(() => {
-  const entryId = detailFlowEntryId.value
-  if (!entryId) return null
-  const entry = currentSlot.value.flow.find((item) => item.id === entryId)
-  return entry ? flowSkipReason(entry) : null
+  const current = detail.value
+  if (!current) return null
+  if (current.kind === 'flow') {
+    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
+    return entry ? flowSkipReason(entry) : null
+  }
+  const prepared = detailPrepared.value
+  const skill = detailSkill.value
+  if (prepared && skill) return dualAgentHint(prepared, skill)
+  return null
 })
 
 const detailZoneRows = computed(() => {
   const skill = detailSkill.value
-  const entryId = detailFlowEntryId.value
-  if (!skill || !entryId || detailSkipReason.value) return []
-  const result = props.hitCalcResults?.[entryId]
+  const key = detailCalcKey.value
+  if (!skill || !key || detailSkipReason.value) return []
+  const result = props.hitCalcResults?.[key]
   if (!result) return []
   return buildSkillCalcZoneRows(result, skill.damageType)
 })
@@ -1031,7 +1030,7 @@ defineExpose({ expand })
                 </div>
               </div>
               <p v-else class="empty-hint">
-                加入流程并完成结算后，这里会列出本条招式各乘区的数值。预设和自定义都一样。
+                还没有结算结果。直伤在库里就能预览；异常类要先加入准备并选双代理人。
               </p>
             </div>
             <p v-else class="empty-hint skill-detail-missing">招式已从库中删除。</p>

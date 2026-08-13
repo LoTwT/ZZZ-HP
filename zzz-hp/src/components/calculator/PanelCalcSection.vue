@@ -215,6 +215,8 @@ const props = defineProps<{
   staggerPhase?: import('@/types/calculator').StaggerPhase
   /** 流程展开后的结算列表，来自 resolveFlow */
   hits?: ResolvedHit[]
+  /** 招式库 / 准备招式的单次预览，不计入流程总伤 */
+  previewHits?: ResolvedHit[]
   /** 为 true 时跳过伤害事件汇总等非必要重算（如最优词条模式） */
   calcSuspended?: boolean
   /** 场地 / 环境 Buff（危局全局、Boss 场地、防卫房间） */
@@ -385,7 +387,7 @@ const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
   const participantIds = new Set<string>()
-  for (const hit of props.hits ?? []) {
+  for (const hit of [...(props.hits ?? []), ...(props.previewHits ?? [])]) {
     for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
       if (id && id !== mainId) participantIds.add(id)
     }
@@ -1276,12 +1278,21 @@ const damageEventSummary = computed(() => {
   )
 })
 
+const previewHitSummary = computed(() => {
+  if (props.calcSuspended || !props.previewHits?.length) return null
+  return summarizeHits(props.previewHits, buildHitCalcInput)
+})
+
 watch(
-  damageEventSummary,
-  (summary) => {
+  [damageEventSummary, previewHitSummary],
+  () => {
     const map: Record<string, number> = {}
     const results: Record<string, DamageCalcResult> = {}
-    for (const line of summary?.lines ?? []) {
+    for (const line of damageEventSummary.value?.lines ?? []) {
+      map[line.hit.id] = line.perHit
+      results[line.hit.id] = line.result
+    }
+    for (const line of previewHitSummary.value?.lines ?? []) {
       map[line.hit.id] = line.perHit
       results[line.hit.id] = line.result
     }

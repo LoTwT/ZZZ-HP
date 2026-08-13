@@ -246,6 +246,73 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
   return { hits, missingSkillIds: [...missing] }
 }
 
+function previewFlowEntry(id: string, ownerAgentId: string, preparedId: string): FlowEntry {
+  return {
+    id,
+    ownerAgentId,
+    preparedId,
+    count: 1,
+    staggerPhase: 'stagger',
+    critMode: 'expected',
+  }
+}
+
+/**
+ * 招式库 / 准备招式主行预览：不进流程也算出单次伤害。
+ * hit.id = 准备条目 id，或未准备时用 skill.id。不计入流程总伤。
+ */
+export function resolveSkillPreviews(
+  options: ResolveFlowOptions & { skillsForAgent: (agentId: string) => Skill[] },
+): ResolvedHit[] {
+  const hits: ResolvedHit[] = []
+
+  options.slots.forEach((slot, index) => {
+    if (!slot) return
+    const ownerAgentId = options.teamSlots[index]?.agentId ?? ''
+    if (!ownerAgentId) return
+
+    const preparedSkillIds = new Set<string>()
+    for (const prepared of slot.prepared) {
+      const skill = options.findSkill(prepared.skillId)
+      if (!skill) continue
+      preparedSkillIds.add(skill.id)
+      hits.push(
+        resolveOne(
+          previewFlowEntry(prepared.id, ownerAgentId, prepared.id),
+          prepared,
+          skill,
+          ownerAgentId,
+          options,
+        ),
+      )
+    }
+
+    for (const skill of options.skillsForAgent(ownerAgentId)) {
+      if (preparedSkillIds.has(skill.id)) continue
+      const agents = defaultAnomalyAgents(skill.damageType, ownerAgentId)
+      const prepared: PreparedSkill = {
+        id: skill.id,
+        skillId: skill.id,
+        skillSource: skill.source,
+        anomalyPowerAgentId: agents.anomalyPowerAgentId,
+        triggerAgentId: agents.triggerAgentId,
+        extraMods: null,
+      }
+      hits.push(
+        resolveOne(
+          previewFlowEntry(skill.id, ownerAgentId, prepared.id),
+          prepared,
+          skill,
+          ownerAgentId,
+          options,
+        ),
+      )
+    }
+  })
+
+  return hits
+}
+
 /** 准备阶段的增伤/暴击加算并入局内面板 */
 export function applyHitPanelMods(
   panel: import('@/types/calculatorPanel').PanelStats,

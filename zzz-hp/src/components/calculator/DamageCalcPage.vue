@@ -72,6 +72,7 @@ import { createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils
 import {
   ensureSchemeSlots,
   resolveFlow,
+  resolveSkillPreviews,
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 
@@ -153,6 +154,19 @@ const resolvedFlow = computed(() =>
   }),
 )
 const hits = computed(() => resolvedFlow.value.hits)
+const previewHits = computed(() =>
+  resolveSkillPreviews({
+    slots: schemeSlots.value,
+    teamSlots,
+    findSkill: (id) => calculatorBuffStore.findSkill(id),
+    skillsForAgent: (agentId) => {
+      const agent = agents.value.find((item) => item.id === agentId)
+      return calculatorBuffStore.skillsForAgent(agentId, agent?.element)
+    },
+    skillSubcategories: skillSubcategories.value,
+    followUpSkillRules: followUpSkillRules.value,
+  }),
+)
 const firstHit = computed(() => hits.value[0] ?? null)
 
 const anomalySubKind = computed<AnomalyDamageSubKind>(
@@ -417,7 +431,7 @@ async function applyEnemyBossByName(bossName: string, meta?: { version?: string;
 
 function getParticipantAgentIds(): string[] {
   const ids = new Set<string>()
-  for (const hit of hits.value) {
+  for (const hit of [...hits.value, ...previewHits.value]) {
     for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
       if (id) ids.add(id)
     }
@@ -457,7 +471,7 @@ function ensureAnomalySlotPanel(agentId: string) {
 
 watch(
   () =>
-    hits.value
+    [...hits.value, ...previewHits.value]
       .map(
         (hit) =>
           `${hit.id}:${hit.ownerAgentId}:${hit.anomalyPowerAgentId ?? ''}:${hit.triggerAgentId ?? ''}`,
@@ -1364,6 +1378,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :slot-buff-selections="multiSlotBuffSelection"
       :stagger-phase="staggerPhase"
       :hits="hits"
+      :preview-hits="previewHits"
       :environment-buffs="activeEnvironmentBuffs"
       v-model:enemy-input="enemyInput"
       v-model:extra-gains="extraGains"
