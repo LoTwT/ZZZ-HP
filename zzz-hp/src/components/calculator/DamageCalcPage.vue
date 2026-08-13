@@ -512,10 +512,6 @@ const mainSlotIndex = computed(() => {
   return index >= 0 ? index : 0
 })
 
-const mainAgent = computed(() =>
-  agents.value.find((item) => item.id === teamSlots[mainSlotIndex.value]?.agentId),
-)
-
 const selectedBangboo = computed(
   () =>
     bangboos.value.find((item) => item.id === selectedBangbooId.value) ??
@@ -541,7 +537,7 @@ const teamBuffSignature = computed(() =>
 
 const skillIsFollowUp = computed(() =>
   resolveIsFollowUp({
-    agentId: mainAgent.value?.id,
+    agentId: activeAgent.value?.id,
     categoryId: skillCategoryId.value,
     subcategoryId: skillSubcategoryId.value,
     skillSubcategories: skillSubcategories.value,
@@ -549,7 +545,7 @@ const skillIsFollowUp = computed(() =>
   }),
 )
 
-/** 异放/乱流/紊乱有产生角色时，增益属性过滤跟随该角色属性 */
+/** 异放/乱流/紊乱有产生角色时，增益属性过滤跟随该角色属性；否则跟当前编辑槽位 */
 const damageElement = computed(() => {
   const needsTrigger =
     damageKind.value === 'anomaly' &&
@@ -560,7 +556,7 @@ const damageElement = computed(() => {
     const trigger = agents.value.find((item) => item.id === triggerAnomalyAgentId.value)
     if (trigger?.element) return trigger.element
   }
-  return mainAgent.value?.element
+  return activeAgent.value?.element
 })
 
 const buffPickerSlotOptions = computed(() => {
@@ -628,10 +624,11 @@ const convertSupportSlots = computed(() =>
       wengines: wengines.value,
       bangboo: selectedBangboo.value,
       bangbooRefine: bangbooRefine.value,
-      mainSlotIndex: mainSlotIndex.value,
+      mainSlotIndex: activeSlot.value,
+      liveExternalSlotIndex: activeSlot.value,
       driveDiscs: driveDiscs.value,
       environmentBuffs: activeEnvironmentBuffs.value,
-      buffSelection: resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
+      buffSelection: resolveBuffSelectionForSlot(multiSlotBuffSelection, activeSlot.value),
       anomalySlotPanels,
       convertSlotPanels,
       skillContext: {
@@ -706,17 +703,18 @@ watch(teamBuffSignature, () => {
 })
 
 watch(
-  buffPickerSlotOptions,
-  (options) => {
+  () => teamSlots.map((slot) => slot.agentId).join(','),
+  () => {
+    const options = buffPickerSlotOptions.value
     if (!options.length) return
     if (!options.some((opt) => opt.index === buffPickerViewSlotIndex.value)) {
-      buffPickerViewSlotIndex.value = mainSlotIndex.value
+      buffPickerViewSlotIndex.value = activeSlot.value
     }
     for (const opt of options) {
       syncBuffDefaultsForSlot(opt.index)
     }
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 )
 
 watch(
