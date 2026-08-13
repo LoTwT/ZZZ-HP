@@ -12,6 +12,7 @@
     "type-check": "vue-tsc --build",
     "test:release-mult": "npx vite-node scripts/test-release-mult.mjs",
     "test:skill-coords": "npx vite-node scripts/test-skill-match-coords.mjs",
+    "test:skill-migration": "npx vite-node scripts/test-skill-library-migration.mjs",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",

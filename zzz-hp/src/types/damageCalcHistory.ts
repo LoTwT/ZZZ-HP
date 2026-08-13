@@ -1,4 +1,11 @@
-import type { BuffStatModifiers, DamageCalcKind, DamageEvent, StaggerPhase } from '@/types/calculator'
+import type {
+  BuffStatModifiers,
+  DamageCalcKind,
+  DamageEvent,
+  DamageEventCritMode,
+  SkillSource,
+  StaggerPhase,
+} from '@/types/calculator'
 import type {
   AffixCounts,
   AffixDriveDiscMainStats,
@@ -57,6 +64,62 @@ export interface DamageCalcPanelSnapshot {
   enemyInput: DamageCalcEnemyInputSnapshot
 }
 
+// ===================== 准备阶段 / 流程（新架构，跟方案走） =====================
+
+/**
+ * 准备阶段里对某条招式的**增量**修改。
+ * 语义为加算并入对应乘区；与 Buff 同区相加。留空 = 用招式库原值。
+ */
+export interface PreparedSkillExtraMods {
+  /** 覆盖基础倍率% */
+  baseMult?: number | null
+  /** 覆盖决算倍率% */
+  settlementMult?: number | null
+  /** 增伤加算% */
+  dmgBonus?: number | null
+  /** 暴击率加算% */
+  critRate?: number | null
+  /** 暴击伤害加算% */
+  critDmg?: number | null
+}
+
+/**
+ * 准备阶段的一条记录（用户仍称之为「招式」，此名仅存盘用）。
+ * 只绑定招式库的 `skillId`，不复制招式定义。
+ */
+export interface PreparedSkill {
+  /** 本方案内实例 id；流程引用它，而非直接引用招式库 */
+  id: string
+  skillId: string
+  skillSource: SkillSource
+  /** 异常强度提供者（agentId）。留空则不能计算 */
+  anomalyPowerAgentId?: string | null
+  /** 异常类触发者（agentId）。留空则不能计算 */
+  triggerAgentId?: string | null
+  extraMods?: PreparedSkillExtraMods | null
+}
+
+/** 流程里的一条编排 */
+export interface FlowEntry {
+  id: string
+  /** 该流程所属角色；为将来三条流程合并显示预留 */
+  ownerAgentId: string
+  /** 指向准备阶段的某条 */
+  preparedId: string
+  count: number
+  staggerPhase: StaggerPhase
+  critMode: DamageEventCritMode
+}
+
+/**
+ * 方案里的一个槽位，**按下标对齐 `teamSlots`**。
+ * 不另存 agentId，避免换人后两处不同步。
+ */
+export interface SchemeSlot {
+  prepared: PreparedSkill[]
+  flow: FlowEntry[]
+}
+
 export interface DamageCalcHistoryEntry {
   /** 路径式 ID，等于 `${folder}/${name}`（根目录下为 `/name`） */
   id: string
@@ -72,9 +135,11 @@ export interface DamageCalcHistoryEntry {
   anomalySlotPanels?: Record<string, PanelStats>
   /** 转模增益角色局外面板（按 agentId） */
   convertSlotPanels?: DamageCalcConvertSlotPanels
-  /** 招式事件（直接伤害） */
+  /** 准备阶段 + 流程，按下标对齐 teamSlots */
+  slots?: SchemeSlot[]
+  /** @deprecated 3.1.6.4 未上线遗留；v3 迁移时清除 */
   directEvents?: DamageEvent[]
-  /** 招式事件（异常伤害） */
+  /** @deprecated 3.1.6.4 未上线遗留；v3 迁移时清除 */
   anomalyEvents?: DamageEvent[]
   /** 伤害类型（direct / anomaly） */
   damageKind?: DamageCalcKind
@@ -95,18 +160,18 @@ export interface SchemeFolderMeta {
 }
 
 /** 方案库存储结构（对齐 zzz-dev 路径树） */
+export const SCHEME_STORE_VERSION = 3
+
 export interface SchemeStore {
-  version: 2
+  version: number
   dirs: Record<string, SchemeFolderMeta>
   schemes: Record<string, DamageCalcHistoryEntry>
-  /** 是否已把全局自定义事件模式库迁移进各方案（一次性，防重复注入） */
-  customEventsMigrated?: boolean
 }
 
 /** 导出包结构 */
 export interface DamageCalcHistoryExport {
   type: 'zzz-hp-schemes'
-  version: 2
+  version: number
   exportedAt: number
   dirs: Record<string, SchemeFolderMeta>
   schemes: Record<string, DamageCalcHistoryEntry>

@@ -1,4 +1,4 @@
-import type { AgentBuffDoc, DamageEvent } from '@/types/calculator'
+import type { AgentBuffDoc } from '@/types/calculator'
 import type {
   DamageCalcHistoryEntry,
   DamageCalcHistoryExport,
@@ -6,7 +6,7 @@ import type {
   SchemeFolderMeta,
   SchemeStore,
 } from '@/types/damageCalcHistory'
-import { loadCustomModes } from './customDamageEventModes'
+import { SCHEME_STORE_VERSION } from '@/types/damageCalcHistory'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
@@ -216,46 +216,27 @@ function ensureOrders(store: SchemeStore): boolean {
 // ===================== 底层读写 / 迁移 =====================
 
 function createEmptyStore(): SchemeStore {
-  return { version: 2, dirs: {}, schemes: {} }
+  return { version: SCHEME_STORE_VERSION, dirs: {}, schemes: {} }
 }
 
 /**
- * @temporary 临时迁移代码，预计大版本 4 后移除（已列入待办）。
- *   移除时：删本函数 + readStore 中 2 处调用点 + SchemeStore.customEventsMigrated 字段。
+ * v2 → v3：招式库 / 准备阶段 / 流程 改造。
  *
- * 一次性迁移：把全局自定义事件模式库（zzz-hp-custom-damage-event-modes）
- * 里的所有事件，按类型复制进每个方案条目。仅旧版升级时需要——旧版方案不存事件，
- * 新版事件跟方案走。
- * - modeType='anomaly' 的 events → 方案 anomalyEvents
- * - modeType='direct' 的 events → 方案 directEvents
- * 仅在方案对应数组为空时填入（不覆盖用户后来手动配的）；damageKind 缺失时补默认值。
- * 置 customEventsMigrated=true 防重复。全局模式库只读不写、不清空。
+ * 3.1.6.4 的「事件跟随方案」未上线，其 `directEvents` / `anomalyEvents` 与随之而来的
+ * 全局事件复制迁移（migrateLegacyGlobalEvents）一并废弃：前者直接清除，后者已删除。
+ *
+ * 旧的全局自定义事件模式库不在这里处理——它转成**全局自定义招式库**，
+ * 与方案无关，见 `migrateLegacyModesToSkills`。
  */
-function migrateLegacyGlobalEvents(store: SchemeStore): void {
-  if (store.customEventsMigrated) return
-  store.customEventsMigrated = true
-  const modes = loadCustomModes()
-  if (modes.length === 0) return
-  const anomalyEvents: DamageEvent[] = []
-  const directEvents: DamageEvent[] = []
-  for (const mode of modes) {
-    const target = mode.modeType === 'anomaly' ? anomalyEvents : directEvents
-    for (const e of mode.events) target.push(e)
-  }
-  if (anomalyEvents.length === 0 && directEvents.length === 0) return
-  for (const key of Object.keys(store.schemes)) {
-    const entry = store.schemes[key]
+function migrateStoreToV3(store: SchemeStore): void {
+  if (store.version >= SCHEME_STORE_VERSION) return
+  for (const entry of Object.values(store.schemes)) {
     if (!entry) continue
-    if (anomalyEvents.length > 0 && (!entry.anomalyEvents || entry.anomalyEvents.length === 0)) {
-      entry.anomalyEvents = anomalyEvents.map((e) => ({ ...e }))
-    }
-    if (directEvents.length > 0 && (!entry.directEvents || entry.directEvents.length === 0)) {
-      entry.directEvents = directEvents.map((e) => ({ ...e }))
-    }
-    if (!entry.damageKind) {
-      entry.damageKind = anomalyEvents.length > 0 ? 'anomaly' : 'direct'
-    }
+    delete entry.directEvents
+    delete entry.anomalyEvents
   }
+  delete (store as unknown as Record<string, unknown>).customEventsMigrated
+  store.version = SCHEME_STORE_VERSION
 }
 
 function isValidEntry(item: unknown): item is DamageCalcHistoryEntry {
@@ -307,7 +288,6 @@ function readStore(): SchemeStore {
     const parsed = JSON.parse(raw) as unknown
     if (Array.isArray(parsed)) {
       const store = migrateFromLegacyArray(parsed)
-      migrateLegacyGlobalEvents(store)
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
       } catch {
@@ -318,10 +298,9 @@ function readStore(): SchemeStore {
     if (!parsed || typeof parsed !== 'object') return createEmptyStore()
     const o = parsed as Partial<SchemeStore>
     const store: SchemeStore = {
-      version: 2,
+      version: Number(o.version) || 2,
       dirs: (o.dirs as Record<string, SchemeFolderMeta>) || {},
       schemes: (o.schemes as Record<string, DamageCalcHistoryEntry>) || {},
-      customEventsMigrated: o.customEventsMigrated ?? false,
     }
     // 迁移 + 清理：
     // 1) 任意 key（未前缀 / 多层 s: 前缀污染）统一还原为正确 schemeKey
@@ -352,7 +331,7 @@ function readStore(): SchemeStore {
       if (store.schemes[alt]) setLoadedSchemeId(alt)
     }
     ensureOrders(store)
-    migrateLegacyGlobalEvents(store)
+    migrateStoreToV3(store)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
     } catch {
@@ -811,7 +790,7 @@ export function exportDamageCalcHistory(): string {
   const store = readStore()
   const payload: DamageCalcHistoryExport = {
     type: 'zzz-hp-schemes',
-    version: 2,
+    version: SCHEME_STORE_VERSION,
     exportedAt: Date.now(),
     dirs: store.dirs,
     schemes: store.schemes,
@@ -891,16 +870,21 @@ export function importDamageCalcHistory(
       skipped++
       continue
     }
-    current.schemes[key] = {
+    const entry: DamageCalcHistoryEntry = {
       ...v,
       id: key,
       folder,
       name,
       order: typeof v.order === 'number' ? v.order : 0,
     }
+    // 旧导出包（v2 及以前）带 3.1.6.4 未上线的事件字段，一并清掉
+    delete entry.directEvents
+    delete entry.anomalyEvents
+    current.schemes[key] = entry
     added++
   }
   ensureOrders(current)
+  current.version = SCHEME_STORE_VERSION
   writeStore(current)
   return { added, skipped, errors }
 }

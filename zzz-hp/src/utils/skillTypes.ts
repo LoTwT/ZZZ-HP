@@ -1,24 +1,11 @@
-import type { SkillCategoryId, SkillMatchCoord } from '@/types/calculator'
+import type { SkillCategoryId, SkillMatchCoord, SkillTypeId } from '@/types/calculator'
 
 /**
- * 招式类型（多选）。取代旧「招式大类」，并把旧的 3 条公共招式小类提升为类型。
+ * 招式类型相关的清单与映射。
  *
  * 与旧数据的关系：Buff 的限定项仍是 `{ category, subcategoryId }` 旧坐标，
  * 这里通过 SKILL_TYPE_COORD 把类型翻译回旧坐标，因此**不需要改动任何 Buff 数据**。
  */
-export type SkillTypeId =
-  | 'basic'
-  | 'dodge'
-  | 'dash'
-  | 'dodgeCounter'
-  | 'assist'
-  | 'special'
-  | 'specialBasic'
-  | 'specialEnhanced'
-  | 'chain'
-  | 'ultimate'
-  | 'followUp'
-
 export const SKILL_TYPE_OPTIONS: { id: SkillTypeId; label: string }[] = [
   { id: 'basic', label: '普通攻击' },
   { id: 'dodge', label: '闪避' },
@@ -68,6 +55,22 @@ const SKILL_TYPE_COORD: Partial<Record<SkillTypeId, SkillMatchCoord>> = {
   },
   chain: { category: 'chain', subcategoryId: null },
   ultimate: { category: 'ultimate', subcategoryId: null },
+}
+
+/** 旧公共小类 id → 对应招式类型（迁移时把「选了公共小类」还原成「勾了类型」） */
+export function skillTypeFromLegacyPublicSubcategory(
+  subcategoryId: string | null | undefined,
+): SkillTypeId | null {
+  if (!subcategoryId) return null
+  for (const [type, id] of Object.entries(LEGACY_PUBLIC_SUBCATEGORY_ID)) {
+    if (id === subcategoryId) return type as SkillTypeId
+  }
+  return null
+}
+
+/** 旧招式大类 → 招式类型（同名，仅做一次收窄） */
+export function skillTypeFromLegacyCategory(categoryId: SkillCategoryId): SkillTypeId {
+  return categoryId as SkillTypeId
 }
 
 /** 展开蕴含关系后的类型集合 */
