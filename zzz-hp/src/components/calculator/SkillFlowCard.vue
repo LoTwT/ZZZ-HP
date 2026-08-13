@@ -39,7 +39,7 @@ function emitCount(event: Event) {
       <span v-if="index != null" class="sf-index">{{ index }}</span>
       <strong class="sf-name" :title="name">{{ name }}</strong>
       <span v-if="mult" class="sf-mult-label">倍率</span>
-      <span v-if="mult" class="sf-mult">{{ mult }}</span>
+      <span v-if="mult" class="sf-mult" :title="mult">{{ mult }}</span>
       <template v-if="count != null">
         <span class="sf-mult-label">次数</span>
         <input
@@ -154,7 +154,6 @@ function emitCount(event: Event) {
 .sf-mult,
 .sf-count {
   flex: 0 0 auto;
-  min-width: 2.2rem;
   padding: 0.08rem 0.28rem;
   border: 1px solid #2d323a;
   border-radius: 4px;
@@ -163,6 +162,15 @@ function emitCount(event: Event) {
   font-size: 0.76rem;
   font-weight: 700;
   text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.sf-mult {
+  box-sizing: content-box;
+  width: 6.2ch;
+  min-width: 6.2ch;
+  max-width: 6.2ch;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .sf-count {
   width: 3rem;
@@ -190,13 +198,16 @@ function emitCount(event: Event) {
 .sf-dtype,
 .sf-stype,
 .sf-agents {
+  box-sizing: border-box;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  padding: 0.08rem 0.42rem;
+  height: 1.25rem;
+  padding: 0 0.42rem;
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
 }
 .sf-dtype.is-anomaly {
@@ -223,11 +234,16 @@ function emitCount(event: Event) {
 }
 .sf-agents {
   appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
   background: #241833;
   border: 1px solid #6b4ea0;
   color: #d4b8f0;
   cursor: pointer;
-  font: inherit;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
 }
 .sf-agents:hover {
   filter: brightness(1.08);
