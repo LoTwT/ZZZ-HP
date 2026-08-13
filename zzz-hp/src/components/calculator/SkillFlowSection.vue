@@ -1065,11 +1065,11 @@ defineExpose({ expand })
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  height: min(62vh, 720px);
+  height: auto;
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   background: #14181f;
   border: 1px solid #2a3038;
   border-radius: 14px;
@@ -1166,8 +1166,6 @@ defineExpose({ expand })
 }
 
 .modal-body {
-  flex: 1 1 0;
-  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1179,19 +1177,15 @@ defineExpose({ expand })
 }
 
 .flow-grid {
-  flex: 1 1 0;
-  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.85rem;
-  align-items: stretch;
+  align-items: start;
 }
 .flow-col {
   min-width: 0;
-  min-height: 22rem;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 .col-head,
 .col-foot {
@@ -1258,15 +1252,9 @@ defineExpose({ expand })
   list-style: none;
   margin: 0;
   padding: 0 0.2rem 0 0;
-  flex: 1 1 auto;
-  min-height: 14rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  overflow: auto;
-  scrollbar-gutter: stable;
-  overscroll-behavior: contain;
-  align-content: start;
 }
 .list-empty {
   padding: 0.85rem 0.4rem;
@@ -1466,16 +1454,8 @@ defineExpose({ expand })
 }
 
 @media (max-width: 800px) {
-  .skill-flow-modal {
-    height: min(96vh, 980px);
-  }
   .flow-grid {
     grid-template-columns: minmax(0, 1fr);
-    overflow: auto;
-    scrollbar-gutter: stable;
-  }
-  .flow-col {
-    min-height: 18rem;
   }
 }
 </style>
