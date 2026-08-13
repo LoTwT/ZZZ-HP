@@ -257,6 +257,10 @@ const detailPrepared = computed((): PreparedSkill | null => {
 
 const detailTitle = computed(() => detailSkill.value?.name || '招式详情')
 
+const detailCanEditDefinition = computed(
+  () => detail.value?.kind === 'library' && detailSkill.value?.source === 'custom',
+)
+
 const detailCalcKey = computed(() => {
   const current = detail.value
   if (!current) return null
@@ -537,7 +541,7 @@ function syncPreparedAgentsForSkill(skillId: string, damageType: SkillDamageType
 
 function saveDetailSkill() {
   const skill = detailSkill.value
-  if (!skill || skill.source !== 'custom') return
+  if (!skill || skill.source !== 'custom' || detail.value?.kind !== 'library') return
   const name = detailDraft.name.trim()
   if (!name) {
     detailSaveHint.value = '请填写名称'
@@ -838,7 +842,7 @@ defineExpose({ expand })
                 <p class="col-desc">
                   {{
                     modalTab === 'prep'
-                      ? '每种招式只准备一条。异常类在详情里选双代理人。'
+                      ? '每种招式只准备一条。异常类在详情里选双代理人；名称和倍率请回招式库改。'
                       : '同一准备招式可以多次加入流程。异常类点详情或代理人胶囊可选人。'
                   }}
                 </p>
@@ -1009,15 +1013,23 @@ defineExpose({ expand })
               <p v-else-if="detail.kind === 'library' && skillNeedsDualAgents(detailSkill.damageType)" class="empty-hint">
                 加入准备后，异常类可在详情里选双代理人。
               </p>
+              <p v-if="detail.kind !== 'library'" class="empty-hint">
+                {{
+                  skillNeedsDualAgents(detailSkill.damageType)
+                    ? '名称、倍率、类型请到招式库里改。这里只能改双代理人。'
+                    : '名称、倍率、类型请到招式库里改。准备和流程里不能改招式定义。'
+                }}
+              </p>
 
               <p class="detail-section-title">招式设置</p>
               <p v-if="detailSkill.source === 'preset'" class="empty-hint">预设招式只读，不能改定义。</p>
+              <p v-else-if="!detailCanEditDefinition" class="empty-hint">自定义招式的定义只在招式库可改。</p>
               <SkillDefinitionForm
                 v-model="detailDraft"
-                :readonly="detailSkill.source === 'preset'"
+                :readonly="!detailCanEditDefinition"
                 :anchors="anchorOptions"
               />
-              <div v-if="detailSkill.source === 'custom'" class="detail-save-row">
+              <div v-if="detailCanEditDefinition" class="detail-save-row">
                 <button type="button" class="mini-btn" @click="saveDetailSkill">保存招式</button>
                 <p v-if="detailSaveHint" class="empty-hint">{{ detailSaveHint }}</p>
               </div>
