@@ -5,6 +5,7 @@ import type {
   DamageEventMode,
   DriveDiscBuffDoc,
   FollowUpSkillRule,
+  Skill,
   SkillSubcategory,
   WengineBuffDoc,
 } from '@/types/calculator'
@@ -59,6 +60,24 @@ export async function deleteSkillSubcategory(id: string): Promise<void> {
     `/api/calculator-buffs/skill-subcategories/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
   )
+}
+
+export async function fetchPresetSkills(): Promise<Skill[]> {
+  return requestJson<Skill[]>('/api/calculator-buffs/skills')
+}
+
+export async function savePresetSkill(doc: Skill): Promise<Skill> {
+  return requestJson<Skill>('/api/calculator-buffs/skills', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc),
+  })
+}
+
+export async function deletePresetSkill(id: string): Promise<void> {
+  await requestJson<{ id: string }>(`/api/calculator-buffs/skills/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function saveFollowUpSkillRule(

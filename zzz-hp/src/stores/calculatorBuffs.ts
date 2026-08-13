@@ -1,15 +1,18 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   deleteAgentBuff,
   deleteBangbooBuff,
   deleteDriveDiscBuff,
   deleteDamageEventMode,
   deleteFollowUpSkillRule,
+  deletePresetSkill,
   deleteSkillSubcategory,
   deleteWengineBuff,
   fetchCalculatorBuffs,
   fetchDamageEventModes,
+  fetchPresetSkills,
+  savePresetSkill,
   saveAgentBuff,
   saveBangbooBuff,
   saveDamageEventMode,
@@ -27,6 +30,7 @@ import type {
   DamageEventMode,
   DriveDiscBuffDoc,
   FollowUpSkillRule,
+  Skill,
   SkillCategoryId,
   SkillSubcategory,
   SupportStatNeed,
@@ -35,6 +39,12 @@ import type {
 import {
   normalizeSkillSubcategoryMultFields,
 } from '@/utils/skillSubcategoryMult'
+import {
+  loadCustomSkills,
+  migrateLegacyModesToSkills,
+  removeCustomSkill,
+  upsertCustomSkill,
+} from '@/utils/skillLibrary'
 import {
   AGENT_MINDSCAPE_RANKS,
   createEmptyMindscapeBuffs,
@@ -397,6 +407,9 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
   const skillSubcategories = ref<SkillSubcategory[]>([])
   const followUpSkillRules = ref<FollowUpSkillRule[]>([])
   const damageEventModes = ref<DamageEventMode[]>([])
+  /** 招式库：预设来自后端，自定义来自浏览器，对外合成一份 */
+  const presetSkills = ref<Skill[]>([])
+  const customSkills = ref<Skill[]>([])
   const loading = ref(true)
   const loaded = ref(false)
   const error = ref('')
@@ -484,6 +497,14 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
         } catch {
           damageEventModes.value = []
         }
+        try {
+          presetSkills.value = await fetchPresetSkills()
+        } catch {
+          presetSkills.value = []
+        }
+        // 小类名要用来给迁移出的招式起名，故排在小类加载之后
+        migrateLegacyModesToSkills({ subcategories: skillSubcategories.value })
+        customSkills.value = loadCustomSkills()
         loaded.value = true
         error.value = ''
       } catch (err) {
@@ -570,6 +591,42 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     skillSubcategories.value = skillSubcategories.value.filter((item) => item.id !== id)
   }
 
+  // ===================== 招式库 =====================
+
+  /** 预设在前、自定义在后；同一 id 不会跨来源重复 */
+  const skills = computed<Skill[]>(() => [...presetSkills.value, ...customSkills.value])
+
+  function findSkill(id: string): Skill | null {
+    return skills.value.find((item) => item.id === id) ?? null
+  }
+
+  /** 招式库对某角色可见的部分：公共招式 + 该角色专属 */
+  function skillsForAgent(agentId: string): Skill[] {
+    return skills.value.filter((item) => !item.agentId || item.agentId === agentId)
+  }
+
+  async function upsertPresetSkillDoc(doc: Skill) {
+    const saved = await savePresetSkill(doc)
+    const index = presetSkills.value.findIndex((item) => item.id === saved.id)
+    if (index >= 0) presetSkills.value[index] = saved
+    else presetSkills.value.push(saved)
+    return saved
+  }
+
+  async function removePresetSkillDoc(id: string) {
+    await deletePresetSkill(id)
+    presetSkills.value = presetSkills.value.filter((item) => item.id !== id)
+  }
+
+  function upsertCustomSkillDoc(doc: Skill) {
+    customSkills.value = upsertCustomSkill(doc)
+    return doc
+  }
+
+  function removeCustomSkillDoc(id: string) {
+    customSkills.value = removeCustomSkill(id)
+  }
+
   async function upsertFollowUpSkillRuleDoc(doc: FollowUpSkillRule) {
     const saved = await saveFollowUpSkillRule(doc)
     const normalized = normalizeFollowUpSkillRule(saved as unknown as Record<string, unknown>)
@@ -615,6 +672,15 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     skillSubcategories,
     followUpSkillRules,
     damageEventModes,
+    presetSkills,
+    customSkills,
+    skills,
+    findSkill,
+    skillsForAgent,
+    upsertPresetSkillDoc,
+    removePresetSkillDoc,
+    upsertCustomSkillDoc,
+    removeCustomSkillDoc,
     loading,
     loaded,
     error,
