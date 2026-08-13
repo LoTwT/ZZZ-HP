@@ -305,7 +305,7 @@ function preparedSkill(prepared: PreparedSkill): Skill | null {
 function slotLabel(slot: TeamSlot, index: number) {
   const agent = props.agents.find((item) => item.id === slot.agentId)
   if (!agent) return `空位 ${index + 1}`
-  return slot.isMainC ? `${agent.name}（主C）` : agent.name
+  return agent.name
 }
 
 function addPrepared(skill: Skill) {
@@ -699,12 +699,12 @@ defineExpose({ expand })
       </p>
     </header>
 
-    <div class="calc-mode-tabs" role="tablist" aria-label="角色流程">
+    <div class="sf-agent-tabs" role="tablist" aria-label="角色流程">
       <button
         v-for="(slot, index) in teamSlots"
         :key="index"
         type="button"
-        class="calc-mode-tab"
+        class="sf-agent-tab"
         :class="{ active: activeSlotIndex === index }"
         @click="activeSlotIndex = index"
       >
@@ -1070,6 +1070,35 @@ defineExpose({ expand })
 </template>
 
 <style scoped>
+.sf-agent-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.sf-agent-tab {
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  border: 1px solid #2d323a;
+  border-radius: 8px;
+  background: #0f1217;
+  color: #d5dae4;
+  padding: 0.35rem 0.85rem;
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.sf-agent-tab.active {
+  border-color: #c9a55c;
+  background: #0f1217;
+  color: #e8edf5;
+  font-weight: 600;
+}
+.sf-agent-tab:hover {
+  border-color: #4a5160;
+}
+
 .flow-summary {
   display: flex;
   align-items: center;

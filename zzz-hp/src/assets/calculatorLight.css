@@ -304,6 +304,26 @@
   background: var(--calc-surface-3) !important;
 }
 
+.calculator-page.theme-light .sf-agent-tab {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface-2) !important;
+  background-color: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
+  box-shadow: none !important;
+}
+
+.calculator-page.theme-light .sf-agent-tab:hover {
+  background: var(--calc-surface-3) !important;
+  background-color: var(--calc-surface-3) !important;
+}
+
+.calculator-page.theme-light .sf-agent-tab.active {
+  border-color: var(--calc-accent) !important;
+  background: var(--calc-surface-2) !important;
+  background-color: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
+}
+
 .calculator-page.theme-light .calc-mode-tab.active,
 .calculator-page.theme-light .chip.active,
 .calculator-page.theme-light .result-mode-btn.active,
