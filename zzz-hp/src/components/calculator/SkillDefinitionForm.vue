@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import type { SkillDamageType, SkillSubcategory, SkillTypeId } from '@/types/calculator'
 import { DAMAGE_EVENT_KIND_OPTIONS } from '@/utils/damageEvent'
 import { skillNeedsDualAgents } from '@/utils/resolvedHit'
@@ -28,6 +28,18 @@ watch(
   },
 )
 
+const damageTypeLabel = computed(
+  () =>
+    DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === draft.value.damageType)?.label ??
+    draft.value.damageType,
+)
+
+const anchorLabel = computed(() => {
+  const id = draft.value.buffAnchorId
+  if (!id) return '无'
+  return props.anchors.find((item) => item.id === id)?.name ?? '无'
+})
+
 function toggleSkillType(id: SkillTypeId) {
   if (props.readonly) return
   const index = draft.value.skillTypes.indexOf(id)
@@ -40,11 +52,13 @@ function toggleSkillType(id: SkillTypeId) {
   <div class="custom-form" :class="{ 'is-readonly': readonly }">
     <label>
       <span>名称</span>
-      <input v-model="draft.name" placeholder="显示名称" :disabled="readonly" />
+      <input v-if="readonly" :value="draft.name" type="text" readonly tabindex="-1" />
+      <input v-else v-model="draft.name" placeholder="显示名称" />
     </label>
     <label>
       <span>伤害类型</span>
-      <select v-model="draft.damageType" :disabled="readonly">
+      <input v-if="readonly" :value="damageTypeLabel" type="text" readonly tabindex="-1" />
+      <select v-else v-model="draft.damageType">
         <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
           {{ opt.label }}
         </option>
@@ -52,14 +66,23 @@ function toggleSkillType(id: SkillTypeId) {
     </label>
     <div v-if="!skillNeedsDualAgents(draft.damageType)" class="type-checks">
       <span>招式类型（可多选，可空）</span>
-      <div class="chip-row">
+      <div v-if="readonly" class="chip-row">
+        <span v-if="!draft.skillTypes.length" class="empty-hint">无</span>
+        <span
+          v-for="item in SKILL_TYPE_OPTIONS.filter((opt) => draft.skillTypes.includes(opt.id))"
+          :key="item.id"
+          class="chip active"
+        >
+          {{ item.label }}
+        </span>
+      </div>
+      <div v-else class="chip-row">
         <button
           v-for="opt in SKILL_TYPE_OPTIONS"
           :key="opt.id"
           type="button"
           class="chip"
           :class="{ active: draft.skillTypes.includes(opt.id) }"
-          :disabled="readonly"
           @click="toggleSkillType(opt.id)"
         >
           {{ opt.label }}
@@ -69,7 +92,8 @@ function toggleSkillType(id: SkillTypeId) {
     <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
     <label v-if="!skillNeedsDualAgents(draft.damageType)">
       <span>增益锚点（仅本角色）</span>
-      <select v-model="draft.buffAnchorId" :disabled="readonly">
+      <input v-if="readonly" :value="anchorLabel" type="text" readonly tabindex="-1" />
+      <select v-else v-model="draft.buffAnchorId">
         <option value="">无</option>
         <option v-for="item in anchors" :key="item.id" :value="item.id">
           {{ item.name }}
@@ -78,11 +102,25 @@ function toggleSkillType(id: SkillTypeId) {
     </label>
     <label>
       <span>基础倍率%</span>
-      <input v-model.number="draft.baseMult" type="number" :disabled="readonly" />
+      <input
+        v-if="readonly"
+        :value="draft.baseMult"
+        type="text"
+        readonly
+        tabindex="-1"
+      />
+      <input v-else v-model.number="draft.baseMult" type="number" />
     </label>
     <label v-if="draft.damageType === 'direct'">
       <span>决算倍率%</span>
-      <input v-model.number="draft.settlementMult" type="number" :disabled="readonly" />
+      <input
+        v-if="readonly"
+        :value="draft.settlementMult"
+        type="text"
+        readonly
+        tabindex="-1"
+      />
+      <input v-else v-model.number="draft.settlementMult" type="number" />
     </label>
   </div>
 </template>
@@ -112,10 +150,10 @@ function toggleSkillType(id: SkillTypeId) {
   color: #e8edf5;
   padding: 0.3rem 0.45rem;
 }
-.custom-form input:disabled,
-.custom-form select:disabled,
-.chip:disabled {
-  opacity: 0.75;
+.custom-form input[readonly] {
+  cursor: default;
+}
+.is-readonly .chip {
   cursor: default;
 }
 .chip-row {
