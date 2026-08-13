@@ -42,6 +42,11 @@ export interface DamageCalcPanelSnapshot {
   externalPanel: PanelStats
   affixCounts: AffixCounts
   affixDriveDiscMainStats: AffixDriveDiscMainStats
+  /** 每人一份词条数；缺省时只用上面那份当前角色词条 */
+  affixStateByAgent?: Record<
+    string,
+    { affixCounts: AffixCounts; affixDriveDiscMainStats: AffixDriveDiscMainStats }
+  >
   extraMods: BuffStatModifiers
   /** 额外 Buff 增益条目（优先于扁平 extraMods） */
   extraGains?: Array<{

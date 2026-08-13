@@ -26,9 +26,14 @@ import type {
 import { CHARACTER_ATTR_OPTIONS } from '@/types/calculator'
 import type { DamageCalcPanelSnapshot } from '@/types/damageCalcHistory'
 import {
+  applyAgentBaseToPanelStats,
   createDefaultExternalPanel,
   createDefaultAffixDriveDiscMainStats,
   createEmptyAffixCounts,
+  createExternalPanelFromAgentBase,
+  isPlaceholderExternalPanel,
+  type AffixCounts,
+  type AffixDriveDiscMainStats,
   type PanelCalcMode,
   type PanelStats,
 } from '@/types/calculatorPanel'
@@ -240,6 +245,28 @@ const selectedDamageEventId = ref<string | null>(null)
 const externalPanel = reactive<PanelStats>(createDefaultExternalPanel())
 const affixCounts = reactive(createEmptyAffixCounts())
 const affixDriveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
+
+type AgentAffixState = {
+  affixCounts: AffixCounts
+  affixDriveDiscMainStats: AffixDriveDiscMainStats
+}
+const affixStateByAgent = reactive<Record<string, AgentAffixState>>({})
+
+function captureAffixState(): AgentAffixState {
+  return {
+    affixCounts: { ...affixCounts },
+    affixDriveDiscMainStats: { ...affixDriveDiscMainStats },
+  }
+}
+
+function applyAffixState(state: AgentAffixState | undefined) {
+  Object.assign(affixCounts, createEmptyAffixCounts(), state?.affixCounts)
+  Object.assign(
+    affixDriveDiscMainStats,
+    createDefaultAffixDriveDiscMainStats(),
+    state?.affixDriveDiscMainStats,
+  )
+}
 
 function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
@@ -567,8 +594,9 @@ function emitConvertSlotPanel(
 
 function ensureAnomalySlotPanel(agentId: string): PanelStats {
   const existing = props.anomalySlotPanels?.[agentId]
-  if (existing) return existing
-  return createDefaultExternalPanel()
+  if (existing && !isPlaceholderExternalPanel(existing)) return existing
+  const agent = props.agents.find((item) => item.id === agentId)
+  return createExternalPanelFromAgentBase(agent?.basePanel)
 }
 
 function updateAnomalySlotPanel(agentId: string, key: keyof PanelStats, value: number) {
@@ -590,29 +618,7 @@ function emitAnomalySlotPanel(agentId: string, panel: PanelStats) {
 }
 
 function applyAgentBaseToExternalPanel(base: PanelStats | AgentBuffDoc['basePanel']) {
-  externalPanel.def = base.def
-  externalPanel.directDmgMult = base.directDmgMult
-  externalPanel.anomalyMult = base.anomalyMult
-  externalPanel.anomalyCritRate = base.anomalyCritRate
-  externalPanel.anomalyCritDmg = base.anomalyCritDmg
-  externalPanel.anomalyDmgBonus = base.anomalyDmgBonus
-  externalPanel.anomalyControl = base.anomalyControl
-  externalPanel.energyRegen = base.energyRegen
-  externalPanel.disorderBaseMult = base.disorderBaseMult
-  externalPanel.anomalyDuration = base.anomalyDuration
-  externalPanel.disorderCompMult = base.disorderCompMult
-  externalPanel.turbulenceBaseMult = base.turbulenceBaseMult
-  externalPanel.turbulenceCompMult = base.turbulenceCompMult
-  externalPanel.disorderDmgBonus = base.disorderDmgBonus
-  externalPanel.turbulenceDmgBonus = base.turbulenceDmgBonus
-  externalPanel.radianceMult = base.radianceMult
-  externalPanel.radianceDmgBonus = base.radianceDmgBonus
-  externalPanel.radianceResPen = base.radianceResPen
-  externalPanel.specialMult = base.specialMult ?? 100
-  externalPanel.mutationCoeff = base.mutationCoeff
-  if ('mastery' in base && typeof base.mastery === 'number') {
-    externalPanel.mastery = base.mastery
-  }
+  applyAgentBaseToPanelStats(externalPanel, base)
 }
 
 const triggerSlotIndex = computed(() => {
@@ -919,26 +925,24 @@ watch(
 watch(
   () => mainAgent.value?.id,
   (newId, oldId) => {
-    if (isAffixMode.value) return
-
     if (oldId) {
-      emitAnomalySlotPanel(oldId, { ...externalPanel })
+      affixStateByAgent[oldId] = captureAffixState()
       const convertSlot = convertSupportSlots.value.find((item) => item.agentId === oldId)
       if (convertSlot) {
-        emitConvertSlotPanel(oldId, convertSlot.requiredAttrs, externalPanel)
+        emitConvertSlotPanel(oldId, convertSlot.requiredAttrs, effectiveExternalPanel.value)
       } else if (props.convertSlotPanels?.[oldId]) {
         const keys = Object.keys(props.convertSlotPanels[oldId]) as CharacterAttrKey[]
-        emitConvertSlotPanel(oldId, keys, externalPanel)
+        emitConvertSlotPanel(oldId, keys, effectiveExternalPanel.value)
       }
     }
 
     if (!mainAgent.value || !newId) return
 
     // 首次挂载不要覆盖方案/草稿里已经灌进编辑器的局外面板。
-    // 真正换人时才把每人自己的面板换上来，避免主 C 标签把攻暴数字挪给另一个角色。
     if (!oldId) {
+      if (affixStateByAgent[newId]) applyAffixState(affixStateByAgent[newId])
       const savedAnomaly = props.anomalySlotPanels?.[newId]
-      if (savedAnomaly && mainAgent.value.profession === '异常') {
+      if (savedAnomaly && !isPlaceholderExternalPanel(savedAnomaly) && mainAgent.value.profession === '异常') {
         Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
         return
       }
@@ -949,40 +953,40 @@ watch(
         return
       }
       applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
-      emitAnomalySlotPanel(newId, { ...externalPanel })
+      emitAnomalySlotPanel(newId, { ...effectiveExternalPanel.value })
       return
     }
 
+    applyAffixState(affixStateByAgent[newId])
     const savedAnomaly = props.anomalySlotPanels?.[newId]
-    if (savedAnomaly) {
+    if (savedAnomaly && !isPlaceholderExternalPanel(savedAnomaly)) {
       Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
       return
     }
 
     const savedConvert = props.convertSlotPanels?.[newId]
     if (savedConvert && Object.keys(savedConvert).length > 0) {
-      Object.assign(externalPanel, createDefaultExternalPanel())
-      applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+      Object.assign(externalPanel, createExternalPanelFromAgentBase(mainAgent.value.basePanel))
       applyConvertPartialToExternalPanel(savedConvert, externalPanel)
       return
     }
 
-    Object.assign(externalPanel, createDefaultExternalPanel())
-    applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
-    emitAnomalySlotPanel(newId, { ...externalPanel })
+    Object.assign(externalPanel, createExternalPanelFromAgentBase(mainAgent.value.basePanel))
+    emitAnomalySlotPanel(newId, { ...effectiveExternalPanel.value })
   },
   { immediate: true },
 )
 
 watch(
-  externalPanel,
+  effectiveExternalPanel,
   () => {
     const id = mainAgent.value?.id
-    if (!id || isAffixMode.value) return
-    emitAnomalySlotPanel(id, { ...externalPanel })
+    if (!id) return
+    emitAnomalySlotPanel(id, { ...effectiveExternalPanel.value })
+    if (isAffixMode.value) affixStateByAgent[id] = captureAffixState()
     const convertSlot = convertSupportSlots.value.find((item) => item.agentId === id)
     if (convertSlot) {
-      emitConvertSlotPanel(id, convertSlot.requiredAttrs, externalPanel)
+      emitConvertSlotPanel(id, convertSlot.requiredAttrs, effectiveExternalPanel.value)
     }
   },
   { deep: true },
@@ -2813,11 +2817,17 @@ const teamWengineNotes = computed(() =>
 )
 
 function getSnapshot(): DamageCalcPanelSnapshot {
+  const id = mainAgent.value?.id
+  if (id) affixStateByAgent[id] = captureAffixState()
   return {
     baseDamageSource: baseDamageSource.value,
     externalPanel: { ...externalPanel },
     affixCounts: { ...affixCounts },
     affixDriveDiscMainStats: { ...affixDriveDiscMainStats },
+    affixStateByAgent: JSON.parse(JSON.stringify(affixStateByAgent)) as Record<
+      string,
+      AgentAffixState
+    >,
     extraMods: { ...extraMods.value },
     extraGains: extraGains.value.map((item) => ({ ...item })),
     enemyInput: { ...enemyInput.value },
@@ -2829,6 +2839,15 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
   Object.assign(externalPanel, createDefaultExternalPanel(), snapshot.externalPanel)
   Object.assign(affixCounts, snapshot.affixCounts)
   Object.assign(affixDriveDiscMainStats, snapshot.affixDriveDiscMainStats)
+  for (const key of Object.keys(affixStateByAgent)) delete affixStateByAgent[key]
+  if (snapshot.affixStateByAgent) {
+    Object.assign(affixStateByAgent, JSON.parse(JSON.stringify(snapshot.affixStateByAgent)))
+  }
+  const currentId = mainAgent.value?.id
+  if (currentId) {
+    affixStateByAgent[currentId] = captureAffixState()
+    applyAffixState(affixStateByAgent[currentId])
+  }
   if (snapshot.extraGains?.length) {
     extraGains.value = snapshot.extraGains.map((item) => ({
       id: item.id,

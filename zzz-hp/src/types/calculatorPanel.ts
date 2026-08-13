@@ -218,3 +218,78 @@ export function createDefaultExternalPanel(): PanelStats {
     mutationCoeffFactor: 100,
   }
 }
+
+/** 未录入时用的占位毕业面板（攻击 4008 等），不是角色自己的局外面板 */
+export function isPlaceholderExternalPanel(
+  panel: Pick<PanelStats, 'hp' | 'atk' | 'critRate' | 'critDmg'>,
+): boolean {
+  return panel.atk === 4008 && panel.hp === 9873 && panel.critRate === 48.2 && panel.critDmg === 186
+}
+
+type AgentBaseLike = {
+  hp: number
+  atk: number
+  def: number
+  critRate: number
+  critDmg: number
+  dmgBonus: number
+  penRate: number
+  pen: number
+  mastery?: number
+  anomalyControl: number
+  energyRegen: number
+  anomalyCritRate: number
+  anomalyCritDmg: number
+  anomalyDmgBonus: number
+  directDmgMult: number
+  anomalyMult: number
+  disorderBaseMult: number
+  anomalyDuration: number
+  disorderCompMult: number
+  turbulenceBaseMult: number
+  turbulenceCompMult: number
+  disorderDmgBonus: number
+  turbulenceDmgBonus: number
+  radianceMult: number
+  radianceDmgBonus: number
+  radianceResPen: number
+  specialMult?: number
+  mutationCoeff: number
+}
+
+export function applyAgentBaseToPanelStats(target: PanelStats, base: AgentBaseLike) {
+  target.hp = base.hp
+  target.atk = base.atk
+  target.def = base.def
+  target.critRate = base.critRate
+  target.critDmg = base.critDmg
+  target.dmgBonus = base.dmgBonus
+  target.penRate = base.penRate
+  target.pen = base.pen
+  target.directDmgMult = base.directDmgMult
+  target.anomalyMult = base.anomalyMult
+  target.anomalyCritRate = base.anomalyCritRate
+  target.anomalyCritDmg = base.anomalyCritDmg
+  target.anomalyDmgBonus = base.anomalyDmgBonus
+  target.anomalyControl = base.anomalyControl
+  target.energyRegen = base.energyRegen
+  target.disorderBaseMult = base.disorderBaseMult
+  target.anomalyDuration = base.anomalyDuration
+  target.disorderCompMult = base.disorderCompMult
+  target.turbulenceBaseMult = base.turbulenceBaseMult
+  target.turbulenceCompMult = base.turbulenceCompMult
+  target.disorderDmgBonus = base.disorderDmgBonus
+  target.turbulenceDmgBonus = base.turbulenceDmgBonus
+  target.radianceMult = base.radianceMult
+  target.radianceDmgBonus = base.radianceDmgBonus
+  target.radianceResPen = base.radianceResPen
+  target.specialMult = base.specialMult ?? 100
+  target.mutationCoeff = base.mutationCoeff
+  if (typeof base.mastery === 'number') target.mastery = base.mastery
+}
+
+export function createExternalPanelFromAgentBase(base?: AgentBaseLike | null): PanelStats {
+  const panel = createDefaultExternalPanel()
+  if (base) applyAgentBaseToPanelStats(panel, base)
+  return panel
+}

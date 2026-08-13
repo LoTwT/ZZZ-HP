@@ -13,7 +13,12 @@ import PanelScreenshotUploadSection from '@/components/calculator/PanelScreensho
 import TeamBuilderSection from '@/components/calculator/TeamBuilderSection.vue'
 import type { DamageCalcSectionId } from '@/constants/damageCalcNav'
 import type { DamageCalcHistoryEntry, DamageCalcWorkingDraft, SchemeSlot } from '@/types/damageCalcHistory'
-import type { PanelCalcMode } from '@/types/calculatorPanel'
+import type { PanelCalcMode, PanelStats } from '@/types/calculatorPanel'
+import {
+  createDefaultExternalPanel,
+  createExternalPanelFromAgentBase,
+  isPlaceholderExternalPanel,
+} from '@/types/calculatorPanel'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import type {
   AnomalyDamageSubKind,
@@ -21,8 +26,6 @@ import type {
   DamageCalcKind,
   StaggerPhase,
 } from '@/types/calculator'
-import type { PanelStats } from '@/types/calculatorPanel'
-import { createDefaultExternalPanel } from '@/types/calculatorPanel'
 import type { DefenseSeason } from '@/types/defense'
 import type { PhaseData } from '@/types/history'
 import { fetchCrisisAssaultPhases } from '@/api/crisisAssault'
@@ -440,33 +443,10 @@ function getParticipantAgentIds(): string[] {
 }
 
 function ensureAnomalySlotPanel(agentId: string) {
-  if (anomalySlotPanels[agentId]) return
+  const existing = anomalySlotPanels[agentId]
+  if (existing && !isPlaceholderExternalPanel(existing)) return
   const agent = agents.value.find((item) => item.id === agentId)
-  const panel = createDefaultExternalPanel()
-  if (agent?.basePanel) {
-    panel.def = agent.basePanel.def
-    panel.mastery = agent.basePanel.mastery
-    panel.anomalyControl = agent.basePanel.anomalyControl
-    panel.energyRegen = agent.basePanel.energyRegen
-    panel.anomalyMult = agent.basePanel.anomalyMult
-    panel.anomalyCritRate = agent.basePanel.anomalyCritRate
-    panel.anomalyCritDmg = agent.basePanel.anomalyCritDmg
-    panel.anomalyDmgBonus = agent.basePanel.anomalyDmgBonus
-    panel.anomalyDuration = agent.basePanel.anomalyDuration
-    panel.disorderBaseMult = agent.basePanel.disorderBaseMult
-    panel.disorderCompMult = agent.basePanel.disorderCompMult
-    panel.turbulenceBaseMult = agent.basePanel.turbulenceBaseMult
-    panel.turbulenceCompMult = agent.basePanel.turbulenceCompMult
-    panel.disorderDmgBonus = agent.basePanel.disorderDmgBonus
-    panel.turbulenceDmgBonus = agent.basePanel.turbulenceDmgBonus
-    panel.directDmgMult = agent.basePanel.directDmgMult
-    panel.radianceMult = agent.basePanel.radianceMult
-    panel.radianceDmgBonus = agent.basePanel.radianceDmgBonus
-    panel.radianceResPen = agent.basePanel.radianceResPen
-    panel.specialMult = agent.basePanel.specialMult ?? 100
-    panel.mutationCoeff = agent.basePanel.mutationCoeff
-  }
-  anomalySlotPanels[agentId] = panel
+  anomalySlotPanels[agentId] = createExternalPanelFromAgentBase(agent?.basePanel)
 }
 
 watch(
@@ -1266,6 +1246,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :hit-damages="hitDamages"
       :hit-calc-results="hitCalcResults"
       v-model:slots="schemeSlots"
+      v-model:active-slot="activeSlot"
     />
 
     <section class="calc-mode-section">

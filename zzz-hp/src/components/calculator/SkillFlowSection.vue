@@ -33,11 +33,11 @@ const props = defineProps<{
 }>()
 
 const slots = defineModel<SchemeSlot[]>('slots', { default: () => ensureSchemeSlots([], 3) })
+const activeSlotIndex = defineModel<number>('activeSlot', { default: 0 })
 
 const buffStore = useCalculatorBuffStore()
 const { skillSubcategories } = storeToRefs(buffStore)
 
-const activeSlotIndex = ref(0)
 const libraryQuery = ref('')
 const libraryFilter = ref<'all' | 'publicAnomaly'>('all')
 const showCustomForm = ref(false)
