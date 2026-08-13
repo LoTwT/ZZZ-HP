@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
@@ -12,7 +12,7 @@ import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.
 import PanelScreenshotUploadSection from '@/components/calculator/PanelScreenshotUploadSection.vue'
 import TeamBuilderSection from '@/components/calculator/TeamBuilderSection.vue'
 import type { DamageCalcSectionId } from '@/constants/damageCalcNav'
-import type { DamageCalcHistoryEntry, SchemeSlot } from '@/types/damageCalcHistory'
+import type { DamageCalcHistoryEntry, DamageCalcWorkingDraft, SchemeSlot } from '@/types/damageCalcHistory'
 import type { PanelCalcMode } from '@/types/calculatorPanel'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import type {
@@ -31,10 +31,13 @@ import { lookupBossInfo } from '@/api/bossInfo'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import {
   createHistoryEntryId,
+  findDamageCalcHistory,
   getLoadedSchemeId,
   listAllDamageCalcHistory,
+  loadWorkingDraft,
   nameConflictType,
   saveDamageCalcHistory,
+  saveWorkingDraft,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
 import {
@@ -363,7 +366,16 @@ watch(defenseFrontierOptions, (options) => {
 
 onMounted(() => {
   void loadEnvironmentBuffCatalogs()
-  activeHistoryId.value = getLoadedSchemeId()
+  restoreWorkingState()
+  window.addEventListener('pagehide', persistWorkingDraftNow)
+  document.addEventListener('visibilitychange', onDraftVisibilityChange)
+})
+
+onUnmounted(() => {
+  persistWorkingDraftNow()
+  window.removeEventListener('pagehide', persistWorkingDraftNow)
+  document.removeEventListener('visibilitychange', onDraftVisibilityChange)
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
 })
 
 function disableCollectedEffects(
@@ -948,6 +960,100 @@ function applyConvertSlotPanels(panels?: ConvertSlotPanels) {
   Object.assign(convertSlotPanels, JSON.parse(JSON.stringify(panels)))
 }
 
+let draftHydrated = false
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+function applyWorkingState(entry: {
+  teamSlots: DamageCalcHistoryEntry['teamSlots']
+  activeSlot: number
+  selectedBangbooId: string
+  bangbooRefine: number
+  panelCalcMode: PanelCalcMode
+  anomalySlotPanels?: Record<string, PanelStats>
+  convertSlotPanels?: ConvertSlotPanels
+  slots?: SchemeSlot[]
+  staggerPhase?: StaggerPhase
+  multiSlotBuffSelection?: MultiSlotBuffSelection
+  panelState?: DamageCalcHistoryEntry['panelState'] | null
+}) {
+  applyTeamSlots(entry.teamSlots)
+  activeSlot.value = entry.activeSlot
+  selectedBangbooId.value = entry.selectedBangbooId
+  bangbooRefine.value = entry.bangbooRefine
+  panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
+  applyAnomalySlotPanels(entry.anomalySlotPanels)
+  applyConvertSlotPanels(entry.convertSlotPanels)
+  schemeSlots.value = ensureSchemeSlots(entry.slots, 3)
+  staggerPhase.value = entry.staggerPhase ?? 'stagger'
+  const restoredBuff = entry.multiSlotBuffSelection
+    ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
+    : createEmptyMultiSlotBuffSelection()
+  multiSlotBuffSelection.team = restoredBuff.team
+  multiSlotBuffSelection.bySlot = restoredBuff.bySlot
+  if (entry.panelState) {
+    void nextTick(() => {
+      panelCalcSectionRef.value?.loadSnapshot(entry.panelState!)
+    })
+  }
+}
+
+function captureWorkingDraft(): DamageCalcWorkingDraft | null {
+  const panelState = panelCalcSectionRef.value?.getSnapshot() ?? null
+  return {
+    savedAt: Date.now(),
+    loadedSchemeId: activeHistoryId.value || getLoadedSchemeId(),
+    teamSlots: cloneTeamSlots(),
+    activeSlot: activeSlot.value,
+    selectedBangbooId: selectedBangbooId.value,
+    bangbooRefine: bangbooRefine.value,
+    panelCalcMode: panelCalcMode.value,
+    panelState,
+    anomalySlotPanels: cloneAnomalySlotPanels(),
+    convertSlotPanels: cloneConvertSlotPanels(),
+    slots: JSON.parse(JSON.stringify(schemeSlots.value)),
+    staggerPhase: staggerPhase.value,
+    multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
+  }
+}
+
+function persistWorkingDraftNow() {
+  if (!draftHydrated) return
+  const draft = captureWorkingDraft()
+  if (!draft) return
+  saveWorkingDraft(draft)
+}
+
+function schedulePersistWorkingDraft() {
+  if (!draftHydrated) return
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = null
+    persistWorkingDraftNow()
+  }, 400)
+}
+
+function onDraftVisibilityChange() {
+  if (document.visibilityState === 'hidden') persistWorkingDraftNow()
+}
+
+function restoreWorkingState() {
+  const loadedId = getLoadedSchemeId()
+  activeHistoryId.value = loadedId
+  const draft = loadWorkingDraft()
+  if (draft) {
+    applyWorkingState(draft)
+    if (draft.loadedSchemeId) activeHistoryId.value = draft.loadedSchemeId
+  } else if (loadedId) {
+    const entry = findDamageCalcHistory(loadedId)
+    if (entry) applyWorkingState(entry)
+  }
+  void nextTick(() => {
+    void nextTick(() => {
+      draftHydrated = true
+    })
+  })
+}
+
 function saveHistoryEntry(payload: { name: string; folder: string }) {
   if (panelCalcMode.value === 'optimal') {
     historyMessage.value = '最优词条分配模式暂不支持写入历史，请切换到面板/词条计算后再保存'
@@ -988,29 +1094,15 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
   historyMessage.value = `已保存「${payload.name}」${folder ? `（${folder}）` : ''}`
+  persistWorkingDraftNow()
 }
 
 function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
-  applyTeamSlots(entry.teamSlots)
-  activeSlot.value = entry.activeSlot
-  selectedBangbooId.value = entry.selectedBangbooId
-  bangbooRefine.value = entry.bangbooRefine
-  panelCalcMode.value = entry.panelCalcMode === 'optimal' ? 'affix' : entry.panelCalcMode
-  applyAnomalySlotPanels(entry.anomalySlotPanels)
-  applyConvertSlotPanels(entry.convertSlotPanels)
-  schemeSlots.value = ensureSchemeSlots(entry.slots, 3)
-  staggerPhase.value = entry.staggerPhase ?? 'stagger'
-  const restoredBuff = entry.multiSlotBuffSelection
-    ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
-    : createEmptyMultiSlotBuffSelection()
-  multiSlotBuffSelection.team = restoredBuff.team
-  multiSlotBuffSelection.bySlot = restoredBuff.bySlot
-  void nextTick(() => {
-    panelCalcSectionRef.value?.loadSnapshot(entry.panelState)
-  })
+  applyWorkingState(entry)
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
   historyMessage.value = `已加载「${entry.name}」`
+  persistWorkingDraftNow()
 }
 
 /** 用当前页面配置覆盖指定方案（保留其 id / 名称 / 目录） */
@@ -1042,12 +1134,32 @@ function overwriteHistoryEntry(id: string) {
   historyEntries.value = saveDamageCalcHistory(updated)
   activeHistoryId.value = updated.id
   historyMessage.value = `已用当前配置覆盖「${updated.name}」`
+  persistWorkingDraftNow()
 }
 
 /** 方案库内部直接改了 localStorage（复制/重命名/删除/批量/目录/导入），在此刷新列表（全量） */
 function onSchemeLibraryChanged() {
   historyEntries.value = listAllDamageCalcHistory()
 }
+
+watch(
+  [
+    teamSlots,
+    schemeSlots,
+    activeSlot,
+    selectedBangbooId,
+    bangbooRefine,
+    panelCalcMode,
+    staggerPhase,
+    extraGains,
+    enemyInput,
+    anomalySlotPanels,
+    convertSlotPanels,
+    multiSlotBuffSelection,
+  ],
+  schedulePersistWorkingDraft,
+  { deep: true },
+)
 
 const pageRootRef = ref<HTMLElement | null>(null)
 

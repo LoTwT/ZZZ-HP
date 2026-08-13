@@ -120,6 +120,23 @@ export interface SchemeSlot {
   flow: FlowEntry[]
 }
 
+/** 计算页当前工作草稿（刷新后恢复；不是方案库里的命名方案） */
+export interface DamageCalcWorkingDraft {
+  savedAt: number
+  loadedSchemeId: string
+  teamSlots: DamageCalcTeamSlotSnapshot[]
+  activeSlot: number
+  selectedBangbooId: string
+  bangbooRefine: number
+  panelCalcMode: PanelCalcMode
+  panelState: DamageCalcPanelSnapshot | null
+  anomalySlotPanels?: Record<string, PanelStats>
+  convertSlotPanels?: DamageCalcConvertSlotPanels
+  slots?: SchemeSlot[]
+  staggerPhase?: StaggerPhase
+  multiSlotBuffSelection?: MultiSlotBuffSelection
+}
+
 export interface DamageCalcHistoryEntry {
   /** 路径式 ID，等于 `${folder}/${name}`（根目录下为 `/name`） */
   id: string

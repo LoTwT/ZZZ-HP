@@ -3,6 +3,7 @@ import type {
   DamageCalcHistoryEntry,
   DamageCalcHistoryExport,
   DamageCalcHistoryImportResult,
+  DamageCalcWorkingDraft,
   SchemeFolderMeta,
   SchemeStore,
 } from '@/types/damageCalcHistory'
@@ -10,6 +11,7 @@ import { SCHEME_STORE_VERSION } from '@/types/damageCalcHistory'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
+const DRAFT_KEY = 'zzz-hp-damage-calc-draft'
 
 // ===================== 路径规范工具（对齐 zzz-dev） =====================
 // 路径以 "/" 开头，多级用 "/" 分隔，末尾无 "/"。根目录 folder = ""。
@@ -745,6 +747,31 @@ export function setLoadedSchemeId(id: string): void {
     else localStorage.removeItem(LOADED_KEY)
   } catch {
     /* ignore */
+  }
+}
+
+export function findDamageCalcHistory(id: string): DamageCalcHistoryEntry | null {
+  if (!id) return null
+  return listAllDamageCalcHistory().find((entry) => entry.id === id) ?? null
+}
+
+export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DamageCalcWorkingDraft
+    if (!parsed || !Array.isArray(parsed.teamSlots)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function saveWorkingDraft(draft: DamageCalcWorkingDraft): void {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    /* quota / private mode */
   }
 }
 
