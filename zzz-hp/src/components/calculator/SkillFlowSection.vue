@@ -199,6 +199,15 @@ function closeDetail() {
   detail.value = null
 }
 
+function closeCustomForm() {
+  showCustomForm.value = false
+}
+
+function openCustomForm() {
+  detail.value = null
+  showCustomForm.value = true
+}
+
 const detailSkill = computed((): Skill | null => {
   const current = detail.value
   if (!current) return null
@@ -496,7 +505,10 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
 }
 
 watch(expanded, (open) => {
-  if (!open) detail.value = null
+  if (!open) {
+    detail.value = null
+    showCustomForm.value = false
+  }
 })
 
 function compactPreparedDuplicates() {
@@ -546,8 +558,12 @@ function expand() {
 }
 
 function onModalKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !detail.value) return
-  closeDetail()
+  if (event.key !== 'Escape') return
+  if (showCustomForm.value) {
+    closeCustomForm()
+    return
+  }
+  if (detail.value) closeDetail()
 }
 
 onMounted(() => window.addEventListener('keydown', onModalKeydown))
@@ -689,57 +705,7 @@ defineExpose({ expand })
                 </li>
               </ul>
               <div class="col-foot">
-                <button type="button" class="mini-btn" @click="showCustomForm = !showCustomForm">
-                  {{ showCustomForm ? '收起新建' : '新建自定义招式' }}
-                </button>
-                <div v-if="showCustomForm" class="custom-form">
-                  <label>
-                    <span>名称</span>
-                    <input v-model="customDraft.name" placeholder="显示名称" />
-                  </label>
-                  <label>
-                    <span>伤害类型</span>
-                    <select v-model="customDraft.damageType">
-                      <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
-                    <span>招式类型（可多选，可空）</span>
-                    <div class="chip-row">
-                      <button
-                        v-for="opt in SKILL_TYPE_OPTIONS"
-                        :key="opt.id"
-                        type="button"
-                        class="chip"
-                        :class="{ active: customDraft.skillTypes.includes(opt.id) }"
-                        @click="toggleCustomSkillType(opt.id)"
-                      >
-                        {{ opt.label }}
-                      </button>
-                    </div>
-                  </div>
-                  <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
-                  <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
-                    <span>增益锚点（仅本角色）</span>
-                    <select v-model="customDraft.buffAnchorId">
-                      <option value="">无</option>
-                      <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
-                        {{ item.name }}
-                      </option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>基础倍率%</span>
-                    <input v-model.number="customDraft.baseMult" type="number" />
-                  </label>
-                  <label v-if="customDraft.damageType === 'direct'">
-                    <span>决算倍率%</span>
-                    <input v-model.number="customDraft.settlementMult" type="number" />
-                  </label>
-                  <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
-                </div>
+                <button type="button" class="mini-btn" @click="openCustomForm">新建招式</button>
               </div>
             </div>
 
@@ -941,6 +907,63 @@ defineExpose({ expand })
               </p>
             </div>
             <p v-else class="empty-hint">招式已从库中删除。</p>
+          </div>
+        </div>
+
+        <div v-if="showCustomForm" class="skill-detail-overlay" @click.self="closeCustomForm">
+          <div class="skill-detail-panel" role="dialog" aria-modal="true" aria-label="新建招式">
+            <header class="skill-detail-head">
+              <h3>新建招式</h3>
+              <button type="button" class="close-btn" aria-label="关闭" @click="closeCustomForm">×</button>
+            </header>
+            <div class="skill-detail-body custom-form">
+              <label>
+                <span>名称</span>
+                <input v-model="customDraft.name" placeholder="显示名称" />
+              </label>
+              <label>
+                <span>伤害类型</span>
+                <select v-model="customDraft.damageType">
+                  <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </label>
+              <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
+                <span>招式类型（可多选，可空）</span>
+                <div class="chip-row">
+                  <button
+                    v-for="opt in SKILL_TYPE_OPTIONS"
+                    :key="opt.id"
+                    type="button"
+                    class="chip"
+                    :class="{ active: customDraft.skillTypes.includes(opt.id) }"
+                    @click="toggleCustomSkillType(opt.id)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                </div>
+              </div>
+              <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
+              <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
+                <span>增益锚点（仅本角色）</span>
+                <select v-model="customDraft.buffAnchorId">
+                  <option value="">无</option>
+                  <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
+                    {{ item.name }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>基础倍率%</span>
+                <input v-model.number="customDraft.baseMult" type="number" />
+              </label>
+              <label v-if="customDraft.damageType === 'direct'">
+                <span>决算倍率%</span>
+                <input v-model.number="customDraft.settlementMult" type="number" />
+              </label>
+              <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
+            </div>
           </div>
         </div>
     </div>
@@ -1191,11 +1214,6 @@ defineExpose({ expand })
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  margin-top: 0.45rem;
-  max-height: 14rem;
-  overflow: auto;
-  scrollbar-gutter: stable;
-  overscroll-behavior: contain;
 }
 .custom-form label,
 .type-checks {
