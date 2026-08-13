@@ -357,7 +357,7 @@ export const SKILL_BUFF_STAT_FIELDS = BUFF_STAT_FIELDS.filter((field) =>
   SKILL_BUFF_STAT_KEYS.includes(field.key),
 )
 
-/** 角色面板异常倍率% 默认值（与公共招式 baseMult 分开；招式侧电×10、火/以太×20） */
+/** 角色面板异常倍率% 默认值（与公共招式 baseMult 同一套数字，招式侧不再额外乘） */
 export const ANOMALY_MULT_BY_ELEMENT: Record<AgentElement, number> = {
   冰: 500,
   霜: 500,

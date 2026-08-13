@@ -2,13 +2,13 @@ import pool from '../config/db.js'
 
 const TABLE = '`calculator_skills`'
 
-/** 与前端 `publicAnomalySkills.ts` 保持一致。已存在的行不覆盖（管理员改过倍率要留下）。 */
+/** 与前端 `publicAnomalySkills.ts` 保持一致。这 7 条公共属性异常每次启动按表校正倍率/元素。 */
 const PUBLIC_ANOMALY_SKILLS = [
   { id: 'sk-public-anomaly-wind', element: '风', name: '风属性异常', baseMult: 1250, sortOrder: 10 },
-  { id: 'sk-public-anomaly-fire', element: '火', name: '火属性异常', baseMult: 1000, sortOrder: 20 },
-  { id: 'sk-public-anomaly-electric', element: '电', name: '电属性异常', baseMult: 1250, sortOrder: 30 },
+  { id: 'sk-public-anomaly-fire', element: '火', name: '火属性异常', baseMult: 50, sortOrder: 20 },
+  { id: 'sk-public-anomaly-electric', element: '电', name: '电属性异常', baseMult: 125, sortOrder: 30 },
   { id: 'sk-public-anomaly-physical', element: '物理', name: '物理属性异常', baseMult: 713, sortOrder: 40 },
-  { id: 'sk-public-anomaly-ether', element: '以太', name: '以太属性异常', baseMult: 1250, sortOrder: 50 },
+  { id: 'sk-public-anomaly-ether', element: '以太', name: '以太属性异常', baseMult: 62.5, sortOrder: 50 },
   { id: 'sk-public-anomaly-ice', element: '冰', name: '冰属性异常', baseMult: 500, sortOrder: 60 },
   { id: 'sk-public-anomaly-frost', element: '霜', name: '霜属性异常', baseMult: 500, sortOrder: 70 },
 ]
@@ -46,13 +46,20 @@ async function ensureTable() {
 
 async function ensurePublicAnomalySkills() {
   for (const skill of PUBLIC_ANOMALY_SKILLS) {
-    const [rows] = await pool.query(`SELECT id FROM ${TABLE} WHERE id = ? LIMIT 1`, [skill.id])
-    if (rows.length) continue
     await pool.query(
       `INSERT INTO calculator_skills
         (id, agent_id, name, damage_type, skill_types, buff_anchor_id,
          base_mult, base_mult_factor, settlement_mult, sort_order, element)
-       VALUES (?, '', ?, 'anomaly', '[]', NULL, ?, 100, 0, ?, ?)`,
+       VALUES (?, '', ?, 'anomaly', '[]', NULL, ?, 100, 0, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         agent_id = '',
+         name = VALUES(name),
+         damage_type = 'anomaly',
+         skill_types = '[]',
+         buff_anchor_id = NULL,
+         base_mult = VALUES(base_mult),
+         element = VALUES(element),
+         sort_order = VALUES(sort_order)`,
       [skill.id, skill.name, skill.baseMult, skill.sortOrder, skill.element],
     )
   }

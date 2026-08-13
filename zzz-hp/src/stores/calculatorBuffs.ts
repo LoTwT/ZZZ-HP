@@ -501,7 +501,7 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
         try {
           presetSkills.value = mergePublicAnomalyPresets(await fetchPresetSkills())
         } catch {
-          presetSkills.value = []
+          presetSkills.value = mergePublicAnomalyPresets([])
         }
         // 小类名要用来给迁移出的招式起名，故排在小类加载之后
         migrateLegacyModesToSkills({ subcategories: skillSubcategories.value })
@@ -601,13 +601,19 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     return skills.value.find((item) => item.id === id) ?? null
   }
 
-  /** 招式库对某角色可见的部分：该角色专属 + 公共（有 element 的只给同属性角色） */
-  function skillsForAgent(agentId: string): Skill[] {
-    const element = agents.value.find((item) => item.id === agentId)?.element ?? ''
+  /** 招式库对某角色可见的部分：该角色专属 + 公共（有 element 的只给同属性；属性未知时不藏） */
+  function skillsForAgent(agentId: string, elementHint?: string): Skill[] {
+    const element = (
+      elementHint ||
+      agents.value.find((item) => item.id === agentId)?.element ||
+      ''
+    ).trim()
     return skills.value.filter((item) => {
       if (item.agentId) return item.agentId === agentId
-      if (item.element) return item.element === element
-      return true
+      const skillEl = String(item.element ?? '').trim()
+      if (!skillEl) return true
+      if (!element) return true
+      return skillEl === element
     })
   }
 

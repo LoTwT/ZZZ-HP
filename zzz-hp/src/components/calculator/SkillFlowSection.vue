@@ -100,7 +100,8 @@ const flowPreparedIds = computed(
 
 const librarySkills = computed(() => {
   if (!currentAgentId.value) return [] as Skill[]
-  let list = buffStore.skillsForAgent(currentAgentId.value)
+  const element = props.agents.find((item) => item.id === currentAgentId.value)?.element ?? ''
+  let list = buffStore.skillsForAgent(currentAgentId.value, element)
   if (libraryFilter.value === 'publicAnomaly') {
     list = list.filter((skill) => !skill.agentId && skill.damageType === 'anomaly')
   }
@@ -476,6 +477,7 @@ function saveCustomSkill() {
     skillTypes: anomaly ? [] : [...customDraft.skillTypes],
     buffAnchorId: anomaly ? null : customDraft.buffAnchorId || null,
     baseMult: Number(customDraft.baseMult) || 0,
+    element: '',
     settlementMult:
       !anomaly && Number(customDraft.settlementMult)
         ? Number(customDraft.settlementMult)
@@ -727,7 +729,7 @@ defineExpose({ expand })
           <p v-if="!currentAgentId" class="empty-hint modal-empty">请先在编队里选择角色。</p>
 
           <div v-else class="flow-grid" :class="`tab-${modalTab}`">
-            <div v-show="modalTab === 'prep'" class="flow-col">
+            <div v-if="modalTab === 'prep'" class="flow-col">
               <div class="col-head">
                 <h3>招式库</h3>
                 <input v-model="libraryQuery" class="search-input" placeholder="搜索招式名" />
@@ -894,7 +896,7 @@ defineExpose({ expand })
               </ul>
             </div>
 
-            <div v-show="modalTab === 'flow'" class="flow-col">
+            <div v-if="modalTab === 'flow'" class="flow-col">
               <div class="col-head">
                 <h3>流程</h3>
                 <div class="col-head-spacer" />
@@ -1186,7 +1188,7 @@ defineExpose({ expand })
 }
 .flow-col {
   min-width: 0;
-  min-height: 0;
+  min-height: 22rem;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1196,10 +1198,10 @@ defineExpose({ expand })
   flex: 0 0 auto;
 }
 .col-head {
-  display: grid;
-  grid-template-rows: 1.6rem 2rem 2rem 2.1rem;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
-  align-items: center;
+  align-items: stretch;
   margin-bottom: 0.45rem;
 }
 .col-head h3 {
@@ -1256,8 +1258,8 @@ defineExpose({ expand })
   list-style: none;
   margin: 0;
   padding: 0 0.2rem 0 0;
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 14rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
