@@ -320,11 +320,12 @@ function computeGeneralAndAnomalyBase(options: {
     options.enemyInput.vulnerableMultiplier + options.combatVulnerable / 100
   const globalStagger = options.combatGlobalStaggerVulnerable / 100
   const phaseStagger =
-    options.staggerPhase === 'stagger'
-      ? (options.combatStaggerVulnerable + options.combatStaggerVulnerableOnly) / 100
-      : 0
+    (options.combatStaggerVulnerable + options.combatStaggerVulnerableOnly) / 100
+  /** 非失衡：乘区固定为 1。失衡易伤只在流程勾了失衡时进入。 */
   const staggerMultiplier =
-    options.enemyInput.staggerMultiplier + globalStagger + phaseStagger
+    options.staggerPhase === 'stagger'
+      ? options.enemyInput.staggerMultiplier + globalStagger + phaseStagger
+      : 1
   const specialMultiplier = options.enemyInput.specialMultiplier + options.combatSpecial / 100
   const pierceDmgBonusRatio = options.combatPierceDmgBonus / 100
 

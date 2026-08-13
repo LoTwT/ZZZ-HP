@@ -252,14 +252,14 @@ function previewFlowEntry(id: string, ownerAgentId: string, preparedId: string):
     ownerAgentId,
     preparedId,
     count: 1,
-    staggerPhase: 'stagger',
+    staggerPhase: 'normal',
     critMode: 'expected',
   }
 }
 
 /**
  * 招式库 / 准备招式主行预览：不进流程也算出单次伤害。
- * hit.id = 准备条目 id，或未准备时用 skill.id。不计入流程总伤。
+ * 次数=1、非失衡（失衡易伤区=1）。hit.id = 准备条目 id，或未准备时用 skill.id。不计入流程总伤。
  */
 export function resolveSkillPreviews(
   options: ResolveFlowOptions & { skillsForAgent: (agentId: string) => Skill[] },
