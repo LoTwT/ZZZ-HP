@@ -5,8 +5,10 @@ import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
 import type { FlowEntry, PreparedSkill, SchemeSlot } from '@/types/damageCalcHistory'
 import SkillFlowCard from '@/components/calculator/SkillFlowCard.vue'
+import SkillDefinitionForm from '@/components/calculator/SkillDefinitionForm.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
+import type { DamageCalcResult } from '@/utils/damageCalc'
 import {
   DAMAGE_EVENT_KIND_OPTIONS,
 } from '@/utils/damageEvent'
@@ -18,6 +20,7 @@ import {
   skillNeedsDualAgents,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
+import { buildSkillCalcZoneRows } from '@/utils/skillCalcZones'
 import { createCustomSkillId } from '@/utils/skillLibrary'
 import { SKILL_TYPE_OPTIONS } from '@/utils/skillTypes'
 
@@ -26,6 +29,7 @@ const props = defineProps<{
   agents: AgentBuffDoc[]
   hits?: ResolvedHit[]
   hitDamages?: Record<string, number>
+  hitCalcResults?: Record<string, DamageCalcResult>
 }>()
 
 const slots = defineModel<SchemeSlot[]>('slots', { default: () => ensureSchemeSlots([], 3) })
@@ -238,11 +242,35 @@ const detailPrepared = computed((): PreparedSkill | null => {
 
 const detailTitle = computed(() => detailSkill.value?.name || '招式详情')
 
-const detailSkipReason = computed(() => {
+const detailFlowEntryId = computed(() => {
   const current = detail.value
-  if (current?.kind !== 'flow') return null
-  const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
+  if (!current) return null
+  if (current.kind === 'flow') return current.entryId
+  if (current.kind === 'prepared') {
+    return currentSlot.value.flow.find((item) => item.preparedId === current.preparedId)?.id ?? null
+  }
+  return (
+    currentSlot.value.flow.find((item) => {
+      const prepared = currentSlot.value.prepared.find((row) => row.id === item.preparedId)
+      return prepared?.skillId === current.skillId
+    })?.id ?? null
+  )
+})
+
+const detailSkipReason = computed(() => {
+  const entryId = detailFlowEntryId.value
+  if (!entryId) return null
+  const entry = currentSlot.value.flow.find((item) => item.id === entryId)
   return entry ? flowSkipReason(entry) : null
+})
+
+const detailZoneRows = computed(() => {
+  const skill = detailSkill.value
+  const entryId = detailFlowEntryId.value
+  if (!skill || !entryId || detailSkipReason.value) return []
+  const result = props.hitCalcResults?.[entryId]
+  if (!result) return []
+  return buildSkillCalcZoneRows(result, skill.damageType)
 })
 
 function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
@@ -406,25 +434,34 @@ const customDraft = reactive({
   settlementMult: 0,
 })
 
+const detailDraft = reactive({
+  name: '',
+  damageType: 'direct' as SkillDamageType,
+  skillTypes: [] as SkillTypeId[],
+  buffAnchorId: '' as string,
+  baseMult: 0,
+  settlementMult: 0,
+})
+const detailSaveHint = ref('')
+
 watch(
-  () => customDraft.damageType,
-  (type) => {
-    if (skillNeedsDualAgents(type)) {
-      customDraft.skillTypes = []
-      customDraft.buffAnchorId = ''
-    }
+  () => (detailSkill.value ? `${detail.value?.kind}:${detailSkill.value.id}` : ''),
+  () => {
+    const skill = detailSkill.value
+    detailSaveHint.value = ''
+    if (!skill) return
+    detailDraft.name = skill.name
+    detailDraft.damageType = skill.damageType
+    detailDraft.skillTypes = [...skill.skillTypes]
+    detailDraft.buffAnchorId = skill.buffAnchorId ?? ''
+    detailDraft.baseMult = skill.baseMult
+    detailDraft.settlementMult = skill.settlementMult ?? 0
   },
 )
 
 const anchorOptions = computed(() =>
   skillSubcategories.value.filter((item) => item.agentId === currentAgentId.value),
 )
-
-function toggleCustomSkillType(id: SkillTypeId) {
-  const index = customDraft.skillTypes.indexOf(id)
-  if (index >= 0) customDraft.skillTypes.splice(index, 1)
-  else customDraft.skillTypes.push(id)
-}
 
 function saveCustomSkill() {
   const name = customDraft.name.trim()
@@ -452,6 +489,67 @@ function saveCustomSkill() {
   customDraft.skillTypes = []
   customDraft.buffAnchorId = ''
   showCustomForm.value = false
+}
+
+function syncPreparedAgentsForSkill(skillId: string, damageType: SkillDamageType) {
+  const next = ensureSchemeSlots(slots.value)
+  let changed = false
+  next.forEach((slot, index) => {
+    const ownerId = props.teamSlots[index]?.agentId
+    if (!ownerId) return
+    const defaults = defaultAnomalyAgents(damageType, ownerId)
+    const needsDual = skillNeedsDualAgents(damageType)
+    for (const item of slot.prepared) {
+      if (item.skillId !== skillId) continue
+      if (!needsDual) {
+        if (item.anomalyPowerAgentId || item.triggerAgentId) {
+          item.anomalyPowerAgentId = null
+          item.triggerAgentId = null
+          changed = true
+        }
+        continue
+      }
+      if (!item.anomalyPowerAgentId && !item.triggerAgentId) {
+        item.anomalyPowerAgentId = defaults.anomalyPowerAgentId
+        item.triggerAgentId = defaults.triggerAgentId
+        changed = true
+      }
+    }
+  })
+  if (changed) slots.value = next
+}
+
+function saveDetailSkill() {
+  const skill = detailSkill.value
+  if (!skill || skill.source !== 'custom') return
+  const name = detailDraft.name.trim()
+  if (!name) {
+    detailSaveHint.value = '请填写名称'
+    return
+  }
+  const nameTaken = currentSlot.value.prepared.some((item) => {
+    if (item.skillId === skill.id) return false
+    return preparedSkill(item)?.name.trim() === name
+  })
+  if (nameTaken) {
+    detailSaveHint.value = '准备阶段已有同名招式'
+    return
+  }
+  const anomaly = skillNeedsDualAgents(detailDraft.damageType)
+  buffStore.upsertCustomSkillDoc({
+    ...skill,
+    name,
+    damageType: detailDraft.damageType,
+    skillTypes: anomaly ? [] : [...detailDraft.skillTypes],
+    buffAnchorId: anomaly ? null : detailDraft.buffAnchorId || null,
+    baseMult: Number(detailDraft.baseMult) || 0,
+    settlementMult:
+      !anomaly && Number(detailDraft.settlementMult)
+        ? Number(detailDraft.settlementMult)
+        : undefined,
+  })
+  syncPreparedAgentsForSkill(skill.id, detailDraft.damageType)
+  detailSaveHint.value = '已保存'
 }
 
 function skillIsReferenced(skillId: string): boolean {
@@ -845,18 +943,6 @@ defineExpose({ expand })
               <button type="button" class="close-btn" aria-label="关闭详情" @click="closeDetail">×</button>
             </header>
             <div v-if="detailSkill" class="skill-detail-body">
-              <div class="detail-facts">
-                <span class="sf-dtype" :class="dtypeKind(detailSkill.damageType) === 'direct' ? 'is-direct' : 'is-anomaly'">
-                  {{ damageTypeLabel(detailSkill.damageType) }}
-                </span>
-                <span v-for="item in skillStypeLabels(detailSkill)" :key="item" class="sf-stype">{{ item }}</span>
-              </div>
-              <p class="detail-mult">
-                基础倍率 {{ skillMultText(detailSkill) || '未设' }}
-                <template v-if="detailSkill.damageType === 'direct' && detailSkill.settlementMult">
-                  · 决算倍率 {{ detailSkill.settlementMult }}
-                </template>
-              </p>
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
                 <p class="detail-section-title">双代理人</p>
@@ -900,8 +986,31 @@ defineExpose({ expand })
                   {{ dualAgentHint(detailPrepared, detailSkill) }}
                 </p>
               </template>
-              <p v-else-if="detail.kind === 'library'" class="empty-hint">
-                招式定义在库里。加入准备后，异常类可在详情里选双代理人。
+              <p v-else-if="detail.kind === 'library' && skillNeedsDualAgents(detailSkill.damageType)" class="empty-hint">
+                加入准备后，异常类可在详情里选双代理人。
+              </p>
+
+              <p class="detail-section-title">招式设置</p>
+              <p v-if="detailSkill.source === 'preset'" class="empty-hint">预设招式只读，不能改定义。</p>
+              <SkillDefinitionForm
+                v-model="detailDraft"
+                :readonly="detailSkill.source === 'preset'"
+                :anchors="anchorOptions"
+              />
+              <div v-if="detailSkill.source === 'custom'" class="detail-save-row">
+                <button type="button" class="mini-btn" @click="saveDetailSkill">保存招式</button>
+                <p v-if="detailSaveHint" class="empty-hint">{{ detailSaveHint }}</p>
+              </div>
+
+              <p class="detail-section-title">计算过程</p>
+              <div v-if="detailZoneRows.length" class="zone-display-grid">
+                <div v-for="row in detailZoneRows" :key="row.label" class="zone-display-item">
+                  <span class="zone-display-label">{{ row.label }}</span>
+                  <span class="zone-display-val">{{ row.value }}</span>
+                </div>
+              </div>
+              <p v-else class="empty-hint">
+                加入流程并完成结算后，这里会列出本条招式各乘区的数值。预设和自定义都一样。
               </p>
             </div>
             <p v-else class="empty-hint">招式已从库中删除。</p>
@@ -914,52 +1023,8 @@ defineExpose({ expand })
               <h3>新建招式</h3>
               <button type="button" class="close-btn" aria-label="关闭" @click="closeCustomForm">×</button>
             </header>
-            <div class="skill-detail-body custom-form">
-              <label>
-                <span>名称</span>
-                <input v-model="customDraft.name" placeholder="显示名称" />
-              </label>
-              <label>
-                <span>伤害类型</span>
-                <select v-model="customDraft.damageType">
-                  <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
-                    {{ opt.label }}
-                  </option>
-                </select>
-              </label>
-              <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
-                <span>招式类型（可多选，可空）</span>
-                <div class="chip-row">
-                  <button
-                    v-for="opt in SKILL_TYPE_OPTIONS"
-                    :key="opt.id"
-                    type="button"
-                    class="chip"
-                    :class="{ active: customDraft.skillTypes.includes(opt.id) }"
-                    @click="toggleCustomSkillType(opt.id)"
-                  >
-                    {{ opt.label }}
-                  </button>
-                </div>
-              </div>
-              <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
-              <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
-                <span>增益锚点（仅本角色）</span>
-                <select v-model="customDraft.buffAnchorId">
-                  <option value="">无</option>
-                  <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label>
-                <span>基础倍率%</span>
-                <input v-model.number="customDraft.baseMult" type="number" />
-              </label>
-              <label v-if="customDraft.damageType === 'direct'">
-                <span>决算倍率%</span>
-                <input v-model.number="customDraft.settlementMult" type="number" />
-              </label>
+            <div class="skill-detail-body">
+              <SkillDefinitionForm v-model="customDraft" :anchors="anchorOptions" />
               <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
             </div>
           </div>
@@ -1367,6 +1432,35 @@ defineExpose({ expand })
 }
 .detail-section-title {
   font-weight: 700;
+}
+.detail-save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.zone-display-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.4rem;
+}
+.zone-display-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #2a3038;
+  border-radius: 8px;
+  background: #12161d;
+}
+.zone-display-label {
+  font-size: 0.7rem;
+  color: #9aa3b0;
+}
+.zone-display-val {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #e8edf5;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 800px) {

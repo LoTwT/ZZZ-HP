@@ -2742,6 +2742,16 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-color: #eef1f5 !important;
   background: #f5f7fa !important;
 }
+[data-theme='light'] .zone-display-item {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .zone-display-label {
+  color: #667085 !important;
+}
+[data-theme='light'] .zone-display-val {
+  color: #1c212a !important;
+}
 [data-theme='light'] .skill-flow-modal .warn-hint {
   color: #b42318 !important;
 }

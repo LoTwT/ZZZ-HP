@@ -73,6 +73,7 @@ import {
   ensureSchemeSlots,
   resolveFlow,
 } from '@/utils/resolvedHit'
+import type { DamageCalcResult } from '@/utils/damageCalc'
 
 export interface TeamSlot {
   agentId: string
@@ -141,6 +142,7 @@ const convertSlotPanels = reactive<ConvertSlotPanels>({})
 const extraGains = ref<ExtraBuffGain[]>([])
 const schemeSlots = ref<SchemeSlot[]>(ensureSchemeSlots([], 3))
 const hitDamages = ref<Record<string, number>>({})
+const hitCalcResults = ref<Record<string, DamageCalcResult>>({})
 const resolvedFlow = computed(() =>
   resolveFlow({
     slots: schemeSlots.value,
@@ -1251,6 +1253,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :agents="agents"
       :hits="hits"
       :hit-damages="hitDamages"
+      :hit-calc-results="hitCalcResults"
       v-model:slots="schemeSlots"
     />
 
@@ -1367,6 +1370,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"
       @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
       @update:hit-damages="hitDamages = $event"
+      @update:hit-calc-results="hitCalcResults = $event"
     />
 
     <KeepAlive>

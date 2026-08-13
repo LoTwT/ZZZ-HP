@@ -68,7 +68,7 @@ import {
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
-import { computeDamageResult, type DamageCalcInput } from '@/utils/damageCalc'
+import { computeDamageResult, type DamageCalcInput, type DamageCalcResult } from '@/utils/damageCalc'
 import {
   normalizeDamageEnemyInput,
   resolveEnemyResistanceForElement,
@@ -227,6 +227,7 @@ const emit = defineEmits<{
   'update:anomalySlotPanels': [value: Record<string, PanelStats>]
   'update:convertSlotPanels': [value: ConvertSlotPanels]
   'update:hitDamages': [value: Record<string, number>]
+  'update:hitCalcResults': [value: Record<string, DamageCalcResult>]
 }>()
 
 const baseDamageSource = ref<BaseDamageSource>('atk')
@@ -1279,10 +1280,13 @@ watch(
   damageEventSummary,
   (summary) => {
     const map: Record<string, number> = {}
+    const results: Record<string, DamageCalcResult> = {}
     for (const line of summary?.lines ?? []) {
       map[line.hit.id] = line.perHit
+      results[line.hit.id] = line.result
     }
     emit('update:hitDamages', map)
+    emit('update:hitCalcResults', results)
   },
   { immediate: true },
 )
