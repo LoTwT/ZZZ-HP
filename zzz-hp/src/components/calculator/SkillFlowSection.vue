@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
@@ -7,7 +7,6 @@ import type { FlowEntry, PreparedSkill, SchemeSlot } from '@/types/damageCalcHis
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
 import {
-  DAMAGE_EVENT_CRIT_MODE_OPTIONS,
   DAMAGE_EVENT_KIND_OPTIONS,
 } from '@/utils/damageEvent'
 import {
@@ -34,7 +33,10 @@ const { skillSubcategories } = storeToRefs(buffStore)
 
 const activeSlotIndex = ref(0)
 const libraryQuery = ref('')
+const libraryFilter = ref<'all' | 'publicAnomaly'>('all')
 const showCustomForm = ref(false)
+const modalOpen = ref(false)
+const modalTab = ref<'prep' | 'flow'>('prep')
 
 watch(
   () => props.teamSlots.length,
@@ -56,9 +58,10 @@ watch(
 
 const currentSlot = computed(() => slots.value[activeSlotIndex.value] ?? { prepared: [], flow: [] })
 const currentAgentId = computed(() => props.teamSlots[activeSlotIndex.value]?.agentId ?? '')
-const currentAgent = computed(
-  () => props.agents.find((item) => item.id === currentAgentId.value) ?? null,
-)
+const currentTeamSlotLabel = computed(() => {
+  const slot = props.teamSlots[activeSlotIndex.value]
+  return slot ? slotLabel(slot, activeSlotIndex.value) : '空位'
+})
 
 const teamAgentOptions = computed(() =>
   props.teamSlots
@@ -72,11 +75,18 @@ const preparedSkillIds = computed(
 
 const librarySkills = computed(() => {
   if (!currentAgentId.value) return [] as Skill[]
-  const list = buffStore.skillsForAgent(currentAgentId.value)
+  let list = buffStore.skillsForAgent(currentAgentId.value)
+  if (libraryFilter.value === 'publicAnomaly') {
+    list = list.filter((skill) => !skill.agentId && skillNeedsDualAgents(skill.damageType))
+  }
   const q = libraryQuery.value.trim().toLowerCase()
   if (!q) return list
   return list.filter((skill) => skill.name.toLowerCase().includes(q))
 })
+
+const unpreparedFilteredCount = computed(
+  () => librarySkills.value.filter((skill) => !preparedSkillIds.value.has(skill.id)).length,
+)
 
 function damageTypeLabel(type: SkillDamageType) {
   return DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === type)?.label ?? type
@@ -113,6 +123,28 @@ function addPrepared(skill: Skill) {
     triggerAgentId: agents.triggerAgentId,
     extraMods: null,
   })
+  slots.value = next
+}
+
+function addFilteredToPrepared() {
+  const ownerId = currentAgentId.value
+  if (!ownerId) return
+  const existing = new Set(currentSlot.value.prepared.map((item) => item.skillId))
+  const next = ensureSchemeSlots(slots.value)
+  const slot = next[activeSlotIndex.value]!
+  for (const skill of librarySkills.value) {
+    if (existing.has(skill.id)) continue
+    existing.add(skill.id)
+    const agents = defaultAnomalyAgents(skill.damageType, ownerId)
+    slot.prepared.push({
+      id: newLocalId('prep'),
+      skillId: skill.id,
+      skillSource: skill.source,
+      anomalyPowerAgentId: agents.anomalyPowerAgentId,
+      triggerAgentId: agents.triggerAgentId,
+      extraMods: null,
+    })
+  }
   slots.value = next
 }
 
@@ -173,6 +205,17 @@ function moveFlow(entryId: string, delta: number) {
   if (index < 0 || target < 0 || target >= slot.flow.length) return
   const [item] = slot.flow.splice(index, 1)
   slot.flow.splice(target, 0, item!)
+  slots.value = next
+}
+
+function movePrepared(preparedId: string, delta: number) {
+  const next = ensureSchemeSlots(slots.value)
+  const slot = next[activeSlotIndex.value]!
+  const index = slot.prepared.findIndex((item) => item.id === preparedId)
+  const target = index + delta
+  if (index < 0 || target < 0 || target >= slot.prepared.length) return
+  const [item] = slot.prepared.splice(index, 1)
+  slot.prepared.splice(target, 0, item!)
   slots.value = next
 }
 
@@ -298,6 +341,13 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
     extraMods: Object.keys(nextMods).length ? nextMods : null,
   })
 }
+
+function onModalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && modalOpen.value) modalOpen.value = false
+}
+
+onMounted(() => window.addEventListener('keydown', onModalKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
 </script>
 
 <template>
@@ -305,7 +355,7 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
     <header class="calc-mode-header">
       <h2>招式流程</h2>
       <p class="calc-mode-desc">
-        从招式库加入当前角色的准备阶段，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。
+        从招式库加入当前角色的准备招式，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。
       </p>
     </header>
 
@@ -322,291 +372,294 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
       </button>
     </div>
 
-    <p v-if="!currentAgentId" class="empty-hint">请先在编队里选择角色。</p>
+    <div class="flow-summary">
+      <span class="flow-summary-counts">
+        {{ currentTeamSlotLabel }} · 已准备 {{ currentSlot.prepared.length }} 条 · 流程 {{ currentSlot.flow.length }} 项
+      </span>
+      <button type="button" class="primary-btn" @click="modalOpen = true">编辑招式流程</button>
+    </div>
+  </section>
 
-    <div v-else class="flow-grid">
-      <div class="flow-col">
-        <h3>招式库</h3>
-        <input v-model="libraryQuery" class="search-input" placeholder="搜索招式名" />
-        <ul class="skill-list library-list">
-          <li v-for="skill in librarySkills" :key="skill.id" class="skill-row">
-            <div class="skill-row-main">
-              <strong>{{ skill.name }}</strong>
-              <span class="meta">
-                {{ damageTypeLabel(skill.damageType) }} · {{ skillTypesLabel(skill) }}
-                · {{ skill.source === 'preset' ? '预设' : '自定义' }}
-              </span>
-            </div>
-            <div class="card-actions">
-              <button type="button" class="mini-btn" @click="addPrepared(skill)">
-                {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入准备' }}
-              </button>
+  <Teleport to="body">
+    <div v-if="modalOpen" class="skill-flow-overlay" @click.self="modalOpen = false">
+      <div class="skill-flow-modal" role="dialog" aria-modal="true" aria-label="招式流程">
+        <header class="skill-flow-modal-header">
+          <h2>招式流程</h2>
+          <button type="button" class="close-btn" aria-label="关闭" @click="modalOpen = false">×</button>
+        </header>
+
+        <div class="modal-agent-row" role="tablist" aria-label="角色">
+          <button
+            v-for="(slot, index) in teamSlots"
+            :key="index"
+            type="button"
+            class="modal-agent-tab"
+            :class="{ active: activeSlotIndex === index }"
+            @click="activeSlotIndex = index"
+          >
+            {{ slotLabel(slot, index) }}
+          </button>
+        </div>
+
+        <div class="modal-tabs" role="tablist" aria-label="阶段">
+          <button
+            type="button"
+            role="tab"
+            class="modal-tab"
+            :class="{ active: modalTab === 'prep' }"
+            @click="modalTab = 'prep'"
+          >
+            准备阶段
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="modal-tab"
+            :class="{ active: modalTab === 'flow' }"
+            @click="modalTab = 'flow'"
+          >
+            流程
+          </button>
+        </div>
+
+        <p v-if="!currentAgentId" class="empty-hint modal-empty">请先在编队里选择角色。</p>
+
+        <div v-else class="flow-grid" :class="`tab-${modalTab}`">
+          <!-- Col 1: 招式库 (仅 准备阶段 tab) -->
+          <div v-show="modalTab === 'prep'" class="flow-col flow-col--library">
+            <h3>招式库</h3>
+            <input v-model="libraryQuery" class="search-input" placeholder="搜索招式名" />
+            <div class="filter-row">
               <button
-                v-if="skill.source === 'custom'"
-                type="button"
-                class="mini-btn danger"
-                @click="deleteCustomSkill(skill)"
-              >
-                删除
-              </button>
-            </div>
-          </li>
-        </ul>
-        <p v-if="!librarySkills.length" class="empty-hint">该角色还没有招式。可先新建自定义，或到管理端录入预设。</p>
-        <button type="button" class="mini-btn" @click="showCustomForm = !showCustomForm">
-          {{ showCustomForm ? '收起新建' : '新建自定义招式' }}
-        </button>
-        <div v-if="showCustomForm" class="custom-form">
-          <label>
-            <span>名称</span>
-            <input v-model="customDraft.name" placeholder="显示名称" />
-          </label>
-          <label>
-            <span>伤害类型</span>
-            <select v-model="customDraft.damageType">
-              <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-          <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
-            <span>招式类型（可多选，可空）</span>
-            <div class="chip-row">
-              <button
-                v-for="opt in SKILL_TYPE_OPTIONS"
-                :key="opt.id"
                 type="button"
                 class="chip"
-                :class="{ active: customDraft.skillTypes.includes(opt.id) }"
-                @click="toggleCustomSkillType(opt.id)"
+                :class="{ active: libraryFilter === 'all' }"
+                @click="libraryFilter = 'all'"
               >
-                {{ opt.label }}
+                全部
+              </button>
+              <button
+                type="button"
+                class="chip"
+                :class="{ active: libraryFilter === 'publicAnomaly' }"
+                @click="libraryFilter = 'publicAnomaly'"
+              >
+                仅公共异常
               </button>
             </div>
-          </div>
-          <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
-          <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
-            <span>增益锚点（仅本角色）</span>
-            <select v-model="customDraft.buffAnchorId">
-              <option value="">无</option>
-              <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
-                {{ item.name }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>基础倍率%</span>
-            <input v-model.number="customDraft.baseMult" type="number" />
-          </label>
-          <label v-if="customDraft.damageType === 'direct'">
-            <span>决算倍率%</span>
-            <input v-model.number="customDraft.settlementMult" type="number" />
-          </label>
-          <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
-        </div>
-      </div>
-
-      <div class="flow-col">
-        <h3>准备阶段</h3>
-        <p v-if="!currentSlot.prepared.length" class="empty-hint">从左侧招式库加入，再填结算参数。</p>
-        <ul class="skill-list">
-          <li v-for="prepared in currentSlot.prepared" :key="prepared.id" class="skill-card">
-            <template v-if="preparedSkill(prepared)">
-              <div class="card-head">
-                <strong>{{ preparedSkill(prepared)!.name }}</strong>
-                <span class="meta">{{ damageTypeLabel(preparedSkill(prepared)!.damageType) }}</span>
-              </div>
-              <p v-if="dualAgentHint(prepared, preparedSkill(prepared)!)" class="warn-hint">
-                {{ dualAgentHint(prepared, preparedSkill(prepared)!) }}
-              </p>
-              <div
-                v-if="skillNeedsDualAgents(preparedSkill(prepared)!.damageType)"
-                class="agent-row"
-              >
-                <label>
-                  <span>异常强度提供者</span>
-                  <select
-                    :value="prepared.anomalyPowerAgentId ?? ''"
-                    @change="
-                      updatePrepared(prepared.id, {
-                        anomalyPowerAgentId: ($event.target as HTMLSelectElement).value || null,
-                      })
-                    "
+            <button
+              type="button"
+              class="mini-btn"
+              :disabled="!unpreparedFilteredCount"
+              @click="addFilteredToPrepared"
+            >
+              将筛选结果全部加入准备
+              <template v-if="unpreparedFilteredCount">（{{ unpreparedFilteredCount }}）</template>
+            </button>
+            <ul class="skill-list library-list">
+              <li v-for="skill in librarySkills" :key="skill.id" class="skill-row">
+                <div class="skill-row-main">
+                  <strong>{{ skill.name }}</strong>
+                  <span class="meta">
+                    {{ damageTypeLabel(skill.damageType) }} · {{ skillTypesLabel(skill) }}
+                    · {{ skill.source === 'preset' ? '预设' : '自定义' }}
+                  </span>
+                </div>
+                <div class="card-actions">
+                  <button type="button" class="mini-btn" @click="addPrepared(skill)">
+                    {{ preparedSkillIds.has(skill.id) ? '再加一条' : '加入准备' }}
+                  </button>
+                  <button
+                    v-if="skill.source === 'custom'"
+                    type="button"
+                    class="mini-btn danger"
+                    @click="deleteCustomSkill(skill)"
                   >
-                    <option value="">未选</option>
-                    <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                      {{ agent.name }}
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  <span>异常类触发者</span>
-                  <select
-                    :value="prepared.triggerAgentId ?? ''"
-                    @change="
-                      updatePrepared(prepared.id, {
-                        triggerAgentId: ($event.target as HTMLSelectElement).value || null,
-                      })
-                    "
-                  >
-                    <option value="">未选</option>
-                    <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                      {{ agent.name }}
-                    </option>
-                  </select>
-                </label>
-              </div>
-              <div class="extra-row">
-                <label>
-                  <span>倍率加算</span>
-                  <input
-                    :value="extraNumber(prepared, 'baseMult')"
-                    @change="
-                      setExtraNumber(prepared, 'baseMult', ($event.target as HTMLInputElement).value)
-                    "
-                  />
-                </label>
-                <label v-if="preparedSkill(prepared)!.damageType === 'direct'">
-                  <span>决算加算</span>
-                  <input
-                    :value="extraNumber(prepared, 'settlementMult')"
-                    @change="
-                      setExtraNumber(
-                        prepared,
-                        'settlementMult',
-                        ($event.target as HTMLInputElement).value,
-                      )
-                    "
-                  />
-                </label>
-                <label>
-                  <span>增伤加算</span>
-                  <input
-                    :value="extraNumber(prepared, 'dmgBonus')"
-                    @change="
-                      setExtraNumber(prepared, 'dmgBonus', ($event.target as HTMLInputElement).value)
-                    "
-                  />
-                </label>
-                <label>
-                  <span>暴击加算</span>
-                  <input
-                    :value="extraNumber(prepared, 'critRate')"
-                    @change="
-                      setExtraNumber(prepared, 'critRate', ($event.target as HTMLInputElement).value)
-                    "
-                  />
-                </label>
-                <label>
-                  <span>爆伤加算</span>
-                  <input
-                    :value="extraNumber(prepared, 'critDmg')"
-                    @change="
-                      setExtraNumber(prepared, 'critDmg', ($event.target as HTMLInputElement).value)
-                    "
-                  />
-                </label>
-              </div>
-              <div class="card-actions">
-                <button type="button" class="mini-btn" @click="addToFlow(prepared)">加入流程</button>
-                <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
-                  移除
-                </button>
-              </div>
-            </template>
-            <template v-else>
-              <span class="missing">招式已从库中删除，不参与结算</span>
-              <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
-                移除
-              </button>
-            </template>
-          </li>
-        </ul>
-      </div>
-
-      <div class="flow-col">
-        <h3>{{ currentAgent?.name }} 的流程</h3>
-        <p v-if="!currentSlot.flow.length" class="empty-hint">从准备阶段把招式加进来编排次数与失衡。</p>
-        <ul class="skill-list">
-          <li
-            v-for="(entry, index) in currentSlot.flow"
-            :key="entry.id"
-            class="skill-card"
-            :class="{ 'skill-card--skip': Boolean(flowSkipReason(entry)) }"
-          >
-            <div class="card-head">
-              <span class="flow-index">{{ index + 1 }}</span>
-              <strong>{{ flowSkillName(entry) }}</strong>
-            </div>
-            <p v-if="flowSkipReason(entry)" class="warn-hint">{{ flowSkipReason(entry) }}</p>
-            <div class="flow-fields">
+                    删除
+                  </button>
+                </div>
+              </li>
+            </ul>
+            <p v-if="!librarySkills.length" class="empty-hint">
+              该角色还没有招式。可先新建自定义，或到管理端录入预设。
+            </p>
+            <button type="button" class="mini-btn" @click="showCustomForm = !showCustomForm">
+              {{ showCustomForm ? '收起新建' : '新建自定义招式' }}
+            </button>
+            <div v-if="showCustomForm" class="custom-form">
               <label>
-                <span>次数</span>
-                <input
-                  type="number"
-                  min="0"
-                  :value="entry.count"
-                  @change="
-                    updateFlow(entry.id, {
-                      count: Math.max(0, Number(($event.target as HTMLInputElement).value) || 0),
-                    })
-                  "
-                />
+                <span>名称</span>
+                <input v-model="customDraft.name" placeholder="显示名称" />
               </label>
               <label>
-                <span>失衡</span>
-                <select
-                  :value="entry.staggerPhase"
-                  @change="
-                    updateFlow(entry.id, {
-                      staggerPhase: ($event.target as HTMLSelectElement)
-                        .value as FlowEntry['staggerPhase'],
-                    })
-                  "
-                >
-                  <option value="stagger">失衡期</option>
-                  <option value="normal">非失衡期</option>
-                </select>
-              </label>
-              <label>
-                <span>暴击</span>
-                <select
-                  :value="entry.critMode"
-                  @change="
-                    updateFlow(entry.id, {
-                      critMode: ($event.target as HTMLSelectElement).value as FlowEntry['critMode'],
-                    })
-                  "
-                >
-                  <option
-                    v-for="opt in DAMAGE_EVENT_CRIT_MODE_OPTIONS"
-                    :key="opt.id"
-                    :value="opt.id"
-                  >
+                <span>伤害类型</span>
+                <select v-model="customDraft.damageType">
+                  <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
                     {{ opt.label }}
                   </option>
                 </select>
               </label>
+              <div v-if="!skillNeedsDualAgents(customDraft.damageType)" class="type-checks">
+                <span>招式类型（可多选，可空）</span>
+                <div class="chip-row">
+                  <button
+                    v-for="opt in SKILL_TYPE_OPTIONS"
+                    :key="opt.id"
+                    type="button"
+                    class="chip"
+                    :class="{ active: customDraft.skillTypes.includes(opt.id) }"
+                    @click="toggleCustomSkillType(opt.id)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                </div>
+              </div>
+              <p v-else class="empty-hint">异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。</p>
+              <label v-if="!skillNeedsDualAgents(customDraft.damageType)">
+                <span>增益锚点（仅本角色）</span>
+                <select v-model="customDraft.buffAnchorId">
+                  <option value="">无</option>
+                  <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
+                    {{ item.name }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>基础倍率%</span>
+                <input v-model.number="customDraft.baseMult" type="number" />
+              </label>
+              <label v-if="customDraft.damageType === 'direct'">
+                <span>决算倍率%</span>
+                <input v-model.number="customDraft.settlementMult" type="number" />
+              </label>
+              <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
             </div>
-            <div class="card-actions">
-              <button type="button" class="mini-btn" :disabled="index === 0" @click="moveFlow(entry.id, -1)">
-                上移
-              </button>
-              <button
-                type="button"
-                class="mini-btn"
-                :disabled="index === currentSlot.flow.length - 1"
-                @click="moveFlow(entry.id, 1)"
+          </div>
+
+          <!-- Col 2: 准备招式（两 tab 共用同一份数据） -->
+          <div class="flow-col flow-col--prepared">
+            <h3>{{ modalTab === 'prep' ? '准备招式' : '准备招式（加入流程）' }}</h3>
+            <p v-if="!currentSlot.prepared.length" class="empty-hint">
+              {{
+                modalTab === 'prep'
+                  ? '从左侧招式库加入。异常类必须选定双代理人才能出伤。'
+                  : '先在准备阶段加入招式，才能排进流程。'
+              }}
+            </p>
+            <ul class="skill-list">
+              <li v-for="(prepared, preparedIndex) in currentSlot.prepared" :key="prepared.id" class="skill-card">
+                <template v-if="preparedSkill(prepared)">
+                  <div class="card-head">
+                    <strong>{{ preparedSkill(prepared)!.name }}</strong>
+                    <span class="meta">{{ damageTypeLabel(preparedSkill(prepared)!.damageType) }}</span>
+                  </div>
+                  <p v-if="dualAgentHint(prepared, preparedSkill(prepared)!)" class="warn-hint">
+                    {{ dualAgentHint(prepared, preparedSkill(prepared)!) }}
+                  </p>
+                  <div
+                    v-if="skillNeedsDualAgents(preparedSkill(prepared)!.damageType)"
+                    class="agent-row"
+                  >
+                    <label>
+                      <span>异常强度提供者</span>
+                      <select
+                        :value="prepared.anomalyPowerAgentId ?? ''"
+                        @change="
+                          updatePrepared(prepared.id, {
+                            anomalyPowerAgentId:
+                              ($event.target as HTMLSelectElement).value || null,
+                          })
+                        "
+                      >
+                        <option value="">未选</option>
+                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                          {{ agent.name }}
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>异常类触发者</span>
+                      <select
+                        :value="prepared.triggerAgentId ?? ''"
+                        @change="
+                          updatePrepared(prepared.id, {
+                            triggerAgentId: ($event.target as HTMLSelectElement).value || null,
+                          })
+                        "
+                      >
+                        <option value="">未选</option>
+                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                          {{ agent.name }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="card-actions">
+                    <template v-if="modalTab === 'prep'">
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        :disabled="preparedIndex === 0"
+                        @click="movePrepared(prepared.id, -1)"
+                      >
+                        上移
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        :disabled="preparedIndex === currentSlot.prepared.length - 1"
+                        @click="movePrepared(prepared.id, 1)"
+                      >
+                        下移
+                      </button>
+                      <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
+                        移除
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button type="button" class="mini-btn" @click="addToFlow(prepared)">加入流程</button>
+                    </template>
+                  </div>
+                </template>
+                <template v-else>
+                  <span class="missing">招式已从库中删除，不参与结算</span>
+                  <button type="button" class="mini-btn danger" @click="removePrepared(prepared.id)">
+                    移除
+                  </button>
+                </template>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Col 3: 流程 (仅 流程 tab，右侧先留框架) -->
+          <div v-show="modalTab === 'flow'" class="flow-col flow-col--flow">
+            <h3>流程</h3>
+            <p class="empty-hint">次数、失衡、顺序稍后在这里编排。</p>
+            <p v-if="!currentSlot.flow.length" class="empty-hint">还没有流程条目。从左侧把准备招式加进来。</p>
+            <ul class="skill-list">
+              <li
+                v-for="(entry, index) in currentSlot.flow"
+                :key="entry.id"
+                class="skill-card"
+                :class="{ 'skill-card--skip': Boolean(flowSkipReason(entry)) }"
               >
-                下移
-              </button>
-              <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">移除</button>
-            </div>
-          </li>
-        </ul>
+                <div class="card-head">
+                  <span class="flow-index">{{ index + 1 }}</span>
+                  <strong>{{ flowSkillName(entry) }}</strong>
+                </div>
+                <p v-if="flowSkipReason(entry)" class="warn-hint">{{ flowSkipReason(entry) }}</p>
+                <div class="card-actions">
+                  <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
+                    移除
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
-  </section>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -770,5 +823,164 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
   .library-list {
     max-height: 16rem;
   }
+}
+
+/* 页面 section 摘要 */
+.flow-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.flow-summary-counts {
+  color: #9aa3b0;
+  font-size: 0.85rem;
+}
+.primary-btn {
+  margin-left: auto;
+  border: 1px solid #c9a55c;
+  background: linear-gradient(180deg, #d8b56a, #b88d3a);
+  color: #1a1407;
+  font-weight: 600;
+  padding: 0.4rem 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.primary-btn:hover {
+  filter: brightness(1.05);
+}
+
+/* 弹窗：覆盖层 + 对话框 */
+.skill-flow-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 10, 16, 0.62);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.skill-flow-modal {
+  width: min(1280px, 100%);
+  max-height: calc(100vh - 3rem);
+  display: flex;
+  flex-direction: column;
+  background: #14181f;
+  border: 1px solid #2a3038;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.skill-flow-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #2a3038;
+  background: #181d27;
+}
+.skill-flow-modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #e8edf5;
+}
+.close-btn {
+  border: none;
+  background: transparent;
+  color: #9aa3b0;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.4rem;
+}
+.close-btn:hover {
+  color: #e8edf5;
+}
+
+/* 角色层：胶囊（与下面阶段 tab 的下划线明显区分） */
+.modal-agent-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.65rem 1rem 0.35rem;
+  background: #14181f;
+}
+.modal-agent-tab {
+  border: 1px solid #2d323a;
+  border-radius: 999px;
+  background: #0f1217;
+  color: #d5dae4;
+  padding: 0.35rem 0.95rem;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.modal-agent-tab.active {
+  border-color: #c9a55c;
+  background: rgba(201, 165, 92, 0.14);
+  color: #f0d7a2;
+  font-weight: 600;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.flow-col--library > .mini-btn {
+  margin-bottom: 0.5rem;
+}
+
+/* 弹窗内的阶段 tab：用下划线（与角色胶囊明显区分） */
+.modal-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1rem;
+  border-bottom: 1px solid #2a3038;
+  background: #14181f;
+}
+.modal-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa3b0;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.modal-tab:hover {
+  color: #dce4f0;
+}
+.modal-tab.active {
+  border-bottom-color: #c9a55c;
+  color: #f0d7a2;
+}
+
+.modal-empty {
+  margin: 1rem;
+}
+
+/* 弹窗内的 flow-grid 调整列数：1 + 2 或 2 + 3 */
+.skill-flow-modal .flow-grid {
+  margin-top: 0;
+  padding: 0.85rem 1rem 1rem;
+  overflow: auto;
+  align-items: stretch;
+}
+.skill-flow-modal .flow-grid.tab-prep {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+.skill-flow-modal .flow-grid.tab-flow {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+
+/* 卡片外壳统一：库 / 准备 / 流程高度对齐（具体内容风格待定） */
+.skill-flow-modal .skill-row,
+.skill-flow-modal .skill-card {
+  min-height: 4rem;
 }
 </style>
