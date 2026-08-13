@@ -213,6 +213,21 @@ function openCustomForm() {
   showCustomForm.value = true
 }
 
+function openPreparedDetail(preparedId: string) {
+  showCustomForm.value = false
+  detail.value = { kind: 'prepared', preparedId }
+}
+
+function openFlowDetail(entryId: string) {
+  showCustomForm.value = false
+  detail.value = { kind: 'flow', entryId }
+}
+
+function openLibraryDetail(skillId: string) {
+  showCustomForm.value = false
+  detail.value = { kind: 'library', skillId }
+}
+
 const detailSkill = computed((): Skill | null => {
   const current = detail.value
   if (!current) return null
@@ -772,7 +787,7 @@ defineExpose({ expand })
                   :damage="damageForLibrary(skill.id)"
                 >
                   <template #actions>
-                    <button type="button" class="mini-btn" @click="detail = { kind: 'library', skillId: skill.id }">
+                    <button type="button" class="mini-btn" @click="openLibraryDetail(skill.id)">
                       详情
                     </button>
                     <button
@@ -825,7 +840,7 @@ defineExpose({ expand })
                   {{
                     modalTab === 'prep'
                       ? '每种招式只准备一条。异常类在详情里选双代理人。'
-                      : '同一准备招式可以多次加入流程。'
+                      : '同一准备招式可以多次加入流程。异常类点详情或代理人胶囊可选人。'
                   }}
                 </p>
                 <div class="col-head-spacer" />
@@ -843,12 +858,13 @@ defineExpose({ expand })
                     :agent-title="agentPairTitle(prepared, preparedSkill(prepared)!)"
                     :damage="damageForPrepared(prepared.id)"
                     :skip="Boolean(dualAgentHint(prepared, preparedSkill(prepared)!))"
+                    @select-agents="openPreparedDetail(prepared.id)"
                   >
                     <template #actions>
                       <button
                         type="button"
                         class="mini-btn"
-                        @click="detail = { kind: 'prepared', preparedId: prepared.id }"
+                        @click="openPreparedDetail(prepared.id)"
                       >
                         详情
                       </button>
@@ -900,7 +916,7 @@ defineExpose({ expand })
               <div class="col-head">
                 <h3>流程</h3>
                 <div class="col-head-spacer" />
-                <p class="col-desc">次数、失衡稍后编排。先从左侧加入。</p>
+                <p class="col-desc">次数、失衡稍后编排。点详情或代理人胶囊可改双代理人。</p>
                 <div class="col-head-spacer" />
               </div>
               <ul class="sf-list">
@@ -920,9 +936,10 @@ defineExpose({ expand })
                   "
                   :damage="damageForFlow(entry.id)"
                   :skip="Boolean(flowSkipReason(entry))"
+                  @select-agents="openFlowDetail(entry.id)"
                 >
                   <template #actions>
-                    <button type="button" class="mini-btn" @click="detail = { kind: 'flow', entryId: entry.id }">
+                    <button type="button" class="mini-btn" @click="openFlowDetail(entry.id)">
                       详情
                     </button>
                     <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
@@ -937,7 +954,9 @@ defineExpose({ expand })
             </div>
           </div>
         </div>
+    </div>
 
+    <Teleport to="body">
         <div v-if="detail" class="skill-detail-overlay" @click.self="closeDetail">
           <div class="skill-detail-panel" role="dialog" aria-modal="true" :aria-label="detailTitle">
             <header class="skill-detail-head">
@@ -1015,10 +1034,12 @@ defineExpose({ expand })
                 加入流程并完成结算后，这里会列出本条招式各乘区的数值。预设和自定义都一样。
               </p>
             </div>
-            <p v-else class="empty-hint">招式已从库中删除。</p>
+            <p v-else class="empty-hint skill-detail-missing">招式已从库中删除。</p>
           </div>
         </div>
+        </Teleport>
 
+        <Teleport to="body">
         <div v-if="showCustomForm" class="skill-detail-overlay" @click.self="closeCustomForm">
           <div class="skill-detail-panel" role="dialog" aria-modal="true" aria-label="新建招式">
             <header class="skill-detail-head">
@@ -1031,7 +1052,7 @@ defineExpose({ expand })
             </div>
           </div>
         </div>
-    </div>
+        </Teleport>
   </section>
 </template>
 
@@ -1344,9 +1365,9 @@ defineExpose({ expand })
 }
 
 .skill-detail-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 2;
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1354,21 +1375,25 @@ defineExpose({ expand })
   background: rgba(7, 10, 16, 0.55);
 }
 .skill-detail-panel {
-  width: min(640px, 100%);
-  max-height: 100%;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(920px, calc(100vw - 2.5rem));
+  min-height: min(70vh, 640px);
+  max-height: min(90vh, 920px);
+  overflow: hidden;
   background: #181d27;
   border: 1px solid #2a3038;
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
 .skill-detail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.65rem 0.9rem;
+  flex: 0 0 auto;
+  padding: 0.75rem 1.1rem;
   border-bottom: 1px solid #2a3038;
 }
 .skill-detail-head h3 {
@@ -1378,9 +1403,17 @@ defineExpose({ expand })
 }
 .skill-detail-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.7rem;
-  padding: 0.85rem 0.9rem 1rem;
+  min-height: 0;
+  padding: 0.95rem 1.1rem 1.15rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.skill-detail-missing {
+  flex: 1 1 auto;
+  padding: 0.95rem 1.1rem 1.15rem;
 }
 .detail-facts {
   display: flex;

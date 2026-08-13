@@ -17,7 +17,7 @@ function readFactor(value: number | undefined | null, fallback = 1): number {
   return multFactorPercentToRatio(value) || fallback
 }
 
-function unsetSkillMult(value: number | undefined | null): boolean {
+export function unsetSkillMult(value: number | undefined | null): boolean {
   return !Number.isFinite(Number(value)) || Number(value) === 0
 }
 
@@ -77,7 +77,8 @@ export function normalizeSkillSubcategoryMultFields(
 
 /**
  * 解析招式小类倍率：小类倍率（百分点）× 小类修正 × 面板倍率区 × 面板修正。
- * 异放/紊乱倍率为 0 表示未设置，回落面板 disorderBaseMult / anomalyReleaseMult。
+ * 直伤 / 异放 / 紊乱倍率为 0 表示未设置，回落对应面板字段。
+ * 增益锚点小类经常把 directDmgMult 留空，不回落的话直伤区会变成 0、主行不出伤害。
  */
 export function resolveSkillMults(
   panel: PanelStats,
@@ -86,8 +87,11 @@ export function resolveSkillMults(
   const sub = normalizeSkillSubcategoryMultFields(subcategory ?? undefined)
 
   const panelDirectFactor = readFactor(panel.directDmgMultFactor)
+  const directMult = unsetSkillMult(sub.directDmgMult)
+    ? panel.directDmgMult
+    : sub.directDmgMult
   const directDmgMultZone =
-    Math.max(0, sub.directDmgMult / 100) * sub.directDmgMultFactor * panelDirectFactor
+    Math.max(0, directMult / 100) * sub.directDmgMultFactor * panelDirectFactor
   const settlementDmgMultZone =
     Math.max(0, sub.settlementDmgMult / 100) * sub.directDmgMultFactor * panelDirectFactor
 

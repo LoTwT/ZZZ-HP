@@ -2632,12 +2632,14 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .skill-flow-modal-header h2 {
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .close-btn {
+[data-theme='light'] .skill-flow-modal .close-btn,
+[data-theme='light'] .skill-detail-panel .close-btn {
   border-color: #d5dae3 !important;
   background: #ffffff !important;
   color: #667085 !important;
 }
-[data-theme='light'] .skill-flow-modal .close-btn:hover {
+[data-theme='light'] .skill-flow-modal .close-btn:hover,
+[data-theme='light'] .skill-detail-panel .close-btn:hover {
   border-color: #c9a55c !important;
   color: #1c212a !important;
 }
@@ -2693,7 +2695,8 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .sf-card .sf-name,
 [data-theme='light'] .skill-detail-head h3,
 [data-theme='light'] .skill-flow-modal .detail-mult,
-[data-theme='light'] .skill-flow-modal .detail-section-title {
+[data-theme='light'] .skill-flow-modal .detail-section-title,
+[data-theme='light'] .skill-detail-panel .detail-section-title {
   color: #1c212a !important;
 }
 [data-theme='light'] .sf-card .sf-mult-label {
@@ -2752,36 +2755,46 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .zone-display-val {
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .warn-hint {
+[data-theme='light'] .skill-flow-modal .warn-hint,
+[data-theme='light'] .skill-detail-panel .warn-hint {
   color: #b42318 !important;
 }
-[data-theme='light'] .skill-flow-modal .mini-btn {
+[data-theme='light'] .skill-flow-modal .mini-btn,
+[data-theme='light'] .skill-detail-panel .mini-btn {
   border-color: #d5dae3 !important;
   background: #ffffff !important;
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .mini-btn.danger {
+[data-theme='light'] .skill-flow-modal .mini-btn.danger,
+[data-theme='light'] .skill-detail-panel .mini-btn.danger {
   border-color: #e4b4b4 !important;
   color: #b42318 !important;
 }
 [data-theme='light'] .skill-flow-modal input:not([type='checkbox']):not([type='radio']),
-[data-theme='light'] .skill-flow-modal select {
+[data-theme='light'] .skill-flow-modal select,
+[data-theme='light'] .skill-detail-panel input:not([type='checkbox']):not([type='radio']),
+[data-theme='light'] .skill-detail-panel select {
   border-color: #d5dae3 !important;
   background: #ffffff !important;
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .chip {
+[data-theme='light'] .skill-flow-modal .chip,
+[data-theme='light'] .skill-detail-panel .chip {
   border-color: #d5dae3 !important;
   background: #f5f7fa !important;
   color: #1c212a !important;
 }
-[data-theme='light'] .skill-flow-modal .chip.active {
+[data-theme='light'] .skill-flow-modal .chip.active,
+[data-theme='light'] .skill-detail-panel .chip.active {
   border-color: #c9a55c !important;
   background: #fff8eb !important;
   color: #8a6a1f !important;
 }
 [data-theme='light'] .skill-flow-modal .agent-row label,
 [data-theme='light'] .skill-flow-modal .custom-form label,
-[data-theme='light'] .skill-flow-modal .type-checks {
+[data-theme='light'] .skill-flow-modal .type-checks,
+[data-theme='light'] .skill-detail-panel .agent-row label,
+[data-theme='light'] .skill-detail-panel .custom-form label,
+[data-theme='light'] .skill-detail-panel .type-checks {
   color: #667085 !important;
 }

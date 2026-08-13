@@ -11,6 +11,10 @@ defineProps<{
   skip?: boolean
   index?: number
 }>()
+
+const emit = defineEmits<{
+  'select-agents': []
+}>()
 </script>
 
 <template>
@@ -25,7 +29,15 @@ defineProps<{
     <span v-if="stypes?.length" class="sf-stypes">
       <span v-for="item in stypes" :key="item" class="sf-stype">{{ item }}</span>
     </span>
-    <span v-if="agentPair" class="sf-agents" :title="agentTitle || agentPair">{{ agentPair }}</span>
+    <button
+      v-if="agentPair"
+      type="button"
+      class="sf-agents"
+      :title="agentTitle || agentPair"
+      @click.stop="emit('select-agents')"
+    >
+      {{ agentPair }}
+    </button>
     <span class="sf-damage">{{ damage || '' }}</span>
     <div class="sf-card-actions">
       <slot name="actions" />
@@ -64,8 +76,8 @@ defineProps<{
   font-weight: 700;
 }
 .sf-name {
-  flex: 0 1 7.5rem;
-  min-width: 3.5rem;
+  flex: 1 1 3.5rem;
+  min-width: 2.8rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,7 +127,9 @@ defineProps<{
 }
 .sf-stypes {
   display: flex;
+  flex: 0 1 auto;
   gap: 0.2rem;
+  max-width: 9rem;
   min-width: 0;
   overflow: hidden;
 }
@@ -125,19 +139,26 @@ defineProps<{
   color: #8fd4c4;
 }
 .sf-agents {
+  appearance: none;
   background: #241833;
   border: 1px solid #6b4ea0;
   color: #d4b8f0;
+  cursor: pointer;
+  font: inherit;
+}
+.sf-agents:hover {
+  filter: brightness(1.08);
 }
 .sf-damage {
   margin-left: auto;
   flex: 0 0 auto;
-  min-width: 4.2rem;
+  min-width: 3.6rem;
   text-align: right;
   font-size: 0.82rem;
   font-weight: 800;
   color: #c4a0e8;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .sf-card-actions {
   display: flex;
