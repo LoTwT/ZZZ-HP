@@ -37,7 +37,7 @@ const activeSlotIndex = ref(0)
 const libraryQuery = ref('')
 const libraryFilter = ref<'all' | 'publicAnomaly'>('all')
 const showCustomForm = ref(false)
-const modalOpen = ref(false)
+const expanded = ref(true)
 const modalTab = ref<'prep' | 'flow'>('prep')
 const detail = ref<
   | { kind: 'library'; skillId: string }
@@ -472,17 +472,13 @@ function setExtraNumber(prepared: PreparedSkill, key: ExtraModKey, raw: string) 
   })
 }
 
-watch(modalOpen, (open) => {
+watch(expanded, (open) => {
   if (!open) detail.value = null
 })
 
 function onModalKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !modalOpen.value) return
-  if (detail.value) {
-    closeDetail()
-    return
-  }
-  modalOpen.value = false
+  if (event.key !== 'Escape' || !detail.value) return
+  closeDetail()
 }
 
 onMounted(() => window.addEventListener('keydown', onModalKeydown))
@@ -515,31 +511,12 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
       <span class="flow-summary-counts">
         {{ currentTeamSlotLabel }} · 已准备 {{ currentSlot.prepared.length }} 条 · 流程 {{ currentSlot.flow.length }} 项
       </span>
-      <button type="button" class="primary-btn" @click="modalOpen = true">编辑招式流程</button>
+      <button type="button" class="primary-btn" @click="expanded = !expanded">
+        {{ expanded ? '收起' : '展开' }}
+      </button>
     </div>
-  </section>
 
-  <Teleport to="body">
-    <div v-if="modalOpen" class="skill-flow-overlay" @click.self="modalOpen = false">
-      <div class="skill-flow-modal" role="dialog" aria-modal="true" aria-label="招式流程">
-        <header class="skill-flow-modal-header">
-          <h2>招式流程 · {{ currentTeamSlotLabel }}</h2>
-          <button type="button" class="close-btn" aria-label="关闭" @click="modalOpen = false">×</button>
-        </header>
-
-        <div class="modal-agent-row" role="tablist" aria-label="角色">
-          <button
-            v-for="(slot, index) in teamSlots"
-            :key="index"
-            type="button"
-            class="modal-agent-tab"
-            :class="{ active: activeSlotIndex === index }"
-            @click="activeSlotIndex = index"
-          >
-            {{ slotLabel(slot, index) }}
-          </button>
-        </div>
-
+    <div v-show="expanded" class="skill-flow-modal skill-flow-editor">
         <div class="modal-tabs" role="tablist" aria-label="阶段">
           <button
             type="button"
@@ -884,9 +861,8 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
             <p v-else class="empty-hint">招式已从库中删除。</p>
           </div>
         </div>
-      </div>
     </div>
-  </Teleport>
+  </section>
 </template>
 
 <style scoped>
@@ -915,28 +891,18 @@ onUnmounted(() => window.removeEventListener('keydown', onModalKeydown))
   filter: brightness(1.05);
 }
 
-.skill-flow-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(7, 10, 16, 0.62);
-}
-.skill-flow-modal {
+.skill-flow-editor {
   position: relative;
   box-sizing: border-box;
-  width: min(96vw, 1680px);
-  height: min(94vh, 980px);
+  width: 100%;
+  height: min(62vh, 720px);
+  margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: #14181f;
   border: 1px solid #2a3038;
   border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
 
 .skill-flow-modal-header,
