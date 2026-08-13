@@ -43,6 +43,9 @@ const libraryFilter = ref<'all' | 'publicAnomaly'>('all')
 const showCustomForm = ref(false)
 const expanded = ref(true)
 const modalTab = ref<'prep' | 'flow'>('prep')
+const flowDragEnabled = ref(false)
+const flowDraggingId = ref<string | null>(null)
+const flowDrop = ref<{ id: string; edge: 'top' | 'bottom' } | null>(null)
 const detail = ref<
   | { kind: 'library'; skillId: string }
   | { kind: 'prepared'; preparedId: string }
@@ -57,6 +60,17 @@ watch(
   },
   { immediate: true },
 )
+
+watch(modalTab, () => {
+  flowDraggingId.value = null
+  flowDrop.value = null
+})
+
+watch(flowDragEnabled, (on) => {
+  if (on) return
+  flowDraggingId.value = null
+  flowDrop.value = null
+})
 
 watch(
   () => props.teamSlots.map((slot) => slot.agentId).join(','),
@@ -402,14 +416,75 @@ function removeFlow(entryId: string) {
   slots.value = next
 }
 
-function moveFlow(entryId: string, delta: number) {
+const FLOW_DRAG_IGNORE = 'button, input, label, select, textarea, a'
+
+function isFlowDragIgnoreTarget(event: DragEvent) {
+  const fromEvent = event.target instanceof Element ? event.target : null
+  const atPoint = document.elementFromPoint(event.clientX, event.clientY)
+  return Boolean(
+    fromEvent?.closest(FLOW_DRAG_IGNORE) || atPoint?.closest(FLOW_DRAG_IGNORE),
+  )
+}
+
+function flowCardEl(event: DragEvent): HTMLElement | null {
+  const fromTarget = event.target instanceof Element ? event.target.closest('.sf-card') : null
+  if (fromTarget instanceof HTMLElement) return fromTarget
+  return event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+}
+
+function onFlowDragStart(entryId: string, event: DragEvent) {
+  if (!flowDragEnabled.value || isFlowDragIgnoreTarget(event)) {
+    event.preventDefault()
+    return
+  }
+  event.dataTransfer?.setData('text/plain', entryId)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  flowDraggingId.value = entryId
+}
+
+function onFlowDragOver(entryId: string, event: DragEvent) {
+  if (!flowDragEnabled.value || !flowDraggingId.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  const el = flowCardEl(event)
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  flowDrop.value = {
+    id: entryId,
+    edge: event.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom',
+  }
+}
+
+function onFlowDrop(entryId: string, event: DragEvent) {
+  if (!flowDragEnabled.value || !flowDraggingId.value) return
+  event.preventDefault()
+  const el = flowCardEl(event)
+  const rect = el?.getBoundingClientRect()
+  const insertAfter = rect
+    ? event.clientY > rect.top + rect.height / 2
+    : flowDrop.value?.edge === 'bottom'
+  reorderFlow(flowDraggingId.value, entryId, insertAfter)
+  flowDraggingId.value = null
+  flowDrop.value = null
+}
+
+function onFlowDragEnd() {
+  flowDraggingId.value = null
+  flowDrop.value = null
+}
+
+function reorderFlow(fromId: string, targetId: string, insertAfter: boolean) {
   const next = ensureSchemeSlots(slots.value)
   const slot = next[activeSlotIndex.value]!
-  const index = slot.flow.findIndex((item) => item.id === entryId)
-  const target = index + delta
-  if (index < 0 || target < 0 || target >= slot.flow.length) return
-  const [item] = slot.flow.splice(index, 1)
-  slot.flow.splice(target, 0, item!)
+  const fromIndex = slot.flow.findIndex((item) => item.id === fromId)
+  const targetIndex = slot.flow.findIndex((item) => item.id === targetId)
+  if (fromIndex < 0 || targetIndex < 0) return
+  let toIndex = insertAfter ? targetIndex + 1 : targetIndex
+  const [item] = slot.flow.splice(fromIndex, 1)
+  if (fromIndex < toIndex) toIndex -= 1
+  if (toIndex < 0) toIndex = 0
+  if (toIndex > slot.flow.length) toIndex = slot.flow.length
+  slot.flow.splice(toIndex, 0, item!)
   slots.value = next
 }
 
@@ -922,10 +997,20 @@ defineExpose({ expand })
 
             <div v-if="modalTab === 'flow'" class="flow-col">
               <div class="col-head">
-                <h3>流程</h3>
-                <div class="col-head-spacer" />
-                <p class="col-desc">只改次数和是否失衡。招式定义和双代理人不能在流程里改。</p>
-                <div class="col-head-spacer" />
+                <div class="col-title-row">
+                  <h3>流程</h3>
+                  <label class="drag-toggle">
+                    <input v-model="flowDragEnabled" type="checkbox" />
+                    拖动排序
+                  </label>
+                </div>
+                <p class="col-desc">
+                  {{
+                    flowDragEnabled
+                      ? '打开拖动后，按住招式行可改顺序。详情、次数和失衡仍是点击。'
+                      : '只改次数和是否失衡。需要换顺序时打开「拖动排序」。'
+                  }}
+                </p>
               </div>
               <ul class="sf-list">
                 <SkillFlowCard
@@ -949,18 +1034,35 @@ defineExpose({ expand })
                       : ''
                   "
                   :agents-clickable="false"
+                  :row-draggable="flowDragEnabled"
+                  :dragging="flowDraggingId === entry.id"
+                  :drop-edge="flowDrop?.id === entry.id ? flowDrop.edge : null"
                   :damage="damageForFlow(entry.id)"
                   :skip="Boolean(flowSkipReason(entry))"
                   @update:count="updateFlow(entry.id, { count: $event })"
                   @update:stagger="
                     updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
                   "
+                  @dragstart="onFlowDragStart(entry.id, $event)"
+                  @dragover="onFlowDragOver(entry.id, $event)"
+                  @drop="onFlowDrop(entry.id, $event)"
+                  @dragend="onFlowDragEnd"
                 >
                   <template #actions>
-                    <button type="button" class="mini-btn" @click="openFlowDetail(entry.id)">
+                    <button
+                      type="button"
+                      class="mini-btn"
+                      draggable="false"
+                      @click="openFlowDetail(entry.id)"
+                    >
                       详情
                     </button>
-                    <button type="button" class="mini-btn danger" @click="removeFlow(entry.id)">
+                    <button
+                      type="button"
+                      class="mini-btn danger"
+                      draggable="false"
+                      @click="removeFlow(entry.id)"
+                    >
                       移除
                     </button>
                   </template>
@@ -1298,6 +1400,26 @@ defineExpose({ expand })
   font-size: 0.92rem;
   color: #e8edf5;
   line-height: 1.6rem;
+}
+.col-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.drag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.76rem;
+  color: #9aa3b0;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.drag-toggle input {
+  margin: 0;
+  accent-color: #c9a55c;
 }
 .col-head-spacer {
   min-height: 0;

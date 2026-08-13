@@ -13,6 +13,9 @@ withDefaults(
     damage?: string
     skip?: boolean
     index?: number
+    rowDraggable?: boolean
+    dragging?: boolean
+    dropEdge?: 'top' | 'bottom' | null
     agentsClickable?: boolean
   }>(),
   {
@@ -34,7 +37,17 @@ function emitCount(event: Event) {
 </script>
 
 <template>
-  <li class="sf-card" :class="{ 'sf-card--skip': skip }">
+  <li
+    class="sf-card"
+    :class="{
+      'sf-card--skip': skip,
+      'sf-card--draggable': rowDraggable,
+      'sf-card--dragging': dragging,
+      'sf-card--drop-top': dropEdge === 'top',
+      'sf-card--drop-bottom': dropEdge === 'bottom',
+    }"
+    :draggable="rowDraggable"
+  >
     <div class="sf-lead">
       <span v-if="index != null" class="sf-index">{{ index }}</span>
       <strong class="sf-name" :title="name">{{ name }}</strong>
@@ -48,10 +61,11 @@ function emitCount(event: Event) {
           min="0"
           step="1"
           :value="count"
+          draggable="false"
           @click.stop
           @input="emitCount"
         />
-        <label class="sf-stagger" @click.stop>
+        <label class="sf-stagger" draggable="false" @click.stop>
           <input
             type="checkbox"
             :checked="stagger"
@@ -71,6 +85,7 @@ function emitCount(event: Event) {
         type="button"
         class="sf-agents"
         :title="agentTitle || agentPair"
+        draggable="false"
         @click.stop="emit('select-agents')"
       >
         {{ agentPair }}
@@ -104,8 +119,18 @@ function emitCount(event: Event) {
   border-radius: 6px;
   background: #141820;
 }
-.sf-card--skip {
-  border-color: #6b3a3a;
+.sf-card--draggable {
+  cursor: grab;
+}
+.sf-card--dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+.sf-card--drop-top {
+  box-shadow: inset 0 3px 0 #c9a55c;
+}
+.sf-card--drop-bottom {
+  box-shadow: inset 0 -3px 0 #c9a55c;
 }
 .sf-lead {
   display: flex;
