@@ -2731,6 +2731,14 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #f5f7fa !important;
   color: #1c212a !important;
 }
+[data-theme='light'] .sf-card .sf-count {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-card .sf-stagger {
+  color: #667085 !important;
+}
 [data-theme='light'] .sf-card .sf-index {
   background: rgba(201, 165, 92, 0.16) !important;
   color: #8a6a1f !important;

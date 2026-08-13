@@ -261,6 +261,8 @@ const detailCanEditDefinition = computed(
   () => detail.value?.kind === 'library' && detailSkill.value?.source === 'custom',
 )
 
+const detailCanEditAgents = computed(() => detail.value?.kind === 'prepared')
+
 const detailCalcKey = computed(() => {
   const current = detail.value
   if (!current) return null
@@ -293,6 +295,7 @@ const detailZoneRows = computed(() => {
 })
 
 function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
+  if (detail.value?.kind !== 'prepared') return
   const prepared = detailPrepared.value
   if (!prepared) return
   updatePrepared(prepared.id, { [field]: raw || null })
@@ -843,7 +846,7 @@ defineExpose({ expand })
                   {{
                     modalTab === 'prep'
                       ? '每种招式只准备一条。异常类在详情里选双代理人；名称和倍率请回招式库改。'
-                      : '同一准备招式可以多次加入流程。异常类点详情或代理人胶囊可选人。'
+                      : '同一准备招式可以多次加入流程。双代理人请在准备阶段的详情里选。'
                   }}
                 </p>
                 <div class="col-head-spacer" />
@@ -921,7 +924,7 @@ defineExpose({ expand })
               <div class="col-head">
                 <h3>流程</h3>
                 <div class="col-head-spacer" />
-                <p class="col-desc">次数、失衡稍后编排。点详情或代理人胶囊可改双代理人。</p>
+                <p class="col-desc">只改次数和是否失衡。招式定义和双代理人不能在流程里改。</p>
                 <div class="col-head-spacer" />
               </div>
               <ul class="sf-list">
@@ -930,7 +933,8 @@ defineExpose({ expand })
                   :key="entry.id"
                   :index="index + 1"
                   :name="flowSkillName(entry)"
-                  :mult="flowSkill(entry) ? skillMultText(flowSkill(entry)!) : ''"
+                  :count="entry.count"
+                  :stagger="entry.staggerPhase === 'stagger'"
                   :dtype="flowSkill(entry) ? damageTypeLabel(flowSkill(entry)!.damageType) : ''"
                   :dtype-kind="flowSkill(entry) ? dtypeKind(flowSkill(entry)!.damageType) : 'direct'"
                   :stypes="flowSkill(entry) ? skillStypeLabels(flowSkill(entry)!) : []"
@@ -939,9 +943,18 @@ defineExpose({ expand })
                       ? agentPairText(flowPrepared(entry)!, flowSkill(entry)!)
                       : ''
                   "
+                  :agent-title="
+                    flowSkill(entry) && flowPrepared(entry)
+                      ? agentPairTitle(flowPrepared(entry)!, flowSkill(entry)!)
+                      : ''
+                  "
+                  :agents-clickable="false"
                   :damage="damageForFlow(entry.id)"
                   :skip="Boolean(flowSkipReason(entry))"
-                  @select-agents="openFlowDetail(entry.id)"
+                  @update:count="updateFlow(entry.id, { count: $event })"
+                  @update:stagger="
+                    updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
+                  "
                 >
                   <template #actions>
                     <button type="button" class="mini-btn" @click="openFlowDetail(entry.id)">
@@ -976,6 +989,7 @@ defineExpose({ expand })
                   <label>
                     <span>异常强度提供者</span>
                     <select
+                      v-if="detailCanEditAgents"
                       :value="detailPrepared.anomalyPowerAgentId ?? ''"
                       @change="
                         setDetailAgent(
@@ -989,10 +1003,18 @@ defineExpose({ expand })
                         {{ agent.name }}
                       </option>
                     </select>
+                    <input
+                      v-else
+                      :value="agentFullName(detailPrepared.anomalyPowerAgentId) || '未选'"
+                      type="text"
+                      readonly
+                      tabindex="-1"
+                    />
                   </label>
                   <label>
                     <span>异常类触发者</span>
                     <select
+                      v-if="detailCanEditAgents"
                       :value="detailPrepared.triggerAgentId ?? ''"
                       @change="
                         setDetailAgent(
@@ -1006,6 +1028,13 @@ defineExpose({ expand })
                         {{ agent.name }}
                       </option>
                     </select>
+                    <input
+                      v-else
+                      :value="agentFullName(detailPrepared.triggerAgentId) || '未选'"
+                      type="text"
+                      readonly
+                      tabindex="-1"
+                    />
                   </label>
                 </div>
                 <p v-if="dualAgentHint(detailPrepared, detailSkill)" class="warn-hint">
@@ -1015,12 +1044,15 @@ defineExpose({ expand })
               <p v-else-if="detail.kind === 'library' && skillNeedsDualAgents(detailSkill.damageType)" class="empty-hint">
                 加入准备后，异常类可在详情里选双代理人。
               </p>
-              <p v-if="detail.kind !== 'library'" class="empty-hint">
+              <p v-if="detail.kind === 'prepared'" class="empty-hint">
                 {{
                   skillNeedsDualAgents(detailSkill.damageType)
                     ? '名称、倍率、类型请到招式库里改。这里只能改双代理人。'
-                    : '名称、倍率、类型请到招式库里改。准备和流程里不能改招式定义。'
+                    : '名称、倍率、类型请到招式库里改。准备阶段不能改招式定义。'
                 }}
+              </p>
+              <p v-else-if="detail.kind === 'flow'" class="empty-hint">
+                次数和失衡在流程行上改。招式定义请回招式库，双代理人请回准备阶段。
               </p>
 
               <p class="detail-section-title">招式设置</p>
@@ -1284,7 +1316,8 @@ defineExpose({ expand })
 .search-input,
 .custom-form input,
 .custom-form select,
-.agent-row select {
+.agent-row select,
+.agent-row input {
   border: 1px solid #2d323a;
   border-radius: 8px;
   background: #0f1217;
@@ -1416,9 +1449,13 @@ defineExpose({ expand })
   font-size: 0.7rem;
   color: #9aa3b0;
 }
-.agent-row select {
+.agent-row select,
+.agent-row input {
   min-width: 0;
   width: 100%;
+}
+.agent-row input[readonly] {
+  cursor: default;
 }
 
 .warn-hint {

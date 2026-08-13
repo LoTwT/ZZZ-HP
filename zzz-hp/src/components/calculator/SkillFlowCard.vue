@@ -1,20 +1,36 @@
 <script setup lang="ts">
-defineProps<{
-  name: string
-  mult?: string
-  dtype?: string
-  dtypeKind?: 'direct' | 'anomaly'
-  stypes?: string[]
-  agentPair?: string
-  agentTitle?: string
-  damage?: string
-  skip?: boolean
-  index?: number
-}>()
+withDefaults(
+  defineProps<{
+    name: string
+    mult?: string
+    count?: number | null
+    stagger?: boolean
+    dtype?: string
+    dtypeKind?: 'direct' | 'anomaly'
+    stypes?: string[]
+    agentPair?: string
+    agentTitle?: string
+    damage?: string
+    skip?: boolean
+    index?: number
+    agentsClickable?: boolean
+  }>(),
+  {
+    agentsClickable: true,
+  },
+)
 
 const emit = defineEmits<{
   'select-agents': []
+  'update:count': [value: number]
+  'update:stagger': [value: boolean]
 }>()
+
+function emitCount(event: Event) {
+  const n = Math.floor(Number((event.target as HTMLInputElement).value))
+  if (!Number.isFinite(n)) return
+  emit('update:count', Math.max(0, n))
+}
 </script>
 
 <template>
@@ -24,6 +40,26 @@ const emit = defineEmits<{
       <strong class="sf-name" :title="name">{{ name }}</strong>
       <span v-if="mult" class="sf-mult-label">倍率</span>
       <span v-if="mult" class="sf-mult">{{ mult }}</span>
+      <template v-if="count != null">
+        <span class="sf-mult-label">次数</span>
+        <input
+          class="sf-count"
+          type="number"
+          min="0"
+          step="1"
+          :value="count"
+          @click.stop
+          @input="emitCount"
+        />
+        <label class="sf-stagger" @click.stop>
+          <input
+            type="checkbox"
+            :checked="stagger"
+            @change="emit('update:stagger', ($event.target as HTMLInputElement).checked)"
+          />
+          失衡
+        </label>
+      </template>
       <span v-if="dtype" class="sf-dtype" :class="dtypeKind === 'direct' ? 'is-direct' : 'is-anomaly'">
         {{ dtype }}
       </span>
@@ -31,7 +67,7 @@ const emit = defineEmits<{
         <span v-for="item in stypes" :key="item" class="sf-stype">{{ item }}</span>
       </span>
       <button
-        v-if="agentPair"
+        v-if="agentPair && agentsClickable"
         type="button"
         class="sf-agents"
         :title="agentTitle || agentPair"
@@ -39,6 +75,13 @@ const emit = defineEmits<{
       >
         {{ agentPair }}
       </button>
+      <span
+        v-else-if="agentPair"
+        class="sf-agents is-static"
+        :title="agentTitle || agentPair"
+      >
+        {{ agentPair }}
+      </span>
     </div>
     <span class="sf-damage">{{ damage || '' }}</span>
     <div class="sf-card-actions">
@@ -108,7 +151,8 @@ const emit = defineEmits<{
   color: #9aa3b0;
   font-weight: 600;
 }
-.sf-mult {
+.sf-mult,
+.sf-count {
   flex: 0 0 auto;
   min-width: 2.2rem;
   padding: 0.08rem 0.28rem;
@@ -119,6 +163,29 @@ const emit = defineEmits<{
   font-size: 0.76rem;
   font-weight: 700;
   text-align: left;
+}
+.sf-count {
+  width: 3rem;
+  height: 1.35rem;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.sf-stagger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: #9aa3b0;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.sf-stagger input {
+  margin: 0;
+  accent-color: #c9a55c;
 }
 .sf-dtype,
 .sf-stype,
@@ -164,6 +231,12 @@ const emit = defineEmits<{
 }
 .sf-agents:hover {
   filter: brightness(1.08);
+}
+.sf-agents.is-static {
+  cursor: default;
+}
+.sf-agents.is-static:hover {
+  filter: none;
 }
 .sf-damage {
   flex: 0 0 auto;
