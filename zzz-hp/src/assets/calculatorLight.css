@@ -2692,7 +2692,11 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .sf-card--skip {
   border-color: #d9a3a3 !important;
 }
-[data-theme='light'] .sf-card .sf-name,
+[data-theme='light'] .sf-card .sf-name {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
 [data-theme='light'] .skill-detail-head h3,
 [data-theme='light'] .skill-flow-modal .detail-mult,
 [data-theme='light'] .skill-flow-modal .detail-section-title,

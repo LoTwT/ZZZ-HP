@@ -19,25 +19,27 @@ const emit = defineEmits<{
 
 <template>
   <li class="sf-card" :class="{ 'sf-card--skip': skip }">
-    <span v-if="index != null" class="sf-index">{{ index }}</span>
-    <strong class="sf-name" :title="name">{{ name }}</strong>
-    <span v-if="mult" class="sf-mult-label">倍率</span>
-    <span v-if="mult" class="sf-mult">{{ mult }}</span>
-    <span v-if="dtype" class="sf-dtype" :class="dtypeKind === 'direct' ? 'is-direct' : 'is-anomaly'">
-      {{ dtype }}
-    </span>
-    <span v-if="stypes?.length" class="sf-stypes">
-      <span v-for="item in stypes" :key="item" class="sf-stype">{{ item }}</span>
-    </span>
-    <button
-      v-if="agentPair"
-      type="button"
-      class="sf-agents"
-      :title="agentTitle || agentPair"
-      @click.stop="emit('select-agents')"
-    >
-      {{ agentPair }}
-    </button>
+    <div class="sf-lead">
+      <span v-if="index != null" class="sf-index">{{ index }}</span>
+      <strong class="sf-name" :title="name">{{ name }}</strong>
+      <span v-if="mult" class="sf-mult-label">倍率</span>
+      <span v-if="mult" class="sf-mult">{{ mult }}</span>
+      <span v-if="dtype" class="sf-dtype" :class="dtypeKind === 'direct' ? 'is-direct' : 'is-anomaly'">
+        {{ dtype }}
+      </span>
+      <span v-if="stypes?.length" class="sf-stypes">
+        <span v-for="item in stypes" :key="item" class="sf-stype">{{ item }}</span>
+      </span>
+      <button
+        v-if="agentPair"
+        type="button"
+        class="sf-agents"
+        :title="agentTitle || agentPair"
+        @click.stop="emit('select-agents')"
+      >
+        {{ agentPair }}
+      </button>
+    </div>
     <span class="sf-damage">{{ damage || '' }}</span>
     <div class="sf-card-actions">
       <slot name="actions" />
@@ -62,6 +64,14 @@ const emit = defineEmits<{
 .sf-card--skip {
   border-color: #6b3a3a;
 }
+.sf-lead {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 .sf-index {
   flex: 0 0 auto;
   display: inline-flex;
@@ -76,11 +86,18 @@ const emit = defineEmits<{
   font-weight: 700;
 }
 .sf-name {
-  flex: 1 1 3.5rem;
-  min-width: 2.8rem;
+  box-sizing: border-box;
+  flex: 0 0 8.5rem;
+  width: 8.5rem;
+  min-width: 0;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid #2d323a;
+  border-radius: 4px;
+  background: #0f1217;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
   font-size: 0.8rem;
   color: #e8edf5;
   font-weight: 600;
@@ -101,7 +118,7 @@ const emit = defineEmits<{
   color: #e8edf5;
   font-size: 0.76rem;
   font-weight: 700;
-  text-align: center;
+  text-align: left;
 }
 .sf-dtype,
 .sf-stype,
@@ -129,7 +146,6 @@ const emit = defineEmits<{
   display: flex;
   flex: 0 1 auto;
   gap: 0.2rem;
-  max-width: 9rem;
   min-width: 0;
   overflow: hidden;
 }
@@ -150,9 +166,8 @@ const emit = defineEmits<{
   filter: brightness(1.08);
 }
 .sf-damage {
-  margin-left: auto;
   flex: 0 0 auto;
-  min-width: 3.6rem;
+  min-width: 4.5rem;
   text-align: right;
   font-size: 0.82rem;
   font-weight: 800;
