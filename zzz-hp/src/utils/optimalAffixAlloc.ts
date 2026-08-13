@@ -632,7 +632,7 @@ export function evaluateOptimalEventDetail(
   const tAgent = evtPowerAgentId
     ? ctx.panelContext.agents.find((a) => a.id === evtPowerAgentId)
     : undefined
-  const evtPowerElement = eventNeedsTrigger ? tAgent?.element : ctx.mainAgentElement
+  const evtPowerElement = eventNeedsTrigger ? tAgent?.element : ownerAgent?.element
   const evtTriggerIsMb = tAgent?.profession === MB_PROFESSION
 
   const skillCtx = buildSkillContextFromHit(hit, ownerAgent?.element)
@@ -798,6 +798,16 @@ export function evaluateOptimalEventDetail(
     }
   }
 
+  const ownerResistance = resolveDamageCalcResistanceElements(
+    ctx.panelContext.teamSlots,
+    ctx.panelContext.agents,
+    ownerSlotIndex,
+    evtPowerAgentId,
+  )
+  const triggerAgentDoc = hit.triggerAgentId
+    ? ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)
+    : undefined
+
   const result = computeDamageResult({
     finalPanel: evtFinalPanel,
     anomalyTriggerPanel,
@@ -812,13 +822,11 @@ export function evaluateOptimalEventDetail(
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
     staggerPhase: hit.staggerPhase,
-    mainAgentElement: ctx.mainAgentElement,
-    ...resolveDamageCalcResistanceElements(
-      ctx.panelContext.teamSlots,
-      ctx.panelContext.agents,
-      ctx.panelContext.mainSlotIndex,
-      evtPowerAgentId,
-    ),
+    ownerAgentElement: ownerAgent?.element ?? '',
+    ownerAgentResistanceElement: ownerResistance.mainAgentResistanceElement,
+    anomalyTriggerElement: triggerAgentDoc?.element,
+    mainAgentElement: ownerAgent?.element ?? '',
+    ...ownerResistance,
     mainAgentId: ctx.mainAgentId,
     mainAgentName: ctx.mainAgentName,
     anomalySubKind,
@@ -828,7 +836,7 @@ export function evaluateOptimalEventDetail(
     triggerBaseDamageSource: evtTriggerIsMb ? 'pierce' : 'atk',
     triggerIsMb: evtTriggerIsMb,
     skillSubcategory: effectiveSub,
-    mainAgentLevel: ctx.enemyInput.level,
+    mainAgentLevel: resolveProducerAgentLevel(ctx, ownerAgentId),
     ownerAgentLevel: resolveProducerAgentLevel(ctx, ownerAgentId),
     triggerAgentLevel: evtPowerAgentId
       ? resolveProducerAgentLevel(ctx, evtPowerAgentId)

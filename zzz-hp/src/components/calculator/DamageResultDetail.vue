@@ -391,7 +391,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       `局内增伤 ${formatFormulaNumber(panel.dmgBonus, 2)}% → 增伤区 1 + ${formatFormulaNumber(panel.dmgBonus, 2)}% = ${formatFormulaNumber(p.dmgMultiplier)}`,
     ),
     defenseMultiplier: props.isMb
-      ? [{ label: '命破主C', items: ['防御区固定为 1'] }]
+      ? [{ label: '命破招式持有者', items: ['防御区固定为 1'] }]
       : withTotal(
           buildStatSourceGroups({
             keys: ['reduceDefense', 'penRate'],

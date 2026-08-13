@@ -1229,6 +1229,17 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     }
   }
 
+  const ownerResSlot = ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value
+  const ownerResistance = resolveDamageCalcResistanceElements(
+    props.teamSlots,
+    props.agents,
+    ownerResSlot,
+    evtPowerAgentId,
+  )
+  const triggerAgentDoc = hit.triggerAgentId
+    ? props.agents.find((item) => item.id === hit.triggerAgentId)
+    : undefined
+
   return {
     finalPanel: evtFinalPanel,
     anomalyTriggerPanel,
@@ -1243,13 +1254,11 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
     staggerPhase: hit.staggerPhase,
-    mainAgentElement: mainAgent.value?.element ?? '',
-    ...resolveDamageCalcResistanceElements(
-      props.teamSlots,
-      props.agents,
-      mainSlotIndex.value,
-      evtPowerAgentId,
-    ),
+    ownerAgentElement: ownerAgent?.element ?? '',
+    ownerAgentResistanceElement: ownerResistance.mainAgentResistanceElement,
+    anomalyTriggerElement: triggerAgentDoc?.element,
+    mainAgentElement: ownerAgent?.element ?? '',
+    ...ownerResistance,
     mainAgentId: actualMainId,
     mainAgentName: mainAgent.value?.name ?? '',
     anomalySubKind: evtAnomalySubKind,
@@ -1258,7 +1267,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     triggerPiercePower: evtTriggerPierce,
     triggerIsMb: evtTriggerIsMb,
     skillSubcategory: effectiveSub,
-    mainAgentLevel: resolveAgentLevel(actualMainId),
+    mainAgentLevel: resolveAgentLevel(ownerAgentId),
     ownerAgentLevel: resolveAgentLevel(ownerAgentId),
     triggerAgentLevel: evtPowerAgentId
       ? resolveAgentLevel(evtPowerAgentId)
@@ -1776,9 +1785,9 @@ const valueTips = computed(() => {
               ? [RADIANCE_SELF_TRIGGER_HINT]
               : usesProducerMult
                 ? [
-                    '异常基础乘区、紊乱/乱流倍率与异常持续时间取产生角色面板；乱流/紊乱增伤与异常暴击取事件产生角色；减防/无视防御取主C',
+                    '异常基础乘区、紊乱/乱流倍率与异常持续时间取异常强度提供者面板；乱流/紊乱增伤与异常暴击取招式持有者；减防/无视防御取异常类触发者',
                   ]
-                : ['异常基础乘区（含等级区）取产生角色面板；减防/无视防御取主C'],
+                : ['异常基础乘区（含等级区）取异常强度提供者面板；减防/无视防御取异常类触发者'],
         },
       ]
     : []
@@ -1910,7 +1919,7 @@ const valueTips = computed(() => {
           {
             label: usesProducerBase
               ? (triggerAgent.value?.name ?? '产生角色')
-              : (mainAgent.value?.name ?? '主C'),
+              : (mainAgent.value?.name ?? '招式持有者'),
             items: ['防御区固定为 1'],
           },
         ]
@@ -1925,7 +1934,7 @@ const valueTips = computed(() => {
             extraGroups: usesProducerBase
               ? [
                   {
-                    label: mainAgent.value?.name ?? '主C',
+                    label: '异常类触发者',
                     items: [
                       `减防 ${formatFormulaNumber(panel.reduceDefense, 2)}%`,
                       `无视防御 ${formatFormulaNumber(panel.ignoreDefense, 2)}%`,
@@ -2641,7 +2650,7 @@ const valueTips = computed(() => {
               finalValues: { penRate: remielSelfPanel?.penRate ?? 0 },
               extraGroups: [
                 {
-                  label: mainAgent.value?.name ?? '主C',
+                  label: '异常类触发者',
                   items: [
                     `减防 ${formatFormulaNumber(panel.reduceDefense, 2)}%`,
                     `无视防御 ${formatFormulaNumber(panel.ignoreDefense, 2)}%`,
@@ -2657,7 +2666,7 @@ const valueTips = computed(() => {
               ],
               showAdditiveProcess: false,
             }),
-            `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}（穿透取蕾米埃尔；减防/无视取主C）`,
+            `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}（穿透取蕾米埃尔；减防/无视取异常类触发者）`,
           )
       : [],
     remielSelfResistanceMultiplier: p.remielSelfRadianceActive

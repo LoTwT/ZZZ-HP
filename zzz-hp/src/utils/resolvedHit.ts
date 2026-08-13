@@ -86,7 +86,7 @@ export interface ResolvedHit {
   /** 取流程条目 id，方便回指 UI */
   id: string
   skill: Skill
-  /** 流程归属角色；直伤取其面板，异常类只用于伤害归属统计 */
+  /** 流程归属角色；直伤取其面板。异常类只用于伤害归属，减防/无视取 triggerAgentId */
   ownerAgentId: string
   /** 异常强度提供者，留空则本条不计算 */
   anomalyPowerAgentId: string | null
@@ -440,12 +440,11 @@ export function getHitSkipReason(
   }
 
   if (damageType === 'turbulence') {
-    const mainSlot = ctx.teamSlots.find((slot) => slot.isMainC) ?? ctx.teamSlots[0]
     return getTurbulenceParticipationFailureReason(
       ctx,
-      mainSlot?.agentId ?? '',
       hit.ownerAgentId,
       hit.anomalyPowerAgentId,
+      hit.triggerAgentId,
     )
   }
 

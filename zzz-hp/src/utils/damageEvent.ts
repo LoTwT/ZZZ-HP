@@ -176,33 +176,27 @@ export interface DamageEventParticipationContext {
   mainAgentId?: string
 }
 
-/** 乱流：主 C、事件产生角色或异常产生角色之一须为风属性 */
+/** 乱流：招式持有者、异常强度提供者或异常类触发者之一须为风属性 */
 export function hasTurbulenceWindRole(
   agents: Array<{ id: string; element: string }>,
-  mainAgentId: string,
-  ownerAgentId: string,
-  triggerAgentId: string | null,
+  ...agentIds: Array<string | null | undefined>
 ): boolean {
   const elementOf = (id: string | null | undefined) =>
     id ? agents.find((agent) => agent.id === id)?.element : undefined
-  return (
-    elementOf(mainAgentId) === '风' ||
-    elementOf(ownerAgentId) === '风' ||
-    (triggerAgentId != null && elementOf(triggerAgentId) === '风')
-  )
+  return agentIds.some((id) => elementOf(id) === '风')
 }
 
 export function getTurbulenceParticipationFailureReason(
   ctx: Pick<DamageEventParticipationContext, 'teamSlots' | 'agents'>,
-  mainAgentId: string,
   ownerAgentId: string,
+  powerAgentId: string | null,
   triggerAgentId: string | null,
 ): string | null {
   if (!isTurbulenceTeamCompositionOk(ctx.teamSlots, ctx.agents)) {
     return '乱流需队伍同时包含风属性与至少一个非风属性代理人'
   }
-  if (!hasTurbulenceWindRole(ctx.agents, mainAgentId, ownerAgentId, triggerAgentId)) {
-    return '乱流伤害需事件产生角色、异常产生角色或主 C 之一为风属性'
+  if (!hasTurbulenceWindRole(ctx.agents, ownerAgentId, powerAgentId, triggerAgentId)) {
+    return '乱流伤害需招式持有者、异常强度提供者或异常类触发者之一为风属性'
   }
   return null
 }
@@ -259,12 +253,7 @@ export function getDamageEventSkipReason(
   }
 
   if (event.kind === 'turbulence') {
-    const failure = getTurbulenceParticipationFailureReason(
-      ctx,
-      mainAgentId,
-      ownerId,
-      triggerId,
-    )
+    const failure = getTurbulenceParticipationFailureReason(ctx, ownerId, triggerId, triggerId)
     if (failure) return failure
   }
 
