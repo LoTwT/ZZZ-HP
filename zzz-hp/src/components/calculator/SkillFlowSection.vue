@@ -669,7 +669,6 @@ defineExpose({ expand })
                   :dtype="damageTypeLabel(skill.damageType)"
                   :dtype-kind="dtypeKind(skill.damageType)"
                   :stypes="skillStypeLabels(skill)"
-                  :source="skill.source === 'preset' ? '预设' : '自定义'"
                   :damage="damageForLibrary(skill.id)"
                 >
                   <template #actions>
@@ -851,7 +850,6 @@ defineExpose({ expand })
                   {{ damageTypeLabel(detailSkill.damageType) }}
                 </span>
                 <span v-for="item in skillStypeLabels(detailSkill)" :key="item" class="sf-stype">{{ item }}</span>
-                <span class="sf-source">{{ detailSkill.source === 'preset' ? '预设' : '自定义' }}</span>
               </div>
               <p class="detail-mult">
                 基础倍率 {{ skillMultText(detailSkill) || '未设' }}
@@ -1336,10 +1334,8 @@ defineExpose({ expand })
 }
 .detail-facts .sf-dtype,
 .detail-facts .sf-stype,
-.detail-facts .sf-source,
 .sf-dtype,
-.sf-stype,
-.sf-source {
+.sf-stype {
   display: inline-flex;
   align-items: center;
   padding: 0.08rem 0.42rem;
@@ -1362,12 +1358,6 @@ defineExpose({ expand })
   background: #15241f;
   border: 1px solid #2f5c52;
   color: #8fd4c4;
-}
-.sf-source {
-  background: #1a1d24;
-  border: 1px solid #3a4150;
-  color: #9aa3b0;
-  font-weight: 600;
 }
 .detail-mult,
 .detail-section-title {

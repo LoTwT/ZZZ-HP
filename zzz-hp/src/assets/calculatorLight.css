@@ -2696,8 +2696,7 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .skill-flow-modal .detail-section-title {
   color: #1c212a !important;
 }
-[data-theme='light'] .sf-card .sf-mult-label,
-[data-theme='light'] .sf-card .sf-source {
+[data-theme='light'] .sf-card .sf-mult-label {
   color: #667085 !important;
 }
 [data-theme='light'] .sf-card .sf-mult {

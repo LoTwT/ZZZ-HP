@@ -5,7 +5,6 @@ defineProps<{
   dtype?: string
   dtypeKind?: 'direct' | 'anomaly'
   stypes?: string[]
-  source?: string
   agentPair?: string
   agentTitle?: string
   damage?: string
@@ -26,7 +25,6 @@ defineProps<{
     <span v-if="stypes?.length" class="sf-stypes">
       <span v-for="item in stypes" :key="item" class="sf-stype">{{ item }}</span>
     </span>
-    <span v-if="source" class="sf-source">{{ source }}</span>
     <span v-if="agentPair" class="sf-agents" :title="agentTitle || agentPair">{{ agentPair }}</span>
     <span class="sf-damage">{{ damage || '' }}</span>
     <div class="sf-card-actions">
@@ -95,7 +93,6 @@ defineProps<{
 }
 .sf-dtype,
 .sf-stype,
-.sf-source,
 .sf-agents {
   flex: 0 0 auto;
   display: inline-flex;
@@ -126,12 +123,6 @@ defineProps<{
   background: #15241f;
   border: 1px solid #2f5c52;
   color: #8fd4c4;
-}
-.sf-source {
-  background: #1a1d24;
-  border: 1px solid #3a4150;
-  color: #9aa3b0;
-  font-weight: 600;
 }
 .sf-agents {
   background: #241833;
