@@ -885,7 +885,7 @@ defineExpose({ expand })
                       :class="{ active: libraryKindDirect }"
                       @click="libraryKindDirect = !libraryKindDirect"
                     >
-                      直伤
+                      直伤类
                     </button>
                     <button
                       type="button"
@@ -893,7 +893,7 @@ defineExpose({ expand })
                       :class="{ active: libraryKindAnomaly }"
                       @click="libraryKindAnomaly = !libraryKindAnomaly"
                     >
-                      异常
+                      异常类
                     </button>
                   </div>
                   <div class="chip-group" role="group" aria-label="招式来源">
