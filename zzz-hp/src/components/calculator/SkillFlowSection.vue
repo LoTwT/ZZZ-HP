@@ -698,24 +698,28 @@ function saveDetailSkill() {
   detailSaveHint.value = '已保存'
 }
 
-function skillIsReferenced(skillId: string): boolean {
-  if (slots.value.some((slot) => slot.prepared.some((item) => item.skillId === skillId))) {
-    return true
-  }
-  return listAllDamageCalcHistory().some((entry) =>
+function skillRefPlaces(skillId: string): { inCurrent: boolean; inSaved: boolean } {
+  const inCurrent = slots.value.some((slot) =>
+    slot.prepared.some((item) => item.skillId === skillId),
+  )
+  const inSaved = listAllDamageCalcHistory().some((entry) =>
     (entry.slots ?? []).some((slot) => slot.prepared.some((item) => item.skillId === skillId)),
   )
+  return { inCurrent, inSaved }
 }
 
 function deleteCustomSkill(skill: Skill) {
   if (skill.source !== 'custom') return
-  const referenced = skillIsReferenced(skill.id)
-  const ok = window.confirm(
-    referenced
-      ? `「${skill.name}」仍被方案引用。删除后那些条目会显示招式已删除且不出伤。确定删除？`
-      : `删除自定义招式「${skill.name}」？`,
-  )
-  if (!ok) return
+  const { inCurrent, inSaved } = skillRefPlaces(skill.id)
+  let message = `删除自定义招式「${skill.name}」？`
+  if (inCurrent && inSaved) {
+    message = `「${skill.name}」还在当前编辑的流程里，也有已保存的方案在用。删除后那些条目会显示招式已删除且不出伤。确定删除？`
+  } else if (inCurrent) {
+    message = `「${skill.name}」还在当前编辑的流程里。删除后那些条目会显示招式已删除且不出伤。确定删除？`
+  } else if (inSaved) {
+    message = `「${skill.name}」仍被已保存的方案使用。删除后那些条目会显示招式已删除且不出伤。确定删除？`
+  }
+  if (!window.confirm(message)) return
   buffStore.removeCustomSkillDoc(skill.id)
 }
 
