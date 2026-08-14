@@ -39,10 +39,10 @@ const { skillSubcategories } = storeToRefs(buffStore)
 
 const activeSlotIndex = ref(0)
 const libraryQuery = ref('')
-/** 可选筛选，全不点 = 显示全部招式（不限角色 / 来源 / 伤害大类） */
+/** 可选筛选，全不点 = 当前角色可见的全部招式（含本元素公共异常） */
 const libraryKindDirect = ref(false)
 const libraryKindAnomaly = ref(false)
-const librarySourceAgent = ref(false)
+const librarySourceCustom = ref(false)
 const librarySourcePreset = ref(false)
 const showCustomForm = ref(false)
 const expanded = ref(true)
@@ -128,22 +128,26 @@ const flowPreparedIds = computed(
   () => new Set(currentSlot.value.flow.map((item) => item.preparedId)),
 )
 
-const librarySkills = computed(() => {
+const visibleLibrarySkills = computed(() => {
   if (!currentAgentId.value) return [] as Skill[]
-  let list = buffStore.skills
+  const element = props.agents.find((item) => item.id === currentAgentId.value)?.element ?? ''
+  return buffStore.skillsForAgent(currentAgentId.value, element)
+})
+
+const librarySkills = computed(() => {
+  let list = visibleLibrarySkills.value
   const kindDirect = libraryKindDirect.value
   const kindAnomaly = libraryKindAnomaly.value
   if (kindDirect !== kindAnomaly) {
     list = list.filter((skill) => skillNeedsDualAgents(skill.damageType) === kindAnomaly)
   }
-  const srcAgent = librarySourceAgent.value
+  const srcCustom = librarySourceCustom.value
   const srcPreset = librarySourcePreset.value
-  if (srcAgent || srcPreset) {
-    const agentId = currentAgentId.value
+  if (srcCustom || srcPreset) {
     list = list.filter((skill) => {
-      const matchAgent = srcAgent && skill.agentId === agentId
+      const matchCustom = srcCustom && skill.source === 'custom'
       const matchPreset = srcPreset && skill.source === 'preset'
-      return matchAgent || matchPreset
+      return matchCustom || matchPreset
     })
   }
   const q = libraryQuery.value.trim().toLowerCase()
@@ -152,8 +156,8 @@ const librarySkills = computed(() => {
 })
 
 const libraryEmptyText = computed(() => {
-  if (!buffStore.skills.length) {
-    return '还没有招式。可先新建自定义，或到管理端录入预设。'
+  if (!visibleLibrarySkills.value.length) {
+    return '该角色还没有招式。可先新建自定义，或到管理端录入预设。'
   }
   return '当前筛选没有招式。'
 })
@@ -896,10 +900,10 @@ defineExpose({ expand })
                     <button
                       type="button"
                       class="chip"
-                      :class="{ active: librarySourceAgent }"
-                      @click="librarySourceAgent = !librarySourceAgent"
+                      :class="{ active: librarySourceCustom }"
+                      @click="librarySourceCustom = !librarySourceCustom"
                     >
-                      角色库
+                      自建库
                     </button>
                     <button
                       type="button"
