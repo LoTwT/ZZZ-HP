@@ -61,6 +61,7 @@ import {
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotRecord,
 } from '@/utils/panelBuffCalc'
+import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
 
 export type OptimalDamageKind = 'direct' | 'anomaly'
 
@@ -130,9 +131,13 @@ export interface OptimalEventEvalDetail {
   producerExternalPanel?: PanelStats
   producerBreakdown?: OptimalPanelBreakdown
   producerAgentLabel?: string
+  /** 类型增伤/倍率面板（异放/耀变=异常类触发者；否则=招式持有者） */
+  bonusFinalPanel?: PanelStats
+  bonusExternalPanel?: PanelStats
+  bonusBreakdown?: OptimalPanelBreakdown
   /** 异常基础乘区角色名 */
   baseAgentLabel?: string
-  /** 增伤/倍率乘区角色名（主 C） */
+  /** 增伤/倍率乘区角色名 */
   bonusAgentLabel?: string
   /** 异化系数区角色名（蕾米埃尔） */
   mutationAgentLabel?: string
@@ -195,6 +200,16 @@ function exceedsAffixCap(
 ): boolean {
   if (!isCappedAffixKey(key)) return false
   return count > affixRollCap(mainStats, key)
+}
+
+export function affixCapLimitNote(
+  mainStats: AffixDriveDiscMainStats,
+  key: OptimalAffixKey,
+  currentCount: number,
+): string {
+  if (!isCappedAffixKey(key)) return '已达可分配上限'
+  const cap = affixRollCap(mainStats, key)
+  return `已达主词条约束上限（当前 ${currentCount}/${cap}）`
 }
 
 export interface DirectAllocState {
@@ -289,6 +304,9 @@ export interface AffixDiffRow {
   addOne: number
   damageDelta: number
   percentDelta: number
+  /** 已达主词条约束上限，无法再 +1 */
+  capped?: boolean
+  note?: string
 }
 
 export interface AffixReplaceRow {
@@ -300,6 +318,8 @@ export interface AffixReplaceRow {
   addOne: number
   damageDelta: number
   percentDelta: number
+  capped?: boolean
+  note?: string
 }
 
 export interface BenefitCurveSeries {
@@ -310,6 +330,8 @@ export interface BenefitCurveSeries {
   cumulativePercent: number[]
   /** values[n] = marginal % of the n-th roll */
   marginalPercent: number[]
+  /** values[n] = 第 n 条因上限未计入 */
+  cappedAt: boolean[]
 }
 
 function clampInt(value: number, min: number, max: number) {
@@ -686,6 +708,7 @@ export function evaluateOptimalEventDetail(
   let producerBreakdown: OptimalPanelBreakdown | undefined
   let producerExternalPanel: PanelStats | undefined
 
+  /** 异常强度提供者是否不是主 C（扫掠敏感度等元数据用） */
   const usesNonMainProducer = Boolean(
     eventNeedsTrigger && evtPowerAgentId && evtPowerAgentId !== ctx.mainAgentId,
   )
@@ -700,8 +723,11 @@ export function evaluateOptimalEventDetail(
     if (tSlotIndex < 0) return null
 
     if (evtPowerAgentId === ownerAgentId) {
+      // 提供者 = 持有者：复用已算好的持有者面板，并显式填入 producer* 供过程明细展示
       evtTriggerFinalPanel = evtFinalPanel
       evtTriggerPierce = evtPierce
+      producerExternalPanel = ownerExternal
+      producerBreakdown = evtBreakdown
     } else {
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainExternal)
       producerExternalPanel = tExternal
@@ -765,6 +791,8 @@ export function evaluateOptimalEventDetail(
 
   // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
   let anomalyTriggerPanel = evtFinalPanel
+  let bonusExternalPanel = ownerExternal
+  let bonusBreakdown: OptimalPanelBreakdown = evtBreakdown
   if (eventNeedsTrigger) {
     if (!hit.triggerAgentId) return null
     if (hit.triggerAgentId !== ownerAgentId) {
@@ -779,7 +807,7 @@ export function evaluateOptimalEventDetail(
         mainExternal,
       )
       const trigAgent = ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)
-      anomalyTriggerPanel = computeFinalPanel(trigExternal, {
+      bonusBreakdown = computeFinalPanel(trigExternal, {
         ...buildPanelContextForSlot(
           ctx,
           trigSlotIndex,
@@ -788,7 +816,9 @@ export function evaluateOptimalEventDetail(
           buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
         ),
         skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
-      }).finalPanel
+      })
+      anomalyTriggerPanel = bonusBreakdown.finalPanel
+      bonusExternalPanel = trigExternal
     }
   }
 
@@ -798,6 +828,12 @@ export function evaluateOptimalEventDetail(
       evtFinalPanel = anomalyTriggerPanel
     }
   }
+
+  const usesTriggerBonus =
+    damageType === 'anomalyRelease' || damageType === 'radiance'
+  const bonusFinalPanel = usesTriggerBonus ? anomalyTriggerPanel : evtFinalPanel
+  const bonusExternalForTips = usesTriggerBonus ? bonusExternalPanel : ownerExternal
+  const bonusBreakdownForTips = usesTriggerBonus ? bonusBreakdown : evtBreakdown
 
   const ownerResistance = resolveDamageCalcResistanceElements(
     ctx.panelContext.teamSlots,
@@ -859,7 +895,19 @@ export function evaluateOptimalEventDetail(
   const remielName = remiel
     ? ctx.panelContext.agents.find((item) => item.id === remiel.id)?.name
     : undefined
-  const baseAgentLabel = eventNeedsTrigger ? tAgent?.name : ownerAgent?.name
+  const triggerName = hit.triggerAgentId
+    ? ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)?.name
+    : undefined
+  const baseAgentLabel = eventNeedsTrigger
+    ? formatAnomalyFormulaAgentLabel('anomalyPower', tAgent?.name)
+    : formatAnomalyFormulaAgentLabel('owner', ownerAgent?.name)
+  const bonusAgentLabel = usesTriggerBonus
+    ? formatAnomalyFormulaAgentLabel('trigger', triggerName ?? ownerAgent?.name)
+    : formatAnomalyFormulaAgentLabel('owner', ownerAgent?.name)
+  const mutationAgentLabel =
+    remielName && result.mutationZone > 1
+      ? formatAnomalyFormulaAgentLabel('mutation', remielName)
+      : undefined
 
   return {
     hit,
@@ -872,17 +920,24 @@ export function evaluateOptimalEventDetail(
     mainlyProducerDriven,
     result,
     finalPanel: evtFinalPanel,
-    external: mainExternal,
+    // 过程明细的「局外面板」必须是招式持有者，不能误用主 C（最优词条）面板
+    external: ownerExternal,
     breakdown: evtBreakdown,
     piercePower: evtPierce,
     anomalySubKind,
-    producerFinalPanel: usesNonMainProducer ? evtTriggerFinalPanel : undefined,
+    // 只要有异常强度提供者，就带上其面板与名字，避免回落到主 C（如蕾米埃尔）面板
+    producerFinalPanel: evtTriggerFinalPanel,
     producerExternalPanel,
     producerBreakdown,
-    producerAgentLabel: usesNonMainProducer ? tAgent?.name : undefined,
+    producerAgentLabel: eventNeedsTrigger
+      ? formatAnomalyFormulaAgentLabel('anomalyPower', tAgent?.name)
+      : undefined,
+    bonusFinalPanel,
+    bonusExternalPanel: bonusExternalForTips,
+    bonusBreakdown: bonusBreakdownForTips,
     baseAgentLabel,
-    bonusAgentLabel: ownerAgent?.name,
-    mutationAgentLabel: remielName && result.mutationZone > 1 ? remielName : undefined,
+    bonusAgentLabel,
+    mutationAgentLabel,
   }
 }
 
@@ -1362,6 +1417,100 @@ export function sweepDirectDamage(
   return points
 }
 
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
+export type SweepAsyncOptions = {
+  chunkSize?: number
+  signal?: AbortSignal
+}
+
+/** 分片扫掠直伤，避免长循环卡住主线程 */
+export async function sweepDirectDamageAsync(
+  ctx: OptimalEvalContext,
+  state: DirectAllocState,
+  options?: SweepAsyncOptions,
+): Promise<DirectSweepPoint[]> {
+  const chunkSize = Math.max(1, options?.chunkSize ?? 6)
+  const signal = options?.signal
+  const crit = clampInt(state.critRate, 0, DIRECT_CONSTRAINTS.maxTotalRolls)
+  const total = clampInt(state.totalRolls, crit, DIRECT_CONSTRAINTS.maxTotalRolls)
+  const caps = getAffixRollCaps(ctx.driveDiscMainStats)
+  const points: DirectSweepPoint[] = []
+  let sinceYield = 0
+
+  const pushPoint = async (point: DirectSweepPoint) => {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    points.push(point)
+    sinceYield += 1
+    if (sinceYield >= chunkSize) {
+      sinceYield = 0
+      await yieldToMain()
+    }
+  }
+
+  if (ctx.isMb) {
+    const fixedAtkPercent = clampInt(state.atkPercent, 0, 99)
+    const remain = total - crit - fixedAtkPercent
+    if (remain < 0 || fixedAtkPercent > caps.atkPercent || crit > caps.critRate) return points
+    for (let hpPercent = 0; hpPercent <= remain; hpPercent += 1) {
+      const critDmg = remain - hpPercent
+      if (hpPercent > caps.hpPercent || critDmg > caps.critDmg) continue
+      const affixCounts = buildDirectAffixCounts(
+        true,
+        { ...state, critRate: crit, totalRolls: total },
+        hpPercent,
+        critDmg,
+      )
+      const evaled = evaluateAffixCounts(ctx, affixCounts)
+      await pushPoint({
+        outPercent: hpPercent,
+        critDmg,
+        label: `局外大生命${hpPercent}/爆伤${critDmg}`,
+        affixCounts,
+        evalSnapshot: evaled,
+        directExpected: evaled.grandTotal,
+        eventLines: evaled.eventLines,
+        grandTotal: evaled.grandTotal,
+      })
+    }
+    return points
+  }
+
+  const remain = total - crit
+  const outLabel = outPercentLabel(false)
+  const outCap = caps.atkPercent
+  for (let outPercent = 0; outPercent <= remain; outPercent += 1) {
+    const critDmg = remain - outPercent
+    if (outPercent > outCap || critDmg > caps.critDmg || crit > caps.critRate) continue
+    const affixCounts = buildDirectAffixCounts(
+      false,
+      { ...state, critRate: crit, totalRolls: total },
+      outPercent,
+      critDmg,
+    )
+    const evaled = evaluateAffixCounts(ctx, affixCounts)
+    await pushPoint({
+      outPercent,
+      critDmg,
+      label: `${outLabel}${outPercent}/爆伤${critDmg}`,
+      affixCounts,
+      evalSnapshot: evaled,
+      directExpected: evaled.grandTotal,
+      eventLines: evaled.eventLines,
+      grandTotal: evaled.grandTotal,
+    })
+  }
+  return points
+}
+
 export function sweepAnomalyDamage(
   ctx: OptimalEvalContext,
   state: AnomalyAllocState,
@@ -1391,6 +1540,50 @@ export function sweepAnomalyDamage(
       eventLines: evaled.eventLines,
       grandTotal: evaled.grandTotal,
     })
+  }
+  return points
+}
+
+/** 分片扫掠异常，避免长循环卡住主线程 */
+export async function sweepAnomalyDamageAsync(
+  ctx: OptimalEvalContext,
+  state: AnomalyAllocState,
+  options?: SweepAsyncOptions,
+): Promise<AnomalySweepPoint[]> {
+  const chunkSize = Math.max(1, options?.chunkSize ?? 6)
+  const signal = options?.signal
+  const total = clampInt(state.totalRolls, 0, ANOMALY_CONSTRAINTS.maxTotalRolls)
+  const outLabel = outPercentLabel(ctx.isMb)
+  const caps = getAffixRollCaps(ctx.driveDiscMainStats)
+  const outCap = ctx.isMb ? caps.hpPercent : caps.atkPercent
+  const points: AnomalySweepPoint[] = []
+  let sinceYield = 0
+
+  for (let outPercent = 0; outPercent <= total; outPercent += 1) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const mastery = total - outPercent
+    if (outPercent > outCap || mastery > caps.mastery) continue
+    const affixCounts = buildAnomalyAffixCounts(ctx.isMb, { ...state, totalRolls: total }, outPercent, mastery)
+    const evaled = evaluateAffixCounts(ctx, affixCounts)
+    points.push({
+      outPercent,
+      mastery,
+      label: `${outLabel}${outPercent}/精通${mastery}`,
+      affixCounts,
+      evalSnapshot: evaled,
+      anomalyExpected: evaled.grandTotal,
+      disorderExpected: evaled.result.disorderExpected,
+      turbulenceExpected: evaled.result.turbulenceExpected,
+      anomalyReleaseExpected: evaled.result.anomalyReleaseExpected,
+      radianceExpected: evaled.result.radianceExpected,
+      eventLines: evaled.eventLines,
+      grandTotal: evaled.grandTotal,
+    })
+    sinceYield += 1
+    if (sinceYield >= chunkSize) {
+      sinceYield = 0
+      await yieldToMain()
+    }
   }
   return points
 }
@@ -1480,6 +1673,8 @@ export function computeDiffAnalysis(
         addOne: AFFIX_VALUE_PER_COUNT[key],
         damageDelta: 0,
         percentDelta: 0,
+        capped: true,
+        note: affixCapLimitNote(mainStats, key, baseCounts[key] ?? 0),
       }
     }
     const bumped = bumpAffix(baseCounts, key, 1)
@@ -1534,6 +1729,8 @@ export function computeDiffAnalysis(
         addOne: 0,
         damageDelta: 0,
         percentDelta: 0,
+        capped: true,
+        note: '可替换目标均已达主词条约束上限',
       }
     }
 
@@ -1624,6 +1821,7 @@ export function computeBenefitCurves(
   const series: BenefitCurveSeries[] = candidates.map((key) => {
     const cumulativePercent = [0]
     const marginalPercent = [0]
+    const cappedAt = [false]
     let counts = { ...baseCounts }
     let prevDmg = baseDmg
     let capped = false
@@ -1634,6 +1832,7 @@ export function computeBenefitCurves(
         capped = true
         cumulativePercent.push(lastCum)
         marginalPercent.push(0)
+        cappedAt.push(true)
         continue
       }
       counts = bumpAffix(counts, key, 1)
@@ -1643,6 +1842,7 @@ export function computeBenefitCurves(
       const mar = prevDmg > 0 ? ((dmg - prevDmg) / prevDmg) * 100 : 0
       cumulativePercent.push(cum)
       marginalPercent.push(mar)
+      cappedAt.push(false)
       prevDmg = dmg
       lastCum = cum
     }
@@ -1653,6 +1853,7 @@ export function computeBenefitCurves(
       color: SERIES_COLORS[key] ?? '#9aa3b0',
       cumulativePercent,
       marginalPercent,
+      cappedAt,
     }
   })
 

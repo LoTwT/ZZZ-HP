@@ -8,7 +8,10 @@ import DamageCalcHistorySection from '@/components/calculator/DamageCalcHistoryS
 import SkillFlowSection from '@/components/calculator/SkillFlowSection.vue'
 import OptimalAffixAllocSection from '@/components/calculator/OptimalAffixAllocSection.vue'
 import PanelCalcSection from '@/components/calculator/PanelCalcSection.vue'
+import ExtraBuffGainModal from '@/components/calculator/ExtraBuffGainModal.vue'
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
+import BuffModSourcesDisplay from '@/components/calculator/BuffModSourcesDisplay.vue'
 import PanelScreenshotUploadSection from '@/components/calculator/PanelScreenshotUploadSection.vue'
 import TeamBuilderSection from '@/components/calculator/TeamBuilderSection.vue'
 import type { DamageCalcSectionId } from '@/constants/damageCalcNav'
@@ -70,7 +73,7 @@ import {
   normalizeDamageEnemyInput,
   type DamageEnemyInput,
 } from '@/utils/enemyResistance'
-import { createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils/calculatorUi'
+import { BUFF_STAT_FIELDS, buffStatFieldLabel, createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils/calculatorUi'
 import {
   ensureSchemeSlots,
   resolveFlow,
@@ -179,6 +182,7 @@ const skillCategoryId = computed(() => firstHit.value?.coords[0]?.category ?? 'b
 const skillSubcategoryId = computed(() => firstHit.value?.coords[0]?.subcategoryId ?? null)
 
 const buffPickerOpen = ref(false)
+const extraBuffModalOpen = ref(false)
 const buffPickerViewSlotIndex = ref(0)
 const multiSlotBuffSelection = reactive<MultiSlotBuffSelection>(createEmptyMultiSlotBuffSelection())
 
@@ -476,9 +480,26 @@ const emit = defineEmits<{
   'update:calcMode': [mode: PanelCalcMode]
 }>()
 
-watch(panelCalcMode, (mode) => emit('update:calcMode', mode), { immediate: true })
+const skillFlowTeleportTo = computed(() =>
+  panelCalcMode.value === 'optimal' ? '#skill-flow-anchor-optimal' : '#skill-flow-anchor-panel',
+)
 
 const panelCalcSectionRef = ref<InstanceType<typeof PanelCalcSection> | null>(null)
+const optimalAffixSectionRef = ref<InstanceType<typeof OptimalAffixAllocSection> | null>(null)
+
+const combatBuffBreakdown = computed(() => {
+  void extraGains.value
+  void JSON.stringify(multiSlotBuffSelection)
+  void teamSlots.map((s) => s.agentId)
+  void selectedBangbooId.value
+  void bangbooRefine.value
+  void hits.value.length
+  void staggerPhase.value
+  if (panelCalcMode.value === 'optimal') {
+    return optimalAffixSectionRef.value?.buffBreakdown ?? null
+  }
+  return panelCalcSectionRef.value?.panelBreakdown ?? null
+})
 
 const activeSlotData = computed(() => teamSlots[activeSlot.value]!)
 const activeAgent = computed(() =>
@@ -1196,29 +1217,39 @@ async function scrollToSection(sectionId: DamageCalcSectionId) {
     await nextTick()
   }
   const anchorId =
-    sectionId === 'damage-calc-mode' ||
     sectionId === 'damage-calc-panel' ||
     sectionId === 'damage-calc-affix' ||
     sectionId === 'damage-calc-optimal'
       ? 'damage-calc-mode'
-      : sectionId
+      : sectionId === 'damage-panel'
+        ? 'damage-panel'
+        : sectionId
   const target = pageRootRef.value?.querySelector<HTMLElement>(`#${anchorId}`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function setCalcMode(mode: PanelCalcMode) {
+  if (panelCalcMode.value === mode) return
   panelCalcMode.value = mode
 }
 
 function selectPanelCalcMode(mode: PanelCalcMode) {
-  panelCalcMode.value = mode
-  void scrollToSection(
+  const changed = panelCalcMode.value !== mode
+  if (changed) {
+    // 先让 Tab 高亮，把重 DOM 切换放到下一帧，避免点击瞬时卡死
+    panelCalcMode.value = mode
+  }
+  const anchor =
     mode === 'panel'
       ? 'damage-calc-panel'
       : mode === 'affix'
         ? 'damage-calc-affix'
-        : 'damage-calc-optimal',
-  )
+        : 'damage-calc-optimal'
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      void scrollToSection(anchor)
+    })
+  })
 }
 
 defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
@@ -1226,6 +1257,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
 
 <template>
   <div ref="pageRootRef" class="damage-page">
+    <!-- 构图：方案库 → 编队/邦布/上传 → 局内Buff → 敌方与环境 → 计算方式 → 面板/伤害 → 招式流程 -->
     <DamageCalcHistorySection
       :entries="historyEntries"
       :agents="agents"
@@ -1236,13 +1268,6 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @load="loadHistoryEntry"
       @changed="onSchemeLibraryChanged"
       @imported="onSchemeImported"
-    />
-
-    <PanelScreenshotUploadSection
-      :agents="agents"
-      :wengines="wengines"
-      :drive-discs="driveDiscs"
-      @apply-recognition="applyPanelRecognition"
     />
 
     <TeamBuilderSection
@@ -1267,31 +1292,53 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @update:refine="bangbooRefine = $event"
     />
 
-    <SkillFlowSection
-      ref="skillFlowSectionRef"
-      :team-slots="teamSlots"
+    <PanelScreenshotUploadSection
       :agents="agents"
-      :hits="hits"
-      :hit-damages="hitDamages"
-      :hit-calc-results="hitCalcResults"
-      v-model:slots="schemeSlots"
+      :wengines="wengines"
+      :drive-discs="driveDiscs"
+      @apply-recognition="applyPanelRecognition"
     />
 
-    <section class="calc-mode-section">
+    <section
+      id="damage-combat-buff"
+      class="calc-mode-section combat-buff-section damage-anchor"
+    >
+      <header class="calc-mode-header">
+        <h2>局内 Buff 增益</h2>
+        <p class="calc-mode-desc">
+          勾选局内 Buff、补充额外增益，并查看当前局内增益汇总。失衡判定跟招式流程条目走。
+        </p>
+      </header>
       <div class="skill-context-row">
-        <label>
-          <span>默认失衡状态（无流程条目时的 Buff 判定）</span>
-          <select v-model="staggerPhase">
-            <option value="stagger">失衡期</option>
-            <option value="normal">非失衡期</option>
-          </select>
-        </label>
         <button type="button" class="buff-open-btn" @click="buffPickerOpen = true">
           选择局内 Buff（已选 {{ buffEnabledCount }} ）
         </button>
+        <button type="button" class="buff-open-btn" @click="extraBuffModalOpen = true">
+          额外 Buff 增益（已加 {{ extraGains.length }} ）
+        </button>
         <p class="buff-set-hint">2件套数值均已自动配置，无需选择2件套。</p>
       </div>
+
+      <details v-if="combatBuffBreakdown" class="buff-breakdown">
+        <summary>查看局内增益汇总数值</summary>
+        <ul class="mods-summary">
+          <li v-for="field in BUFF_STAT_FIELDS" :key="field.key">
+            <span>{{ buffStatFieldLabel(field) }}</span>
+            <strong>{{ combatBuffBreakdown.totalMods[field.key] }}</strong>
+          </li>
+        </ul>
+        <BuffModSourcesDisplay
+          :sources="combatBuffBreakdown.sources"
+          :skill-subcategories="skillSubcategories"
+        />
+      </details>
     </section>
+
+    <ExtraBuffGainModal
+      v-model:open="extraBuffModalOpen"
+      v-model:gains="extraGains"
+      :skill-subcategories="skillSubcategories"
+    />
 
     <BuffEffectPickerModal
       v-model:open="buffPickerOpen"
@@ -1319,6 +1366,14 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
         />
       </template>
     </BuffEffectPickerModal>
+
+    <section id="damage-enemy" class="calc-mode-section enemy-env-section damage-anchor">
+      <EnemyEnvironmentSection
+        v-model="enemyInput"
+        title="敌方与环境"
+        description="选择 Boss 或手动录入防御、抗性与失衡倍率，供面板计算与最优词条共用。"
+      />
+    </section>
 
     <section id="damage-calc-mode" class="calc-mode-section damage-anchor">
       <header class="calc-mode-header">
@@ -1374,7 +1429,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       :selected-bangboo-id="selectedBangbooId"
       :bangboo-refine="bangbooRefine"
       :edited-slot-index="activeSlot"
-      :calc-mode="panelCalcMode"
+      :calc-mode="panelCalcMode === 'optimal' ? 'panel' : panelCalcMode"
       :damage-kind="damageKind"
       :anomaly-sub-kind="anomalySubKind"
       :trigger-anomaly-agent-id="triggerAnomalyAgentId"
@@ -1393,13 +1448,20 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
       @update:hit-damages="hitDamages = $event"
       @update:hit-calc-results="hitCalcResults = $event"
-    />
+    >
+      <!-- 锚点常驻，招式流程经 Teleport 插入，避免双实例销毁重建 -->
+      <template #after-setup>
+        <div id="skill-flow-anchor-panel" class="skill-flow-anchor" />
+      </template>
+    </PanelCalcSection>
 
     <KeepAlive>
       <OptimalAffixAllocSection
         v-if="panelCalcMode === 'optimal'"
-        :id="panelCalcMode === 'optimal' ? 'damage-panel' : undefined"
+        ref="optimalAffixSectionRef"
+        id="damage-panel"
         class="damage-anchor"
+        :active="panelCalcMode === 'optimal'"
         :team-slots="teamSlots"
         :agents="agents"
         :wengines="wengines"
@@ -1417,14 +1479,36 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
         :slot-buff-selections="multiSlotBuffSelection"
         :stagger-phase="staggerPhase"
         :hits="hits"
+        :preview-hits="previewHits"
         :environment-buffs="activeEnvironmentBuffs"
         v-model:enemy-input="enemyInput"
         v-model:extra-gains="extraGains"
         :convert-slot-panels="convertSlotPanels"
         @update:anomaly-slot-panels="Object.assign(anomalySlotPanels, $event)"
         @update:convert-slot-panels="Object.assign(convertSlotPanels, $event)"
+        @update:hit-damages="hitDamages = $event"
+        @update:hit-calc-results="hitCalcResults = $event"
       />
     </KeepAlive>
+
+    <div
+      id="skill-flow-anchor-optimal"
+      v-show="panelCalcMode === 'optimal'"
+      class="skill-flow-anchor"
+    />
+
+    <!-- 单实例 Teleport：面板时插在录入后，最优时插在模块后 -->
+    <Teleport defer :to="skillFlowTeleportTo">
+      <SkillFlowSection
+        ref="skillFlowSectionRef"
+        :team-slots="teamSlots"
+        :agents="agents"
+        :hits="hits"
+        :hit-damages="hitDamages"
+        :hit-calc-results="hitCalcResults"
+        v-model:slots="schemeSlots"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -1432,7 +1516,12 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
 .damage-page {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.35rem;
+}
+
+.skill-flow-anchor {
+  /* Teleport 挂载点：保持块级容器，避免 display:contents 在部分浏览器下丢子树 */
+  min-height: 0;
 }
 
 .damage-page :deep(.damage-anchor) {
@@ -1440,10 +1529,30 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
 }
 
 .calc-mode-section {
-  border: 1px solid #2a2d33;
+  border: 1px solid #343a44;
   border-radius: 14px;
-  background: linear-gradient(180deg, #171a1f 0%, #12151a 100%);
-  padding: 1rem;
+  background: linear-gradient(180deg, #1a1e26 0%, #12151a 100%);
+  padding: 1.05rem 1.1rem 1.15rem;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.calc-mode-section + .calc-mode-section,
+.damage-page > .opt-section,
+.damage-page > :deep(.panel-section),
+.damage-page > :deep(.history-section),
+.damage-page > :deep(.team-section),
+.damage-page > :deep(.upload-section) {
+  position: relative;
+}
+
+.calc-mode-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
 }
 
 .calc-mode-header h2 {
@@ -1488,48 +1597,60 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1.25rem;
-  margin-top: 0.85rem;
+  margin-top: 0;
+  align-items: center;
 }
 
-.skill-context-row > label {
+.combat-buff-section {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  min-width: 9rem;
+  gap: 0.85rem;
 }
 
-.skill-context-row > label > span {
-  font-size: 0.8rem;
-  color: #9aa3b0;
+.enemy-env-section :deep(.enemy-environment) {
+  margin-top: 0;
+  border: none;
+  padding: 0;
+  background: transparent;
 }
 
-.skill-context-row > label > select {
+.combat-buff-section .buff-breakdown {
   border: 1px solid #2d323a;
-  border-radius: 8px;
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
   background: #0f1217;
-  color: #e8edf5;
-  padding: 0.4rem 0.55rem;
-  font-size: 0.84rem;
 }
 
-.event-mode-row {
-  width: 100%;
+.combat-buff-section .buff-breakdown summary {
+  cursor: pointer;
+  color: #d5dae4;
+  font-size: 0.86rem;
 }
 
-.event-mode-block {
+.combat-buff-section .mods-summary {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.35rem 0.75rem;
+}
+
+.combat-buff-section .mods-summary li {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  width: 100%;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: #9aa3b0;
 }
 
-.event-mode-label {
-  font-size: 0.8rem;
-  color: #9aa3b0;
+.combat-buff-section .mods-summary strong {
+  color: #e8edf5;
+  font-weight: 600;
 }
 
 .buff-open-btn {
-  align-self: end;
+  align-self: center;
   border: 1px solid #c9a55c;
   border-radius: 8px;
   background: rgba(201, 165, 92, 0.14);
@@ -1540,7 +1661,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
 }
 
 .buff-set-hint {
-  align-self: end;
+  align-self: center;
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.45;

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { storeToRefs } from 'pinia'
-import ExtraBuffGainEditor, {
-  type ExtraBuffGain,
-} from '@/components/calculator/ExtraBuffGainEditor.vue'
-import BuffModSourcesDisplay from '@/components/calculator/BuffModSourcesDisplay.vue'
+import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import DamageResultDetail from '@/components/calculator/DamageResultDetail.vue'
 import OptimalBenefitCurveChart from '@/components/calculator/OptimalBenefitCurveChart.vue'
 import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart.vue'
@@ -37,8 +42,6 @@ import {
   DRIVE_DISC_SLOT_6_OPTIONS,
 } from '@/utils/affixDriveDiscConfig'
 import {
-  BUFF_STAT_FIELDS,
-  buffStatFieldLabel,
   createEmptyBuffStatModifiers,
   createEmptyRefinementMods,
 } from '@/utils/calculatorUi'
@@ -57,11 +60,13 @@ import {
   clearAffixEvalCache,
   findMinCritRollsForOvercap,
   evaluateOptimalEventDetail,
+  buildDirectAffixCounts,
+  buildAnomalyAffixCounts,
   type OptimalEventEvalDetail,
   flatStatLabel,
   outPercentLabel,
-  sweepAnomalyDamage,
-  sweepDirectDamage,
+  sweepAnomalyDamageAsync,
+  sweepDirectDamageAsync,
   validateAnomalyAlloc,
   validateDirectAlloc,
   type AnomalyAllocState,
@@ -72,7 +77,6 @@ import {
   type OptimalEventAffixImpact,
   type OptimalEventDamageLine,
 } from '@/utils/optimalAffixAlloc'
-import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import {
@@ -178,6 +182,8 @@ const props = defineProps<{
   driveDiscs: DriveDiscBuffDoc[]
   selectedBangbooId: string
   bangbooRefine: number
+  /** 是否为当前可见模块；隐藏时不因外部配置变更清空已算结果 */
+  active?: boolean
   damageKind?: import('@/utils/optimalAffixAlloc').OptimalDamageKind
   anomalySubKind?: AnomalyDamageSubKind
   triggerAnomalyAgentId?: string | null
@@ -189,6 +195,8 @@ const props = defineProps<{
   slotBuffSelections?: import('@/utils/panelBuffCalc').MultiSlotBuffSelection | null
   staggerPhase?: import('@/types/calculator').StaggerPhase
   hits?: import('@/utils/resolvedHit').ResolvedHit[]
+  /** 招式流程准备态预览（与面板计算共用，用于技能卡伤害数字） */
+  previewHits?: import('@/utils/resolvedHit').ResolvedHit[]
   environmentBuffs?: import('@/utils/environmentBuffCalc').EnvironmentBuffEntry[]
 }>()
 
@@ -197,6 +205,8 @@ const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [
 const emit = defineEmits<{
   'update:anomalySlotPanels': [value: Record<string, PanelStats>]
   'update:convertSlotPanels': [value: ConvertSlotPanels]
+  'update:hitDamages': [value: Record<string, number>]
+  'update:hitCalcResults': [value: Record<string, DamageCalcResult>]
 }>()
 
 const emptyBangboo: BangbooBuffDoc = {
@@ -213,11 +223,26 @@ type DetailTab = 'diff' | 'process' | 'curve'
 type AnomalyMetric = 'anomaly' | 'disorder' | 'turbulence' | 'anomalyRelease' | 'radiance'
 type CurveMode = 'cumulative' | 'marginal'
 
-const damageKind = computed(() => props.damageKind ?? 'direct')
+/** 本模块需手动选择直伤/异常；未选时只展示模式入口 */
+const damageKind = ref<OptimalDamageKind | null>(null)
 const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
+/** KeepAlive 停用后仍会收到 props 变更；用 activated 门闩短路昂贵计算 */
+const keptAliveActive = ref(true)
+onActivated(() => {
+  keptAliveActive.value = true
+})
+onDeactivated(() => {
+  keptAliveActive.value = false
+})
+const isSectionActive = computed(() => props.active !== false && keptAliveActive.value)
 const baseDamageSource = ref<BaseDamageSource>('atk')
 const driveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
 const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
+
+function setDamageKind(kind: OptimalDamageKind) {
+  if (damageKind.value === kind) return
+  damageKind.value = kind
+}
 
 const directAlloc = reactive<DirectAllocState>({
   flatStat: 0,
@@ -264,7 +289,7 @@ const selectedBangboo = computed(
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
   const participantIds = new Set<string>()
-  for (const hit of props.hits ?? []) {
+  for (const hit of [...(props.hits ?? []), ...(props.previewHits ?? [])]) {
     for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
       if (id && id !== mainId) participantIds.add(id)
     }
@@ -459,6 +484,7 @@ const evalCtx = computed(() =>
     skillContext: buildGenericPanelSkillContext({
       element: mainAgent.value?.element,
       staggerPhase: props.staggerPhase ?? 'stagger',
+      damageKind: damageKind.value ?? 'direct',
     }),
     buffSelection: props.buffSelection ?? null,
     slotBuffSelections: props.slotBuffSelections ?? null,
@@ -481,9 +507,10 @@ const directError = computed(() =>
 )
 const anomalyError = computed(() => validateAnomalyAlloc(anomalyAlloc, isMb.value))
 
-const SWEEP_DEBOUNCE_MS = 250
-const EVENT_SWEEP_DEBOUNCE_MS = 550
+const SWEEP_DEBOUNCE_MS = 320
+const EVENT_SWEEP_DEBOUNCE_MS = 700
 const DIFF_DEBOUNCE_MS = 450
+const SKILL_FLOW_EMIT_DEBOUNCE_MS = 280
 
 const directPoints = ref<DirectSweepPoint[]>([])
 const anomalyPoints = ref<AnomalySweepPoint[]>([])
@@ -497,10 +524,21 @@ const hasEventMode = computed(() => (props.hits?.length ?? 0) > 0)
 
 let sweepTimer: ReturnType<typeof setTimeout> | null = null
 let diffTimer: ReturnType<typeof setTimeout> | null = null
+let skillFlowEmitTimer: ReturnType<typeof setTimeout> | null = null
+let sweepAbort: AbortController | null = null
+let sweepGeneration = 0
+/** 隐藏期间外部配置有变，回到本模块时再提示重算，不清空已有柱图 */
+const pendingConfigDirty = ref(false)
 
 function markSweepConfigDirty() {
+  if (!isSectionActive.value) {
+    pendingConfigDirty.value = true
+    return
+  }
   sweepNeedsCommit.value = true
   sweepCommitted.value = false
+  sweepAbort?.abort()
+  sweepAbort = null
   directPoints.value = []
   anomalyPoints.value = []
   clearBarSelection()
@@ -508,38 +546,90 @@ function markSweepConfigDirty() {
   mainStatDiff.value = null
   showMainStatDiff.value = false
   benefitData.value = null
+  sweepComputing.value = false
 }
 
 function startCalculation() {
+  if (!damageKind.value) return
   sweepNeedsCommit.value = false
   sweepCommitted.value = true
   clearAffixEvalCache()
   clearBarSelection()
-  runSweepRecompute()
+  void runSweepRecompute()
 }
 
-function runSweepRecompute() {
-  if (!sweepCommitted.value) {
+async function runSweepRecompute() {
+  if (!sweepCommitted.value || !damageKind.value) {
     sweepComputing.value = false
     return
   }
-  if (damageKind.value === 'direct') {
-    directPoints.value = directError.value ? [] : sweepDirectDamage(evalCtx.value, { ...directAlloc })
-    anomalyPoints.value = []
-  } else {
-    anomalyPoints.value = anomalyError.value ? [] : sweepAnomalyDamage(evalCtx.value, { ...anomalyAlloc })
-    directPoints.value = []
+  const generation = ++sweepGeneration
+  sweepAbort?.abort()
+  const controller = new AbortController()
+  sweepAbort = controller
+  sweepComputing.value = true
+  const chunkSize = hasEventMode.value ? 3 : 6
+  const kind = damageKind.value
+  try {
+    if (kind === 'direct') {
+      if (directError.value) {
+        directPoints.value = []
+      } else {
+        directPoints.value = await sweepDirectDamageAsync(
+          evalCtx.value,
+          { ...directAlloc },
+          { signal: controller.signal, chunkSize },
+        )
+      }
+      if (generation !== sweepGeneration) return
+      anomalyPoints.value = []
+    } else {
+      if (anomalyError.value) {
+        anomalyPoints.value = []
+      } else {
+        anomalyPoints.value = await sweepAnomalyDamageAsync(
+          evalCtx.value,
+          { ...anomalyAlloc },
+          { signal: controller.signal, chunkSize },
+        )
+      }
+      if (generation !== sweepGeneration) return
+      directPoints.value = []
+    }
+  } catch (err) {
+    if ((err as DOMException)?.name === 'AbortError') return
+    throw err
+  } finally {
+    if (generation === sweepGeneration) {
+      sweepComputing.value = false
+    }
   }
-  sweepComputing.value = false
 }
 
 function scheduleSweepRecompute() {
-  if (!sweepCommitted.value) return
+  if (!isSectionActive.value || !sweepCommitted.value || !damageKind.value) return
   sweepComputing.value = true
   if (sweepTimer) clearTimeout(sweepTimer)
   const delay = hasEventMode.value ? EVENT_SWEEP_DEBOUNCE_MS : SWEEP_DEBOUNCE_MS
-  sweepTimer = setTimeout(runSweepRecompute, delay)
+  sweepTimer = setTimeout(() => {
+    void runSweepRecompute()
+  }, delay)
 }
+
+watch(isSectionActive, (active) => {
+  if (!active) {
+    sweepAbort?.abort()
+    if (skillFlowEmitTimer) {
+      clearTimeout(skillFlowEmitTimer)
+      skillFlowEmitTimer = null
+    }
+    return
+  }
+  if (pendingConfigDirty.value) {
+    pendingConfigDirty.value = false
+    markSweepConfigDirty()
+  }
+})
 
 watch(
   [
@@ -572,6 +662,8 @@ watch(
 onBeforeUnmount(() => {
   if (sweepTimer) clearTimeout(sweepTimer)
   if (diffTimer) clearTimeout(diffTimer)
+  if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
+  sweepAbort?.abort()
 })
 
 const showEventAffixImpact = ref(false)
@@ -733,86 +825,10 @@ interface ProcessEventRow {
   skipReason: string | null
 }
 
-const processEventRows = computed((): ProcessEventRow[] => {
-  if (detailTab.value !== 'process' || !hasEventMode.value) return []
-  const counts = analysisCounts.value
-  if (!counts) return []
-  const external =
-    analysisEval.value?.external ?? evaluateAffixCounts(evalCtx.value, counts).external
-  const selectedIds = new Set(selectedChartEventIds.value)
-  return (props.hits ?? [])
-    .filter((hit) => !selectedIds.size || selectedIds.has(hit.id))
-    .map((hit) => {
-      const ownerName = props.agents.find((item) => item.id === hit.ownerAgentId)?.name
-      const displayName = `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}`
-      const skipReason = getHitSkipReason(hit, {
-        teamSlots: props.teamSlots,
-        agents: props.agents,
-      })
-      const detail = skipReason
-        ? null
-        : evaluateOptimalEventDetail(evalCtx.value, external, hit)
-      return {
-        hit,
-        eventId: hit.id,
-        displayName,
-        detail,
-        skipReason,
-      }
-    })
-})
-
-watch(
-  processEventRows,
-  (rows) => {
-    const selectable = rows.filter((row) => row.detail)
-    if (!selectable.length) {
-      selectedProcessEventId.value = null
-      return
-    }
-    if (!selectable.some((row) => row.eventId === selectedProcessEventId.value)) {
-      selectedProcessEventId.value = selectable[0]!.eventId
-    }
-  },
-  { immediate: true },
-)
-
-const selectedProcessEventRow = computed(
-  () => processEventRows.value.find((row) => row.eventId === selectedProcessEventId.value) ?? null,
-)
-
-const selectedProcessEventDetail = computed(() => selectedProcessEventRow.value?.detail ?? null)
-
-const processOwnerShareSummary = computed(() => {
-  const rows = processEventRows.value.filter((row) => row.detail)
-  if (!rows.length) return null
-  return summarizeDamageByOwner(
-    rows.map((row) => ({
-      ownerAgentId: row.hit.ownerAgentId,
-      eventId: row.eventId,
-      displayName: row.displayName,
-      total: row.detail!.total,
-    })),
-    (id) => props.agents.find((item) => item.id === id),
-  )
-})
-
-function selectProcessEventFromShare(eventId: string) {
-  const row = processEventRows.value.find((item) => item.eventId === eventId)
-  if (!row?.detail) return
-  selectedProcessEventId.value = eventId
-}
-
-function toggleProcessEventSelection(eventId: string) {
-  const row = processEventRows.value.find((item) => item.eventId === eventId)
-  if (!row?.detail) return
-  selectedProcessEventId.value = selectedProcessEventId.value === eventId ? null : eventId
-}
-
 const eventAffixImpact = ref<OptimalEventAffixImpact[]>([])
 
 function recomputeEventAffixImpact() {
-  if (!hasEventMode.value || !analysisCounts.value) {
+  if (!hasEventMode.value || !analysisCounts.value || !damageKind.value) {
     eventAffixImpact.value = []
     return
   }
@@ -955,6 +971,88 @@ const analysisEval = computed(() => {
   return displayEval.value
 })
 
+/**
+ * 招式流程用的局外面板：优先当前选中/展示柱体的最优词条面板；
+ * 尚未开始计算时，按「第一个扫掠点」规则（余量全给爆伤/精通）现场推导，避免残留面板计算数值。
+ */
+const skillFlowExternal = computed(() => {
+  if (analysisEval.value?.external) return analysisEval.value.external
+  if (damageKind.value === 'direct') {
+    if (directError.value) return null
+    const crit = Math.round(directAlloc.critRate)
+    const total = Math.round(directAlloc.totalRolls)
+    const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
+    const remain = isMb.value ? total - crit - fixedAtk : total - crit
+    if (remain < 0) return null
+    const counts = buildDirectAffixCounts(
+      isMb.value,
+      { ...directAlloc, critRate: crit, totalRolls: total },
+      0,
+      remain,
+    )
+    return evaluateAffixCounts(evalCtx.value, counts).external
+  }
+  if (anomalyError.value) return null
+  const total = Math.round(anomalyAlloc.totalRolls)
+  const counts = buildAnomalyAffixCounts(isMb.value, { ...anomalyAlloc, totalRolls: total }, 0, total)
+  return evaluateAffixCounts(evalCtx.value, counts).external
+})
+
+/** 用最优词条面板重算流程/准备招式预览伤害，供招式流程展示 */
+const skillFlowHitMaps = computed(() => {
+  if (!isSectionActive.value) {
+    return { map: {} as Record<string, number>, results: {} as Record<string, DamageCalcResult> }
+  }
+  const map: Record<string, number> = {}
+  const results: Record<string, DamageCalcResult> = {}
+  const external = skillFlowExternal.value
+  // 追踪准备招式与流程变更，避免预览残留面板计算数值
+  void (props.previewHits ?? []).map(
+    (hit) =>
+      `${hit.id}:${hit.ownerAgentId}:${hit.anomalyPowerAgentId ?? ''}:${hit.triggerAgentId ?? ''}`,
+  )
+  void (props.hits ?? []).map((hit) => hit.id)
+  if (!external) return { map, results }
+  const ctx = evalCtx.value
+  for (const hit of props.hits ?? []) {
+    const detail = evaluateOptimalEventDetail(ctx, external, hit)
+    if (!detail) continue
+    map[hit.id] = detail.total
+    results[hit.id] = detail.result
+  }
+  for (const hit of props.previewHits ?? []) {
+    const detail = evaluateOptimalEventDetail(ctx, external, hit)
+    if (!detail) continue
+    // 准备招式/招式库预览：单次期望（次数固定为 1）
+    map[hit.id] = detail.perHit
+    results[hit.id] = detail.result
+  }
+  return { map, results }
+})
+
+watch(
+  skillFlowHitMaps,
+  (next) => {
+    if (!isSectionActive.value || sweepComputing.value) return
+    if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
+    skillFlowEmitTimer = setTimeout(() => {
+      emit('update:hitDamages', next.map)
+      emit('update:hitCalcResults', next.results)
+    }, SKILL_FLOW_EMIT_DEBOUNCE_MS)
+  },
+  { immediate: true },
+)
+
+watch([sweepComputing, isSectionActive], ([computing, active]) => {
+  if (computing || !active) return
+  const next = skillFlowHitMaps.value
+  if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
+  skillFlowEmitTimer = setTimeout(() => {
+    emit('update:hitDamages', next.map)
+    emit('update:hitCalcResults', next.results)
+  }, SKILL_FLOW_EMIT_DEBOUNCE_MS)
+})
+
 watch([analysisCounts, evalCtx, damageKind, hasEventMode], () => {
   showEventAffixImpact.value = false
   eventAffixImpact.value = []
@@ -1039,6 +1137,127 @@ const analysisMetricDamage = computed(() => {
   if (!analysisEval.value) return 0
   return resolveAffixMetricDamage(analysisEval.value)
 })
+
+/** 过程明细仅在「计算过程」Tab 展开且模块可见时求值，避免扫掠后全量重算卡顿 */
+const processEventRows = computed((): ProcessEventRow[] => {
+  if (!isSectionActive.value || detailTab.value !== 'process' || !hasEventMode.value) return []
+  const counts = analysisCounts.value
+  if (!counts) return []
+  const external =
+    analysisEval.value?.external ?? evaluateAffixCounts(evalCtx.value, counts).external
+  const selectedIds = new Set(selectedChartEventIds.value)
+  if (!selectedIds.size) return []
+  return (props.hits ?? [])
+    .filter((hit) => selectedIds.has(hit.id))
+    .map((hit) => {
+      const ownerName = props.agents.find((item) => item.id === hit.ownerAgentId)?.name
+      const displayName = `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}`
+      const skipReason = getHitSkipReason(hit, {
+        teamSlots: props.teamSlots,
+        agents: props.agents,
+      })
+      const detail = skipReason
+        ? null
+        : evaluateOptimalEventDetail(evalCtx.value, external, hit)
+      return {
+        hit,
+        eventId: hit.id,
+        displayName,
+        detail,
+        skipReason,
+      }
+    })
+})
+
+watch(
+  processEventRows,
+  (rows) => {
+    const selectable = rows.filter((row) => row.detail)
+    if (!selectable.length) {
+      selectedProcessEventId.value = null
+      return
+    }
+    if (!selectable.some((row) => row.eventId === selectedProcessEventId.value)) {
+      selectedProcessEventId.value = selectable[0]!.eventId
+    }
+  },
+  { immediate: true },
+)
+
+const selectedProcessEventRow = computed(
+  () => processEventRows.value.find((row) => row.eventId === selectedProcessEventId.value) ?? null,
+)
+
+const selectedProcessEventDetail = computed(() => selectedProcessEventRow.value?.detail ?? null)
+
+/** 与柱状图/词条分析同一口径：analysisEval.eventLines + analysisMetricDamage */
+const processOwnerShareSummary = computed(() => {
+  const evaled = analysisEval.value
+  if (!hasEventMode.value || !evaled?.eventLines?.length) return null
+  const selectedIds = new Set(selectedChartEventIds.value)
+  if (!selectedIds.size) return null
+  const hitById = new Map((props.hits ?? []).map((hit) => [hit.id, hit]))
+  const lines = evaled.eventLines.filter((line) => selectedIds.has(line.eventId))
+  if (!lines.length) return null
+  const summary = summarizeDamageByOwner(
+    lines
+      .map((line) => {
+        const hit = hitById.get(line.eventId)
+        if (!hit) return null
+        return {
+          ownerAgentId: hit.ownerAgentId,
+          eventId: line.eventId,
+          displayName: line.displayName,
+          total: line.total,
+          perHit: line.perHit,
+          count: hit.count,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null),
+    (id) => props.agents.find((item) => item.id === id),
+  )
+  return {
+    ...summary,
+    grandTotal: analysisMetricDamage.value,
+  }
+})
+
+const processSkippedEvents = computed(() => {
+  if (!hasEventMode.value) return []
+  const selectedIds = new Set(selectedChartEventIds.value)
+  if (!selectedIds.size) return []
+  const computedIds = new Set(
+    (analysisEval.value?.eventLines ?? [])
+      .filter((line) => selectedIds.has(line.eventId))
+      .map((line) => line.eventId),
+  )
+  return (props.hits ?? [])
+    .filter((hit) => selectedIds.has(hit.id) && !computedIds.has(hit.id))
+    .map((hit) => {
+      const ownerName = props.agents.find((item) => item.id === hit.ownerAgentId)?.name
+      const displayName = `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}`
+      const skipReason = getHitSkipReason(hit, {
+        teamSlots: props.teamSlots,
+        agents: props.agents,
+      })
+      return {
+        eventId: hit.id,
+        displayName,
+        reason: skipReason ?? '无法计算',
+      }
+    })
+})
+
+const processDamageTotalLabel = computed(() =>
+  damageKind.value === 'anomaly' ? '异常伤害事件总伤期望' : '伤害事件总伤期望',
+)
+
+function selectProcessEventFromShare(eventId: string) {
+  const row = processEventRows.value.find((item) => item.eventId === eventId)
+  if (!row?.detail) return
+  detailTab.value = 'process'
+  selectedProcessEventId.value = eventId
+}
 
 const filteredEventAffixImpact = computed(() => {
   if (!hasEventMode.value || !selectedChartEventIds.value.length) {
@@ -1275,7 +1494,7 @@ function buildCombinedMainStatRankings() {
 }
 
 function recomputeDiffAnalysis() {
-  if (detailTab.value !== 'diff' || !analysisCounts.value) {
+  if (detailTab.value !== 'diff' || !analysisCounts.value || !damageKind.value) {
     diffAnalysis.value = null
     mainStatDiff.value = null
     showMainStatDiff.value = false
@@ -1306,7 +1525,7 @@ function scheduleDiffRecompute() {
 }
 
 function recomputeBenefitData() {
-  if (detailTab.value !== 'curve' || !analysisCounts.value) {
+  if (detailTab.value !== 'curve' || !analysisCounts.value || !damageKind.value) {
     benefitData.value = null
     return
   }
@@ -1568,6 +1787,7 @@ watch(
 
 watch(damageKind, (kind) => {
   clearBarSelection()
+  if (!kind) return
   if (kind === 'direct') applyDefaultCrit()
   else {
     anomalyAlloc.totalRolls = 0
@@ -1592,6 +1812,10 @@ watch(
     if (directAlloc.totalRolls < minTotal) directAlloc.totalRolls = minTotal
   },
 )
+
+defineExpose({
+  buffBreakdown: computed(() => displayEval.value?.breakdown ?? null),
+})
 </script>
 
 <template>
@@ -1599,14 +1823,36 @@ watch(
     <header class="opt-header">
       <h2>词条分配与伤害曲线</h2>
       <p>
-        在约束内设置固定词条与总词条数，扫掠局外大{{ isMb ? '生命' : '攻击' }}与{{
-          damageKind === 'direct' ? '爆伤' : '精通'
-        }}的分配，并点击柱体查看差异与收益曲线。柱状图在固定{{
-          isMb && damageKind === 'direct' ? '攻击、生命、局外大攻击' : flatLabel
-        }}、穿透等前提下扫掠，并非全词条穷举最优。
+        先选择直伤或异常模式，在约束内设置固定词条与总词条数后开始计算；点击柱体查看差异与收益曲线。柱状图在固定小词条与穿透等前提下扫掠，并非全词条穷举最优。
       </p>
     </header>
 
+    <div class="kind-mode-row" role="tablist" aria-label="最优词条伤害模式">
+      <span class="kind-mode-label">伤害模式</span>
+      <button
+        type="button"
+        role="tab"
+        class="kind-mode-tab"
+        :class="{ active: damageKind === 'direct' }"
+        :aria-selected="damageKind === 'direct'"
+        @click="setDamageKind('direct')"
+      >
+        直伤
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="kind-mode-tab"
+        :class="{ active: damageKind === 'anomaly' }"
+        :aria-selected="damageKind === 'anomaly'"
+        @click="setDamageKind('anomaly')"
+      >
+        异常
+      </button>
+      <p v-if="!damageKind" class="hint kind-mode-hint">请先选择直伤或异常，再配置词条并开始计算。</p>
+    </div>
+
+    <template v-if="damageKind">
     <h3 class="block-title">基础伤害来源与驱动盘主属性</h3>
     <div class="grid three">
       <label class="field">
@@ -1644,30 +1890,6 @@ watch(
       </label>
       <p class="hint span-2">
         1号固定生命 {{ AFFIX_DRIVE_DISC_SLOT_1_HP }} · 2号固定攻击 {{ AFFIX_DRIVE_DISC_SLOT_2_ATK }}（已计入词条推导）
-      </p>
-    </div>
-
-    <EnemyEnvironmentSection v-model="enemyInput" title="敌方与环境" />
-
-    <div class="kind-hint">
-      当前计算方式：{{ damageKind === 'direct' ? '直伤' : '异常' }}（与上方全局选择同步）
-    </div>
-
-    <div class="calc-commit-row">
-      <button
-        type="button"
-        class="calc-run-btn"
-        :class="{ 'is-computing': sweepComputing }"
-        :disabled="sweepComputing || (damageKind === 'direct' ? Boolean(directError) : Boolean(anomalyError))"
-        @click="startCalculation"
-      >
-        {{ sweepComputing ? '计算中…' : '开始计算' }}
-      </button>
-      <p v-if="sweepNeedsCommit" class="hint calc-commit-hint">
-        修改基础伤害来源、驱动盘主属性、敌人参数、增益或转模录入后，请点击「开始计算」更新柱状图与详情。
-      </p>
-      <p v-else-if="sweepCommitted && !sweepComputing" class="hint calc-commit-hint calc-commit-hint--synced">
-        已按当前配置计算；调整下方词条分配会自动刷新柱状图。
       </p>
     </div>
 
@@ -1747,14 +1969,6 @@ watch(
           <p v-if="anomalyError" class="err">{{ anomalyError }}</p>
         </template>
       </div>
-
-      <section class="panel-block extra-mods-block alloc-right">
-        <header class="panel-block-header">
-          <h3>额外 Buff 增益</h3>
-          <p>补充增益按条添加，参与局内面板与乘区汇总。</p>
-        </header>
-        <ExtraBuffGainEditor v-model="extraGains" :skill-subcategories="skillSubcategories" />
-      </section>
 
       <section
         v-if="anomalySupportSlots.length"
@@ -1898,19 +2112,23 @@ watch(
       </section>
     </div>
 
-    <details v-if="displayEval" class="buff-breakdown">
-      <summary>查看局内增益汇总数值</summary>
-      <ul class="mods-summary">
-        <li v-for="field in BUFF_STAT_FIELDS" :key="field.key">
-          <span>{{ buffStatFieldLabel(field) }}</span>
-          <strong>{{ displayEval.breakdown.totalMods[field.key] }}</strong>
-        </li>
-      </ul>
-      <BuffModSourcesDisplay
-        :sources="displayEval.breakdown.sources"
-        :skill-subcategories="skillSubcategories"
-      />
-    </details>
+    <div class="calc-commit-row">
+      <button
+        type="button"
+        class="calc-run-btn"
+        :class="{ 'is-computing': sweepComputing }"
+        :disabled="sweepComputing || (damageKind === 'direct' ? Boolean(directError) : Boolean(anomalyError))"
+        @click="startCalculation"
+      >
+        {{ sweepComputing ? '计算中…' : '开始计算' }}
+      </button>
+      <p v-if="sweepNeedsCommit" class="hint calc-commit-hint">
+        配好词条分配后点击开始；修改主属性、敌人、增益或转模后也需重新计算。
+      </p>
+      <p v-else-if="sweepCommitted && !sweepComputing" class="hint calc-commit-hint calc-commit-hint--synced">
+        已按当前配置计算；继续调整词条分配会自动刷新柱状图。
+      </p>
+    </div>
 
     <h3 class="block-title">
       {{ hasEventMode ? '伤害事件期望柱状图' : '期望伤害柱状图' }}
@@ -2088,7 +2306,7 @@ watch(
         </p>
       </header>
 
-            <p v-if="damageKind === 'anomaly' && !hasEventMode" class="metric-tabs">
+      <p v-if="damageKind === 'anomaly' && !hasEventMode" class="metric-tabs">
         当前异常子类：{{
           anomalySubKind === 'disorder'
             ? '紊乱伤害'
@@ -2104,50 +2322,14 @@ watch(
 
       <template v-if="detailTab === 'process'">
         <template v-if="hasEventMode">
-          <div class="result-summary">
-            <p>
-              伤害事件总伤期望：
-              <strong>{{ formatNumber(analysisMetricDamage) }}</strong>
-            </p>
-          </div>
           <DamageOwnerShareBlock
-            :summary="processOwnerShareSummary"
+            :summary="processOwnerShareSummary ?? { shares: [], grandTotal: 0 }"
             :selected-event-id="selectedProcessEventId"
+            :total-label="processDamageTotalLabel"
+            :skipped-events="processSkippedEvents"
+            hint="总伤期望已并入本区（口径与柱状图所选统计事件一致）。点击产生者展开事件，再点事件查看下方计算过程。"
             @select-event="selectProcessEventFromShare"
           />
-          <section class="event-summary-block">
-            <h3 class="result-section-title event-summary-title">伤害事件</h3>
-            <ul class="event-summary-list">
-              <li
-                v-for="row in processEventRows"
-                :key="row.eventId"
-                class="event-summary-item"
-                :class="{
-                  'event-summary-item--active': selectedProcessEventId === row.eventId,
-                  'event-summary-item--disabled': !row.detail,
-                }"
-                :role="row.detail ? 'button' : undefined"
-                :tabindex="row.detail ? 0 : undefined"
-                @click="row.detail && toggleProcessEventSelection(row.eventId)"
-                @keydown.enter.prevent="row.detail && toggleProcessEventSelection(row.eventId)"
-                @keydown.space.prevent="row.detail && toggleProcessEventSelection(row.eventId)"
-              >
-                <span class="event-summary-name">
-                  {{ row.displayName }}
-                  <span v-if="row.hit.count > 1" class="event-summary-count">
-                    ×{{ row.hit.count }}
-                  </span>
-                </span>
-                <span v-if="row.detail" class="event-summary-damage">
-                  单次 {{ formatNumber(row.detail.perHit) }} · 合计 {{ formatNumber(row.detail.total) }}
-                </span>
-                <span v-else class="event-summary-skip">{{ row.skipReason ?? '无法计算' }}</span>
-              </li>
-            </ul>
-            <p class="result-total event-summary-total">
-              伤害事件总伤期望：{{ formatNumber(analysisMetricDamage) }}
-            </p>
-          </section>
           <DamageResultDetail
             v-if="selectedProcessEventDetail"
             :calc-parts="selectedProcessEventDetail.result"
@@ -2164,12 +2346,15 @@ watch(
             :producer-external-panel="selectedProcessEventDetail.producerExternalPanel"
             :producer-sources="selectedProcessEventDetail.producerBreakdown?.sources"
             :producer-agent-label="selectedProcessEventDetail.producerAgentLabel"
+            :bonus-final-panel="selectedProcessEventDetail.bonusFinalPanel"
+            :bonus-external-panel="selectedProcessEventDetail.bonusExternalPanel"
+            :bonus-sources="selectedProcessEventDetail.bonusBreakdown?.sources"
             :base-agent-label="selectedProcessEventDetail.baseAgentLabel"
             :bonus-agent-label="selectedProcessEventDetail.bonusAgentLabel"
             :mutation-agent-label="selectedProcessEventDetail.mutationAgentLabel"
           />
-          <p v-else-if="processEventRows.some((row) => row.detail)" class="hint">
-            点击上方事件查看该事件的详细计算过程。
+          <p v-else-if="processOwnerShareSummary || processSkippedEvents.length" class="hint">
+            在上方「产生者伤害占比」中点选事件，查看该事件的详细计算过程。
           </p>
           <p v-else class="hint">当前配置下暂无可用伤害事件，请检查产生角色与局外面板。</p>
         </template>
@@ -2220,12 +2405,16 @@ watch(
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in diffAnalysis.addOne" :key="row.key">
+              <tr v-for="row in diffAnalysis.addOne" :key="row.key" :class="{ 'row-capped': row.capped }">
                 <td>{{ row.label }}</td>
                 <td>{{ row.currentValue }}</td>
                 <td>+{{ row.addOne }}</td>
-                <td :class="row.damageDelta >= 0 ? 'pos' : 'neg'">{{ formatDelta(row.damageDelta) }}</td>
-                <td :class="row.percentDelta >= 0 ? 'pos' : 'neg'">{{ formatPercent(row.percentDelta) }}</td>
+                <td :class="row.capped ? '' : row.damageDelta >= 0 ? 'pos' : 'neg'">
+                  {{ row.capped ? '—' : formatDelta(row.damageDelta) }}
+                </td>
+                <td :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
+                  {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -2245,13 +2434,17 @@ watch(
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in diffAnalysis.replace" :key="row.key">
+              <tr v-for="row in diffAnalysis.replace" :key="row.key" :class="{ 'row-capped': row.capped }">
                 <td>{{ row.label }}</td>
                 <td>-{{ row.removeOne }}</td>
                 <td>{{ row.bestReplaceLabel }}</td>
                 <td>+{{ row.addOne }}</td>
-                <td :class="row.damageDelta >= 0 ? 'pos' : 'neg'">{{ formatDelta(row.damageDelta) }}</td>
-                <td :class="row.percentDelta >= 0 ? 'pos' : 'neg'">{{ formatPercent(row.percentDelta) }}</td>
+                <td :class="row.capped ? '' : row.damageDelta >= 0 ? 'pos' : 'neg'">
+                  {{ row.capped ? '—' : formatDelta(row.damageDelta) }}
+                </td>
+                <td :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
+                  {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
+                </td>
               </tr>
               <tr v-if="!diffAnalysis.replace.length">
                 <td colspan="6" class="empty-cell">当前无可替换的已有候选词条</td>
@@ -2568,24 +2761,30 @@ watch(
         <h4 class="sub-title">下一条累计提升</h4>
         <ul class="next-bars">
           <li
-            v-for="row in [...benefitData.nextStep].sort((a, b) => b.percentDelta - a.percentDelta)"
+            v-for="row in [...benefitData.nextStep].sort((a, b) => Number(a.capped) - Number(b.capped) || b.percentDelta - a.percentDelta)"
             :key="row.key"
+            :class="{ 'next-bars-item--capped': row.capped }"
           >
             <span class="next-label">{{ row.label }}</span>
             <div class="next-track">
               <div
                 class="next-fill"
                 :style="{
-                  width: `${Math.max(2, Math.min(100, Math.abs(row.percentDelta) * 8))}%`,
+                  width: row.capped
+                    ? '0%'
+                    : `${Math.max(2, Math.min(100, Math.abs(row.percentDelta) * 8))}%`,
                   background: row.percentDelta >= 0 ? '#7dd3a0' : '#f07178',
                 }"
               />
             </div>
-            <strong :class="row.percentDelta >= 0 ? 'pos' : 'neg'">{{ formatPercent(row.percentDelta) }}</strong>
+            <strong :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
+              {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
+            </strong>
           </li>
         </ul>
       </template>
     </div>
+    </template>
   </section>
 </template>
 
@@ -2843,7 +3042,7 @@ watch(
 
 .alloc-layout {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-columns: 1fr;
   gap: 0.75rem;
   align-items: start;
 }
@@ -2994,10 +3193,56 @@ watch(
   font: inherit;
 }
 
-.kind-hint {
-  margin: 0.75rem 0 0;
+.kind-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+}
+
+.kind-mode-hint {
+  flex: 1 1 12rem;
+  margin: 0 !important;
+}
+
+.capped-note {
+  color: #e6c07b !important;
+  font-weight: 600;
+  white-space: normal;
+  max-width: 14rem;
+  line-height: 1.35;
+}
+
+.row-capped td {
+  color: #9aa3b5;
+}
+
+.next-bars-item--capped .next-label {
+  color: #9aa3b5;
+}
+
+.kind-mode-label {
   font-size: 0.82rem;
-  opacity: 0.75;
+  color: #9aa3b0;
+  margin-right: 0.15rem;
+}
+
+.kind-mode-tab {
+  border: 1px solid #2d323a;
+  border-radius: 999px;
+  background: #10141a;
+  color: #c5ccd6;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.28rem 0.75rem;
+  cursor: pointer;
+}
+
+.kind-mode-tab.active {
+  border-color: rgba(201, 165, 92, 0.55);
+  background: rgba(201, 165, 92, 0.14);
+  color: #f0d7a2;
+  font-weight: 600;
 }
 
 .calc-commit-row {

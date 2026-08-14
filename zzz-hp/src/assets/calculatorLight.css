@@ -4,12 +4,12 @@
  */
 
 .calculator-page.theme-light {
-  --calc-surface: #ffffff;
-  --calc-surface-2: #f5f7fa;
-  --calc-surface-3: #eef1f5;
-  --calc-border: #d5dae3;
-  --calc-text: #1c212a;
-  --calc-muted: #667085;
+  --calc-surface: var(--zzz-card, #faf8f2);
+  --calc-surface-2: var(--zzz-paper-soft, #f1efe9);
+  --calc-surface-3: color-mix(in srgb, var(--zzz-paper, #e8e6df) 85%, #ffffff);
+  --calc-border: var(--color-border, #d5dae3);
+  --calc-text: var(--color-text, #1c212a);
+  --calc-muted: color-mix(in srgb, var(--color-text, #1c212a) 58%, transparent);
   --calc-accent: #c9a55c;
   --calc-accent-bg: #fff8eb;
   --calc-input-bg: #ffffff;
@@ -41,7 +41,16 @@
   background: var(--calc-surface) !important;
   color: var(--calc-text) !important;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  border-radius: 12px;
 }
+
+.calculator-page.theme-light .panel-section :deep(#skill-flow),
+.calculator-page.theme-light #skill-flow {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
+}
+
 
 .calculator-page.theme-light .skill-row,
 .calculator-page.theme-light .skill-card {
@@ -789,6 +798,7 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear:hover 
 }
 
 .calculator-page.theme-light .opt-section .kind-tab,
+.calculator-page.theme-light .opt-section .kind-mode-tab,
 .calculator-page.theme-light .opt-section .detail-tab,
 .calculator-page.theme-light .opt-section .ghost-btn {
   border-color: var(--calc-border) !important;
@@ -797,6 +807,7 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear:hover 
 }
 
 .calculator-page.theme-light .opt-section .kind-tab.active,
+.calculator-page.theme-light .opt-section .kind-mode-tab.active,
 .calculator-page.theme-light .opt-section .detail-tab.active {
   border-color: var(--calc-accent) !important;
   background: var(--calc-accent-bg) !important;
@@ -1638,6 +1649,53 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
   border-top-color: #d5dae3 !important;
 }
 
+/* 额外 Buff 弹窗（Teleport 到 body） */
+[data-theme='light'] .extra-buff-modal .extra-buff-editor .field {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-editor .field input,
+[data-theme='light'] .extra-buff-modal .extra-buff-editor .field select {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-editor .add-btn {
+  border-color: #d5dae3 !important;
+  background: #f6f8fb !important;
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-editor .remove-btn {
+  border-color: rgba(196, 92, 92, 0.45) !important;
+  background: transparent !important;
+  color: #b42318 !important;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-item {
+  border-color: #d5dae3 !important;
+  background: #f6f8fb !important;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-copy strong {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .extra-buff-modal .extra-buff-copy span,
+[data-theme='light'] .extra-buff-modal .extra-buff-empty,
+[data-theme='light'] .extra-buff-modal .extra-buff-hint,
+[data-theme='light'] .extra-buff-modal .buff-picker-footer .muted {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .extra-buff-modal .primary {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #1c212a !important;
+}
+
 [data-theme='light'] .buff-picker-modal .num-stepper {
   border-color: #d5dae3 !important;
   background: #ffffff !important;
@@ -2215,9 +2273,17 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #1c212a !important;
 }
 
-/* 鈥斺€?鏁屾柟涓庣幆澧?鈥斺€?*/
+/* --- 敌方与环境 --- */
 .calculator-page.theme-light .enemy-environment-title {
   color: var(--calc-text) !important;
+}
+
+.calculator-page.theme-light .enemy-environment-desc {
+  color: var(--calc-muted) !important;
+}
+
+.calculator-page.theme-light .opt-section .capped-note {
+  color: #9a6b12 !important;
 }
 
 .calculator-page.theme-light .enemy-environment .input-mode-toggle {

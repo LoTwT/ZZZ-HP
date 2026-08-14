@@ -50,10 +50,14 @@ const props = defineProps<{
   producerAgentLabel?: string
   /** 异常基础乘区角色名 */
   baseAgentLabel?: string
-  /** 增伤/倍率乘区角色名（主 C） */
+  /** 增伤/倍率乘区角色名（招式持有者或异常类触发者） */
   bonusAgentLabel?: string
   /** 异化系数区角色名（蕾米埃尔） */
   mutationAgentLabel?: string
+  /** 类型增伤/倍率面板（异放/耀变=异常类触发者；缺省回落 finalPanel） */
+  bonusFinalPanel?: PanelStats
+  bonusExternalPanel?: PanelStats
+  bonusSources?: BuffModSource[]
 }>()
 
 const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
@@ -276,27 +280,45 @@ function withTotal(groups: StatSourceGroup[], totalText: string, processItems?: 
 
 const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const p = props.calcParts
-  const panel = props.finalPanel
-  const external = props.externalPanel
-  const sources = props.sources
+  const ownerPanel = props.finalPanel
+  const ownerExternal = props.externalPanel
+  const ownerSources = props.sources
   const enemy = props.enemyInput
   const pierceMod = props.pierceMod
 
   const sub = anomalySubKind.value
+  const usesProducerBase =
+    (sub === 'turbulence' ||
+      sub === 'disorder' ||
+      sub === 'anomalyRelease' ||
+      sub === 'radiance') &&
+    Boolean(props.producerFinalPanel && props.producerExternalPanel && props.producerSources)
+  // 通用乘区（含增伤区）在异常基础链上取异常强度提供者
+  const panel = usesProducerBase ? props.producerFinalPanel! : ownerPanel
+  const external = usesProducerBase ? props.producerExternalPanel! : ownerExternal
+  const sources = usesProducerBase ? props.producerSources! : ownerSources
+
   const usesProducerMult =
     (sub === 'turbulence' || sub === 'disorder') &&
     Boolean(props.producerFinalPanel && props.producerExternalPanel && props.producerSources)
-  const multPanel = usesProducerMult ? props.producerFinalPanel! : panel
-  const multExternal = usesProducerMult ? props.producerExternalPanel! : external
-  const multSources = usesProducerMult ? props.producerSources! : sources
-  const producerExtraGroup = usesProducerMult
+  const multPanel = usesProducerMult ? props.producerFinalPanel! : ownerPanel
+  const multExternal = usesProducerMult ? props.producerExternalPanel! : ownerExternal
+  const multSources = usesProducerMult ? props.producerSources! : ownerSources
+  const producerExtraGroup = usesProducerBase
     ? [
         {
-          label: props.producerAgentLabel ?? '异常产生角色',
-          items: ['紊乱/乱流基础与补偿倍率、异常持续时间取产生角色面板'],
+          label: props.producerAgentLabel ?? '异常强度提供者',
+          items: usesProducerMult
+            ? ['异常基础与紊乱/乱流倍率、持续时间取异常强度提供者面板']
+            : ['异常基础乘区（含通用增伤区）取异常强度提供者面板'],
         },
       ]
     : []
+
+  // 类型增伤/倍率/暴击：异放/耀变优先 bonus*；紊乱/乱流/属性异常用招式持有者
+  const bonusPanel = props.bonusFinalPanel ?? ownerPanel
+  const bonusExternal = props.bonusExternalPanel ?? ownerExternal
+  const bonusSources = props.bonusSources ?? ownerSources
 
   const atkGroups = buildStatSourceGroups({
     keys: ['inCombatAtkPercent', 'atk'],
@@ -683,53 +705,53 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     anomalyDmgBonusZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyDmgBonus'],
-        externalPanel: external,
-        sources,
-        finalValues: { anomalyDmgBonus: panel.anomalyDmgBonus },
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: { anomalyDmgBonus: bonusPanel.anomalyDmgBonus },
       }),
-      `异常增伤区 1 + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
+      `异常增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
     ),
     anomalyMultZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyMult'],
-        externalPanel: external,
-        sources,
-        finalValues: { anomalyMult: panel.anomalyMult },
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: { anomalyMult: bonusPanel.anomalyMult },
       }),
-      `异常倍率区 ${formatFormulaNumber(panel.anomalyMult, 2)}% = ${formatFormulaNumber(p.anomalyMultZone)}`,
+      `异常倍率区 ${formatFormulaNumber(bonusPanel.anomalyMult, 2)}% = ${formatFormulaNumber(p.anomalyMultZone)}`,
     ),
     anomalyReleaseCombinedDmgBonusZone: [
       {
         label: '乘区组成',
         items: [
-          `异放增伤区 1 + ${formatFormulaNumber(panel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(1 + panel.anomalyReleaseDmgBonus / 100)}`,
-          `异常增伤区 1 + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `异放综合增伤区 1 + (${formatFormulaNumber(panel.anomalyReleaseDmgBonus, 2)}% + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}%) = ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}`,
+          `异放增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(1 + bonusPanel.anomalyReleaseDmgBonus / 100)}`,
+          `异常增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
+          `异放综合增伤区 1 + (${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%) = ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}`,
         ],
       },
     ],
     anomalyReleaseMultZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyReleaseMult', 'anomalyReleaseMultFactor'],
-        externalPanel: external,
-        sources,
+        externalPanel: bonusExternal,
+        sources: bonusSources,
         finalValues: {
-          anomalyReleaseMult: panel.anomalyReleaseMult,
-          anomalyReleaseMultFactor: panel.anomalyReleaseMultFactor,
+          anomalyReleaseMult: bonusPanel.anomalyReleaseMult,
+          anomalyReleaseMultFactor: bonusPanel.anomalyReleaseMultFactor,
         },
       }),
-      `异放倍率区 ${formatFormulaNumber(panel.anomalyReleaseMult, 2)}% × ${formatFormulaNumber(panel.anomalyReleaseMultFactor, 2)}% = ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
+      `异放倍率区 ${formatFormulaNumber(bonusPanel.anomalyReleaseMult, 2)}% × ${formatFormulaNumber(bonusPanel.anomalyReleaseMultFactor, 2)}% = ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
     ),
     anomalyCombinedCritZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyCritRate', 'anomalyCritDmg', 'anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
-        externalPanel: external,
-        sources,
+        externalPanel: bonusExternal,
+        sources: bonusSources,
         finalValues: {
-          anomalyCritRate: panel.anomalyCritRate,
-          anomalyCritDmg: panel.anomalyCritDmg,
-          anomalyReleaseCritRate: panel.anomalyReleaseCritRate,
-          anomalyReleaseCritDmg: panel.anomalyReleaseCritDmg,
+          anomalyCritRate: bonusPanel.anomalyCritRate,
+          anomalyCritDmg: bonusPanel.anomalyCritDmg,
+          anomalyReleaseCritRate: bonusPanel.anomalyReleaseCritRate,
+          anomalyReleaseCritDmg: bonusPanel.anomalyReleaseCritDmg,
         },
       }),
       [
@@ -741,11 +763,11 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     anomalyCritZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyCritRate', 'anomalyCritDmg'],
-        externalPanel: external,
-        sources,
+        externalPanel: bonusExternal,
+        sources: bonusSources,
         finalValues: {
-          anomalyCritRate: panel.anomalyCritRate,
-          anomalyCritDmg: panel.anomalyCritDmg,
+          anomalyCritRate: bonusPanel.anomalyCritRate,
+          anomalyCritDmg: bonusPanel.anomalyCritDmg,
         },
       }),
       [
@@ -830,11 +852,11 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     disorderDmgBonusZone: withTotal(
       buildStatSourceGroups({
         keys: ['disorderDmgBonus'],
-        externalPanel: external,
-        sources,
-        finalValues: { disorderDmgBonus: panel.disorderDmgBonus },
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: { disorderDmgBonus: bonusPanel.disorderDmgBonus },
       }),
-      `紊乱增伤区 1 + ${formatFormulaNumber(panel.disorderDmgBonus, 2)}% = ${formatFormulaNumber(p.disorderDmgBonusZone)}`,
+      `紊乱增伤区 1 + ${formatFormulaNumber(bonusPanel.disorderDmgBonus, 2)}% = ${formatFormulaNumber(p.disorderDmgBonusZone)}`,
     ),
     disorderZone: [
       ...(producerExtraGroup.length ? producerExtraGroup : []),
@@ -903,11 +925,11 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     turbulenceDmgBonusZone: withTotal(
       buildStatSourceGroups({
         keys: ['turbulenceDmgBonus'],
-        externalPanel: external,
-        sources,
-        finalValues: { turbulenceDmgBonus: panel.turbulenceDmgBonus },
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: { turbulenceDmgBonus: bonusPanel.turbulenceDmgBonus },
       }),
-      `乱流增伤区 1 + ${formatFormulaNumber(panel.turbulenceDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
+      `乱流增伤区 1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
     ),
     turbulenceZone: [
       ...(producerExtraGroup.length ? producerExtraGroup : []),
@@ -943,7 +965,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         label: '加减过程',
         fullWidth: true,
         items: [
-          `1 + ${formatFormulaNumber(panel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}%`,
+          `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
           `= ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
         ],
       },
@@ -996,7 +1018,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       {
         label: '乘区组成',
         items: [
-          `耀变增伤区 ${formatFormulaNumber(1 + panel.radianceDmgBonus / 100)}`,
+          `耀变增伤区 ${formatFormulaNumber(1 + bonusPanel.radianceDmgBonus / 100)}`,
           `异常增伤区 ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
           `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}`,
         ],
@@ -1004,16 +1026,20 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     ],
     radianceMultZone: buildStatSourceGroups({
       keys: ['radianceMult', 'radianceMultFactor'],
-      externalPanel: external,
-      sources,
+      externalPanel: bonusExternal,
+      sources: bonusSources,
       externalKeyMap: { radianceMult: null, radianceMultFactor: null },
+      finalValues: {
+        radianceMult: bonusPanel.radianceMult,
+        radianceMultFactor: bonusPanel.radianceMultFactor,
+      },
     }),
     mutationZone: [
       {
         label: '异化系数',
         items: [
           props.mutationAgentLabel
-            ? `取 ${props.mutationAgentLabel} 局内最终面板的异化系数与修正`
+            ? `由 ${props.mutationAgentLabel} 提供（取该角色局内最终面板的异化系数与修正）`
             : '取队伍中蕾米埃尔局内最终面板的异化系数与修正',
           `异化系数区 ${formatFormulaNumber(p.mutationZone)}`,
         ],

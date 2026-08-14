@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import ExtraBuffGainEditor, {
-  type ExtraBuffGain,
-} from '@/components/calculator/ExtraBuffGainEditor.vue'
-import BuffModSourcesDisplay from '@/components/calculator/BuffModSourcesDisplay.vue'
+import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import StatValueWithSources from '@/components/calculator/StatValueWithSources.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type {
@@ -121,11 +118,11 @@ import {
 } from '@/utils/directDamageDisplay'
 import {
   buildAlignedAnomalyFormulaGroups,
+  formatAnomalyFormulaAgentLabel,
   resolveAnomalyBaseWithMutation,
   type AnomalyFormulaAgentLabels,
 } from '@/utils/anomalyFormulaDisplay'
 import { buildAtkPanelProcessItems, buildDefPanelProcessItems, buildEnemyCombatProcessItems, buildStatSourceGroups, type StatSourceGroup } from '@/utils/statSourceTips'
-import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
 import DirectDamageFormulaAligned from '@/components/calculator/DirectDamageFormulaAligned.vue'
 import DamageOwnerShareBlock from '@/components/calculator/DamageOwnerShareBlock.vue'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
@@ -240,6 +237,26 @@ const emit = defineEmits<{
 const baseDamageSource = ref<BaseDamageSource>('atk')
 const showDetailedResults = ref(false)
 const selectedDamageEventId = ref<string | null>(null)
+/**
+ * calcSuspended 解除后延后恢复伤害汇总，避免切回面板时同步卡死。
+ * 首帧保持 false→true 与挂起态对齐：挂起时关闭，恢复时双 rAF 后再开。
+ */
+const damageCalcEnabled = ref(!props.calcSuspended)
+watch(
+  () => props.calcSuspended,
+  (suspended) => {
+    if (suspended) {
+      damageCalcEnabled.value = false
+      return
+    }
+    damageCalcEnabled.value = false
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!props.calcSuspended) damageCalcEnabled.value = true
+      })
+    })
+  },
+)
 const externalPanel = reactive<PanelStats>(createDefaultExternalPanel())
 const affixCounts = reactive(createEmptyAffixCounts())
 const affixDriveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
@@ -1278,7 +1295,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
 }
 
 const damageEventSummary = computed(() => {
-  if (props.calcSuspended || !props.hits?.length) return null
+  if (props.calcSuspended || !damageCalcEnabled.value || !props.hits?.length) return null
   return summarizeHits(
     props.hits,
     buildHitCalcInput,
@@ -1287,14 +1304,14 @@ const damageEventSummary = computed(() => {
 })
 
 const previewHitSummary = computed(() => {
-  if (props.calcSuspended || !props.previewHits?.length) return null
+  if (props.calcSuspended || !damageCalcEnabled.value || !props.previewHits?.length) return null
   return summarizeHits(props.previewHits, buildHitCalcInput)
 })
 
 watch(
   [damageEventSummary, previewHitSummary],
   () => {
-    if (props.calcSuspended) return
+    if (props.calcSuspended || !damageCalcEnabled.value) return
     const map: Record<string, number> = {}
     const results: Record<string, DamageCalcResult> = {}
     for (const line of damageEventSummary.value?.lines ?? []) {
@@ -1362,6 +1379,8 @@ const damageOwnerShareSummary = computed(() => {
       eventId: line.hit.id,
       displayName: line.displayName,
       total: line.total,
+      perHit: line.perHit,
+      count: line.hit.count,
     })),
     (id) => props.agents.find((item) => item.id === id),
   )
@@ -1381,10 +1400,6 @@ const selectedDamageEventLine = computed(
     damageEventSummary.value?.lines.find((line) => line.hit.id === selectedDamageEventId.value) ??
     null,
 )
-
-function toggleDamageEventSelection(eventId: string) {
-  selectedDamageEventId.value = selectedDamageEventId.value === eventId ? null : eventId
-}
 
 watch(
   () => props.hits,
@@ -1613,27 +1628,39 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === remiel.id)?.name
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
+  const usesTriggerBonus =
+    effectiveSub === 'anomalyRelease' || effectiveSub === 'radiance'
+  const mutationAgent = formatAnomalyFormulaAgentLabel('mutation', remielName)
   if (hit) {
     const nameOf = (id: string | null) =>
       id ? props.agents.find((item) => item.id === id)?.name : undefined
     const ownerName = nameOf(hit.ownerAgentId)
     const powerName = nameOf(hit.anomalyPowerAgentId)
     const triggerName = nameOf(hit.triggerAgentId)
+    const hitUsesTriggerBonus =
+      hit.skill.damageType === 'anomalyRelease' || hit.skill.damageType === 'radiance'
     return {
       baseAgent: skillNeedsDualAgents(hit.skill.damageType)
-        ? (powerName ?? ownerName ?? mainName)
-        : (ownerName ?? mainName),
-      bonusAgent: triggerName ?? ownerName ?? mainName,
-      mutationAgent: remielName,
+        ? formatAnomalyFormulaAgentLabel('anomalyPower', powerName ?? ownerName ?? mainName)
+        : formatAnomalyFormulaAgentLabel('owner', ownerName ?? mainName),
+      bonusAgent: hitUsesTriggerBonus
+        ? formatAnomalyFormulaAgentLabel('trigger', triggerName ?? ownerName ?? mainName)
+        : formatAnomalyFormulaAgentLabel('owner', ownerName ?? mainName),
+      mutationAgent,
     }
   }
   const triggerName = props.triggerAnomalyAgentId
     ? props.agents.find((item) => item.id === props.triggerAnomalyAgentId)?.name
     : undefined
   return {
-    baseAgent: (props.damageKind === 'anomaly' ? triggerName : mainName) ?? mainName,
-    bonusAgent: mainName,
-    mutationAgent: remielName,
+    baseAgent:
+      props.damageKind === 'anomaly'
+        ? formatAnomalyFormulaAgentLabel('anomalyPower', triggerName ?? mainName)
+        : formatAnomalyFormulaAgentLabel('owner', mainName),
+    bonusAgent: usesTriggerBonus
+      ? formatAnomalyFormulaAgentLabel('trigger', triggerName ?? mainName)
+      : formatAnomalyFormulaAgentLabel('owner', mainName),
+    mutationAgent,
   }
 }
 
@@ -1739,18 +1766,42 @@ const valueTips = computed(() => {
   const eventLine = selectedEventDetailLine.value
   const ownerBreakdown = selectedEventOwnerBreakdown.value
   const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
-  const usesOwnerBonusPanel = Boolean(
-    eventLine &&
-      ownerBreakdown &&
-      eventOwnerCtx &&
-      (eventLine.hit.skill.damageType === 'turbulence' ||
-        eventLine.hit.skill.damageType === 'disorder'),
-  )
-  const bonusPanel = usesOwnerBonusPanel ? ownerBreakdown!.finalPanel : panel
-  const bonusExternal = usesOwnerBonusPanel
-    ? resolveOwnerExternalPanel(eventOwnerCtx!.ownerSlotIndex, eventLine!.hit.ownerAgentId)
-    : external
-  const bonusSources = usesOwnerBonusPanel ? ownerBreakdown!.sources : sources
+  // 类型增伤/倍率/暴击：异放/耀变→异常类触发者；紊乱/乱流/属性异常→招式持有者
+  let bonusPanel = panel
+  let bonusExternal = external
+  let bonusSources = sources
+  if (eventLine && eventOwnerCtx) {
+    const damageType = eventLine.hit.skill.damageType
+    const usesTriggerBonus =
+      damageType === 'anomalyRelease' || damageType === 'radiance'
+    const bonusAgentId = usesTriggerBonus
+      ? (eventLine.hit.triggerAgentId ?? eventLine.hit.ownerAgentId)
+      : eventLine.hit.ownerAgentId
+    const bonusSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === bonusAgentId)
+    if (bonusSlotIndex >= 0) {
+      if (!usesTriggerBonus && ownerBreakdown && bonusAgentId === eventLine.hit.ownerAgentId) {
+        bonusPanel = ownerBreakdown.finalPanel
+        bonusExternal = resolveOwnerExternalPanel(eventOwnerCtx.ownerSlotIndex, bonusAgentId)
+        bonusSources = ownerBreakdown.sources
+      } else {
+        const be = resolveOwnerExternalPanel(bonusSlotIndex, bonusAgentId)
+        const bonusElement = props.agents.find((item) => item.id === bonusAgentId)?.element
+        const bb = computeFinalPanel(be, {
+          ...buildPanelCalcContextForSlot(
+            bonusSlotIndex,
+            buildExtraModsForHit(eventLine.hit, bonusAgentId),
+          ),
+          skillContext: buildSkillContextFromHit(eventLine.hit, bonusElement),
+        })
+        bonusPanel =
+          damageType === 'radiance'
+            ? applyRadianceBonusMultOverrides(bb.finalPanel, eventLine.hit.multOverrides)
+            : bb.finalPanel
+        bonusExternal = be
+        bonusSources = bb.sources
+      }
+    }
+  }
 
   const sub = effectiveAnomalySubKind.value
   const usesProducerBase =
@@ -2266,44 +2317,44 @@ const valueTips = computed(() => {
     anomalyMultZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyMult'],
-        externalPanel: external,
-        sources,
-        finalValues: { anomalyMult: panel.anomalyMult },
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: { anomalyMult: bonusPanel.anomalyMult },
       }),
-      `异常倍率区 ${formatFormulaNumber(panel.anomalyMult, 2)}% = ${formatFormulaNumber(p.anomalyMultZone)}`,
+      `异常倍率区 ${formatFormulaNumber(bonusPanel.anomalyMult, 2)}% = ${formatFormulaNumber(p.anomalyMultZone)}`,
     ),
     anomalyReleaseCombinedDmgBonusZone: [
       {
         label: '乘区组成',
         items: [
-          `异放增伤区 1 + ${formatFormulaNumber(panel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(1 + panel.anomalyReleaseDmgBonus / 100)}`,
-          `异常增伤区 1 + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `异放综合增伤区 1 + (${formatFormulaNumber(panel.anomalyReleaseDmgBonus, 2)}% + ${formatFormulaNumber(panel.anomalyDmgBonus, 2)}%) = ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}`,
+          `异放增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(1 + bonusPanel.anomalyReleaseDmgBonus / 100)}`,
+          `异常增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
+          `异放综合增伤区 1 + (${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%) = ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}`,
         ],
       },
     ],
     anomalyReleaseMultZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyReleaseMult', 'anomalyReleaseMultFactor'],
-        externalPanel: external,
-        sources,
+        externalPanel: bonusExternal,
+        sources: bonusSources,
         finalValues: {
-          anomalyReleaseMult: panel.anomalyReleaseMult,
-          anomalyReleaseMultFactor: panel.anomalyReleaseMultFactor,
+          anomalyReleaseMult: bonusPanel.anomalyReleaseMult,
+          anomalyReleaseMultFactor: bonusPanel.anomalyReleaseMultFactor,
         },
       }),
-      `异放倍率区 ${formatFormulaNumber(panel.anomalyReleaseMult, 2)}% × ${formatFormulaNumber(panel.anomalyReleaseMultFactor, 2)}% = ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
+      `异放倍率区 ${formatFormulaNumber(bonusPanel.anomalyReleaseMult, 2)}% × ${formatFormulaNumber(bonusPanel.anomalyReleaseMultFactor, 2)}% = ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
     ),
     anomalyCombinedCritZone: withTotal(
       buildStatSourceGroups({
         keys: ['anomalyCritRate', 'anomalyCritDmg', 'anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
-        externalPanel: external,
-        sources,
+        externalPanel: bonusExternal,
+        sources: bonusSources,
         finalValues: {
-          anomalyCritRate: panel.anomalyCritRate,
-          anomalyCritDmg: panel.anomalyCritDmg,
-          anomalyReleaseCritRate: panel.anomalyReleaseCritRate,
-          anomalyReleaseCritDmg: panel.anomalyReleaseCritDmg,
+          anomalyCritRate: bonusPanel.anomalyCritRate,
+          anomalyCritDmg: bonusPanel.anomalyCritDmg,
+          anomalyReleaseCritRate: bonusPanel.anomalyReleaseCritRate,
+          anomalyReleaseCritDmg: bonusPanel.anomalyReleaseCritDmg,
         },
       }),
       [
@@ -2612,7 +2663,7 @@ const valueTips = computed(() => {
       {
         label: '乘区组成',
         items: [
-          `耀变增伤区 ${formatFormulaNumber(1 + panel.radianceDmgBonus / 100)}`,
+          `耀变增伤区 ${formatFormulaNumber(1 + bonusPanel.radianceDmgBonus / 100)}`,
           `异常增伤区 ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
           `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}`,
         ],
@@ -2620,9 +2671,13 @@ const valueTips = computed(() => {
     ],
     radianceMultZone: buildStatSourceGroups({
       keys: ['radianceMult', 'radianceMultFactor'],
-      externalPanel: panel,
-      sources,
+      externalPanel: bonusExternal,
+      sources: bonusSources,
       externalKeyMap: { radianceMult: null, radianceMultFactor: null },
+      finalValues: {
+        radianceMult: bonusPanel.radianceMult,
+        radianceMultFactor: bonusPanel.radianceMultFactor,
+      },
     }),
     specialMultZone: buildStatSourceGroups({
       keys: ['specialMult', 'specialMultFactor'],
@@ -2711,32 +2766,62 @@ const valueTips = computed(() => {
 })
 
 const selectedEventDmgMultiplierTips = computed(() => {
-  const breakdown = selectedEventOwnerBreakdown.value
+  const line = selectedEventDetailLine.value
   const p = displayCalcParts.value
-  if (!breakdown) return [] as StatSourceGroup[]
-  const ownerId = selectedEventDetailLine.value!.hit.ownerAgentId
-  const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === ownerId)
-  const external = resolveOwnerExternalPanel(
-    ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
-    ownerId,
-  )
+  if (!line) return valueTips.value.dmgMultiplier
+
+  // 紊乱/乱流/异放/耀变：通用增伤区取异常强度提供者；直伤与属性异常取招式持有者
+  const damageType = line.hit.skill.damageType
+  const usesProducerBase =
+    damageType === 'disorder' ||
+    damageType === 'turbulence' ||
+    damageType === 'anomalyRelease' ||
+    damageType === 'radiance'
+  const agentId =
+    usesProducerBase && line.hit.anomalyPowerAgentId
+      ? line.hit.anomalyPowerAgentId
+      : line.hit.ownerAgentId
+  const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
+  if (slotIndex < 0) return valueTips.value.dmgMultiplier
+
+  const external = resolveOwnerExternalPanel(slotIndex, agentId)
+  const element = props.agents.find((item) => item.id === agentId)?.element
+  const breakdown = computeFinalPanel(external, {
+    ...buildPanelCalcContextForSlot(slotIndex, buildExtraModsForHit(line.hit, agentId)),
+    skillContext: buildSkillContextFromHit(line.hit, element),
+  })
   const sources = breakdown.sources
   const skillBonus = breakdown.totalMods.skillDmgBonus ?? 0
   const generalBonus = breakdown.finalPanel.dmgBonus - skillBonus
+  const agentName = props.agents.find((item) => item.id === agentId)?.name
+  const roleLabel = usesProducerBase ? '异常强度提供者' : '招式持有者'
   const generalGroups = buildStatSourceGroups({
     keys: ['dmgBonus'],
     externalPanel: external,
     sources,
     finalValues: { dmgBonus: generalBonus },
-  }).map((group) => ({ ...group, label: `通用 · ${group.label}` }))
+  }).map((group) => ({
+    ...group,
+    label: `通用 · ${group.label}`,
+  }))
   const skillGroups = buildStatSourceGroups({
     keys: ['skillDmgBonus'],
     externalPanel: external,
     sources,
     finalValues: { skillDmgBonus: skillBonus },
-  }).map((group) => ({ ...group, label: `招式 · ${group.label}` }))
+  }).map((group) => ({
+    ...group,
+    label: `招式 · ${group.label}`,
+  }))
   return withTotal(
-    [...generalGroups, ...skillGroups],
+    [
+      {
+        label: '面板来源',
+        items: [`${roleLabel}${agentName ? ` · ${agentName}` : ''}`],
+      },
+      ...generalGroups,
+      ...skillGroups,
+    ],
     `增伤区 1 + ${formatFormulaNumber(generalBonus, 2)}% + ${formatFormulaNumber(skillBonus, 2)}% = ${formatFormulaNumber(p.dmgMultiplier)}`,
   )
 })
@@ -2930,6 +3015,7 @@ defineExpose({
   resolveMultDefaultsForEvent,
   getAttrDefaultsForSlot,
   getPanelSourceValuesForSlot,
+  panelBreakdown,
   enemyInput,
   applyEnemyInput(next: import('@/utils/enemyResistance').DamageEnemyInput) {
     Object.assign(enemyInput.value, normalizeDamageEnemyInput(next))
@@ -3202,15 +3288,6 @@ defineExpose({
           </details>
         </section>
 
-        <section class="panel-block extra-mods-block">
-          <header class="panel-block-header">
-            <h3>额外 Buff 增益</h3>
-            <p>
-              未录入角色/音擎/邦布数据时的补充增益。「自身」= 编队里正在编辑的角色，不跟招式持有者走。
-            </p>
-          </header>
-          <ExtraBuffGainEditor v-model="extraGains" :skill-subcategories="skillSubcategories" />
-        </section>
       </div>
 
       <section class="panel-block panel-block--final panel-layout-right">
@@ -3230,21 +3307,8 @@ defineExpose({
       </section>
     </div>
 
-    <details class="buff-breakdown">
-      <summary>查看局内增益汇总数值</summary>
-      <ul class="mods-summary">
-        <li v-for="field in BUFF_STAT_FIELDS" :key="field.key">
-          <span>{{ buffStatFieldLabel(field) }}</span>
-          <strong>{{ panelBreakdown.totalMods[field.key] }}</strong>
-        </li>
-      </ul>
-      <BuffModSourcesDisplay
-        :sources="panelBreakdown.sources"
-        :skill-subcategories="skillSubcategories"
-      />
-    </details>
-
-    <EnemyEnvironmentSection v-model="enemyInput" />
+    <!-- 父页可插入招式流程等：构图上落在面板区与伤害结果之间 -->
+    <slot name="after-setup" />
 
     <div class="result-mode-bar">
       <h3 class="enemy-title result-mode-title">伤害结果</h3>
@@ -3267,14 +3331,10 @@ defineExpose({
         v-else-if="hasDamageEventResults"
         :summary="damageOwnerShareSummary"
         :selected-event-id="selectedDamageEventId"
+        :total-label="damageEventTotalLabel"
+        hint="总伤期望已并入本区。点击产生者展开事件；若要看公式分解，请先开启「显示详细数据」。"
         @select-event="selectDamageEventFromShare"
       />
-      <div v-if="hasDamageEventResults" class="result-grid result-grid-summary">
-        <p class="result-total">
-          {{ damageEventTotalLabel }}：
-          <span>{{ formatNumber(damageEventSummary!.grandTotal) }}</span>
-        </p>
-      </div>
     </template>
 
     <template v-else-if="!anomalyCalcBlockedReason">
@@ -3283,41 +3343,16 @@ defineExpose({
       v-if="hasDamageEventResults"
       :summary="damageOwnerShareSummary"
       :selected-event-id="selectedDamageEventId"
+      :total-label="damageEventTotalLabel"
+      hint="总伤期望已并入本区。点击产生者展开事件明细，再点事件可查看下方计算过程。"
       @select-event="selectDamageEventFromShare"
     />
-    <section v-if="hasDamageEventResults" class="event-summary-block">
-      <h3 class="result-section-title event-summary-title">{{ damageEventTotalLabel }}</h3>
-      <ul class="event-summary-list">
-        <li
-          v-for="line in damageEventSummary!.lines"
-          :key="line.hit.id"
-          class="event-summary-item"
-          :class="{ 'event-summary-item--active': selectedDamageEventId === line.hit.id }"
-          role="button"
-          tabindex="0"
-          @click="toggleDamageEventSelection(line.hit.id)"
-          @keydown.enter.prevent="toggleDamageEventSelection(line.hit.id)"
-          @keydown.space.prevent="toggleDamageEventSelection(line.hit.id)"
-        >
-          <span class="event-summary-name">
-            {{ line.displayName }}
-            <span v-if="line.hit.count > 1" class="event-summary-count">×{{ line.hit.count }}</span>
-          </span>
-          <span class="event-summary-damage">
-            单次 {{ formatNumber(line.perHit) }} · 合计 {{ formatNumber(line.total) }}
-          </span>
-        </li>
-      </ul>
-      <p class="result-total event-summary-total">
-        {{ damageEventTotalLabel }}：{{ formatNumber(damageEventSummary!.grandTotal) }}
-      </p>
-    </section>
 
     <p v-if="hasDamageEvents && !showGeneralZone && displayCalcParts.remielSelfRadianceActive" class="anomaly-block-hint">
       蕾米埃尔本人耀变不使用通用乘区，详见下方耀变公式分解
     </p>
     <p v-else-if="hasDamageEvents && !showGeneralZone" class="anomaly-block-hint">
-      选中上方伤害事件后可查看通用乘区与详细分解
+      在上方「产生者伤害占比」中点选事件后，可查看通用乘区与详细分解
     </p>
 
     <template v-if="showGeneralZone">
@@ -4386,5 +4421,14 @@ defineExpose({
   .panel-layout {
     grid-template-columns: 1fr;
   }
+}
+
+.panel-section :deep(.skill-flow-section),
+.panel-section :deep(#skill-flow) {
+  margin: 1rem 0 0.35rem;
+  border: 1px solid #2a2d33;
+  border-radius: 12px;
+  background: #12151a;
+  padding: 0.85rem 1rem;
 }
 </style>

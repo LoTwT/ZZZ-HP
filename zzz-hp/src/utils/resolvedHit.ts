@@ -318,9 +318,10 @@ export function applyHitPanelMods(
 export function buildGenericPanelSkillContext(options?: {
   element?: string
   staggerPhase?: StaggerPhase
+  damageKind?: DamageCalcKind
 }): SkillCalcContext {
   return {
-    damageKind: 'direct',
+    damageKind: options?.damageKind ?? 'direct',
     categoryId: 'basic',
     subcategoryId: null,
     coords: [],

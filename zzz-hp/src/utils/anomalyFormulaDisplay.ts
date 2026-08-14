@@ -2,12 +2,30 @@ import type { AnomalyDamageSubKind } from '@/types/calculator'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 
 export interface AnomalyFormulaAgentLabels {
-  /** 异常基础乘区所属角色（产生角色或 owner） */
+  /**
+   * 异常基础乘区所属角色展示名（建议带身份前缀，如「异常强度提供者 · 爱丽丝」）
+   */
   baseAgent?: string
-  /** 增伤/倍率/暴击等 bonus 乘区所属角色（紊乱/乱流为事件 owner，异放/耀变为 main C） */
+  /**
+   * 增伤/倍率/暴击等 bonus 乘区所属角色展示名
+   * （紊乱/乱流/异常 → 招式持有者；异放/耀变 → 异常类触发者）
+   */
   bonusAgent?: string
-  /** 异化系数区所属角色（蕾米埃尔） */
+  /** 异化系数区所属角色展示名（如「异化系数 · 蕾米埃尔」） */
   mutationAgent?: string
+}
+
+/** 公式标题上的身份前缀，避免只显示角色名时误解来源 */
+export function formatAnomalyFormulaAgentLabel(
+  role: 'anomalyPower' | 'owner' | 'trigger' | 'mutation',
+  agentName: string | null | undefined,
+): string | undefined {
+  const name = agentName?.trim()
+  if (!name) return undefined
+  if (role === 'anomalyPower') return `异常强度提供者 · ${name}`
+  if (role === 'owner') return `招式持有者 · ${name}`
+  if (role === 'trigger') return `异常类触发者 · ${name}`
+  return `异化系数 · ${name}`
 }
 
 export interface AlignedFormulaTerm {
@@ -89,12 +107,7 @@ export function buildAlignedAnomalyFormulaGroups(
   }
   const base: AlignedAnomalyFormulaGroup = {
     key: 'anomalyBaseExpected',
-    title: remielSelf ? '蕾米埃尔异常基础' : '异常基础',
-    hint: remielSelf
-      ? '（局内攻/精不含队友增益；已含异化系数与双等级区）'
-      : p.mutationZone > 1
-        ? '（含异化系数；不含异常增伤/倍率/暴击）'
-        : '（不含异常增伤/倍率/暴击）',
+    title: remielSelf ? '蕾米埃尔异常基础' : '异常基础期望',
     agentLabel: labels?.baseAgent,
     terms: baseTerms,
     result: formatNumber(baseWithMutation),

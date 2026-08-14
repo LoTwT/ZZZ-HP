@@ -61,6 +61,10 @@ export interface DamageOwnerEventShare {
   eventId: string
   displayName: string
   total: number
+  /** 单次期望（可选，用于明细展示） */
+  perHit?: number
+  /** 次数（可选） */
+  count?: number
   /** 占全部可计算事件总伤的比例 */
   ratio: number
   /** 占该产生者合计伤害的比例 */
@@ -86,6 +90,8 @@ export interface DamageOwnerShareInput {
   eventId: string
   displayName: string
   total: number
+  perHit?: number
+  count?: number
 }
 
 /** 按归属者汇总可计算招式的伤害占比 */
@@ -113,6 +119,8 @@ export function summarizeDamageByOwner(
       eventId,
       displayName,
       total,
+      perHit: item.perHit,
+      count: item.count,
       ratio: 0,
       ownerRatio: 0,
     })
