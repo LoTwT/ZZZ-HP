@@ -22,6 +22,7 @@ import {
   listDamageEventModes,
   upsertDamageEventMode,
 } from '../services/damageEventModeService.js'
+import { deleteSkill, listSkills, upsertSkill } from '../services/skillLibraryService.js'
 import { fail, success } from '../utils/response.js'
 
 export async function getCalculatorBuffs(_req, res) {
@@ -84,6 +85,33 @@ export async function removeFollowUpSkillRule(req, res) {
     return success(res, data, '追加攻击规则删除成功')
   } catch (err) {
     return fail(res, err.message || '追加攻击规则删除失败', 400, { error: err.message })
+  }
+}
+
+export async function getSkills(_req, res) {
+  try {
+    const data = await listSkills()
+    return success(res, data)
+  } catch (err) {
+    return fail(res, err.message || '获取招式库失败', 500, { error: err.message })
+  }
+}
+
+export async function saveSkill(req, res) {
+  try {
+    const data = await upsertSkill(req.body)
+    return success(res, data, '招式保存成功')
+  } catch (err) {
+    return fail(res, err.message || '招式保存失败', 400, { error: err.message })
+  }
+}
+
+export async function removeSkill(req, res) {
+  try {
+    const data = await deleteSkill(req.params.id)
+    return success(res, data, '招式删除成功')
+  } catch (err) {
+    return fail(res, err.message || '招式删除失败', 400, { error: err.message })
   }
 }
 

@@ -4,7 +4,7 @@ export type AdminCalculatorPanel =
   | 'bangboo'
   | 'drive-disc'
   | 'skill-subcategory'
-  | 'damage-event'
+  | 'skill-library'
 
 export type SupportStatNeed =
   | 'hp'
@@ -62,6 +62,23 @@ export type SkillCategoryId =
 
 /** 增益招式目标：真实大类，或伪大类「追加攻击」 */
 export type BuffSkillTargetId = SkillCategoryId | 'follow_up'
+
+/**
+ * 招式类型（多选）。取代旧「招式大类」，并把旧的 3 条公共招式小类提升为类型。
+ * 清单、蕴含关系与「类型 → 旧坐标」映射见 `utils/skillTypes.ts`。
+ */
+export type SkillTypeId =
+  | 'basic'
+  | 'dodge'
+  | 'dash'
+  | 'dodgeCounter'
+  | 'assist'
+  | 'special'
+  | 'specialBasic'
+  | 'specialEnhanced'
+  | 'chain'
+  | 'ultimate'
+  | 'followUp'
 
 export const SKILL_CATEGORY_OPTIONS: { id: SkillCategoryId; label: string }[] = [
   { id: 'basic', label: '普通攻击' },
@@ -405,6 +422,46 @@ export interface DamageEventMultOverrides {
   specialMultFactor?: number | null
 }
 
+// ===================== 招式库（新架构） =====================
+
+/** 招式的伤害类型，决定走哪套公式。一条招式有且仅有一个 */
+export type SkillDamageType = DamageEventKind
+
+export type SkillSource = 'preset' | 'custom'
+
+/**
+ * 招式：伤害定义。存在全局招式库里（预设在后端，自定义在浏览器）。
+ *
+ * 与准备阶段/流程的关系：准备阶段按 `id` 绑定本条，不复制定义；
+ * 管理员改预设且用户未覆写时，方案自动跟着新预设。
+ */
+export interface Skill {
+  id: string
+  name: string
+  /** 空 = 公共招式（全部角色可见）；有值 = 该角色专属 */
+  agentId: string
+  /**
+   * 公共招式绑定的元素。空 = 不按元素过滤；有值时只对同属性角色展示。
+   * 公共属性异常用这个字段按当前角色 `element` 拆条。
+   */
+  element?: string
+  source: SkillSource
+  damageType: SkillDamageType
+  /** 招式类型，多选。异常类留空 → 招式限定 Buff 一律不命中 */
+  skillTypes: SkillTypeId[]
+  /**
+   * 增益锚点：旧「招式小类」id，至多一个，可不选。
+   * 唯一作用是让「专门加强某一招」的 Buff 认出这条招式；异常类留空。
+   */
+  buffAnchorId?: string | null
+  /** 基础倍率%（0 = 未设置，回落面板值，与旧招式小类语义一致） */
+  baseMult: number
+  /** 基础倍率乘算修正%（默认 100 = ×1） */
+  baseMultFactor?: number
+  /** 决算倍率%，仅直伤可选 */
+  settlementMult?: number
+}
+
 /** 管理端：计算时再选产生角色 */
 export const TRIGGER_AGENT_AT_CALC = '__at_calc__' as const
 
@@ -421,10 +478,25 @@ export interface DamageEventMode {
   events: DamageEvent[]
 }
 
+/**
+ * 招式在 Buff 限定体系里的一个坐标。
+ * 新架构一条招式可有多个招式类型 + 一个增益锚点，故需要多坐标。
+ */
+export interface SkillMatchCoord {
+  category: SkillCategoryId
+  subcategoryId: string | null
+}
+
 export interface SkillCalcContext {
   damageKind: DamageCalcKind
   categoryId: SkillCategoryId
   subcategoryId: string | null
+  /**
+   * 多坐标匹配，Buff 命中任意一个坐标即生效。
+   * - 不提供：回落 categoryId + subcategoryId 单坐标（旧行为）
+   * - 提供空数组：该招式无任何招式类型（异常类），招式限定 Buff 一律不命中
+   */
+  coords?: SkillMatchCoord[]
   element?: string
   staggerPhase?: StaggerPhase
   /** 当前招式是否视为追加攻击 */

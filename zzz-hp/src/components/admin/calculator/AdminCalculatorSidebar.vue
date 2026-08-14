@@ -33,8 +33,8 @@ defineProps<{
   bangbooCanDelete?: boolean
   driveDiscSaving?: boolean
   driveDiscCanDelete?: boolean
-  damageEventSaving?: boolean
-  damageEventCanDelete?: boolean
+  skillLibrarySaving?: boolean
+  skillLibraryCanDelete?: boolean
 }>()
 
 const activePanel = defineModel<AdminCalculatorPanel>('activePanel', { default: 'agent' })
@@ -48,7 +48,7 @@ const emit = defineEmits<{
   bangbooAction: [actionId: BangbooBuffEditActionId]
   scrollDriveDiscSection: [sectionId: (typeof DRIVE_DISC_BUFF_EDIT_SECTIONS)[number]['id']]
   driveDiscAction: [actionId: DriveDiscBuffEditActionId]
-  damageEventAction: [actionId: 'save' | 'delete']
+  skillLibraryAction: [actionId: 'save' | 'delete']
 }>()
 
 const panels: { id: AdminCalculatorPanel; label: string }[] = [
@@ -56,8 +56,8 @@ const panels: { id: AdminCalculatorPanel; label: string }[] = [
   { id: 'wengine', label: '编辑音擎增益' },
   { id: 'bangboo', label: '编辑邦布增益' },
   { id: 'drive-disc', label: '编辑驱动盘增益' },
-  { id: 'skill-subcategory', label: '招式小类管理' },
-  { id: 'damage-event', label: '伤害事件模式' },
+  { id: 'skill-subcategory', label: '招式小类 / 增益锚点' },
+  { id: 'skill-library', label: '招式库' },
 ]
 </script>
 
@@ -231,30 +231,30 @@ const panels: { id: AdminCalculatorPanel; label: string }[] = [
         </div>
 
         <div
-          v-if="panel.id === 'damage-event'"
+          v-if="panel.id === 'skill-library'"
           class="panel-subnav-wrap"
-          :class="{ expanded: activePanel === 'damage-event' }"
+          :class="{ expanded: activePanel === 'skill-library' }"
         >
           <div class="panel-subnav-inner">
-            <nav class="panel-subnav" :aria-hidden="activePanel !== 'damage-event'">
+            <nav class="panel-subnav" :aria-hidden="activePanel !== 'skill-library'">
               <div class="panel-subnav-actions">
                 <button
                   type="button"
                   class="panel-subnav-btn action"
-                  :disabled="damageEventSaving"
-                  :tabindex="activePanel === 'damage-event' ? 0 : -1"
-                  @click="emit('damageEventAction', 'save')"
+                  :disabled="skillLibrarySaving"
+                  :tabindex="activePanel === 'skill-library' ? 0 : -1"
+                  @click="emit('skillLibraryAction', 'save')"
                 >
-                  {{ damageEventSaving ? '保存中...' : '保存模式' }}
+                  {{ skillLibrarySaving ? '保存中...' : '保存招式' }}
                 </button>
                 <button
                   type="button"
                   class="panel-subnav-btn danger"
-                  :disabled="!damageEventCanDelete"
-                  :tabindex="activePanel === 'damage-event' ? 0 : -1"
-                  @click="emit('damageEventAction', 'delete')"
+                  :disabled="!skillLibraryCanDelete"
+                  :tabindex="activePanel === 'skill-library' ? 0 : -1"
+                  @click="emit('skillLibraryAction', 'delete')"
                 >
-                  删除模式
+                  删除招式
                 </button>
               </div>
             </nav>

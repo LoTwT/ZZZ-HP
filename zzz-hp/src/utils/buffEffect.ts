@@ -15,6 +15,7 @@ import type {
   CharacterAttrKey,
   FollowUpSkillRule,
   SkillCalcContext,
+  SkillMatchCoord,
   SkillCategoryId,
   SkillSubcategory,
 } from '@/types/calculator'
@@ -537,22 +538,30 @@ export function effectMatchesContext(
   return false
 }
 
+/**
+ * 未提供 coords → 回落单坐标（旧调用方行为不变）。
+ * 提供了空数组 → 该招式没有任何招式类型（异常类），招式限定 Buff 一律不命中。
+ */
+export function resolveSkillMatchCoords(ctx: SkillCalcContext): SkillMatchCoord[] {
+  if (ctx.coords) return ctx.coords
+  return [{ category: ctx.categoryId, subcategoryId: ctx.subcategoryId }]
+}
+
 function skillTargetMatchesContext(
   target: BuffSkillTarget,
   ctx: SkillCalcContext,
 ): boolean {
+  const coords = resolveSkillMatchCoords(ctx)
   if (target.category === 'follow_up') {
     if (!ctx.isFollowUp) return false
-    if (target.subcategoryId) {
-      return target.subcategoryId === ctx.subcategoryId
-    }
-    return true
+    if (!target.subcategoryId) return true
+    return coords.some((coord) => coord.subcategoryId === target.subcategoryId)
   }
-  if (target.category !== ctx.categoryId) return false
-  if (target.subcategoryId) {
-    return target.subcategoryId === ctx.subcategoryId
-  }
-  return true
+  return coords.some(
+    (coord) =>
+      coord.category === target.category &&
+      (!target.subcategoryId || coord.subcategoryId === target.subcategoryId),
+  )
 }
 
 /** 根据小类打标与整大类规则判断当前招式是否视为追加攻击 */

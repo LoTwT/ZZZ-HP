@@ -19,15 +19,21 @@ import type {
   DamageEventKind,
   DamageEventMultOverrides,
   DriveDiscBuffDoc,
+  SkillCalcContext,
   SkillSubcategory,
   WengineBuffDoc,
 } from '@/types/calculator'
 import { CHARACTER_ATTR_OPTIONS } from '@/types/calculator'
 import type { DamageCalcPanelSnapshot } from '@/types/damageCalcHistory'
 import {
+  applyAgentBaseToPanelStats,
   createDefaultExternalPanel,
   createDefaultAffixDriveDiscMainStats,
   createEmptyAffixCounts,
+  createExternalPanelFromAgentBase,
+  isPlaceholderExternalPanel,
+  type AffixCounts,
+  type AffixDriveDiscMainStats,
   type PanelCalcMode,
   type PanelStats,
 } from '@/types/calculatorPanel'
@@ -67,7 +73,7 @@ import {
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
-import { computeDamageResult, type DamageCalcInput } from '@/utils/damageCalc'
+import { computeDamageResult, type DamageCalcInput, type DamageCalcResult } from '@/utils/damageCalc'
 import {
   normalizeDamageEnemyInput,
   resolveEnemyResistanceForElement,
@@ -76,22 +82,25 @@ import {
   type EnemyResistanceElement,
 } from '@/utils/enemyResistance'
 import {
-  eventNeedsAnomalyProducer,
-  getDamageEventSkipReason,
   isTurbulenceTeamCompositionOk,
   mapEventKindToCalc,
   pickEventDamage,
-  summarizeDamageEvents,
   applyOwnerPanelMultOverrides,
   applyRadianceBonusMultOverrides,
   resolveRadianceBonusMultDefaults,
-  type DamageEventLine,
 } from '@/utils/damageEvent'
-import { collectParticipantAgentIds, resolveEventOwnerAgentId, summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
 import {
-  buildSkillContextFromDamageEvent,
-  extraGainMatchesProfession,
-  resolveExtraGainValue,
+  buildGenericPanelSkillContext,
+  buildSkillContextFromHit,
+  getHitSkipReason,
+  skillNeedsDualAgents,
+  applyHitPanelMods,
+  summarizeHits,
+  type HitLine,
+  type ResolvedHit,
+} from '@/utils/resolvedHit'
+import { summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
+import {
   mergeExtraModsForEvent,
 } from '@/utils/extraBuffCalc'
 import {
@@ -121,7 +130,6 @@ import DirectDamageFormulaAligned from '@/components/calculator/DirectDamageForm
 import DamageOwnerShareBlock from '@/components/calculator/DamageOwnerShareBlock.vue'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 
 const MB_PROFESSION = '命破'
 
@@ -195,12 +203,14 @@ const props = defineProps<{
   driveDiscs: DriveDiscBuffDoc[]
   selectedBangbooId: string
   bangbooRefine: number
+  /** 计算页正在编辑的编队槽位；局外面板跟这个人走，与主C无关 */
+  editedSlotIndex: number
   calcMode: PanelCalcMode
   sectionId?: string
   damageKind?: import('@/types/calculator').DamageCalcKind
   anomalySubKind?: AnomalyDamageSubKind
   triggerAnomalyAgentId?: string | null
-  /** 异常非主 C 槽位局外面板，key = agentId */
+  /** 各角色局外面板，key = agentId；当前编辑槽位用 live 编辑器，其余读这里 */
   anomalySlotPanels?: Record<string, PanelStats>
   /** 转模增益角色局外面板（仅转模来源属性），key = agentId */
   convertSlotPanels?: ConvertSlotPanels
@@ -208,7 +218,10 @@ const props = defineProps<{
   skillSubcategoryId?: string | null
   slotBuffSelections?: MultiSlotBuffSelection | null
   staggerPhase?: import('@/types/calculator').StaggerPhase
-  damageEvents?: DamageEvent[]
+  /** 流程展开后的结算列表，来自 resolveFlow */
+  hits?: ResolvedHit[]
+  /** 招式库 / 准备招式的单次预览，不计入流程总伤 */
+  previewHits?: ResolvedHit[]
   /** 为 true 时跳过伤害事件汇总等非必要重算（如最优词条模式） */
   calcSuspended?: boolean
   /** 场地 / 环境 Buff（危局全局、Boss 场地、防卫房间） */
@@ -220,6 +233,8 @@ const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [
 const emit = defineEmits<{
   'update:anomalySlotPanels': [value: Record<string, PanelStats>]
   'update:convertSlotPanels': [value: ConvertSlotPanels]
+  'update:hitDamages': [value: Record<string, number>]
+  'update:hitCalcResults': [value: Record<string, DamageCalcResult>]
 }>()
 
 const baseDamageSource = ref<BaseDamageSource>('atk')
@@ -229,25 +244,35 @@ const externalPanel = reactive<PanelStats>(createDefaultExternalPanel())
 const affixCounts = reactive(createEmptyAffixCounts())
 const affixDriveDiscMainStats = reactive(createDefaultAffixDriveDiscMainStats())
 
-function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
+type AgentAffixState = {
+  affixCounts: AffixCounts
+  affixDriveDiscMainStats: AffixDriveDiscMainStats
+}
+const affixStateByAgent = reactive<Record<string, AgentAffixState>>({})
+
+function captureAffixState(): AgentAffixState {
+  return {
+    affixCounts: { ...affixCounts },
+    affixDriveDiscMainStats: { ...affixDriveDiscMainStats },
+  }
+}
+
+function applyAffixState(state: AgentAffixState | undefined) {
+  Object.assign(affixCounts, createEmptyAffixCounts(), state?.affixCounts)
+  Object.assign(
+    affixDriveDiscMainStats,
+    createDefaultAffixDriveDiscMainStats(),
+    state?.affixDriveDiscMainStats,
+  )
+}
+
+function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const mainId = mainAgent.value?.id ?? ''
-  const ownerAgentId = resolveEventOwnerAgentId(event, mainId)
-  const skillCtx = buildSkillContextFromDamageEvent(event, {
-    ownerAgentId,
-    agents: props.agents,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-    resolveBuffElement: (agentId) => {
-      const agent = props.agents.find((item) => item.id === agentId)
-      return agent?.element
-    },
-    resolveTriggerElement: resolveEventTriggerElement,
-  })
-  return mergeExtraModsForEvent(extraGains.value, event, skillCtx, {
+  const ownerElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  return mergeExtraModsForEvent(extraGains.value, buildSkillContextFromHit(hit, ownerElement), {
     slotAgentId,
-    ownerAgentId,
-    staggerPhase: props.staggerPhase ?? 'stagger',
+    editedAgentId: mainAgent.value?.id ?? '',
+    staggerPhase: hit.staggerPhase,
     resolveAgentProfession: (agentId) =>
       props.agents.find((item) => item.id === agentId)?.profession,
     teamSlots: props.teamSlots,
@@ -255,33 +280,27 @@ function buildExtraModsForEvent(event: DamageEvent, slotAgentId: string) {
   })
 }
 
-/** 主 C 局内面板汇总用的额外 Buff（无事件时全量；有事件时按首条主 C 事件或首条事件上下文匹配 scope） */
+/** 局内通用面板上的额外 Buff：只吃通用，不跟流程第一条招式走 */
 function buildExtraModsForMainPanel(): BuffStatModifiers {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const phase = props.staggerPhase ?? 'stagger'
-  if (!props.damageEvents?.length) {
-    let total = createEmptyBuffStatModifiers()
-    const mainId = mainAgent.value?.id ?? ''
-    const mainProfession = props.agents.find((item) => item.id === mainId)?.profession
-    for (const gain of extraGains.value) {
-      const situation = gain.applySituation ?? 'global'
-      if (situation === 'stagger' && phase !== 'stagger') continue
-      if (situation === 'non_stagger' && phase !== 'normal') continue
-      if (!extraGainMatchesProfession(gain, mainProfession)) continue
-      const amount = resolveExtraGainValue(gain, props.teamSlots, props.agents)
-      if (amount == null) continue
-      const next = createEmptyBuffStatModifiers()
-      next[gain.stat as BuffStatKey] = amount
-      total = mergeBuffStatModifiers(total, next)
-    }
-    return total
-  }
   const mainId = mainAgent.value?.id ?? ''
-  const ownedEvent = props.damageEvents.find(
-    (event) => resolveEventOwnerAgentId(event, mainId) === mainId,
+  const phase = props.staggerPhase ?? 'stagger'
+  return mergeExtraModsForEvent(
+    extraGains.value,
+    buildGenericPanelSkillContext({
+      element: mainAgent.value?.element,
+      staggerPhase: phase,
+    }),
+    {
+      slotAgentId: mainId,
+      editedAgentId: mainId,
+      staggerPhase: phase,
+      resolveAgentProfession: (agentId) =>
+        props.agents.find((item) => item.id === agentId)?.profession,
+      teamSlots: props.teamSlots,
+      agents: props.agents,
+    },
   )
-  const proxyEvent = ownedEvent ?? props.damageEvents[0]!
-  return buildExtraModsForEvent(proxyEvent, mainId)
 }
 
 const extraMods = computed(() => buildExtraModsForMainPanel())
@@ -295,9 +314,11 @@ function ensureElementResistanceMap() {
   return enemyInput.value.elementResistance!
 }
 
+/** 当前正在编辑的编队槽位（点选代理人卡片），不是主C */
 const mainSlotIndex = computed(() => {
-  const index = props.teamSlots.findIndex((slot) => slot.isMainC)
-  return index >= 0 ? index : 0
+  const index = props.editedSlotIndex
+  if (index >= 0 && index < props.teamSlots.length) return index
+  return 0
 })
 
 const mainSlot = computed(() => props.teamSlots[mainSlotIndex.value]!)
@@ -306,17 +327,7 @@ const mainAgent = computed(() =>
   props.agents.find((item) => item.id === mainSlot.value.agentId),
 )
 
-const { skillSubcategories, followUpSkillRules } = storeToRefs(useCalculatorBuffStore())
-
-const skillIsFollowUp = computed(() =>
-  resolveIsFollowUp({
-    agentId: mainAgent.value?.id,
-    categoryId: props.skillCategoryId ?? 'basic',
-    subcategoryId: props.skillSubcategoryId ?? null,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-  }),
-)
+const { skillSubcategories } = storeToRefs(useCalculatorBuffStore())
 
 const resolvedSkillSubcategory = computed<SkillSubcategory | null>(() => {
   const id = props.skillSubcategoryId
@@ -362,7 +373,7 @@ const mainDriveDiscSummary = computed(() => {
   const parts: string[] = []
   if (fourName) parts.push(`4件：${fourName}`)
   if (twoName && twoName !== fourName) parts.push(`2件：${twoName}`)
-  return parts.length ? parts.join(' · ') : '未选择（请在上方驱动盘区为主C选择）'
+  return parts.length ? parts.join(' · ') : '未选择（请先点选编队槽位并配置驱动盘）'
 })
 
 const effectiveExternalPanel = computed<PanelStats>(() =>
@@ -388,13 +399,18 @@ const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(
   panelToConvertAttrValues(effectiveExternalPanel.value, { level: 60, pierceMod: 0 }),
 )
 
-/** 伤害事件参与者（非主 C 的 owner / 异常产生角色） */
+/** 流程参与者里、不是当前正在编辑的槽位 */
 const anomalySupportSlots = computed(() => {
   const mainId = mainSlot.value.agentId
-  const participantIds = collectParticipantAgentIds(props.damageEvents ?? [], mainId)
+  const participantIds = new Set<string>()
+  for (const hit of [...(props.hits ?? []), ...(props.previewHits ?? [])]) {
+    for (const id of [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      if (id && id !== mainId) participantIds.add(id)
+    }
+  }
   return props.teamSlots
     .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => Boolean(slot.agentId && participantIds.includes(slot.agentId)))
+    .filter(({ slot }) => Boolean(slot.agentId && participantIds.has(slot.agentId)))
 })
 
 function resolveExternalPanelForSlotIndex(slotIndex: number): PanelStats {
@@ -448,22 +464,10 @@ function resolveLuminousTeamModifiers() {
 
 function buildSkillContextForSlot(slotIndex: number) {
   const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  return {
-    damageKind: props.damageKind ?? 'direct',
-    categoryId: props.skillCategoryId ?? 'basic',
-    subcategoryId: props.skillSubcategoryId ?? null,
+  return buildGenericPanelSkillContext({
     element: resolveBuffMatchElementForSlot(slotIndex) ?? agent?.element ?? mainAgent.value?.element,
     staggerPhase: props.staggerPhase ?? 'stagger',
-    isFollowUp: resolveIsFollowUp({
-      agentId: agent?.id,
-      categoryId: props.skillCategoryId ?? 'basic',
-      subcategoryId: props.skillSubcategoryId ?? null,
-      skillSubcategories: skillSubcategories.value,
-      followUpSkillRules: followUpSkillRules.value,
-    }),
-    anomalySubKind:
-      props.damageKind === 'anomaly' ? (props.anomalySubKind ?? 'anomaly') : undefined,
-  }
+  })
 }
 
 function buildPanelCalcContextForSlot(
@@ -477,6 +481,7 @@ function buildPanelCalcContextForSlot(
     bangboo: selectedBangboo.value,
     bangbooRefine: props.bangbooRefine,
     mainSlotIndex: slotIndex,
+    liveExternalSlotIndex: mainSlotIndex.value,
     driveDiscs: props.driveDiscs,
     extraMods: extraModsOverride ?? extraMods.value,
     skillContext: buildSkillContextForSlot(slotIndex),
@@ -562,8 +567,9 @@ function emitConvertSlotPanel(
 
 function ensureAnomalySlotPanel(agentId: string): PanelStats {
   const existing = props.anomalySlotPanels?.[agentId]
-  if (existing) return existing
-  return createDefaultExternalPanel()
+  if (existing && !isPlaceholderExternalPanel(existing)) return existing
+  const agent = props.agents.find((item) => item.id === agentId)
+  return createExternalPanelFromAgentBase(agent?.basePanel)
 }
 
 function updateAnomalySlotPanel(agentId: string, key: keyof PanelStats, value: number) {
@@ -585,29 +591,7 @@ function emitAnomalySlotPanel(agentId: string, panel: PanelStats) {
 }
 
 function applyAgentBaseToExternalPanel(base: PanelStats | AgentBuffDoc['basePanel']) {
-  externalPanel.def = base.def
-  externalPanel.directDmgMult = base.directDmgMult
-  externalPanel.anomalyMult = base.anomalyMult
-  externalPanel.anomalyCritRate = base.anomalyCritRate
-  externalPanel.anomalyCritDmg = base.anomalyCritDmg
-  externalPanel.anomalyDmgBonus = base.anomalyDmgBonus
-  externalPanel.anomalyControl = base.anomalyControl
-  externalPanel.energyRegen = base.energyRegen
-  externalPanel.disorderBaseMult = base.disorderBaseMult
-  externalPanel.anomalyDuration = base.anomalyDuration
-  externalPanel.disorderCompMult = base.disorderCompMult
-  externalPanel.turbulenceBaseMult = base.turbulenceBaseMult
-  externalPanel.turbulenceCompMult = base.turbulenceCompMult
-  externalPanel.disorderDmgBonus = base.disorderDmgBonus
-  externalPanel.turbulenceDmgBonus = base.turbulenceDmgBonus
-  externalPanel.radianceMult = base.radianceMult
-  externalPanel.radianceDmgBonus = base.radianceDmgBonus
-  externalPanel.radianceResPen = base.radianceResPen
-  externalPanel.specialMult = base.specialMult ?? 100
-  externalPanel.mutationCoeff = base.mutationCoeff
-  if ('mastery' in base && typeof base.mastery === 'number') {
-    externalPanel.mastery = base.mastery
-  }
+  applyAgentBaseToPanelStats(externalPanel, base)
 }
 
 const triggerSlotIndex = computed(() => {
@@ -670,6 +654,7 @@ const panelBreakdown = computed(() => {
 const finalPanel = computed(() => {
   const panel = { ...panelBreakdown.value.finalPanel }
   if (
+    !props.hits?.length &&
     props.damageKind === 'anomaly' &&
     (props.anomalySubKind ?? 'anomaly') === 'anomalyRelease'
   ) {
@@ -914,56 +899,68 @@ watch(
 watch(
   () => mainAgent.value?.id,
   (newId, oldId) => {
-    if (isAffixMode.value) return
-
     if (oldId) {
-      const oldAgent = props.agents.find((item) => item.id === oldId)
-      if (oldAgent?.profession === '异常') {
-        emitAnomalySlotPanel(oldId, externalPanel)
-      }
+      affixStateByAgent[oldId] = captureAffixState()
       const convertSlot = convertSupportSlots.value.find((item) => item.agentId === oldId)
       if (convertSlot) {
-        emitConvertSlotPanel(oldId, convertSlot.requiredAttrs, externalPanel)
+        emitConvertSlotPanel(oldId, convertSlot.requiredAttrs, effectiveExternalPanel.value)
       } else if (props.convertSlotPanels?.[oldId]) {
         const keys = Object.keys(props.convertSlotPanels[oldId]) as CharacterAttrKey[]
-        emitConvertSlotPanel(oldId, keys, externalPanel)
+        emitConvertSlotPanel(oldId, keys, effectiveExternalPanel.value)
       }
     }
 
     if (!mainAgent.value || !newId) return
 
+    // 首次挂载不要覆盖方案/草稿里已经灌进编辑器的局外面板。
+    if (!oldId) {
+      if (affixStateByAgent[newId]) applyAffixState(affixStateByAgent[newId])
+      const savedAnomaly = props.anomalySlotPanels?.[newId]
+      if (savedAnomaly && !isPlaceholderExternalPanel(savedAnomaly) && mainAgent.value.profession === '异常') {
+        Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
+        return
+      }
+      const savedConvert = props.convertSlotPanels?.[newId]
+      if (savedConvert && Object.keys(savedConvert).length > 0) {
+        applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+        applyConvertPartialToExternalPanel(savedConvert, externalPanel)
+        return
+      }
+      applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+      emitAnomalySlotPanel(newId, { ...effectiveExternalPanel.value })
+      return
+    }
+
+    applyAffixState(affixStateByAgent[newId])
     const savedAnomaly = props.anomalySlotPanels?.[newId]
-    if (savedAnomaly && mainAgent.value.profession === '异常') {
+    if (savedAnomaly && !isPlaceholderExternalPanel(savedAnomaly)) {
       Object.assign(externalPanel, createDefaultExternalPanel(), savedAnomaly)
       return
     }
 
     const savedConvert = props.convertSlotPanels?.[newId]
     if (savedConvert && Object.keys(savedConvert).length > 0) {
-      applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
+      Object.assign(externalPanel, createExternalPanelFromAgentBase(mainAgent.value.basePanel))
       applyConvertPartialToExternalPanel(savedConvert, externalPanel)
       return
     }
 
-    applyAgentBaseToExternalPanel(mainAgent.value.basePanel)
-    if (mainAgent.value.profession === '异常') {
-      emitAnomalySlotPanel(newId, externalPanel)
-    }
+    Object.assign(externalPanel, createExternalPanelFromAgentBase(mainAgent.value.basePanel))
+    emitAnomalySlotPanel(newId, { ...effectiveExternalPanel.value })
   },
   { immediate: true },
 )
 
 watch(
-  externalPanel,
+  effectiveExternalPanel,
   () => {
     const id = mainAgent.value?.id
-    if (!id || isAffixMode.value) return
-    if (mainAgent.value?.profession === '异常') {
-      emitAnomalySlotPanel(id, externalPanel)
-    }
+    if (!id) return
+    emitAnomalySlotPanel(id, { ...effectiveExternalPanel.value })
+    if (isAffixMode.value) affixStateByAgent[id] = captureAffixState()
     const convertSlot = convertSupportSlots.value.find((item) => item.agentId === id)
     if (convertSlot) {
-      emitConvertSlotPanel(id, convertSlot.requiredAttrs, externalPanel)
+      emitConvertSlotPanel(id, convertSlot.requiredAttrs, effectiveExternalPanel.value)
     }
   },
   { deep: true },
@@ -1020,7 +1017,7 @@ const calcParts = computed(() =>
     mainAgentLevel: enemyInput.value.level,
     ownerAgentLevel: enemyInput.value.level,
     triggerAgentLevel: triggerAgentLevel.value,
-    mainCFinalPanel: finalPanel.value,
+    anomalyTriggerPanel: finalPanel.value,
     mutationZone: luminousTeamModifiers.value.mutationZone,
     remielRadianceResPen:
       (props.anomalySubKind ?? 'anomaly') === 'radiance'
@@ -1036,124 +1033,94 @@ const disorderDamageLabel = computed(() =>
   calcParts.value.hasPolarDisorder ? '极性紊乱' : '紊乱伤害',
 )
 
-function resolveEventTriggerElement(event: DamageEvent): string | undefined {
-  const rawTriggerId = event.triggerAgentId ?? props.triggerAnomalyAgentId
-  const triggerId =
-    rawTriggerId && rawTriggerId !== '__at_calc__' ? rawTriggerId : null
-  if (!triggerId) return undefined
-  return props.agents.find((agent) => agent.id === triggerId)?.element
+function resolveHitPowerElement(hit: ResolvedHit): string | undefined {
+  if (!hit.anomalyPowerAgentId) return undefined
+  return props.agents.find((agent) => agent.id === hit.anomalyPowerAgentId)?.element
 }
 
-function buildEventSkillContext(event: DamageEvent) {
-  const mainId = mainAgent.value?.id ?? ''
-  const ownerAgentId = resolveEventOwnerAgentId(event, mainId)
-  const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === ownerAgentId)
-  const effectiveOwnerSlotIndex = ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value
-
-  const { damageKind: evtDamageKind, anomalySubKind: evtAnomalySubKind } = mapEventKindToCalc(
-    event.kind,
-  )
-  const eventNeedsTrigger = eventNeedsAnomalyProducer(event.kind)
-  const triggerElement = resolveEventTriggerElement(event)
-  const skillBound = event.skillBound !== false || evtDamageKind === 'direct'
-  const evtIsFollowUp = skillBound
-    ? resolveIsFollowUp({
-        agentId: ownerAgentId,
-        categoryId: event.categoryId,
-        subcategoryId: event.skillSubcategoryId,
-        skillSubcategories: skillSubcategories.value,
-        followUpSkillRules: followUpSkillRules.value,
-      })
-    : false
-
-  const ownerBuffElement = props.agents.find((item) => item.id === ownerAgentId)?.element
-
+function buildHitSkillContext(hit: ResolvedHit) {
+  const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === hit.ownerAgentId)
+  const ownerBuffElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return {
-    skillCtx: {
-      damageKind: evtDamageKind,
-      categoryId: skillBound ? event.categoryId : ('basic' as const),
-      subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-      element: ownerBuffElement,
-      staggerPhase: event.staggerPhase,
-      isFollowUp: evtIsFollowUp,
-      anomalySubKind: evtAnomalySubKind,
-    },
-    eventNeedsTrigger,
-    triggerElement,
-    skillBound,
-    evtDamageKind,
-    evtAnomalySubKind,
-    ownerAgentId,
-    ownerSlotIndex: effectiveOwnerSlotIndex,
+    skillCtx: buildSkillContextFromHit(hit, ownerBuffElement),
+    ownerSlotIndex: ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
   }
 }
 
-function buildEventPanelCalcContext(
-  skillCtx: ReturnType<typeof buildEventSkillContext>['skillCtx'],
+function buildHitPanelCalcContext(
+  skillCtx: SkillCalcContext,
   ownerSlotIndex: number,
-  event: DamageEvent,
+  hit: ResolvedHit,
 ) {
   const ownerId = props.teamSlots[ownerSlotIndex]?.agentId ?? ''
   return {
-    ...buildPanelCalcContextForSlot(ownerSlotIndex, buildExtraModsForEvent(event, ownerId)),
+    ...buildPanelCalcContextForSlot(ownerSlotIndex, buildExtraModsForHit(hit, ownerId)),
     skillContext: skillCtx,
   }
 }
 
 function resolveOwnerExternalPanel(ownerSlotIndex: number, ownerAgentId: string): PanelStats {
+  // 主 C 只表示「面板计算正在编辑谁」。招式结算读该角色自己的局外面板：
+  // 正在编辑的人用 live 编辑器，其他人用各自存好的槽位面板。
   if (ownerSlotIndex === mainSlotIndex.value) return effectiveExternalPanel.value
   return ensureAnomalySlotPanel(ownerAgentId)
 }
 
-function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
-  if (
-    getDamageEventSkipReason(event, {
-      teamSlots: props.teamSlots,
-      agents: props.agents,
-      mainAgentId: mainAgent.value?.id ?? '',
-    })
-  ) {
+/** 计算某角色在本条招式上下文下的局内最终面板 */
+function computeHitPanelForAgent(hit: ResolvedHit, agentId: string): PanelStats | null {
+  const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
+  if (slotIndex < 0) return null
+  const external =
+    slotIndex === mainSlotIndex.value
+      ? effectiveExternalPanel.value
+      : ensureAnomalySlotPanel(agentId)
+  const element = props.agents.find((item) => item.id === agentId)?.element
+  return computeFinalPanel(external, {
+    ...buildPanelCalcContextForSlot(slotIndex, buildExtraModsForHit(hit, agentId)),
+    skillContext: buildSkillContextFromHit(hit, element),
+  }).finalPanel
+}
+
+function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
+  if (getHitSkipReason(hit, { teamSlots: props.teamSlots, agents: props.agents })) {
     return null
   }
 
-  const {
-    skillCtx: evtSkillCtx,
-    eventNeedsTrigger,
-    triggerElement: evtTriggerElement,
-    skillBound,
-    evtDamageKind,
-    evtAnomalySubKind,
-    ownerAgentId,
-    ownerSlotIndex,
-  } = buildEventSkillContext(event)
+  const { skillCtx: evtSkillCtx, ownerSlotIndex } = buildHitSkillContext(hit)
+  const ownerAgentId = hit.ownerAgentId
+  const evtAnomalySubKind = hit.anomalySubKind
+  const damageType = hit.skill.damageType
+  const needsPowerAgent = skillNeedsDualAgents(damageType)
 
   const ownerAgent = props.agents.find((item) => item.id === ownerAgentId)
   const evtOwnerIsMb = ownerAgent?.profession === MB_PROFESSION
   const evtBaseDamageSource: BaseDamageSource = evtOwnerIsMb ? 'pierce' : baseDamageSource.value
 
-  const rawTriggerId = event.triggerAgentId ?? props.triggerAnomalyAgentId
-  const evtTriggerAgentId =
-    rawTriggerId && rawTriggerId !== '__at_calc__' ? rawTriggerId : null
-  if (eventNeedsTrigger && !evtTriggerAgentId) return null
+  const evtPowerAgentId = hit.anomalyPowerAgentId
+  if (needsPowerAgent && !evtPowerAgentId) return null
 
+  const evtPowerElement = resolveHitPowerElement(hit)
   const tAgent =
-    eventNeedsTrigger && evtTriggerAgentId
-      ? props.agents.find((a) => a.id === evtTriggerAgentId)
+    needsPowerAgent && evtPowerAgentId
+      ? props.agents.find((a) => a.id === evtPowerAgentId)
       : undefined
   const evtTriggerIsMb = tAgent?.profession === MB_PROFESSION
 
   const ownerExternal = resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId)
-  const evtPanelCtx = buildEventPanelCalcContext(evtSkillCtx, ownerSlotIndex, event)
+  const evtPanelCtx = buildHitPanelCalcContext(evtSkillCtx, ownerSlotIndex, hit)
   const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx)
 
-  const overrides = event.multOverrides
-  let evtFinalPanel = applyOwnerPanelMultOverrides(evtBreakdown.finalPanel, overrides)
+  const overrides = hit.multOverrides
+  let evtFinalPanel = applyHitPanelMods(
+    applyOwnerPanelMultOverrides(evtBreakdown.finalPanel, overrides),
+    hit.panelMods,
+  )
 
-  if (event.kind === 'anomalyRelease') {
+  if (damageType === 'anomalyRelease') {
     const releaseFields = resolveMainCAnomalyReleaseMultFields(
       ownerExternal,
       evtPanelCtx,
-      evtTriggerElement,
+      evtPowerElement,
     )
     if (overrides?.anomalyReleaseMult == null) {
       evtFinalPanel.anomalyReleaseMult = releaseFields.anomalyReleaseMult
@@ -1171,35 +1138,21 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
 
   let evtTriggerFinalPanel: PanelStats | undefined
   let evtTriggerPierce: number | undefined
-  if (eventNeedsTrigger && evtTriggerAgentId) {
-    const tSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === evtTriggerAgentId)
+  if (needsPowerAgent && evtPowerAgentId) {
+    const tSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === evtPowerAgentId)
     if (tSlotIndex < 0) return null
 
-    if (evtTriggerAgentId === ownerAgentId) {
+    if (evtPowerAgentId === ownerAgentId) {
       evtTriggerFinalPanel = evtFinalPanel
       evtTriggerPierce = evtPierce
     } else {
-      const tExternal = ensureAnomalySlotPanel(evtTriggerAgentId)
+      const tExternal = ensureAnomalySlotPanel(evtPowerAgentId)
       const tBreakdown = computeFinalPanel(tExternal, {
         ...buildPanelCalcContextForSlot(
           tSlotIndex,
-          buildExtraModsForEvent(event, evtTriggerAgentId),
+          buildExtraModsForHit(hit, evtPowerAgentId),
         ),
-        skillContext: {
-          damageKind: 'anomaly',
-          categoryId: skillBound ? event.categoryId : 'basic',
-          subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-          element: tAgent?.element,
-          staggerPhase: event.staggerPhase,
-          isFollowUp: resolveIsFollowUp({
-            agentId: tAgent?.id,
-            categoryId: skillBound ? event.categoryId : 'basic',
-            subcategoryId: skillBound ? (event.skillSubcategoryId ?? null) : null,
-            skillSubcategories: skillSubcategories.value,
-            followUpSkillRules: followUpSkillRules.value,
-          }),
-          anomalySubKind: evtAnomalySubKind,
-        },
+        skillContext: buildSkillContextFromHit(hit, tAgent?.element),
       })
       evtTriggerFinalPanel = tBreakdown.finalPanel
       evtTriggerPierce = computePiercePower(
@@ -1209,11 +1162,11 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
       )
     }
 
-    // 紊乱/乱流倍率取产生角色最终面板（未覆写时）
-    // 异放倍率留在主 C 面板：按产生角色属性从主 C 增益筛选
+    // 紊乱/乱流倍率取异常强度提供者最终面板（未覆写时）
+    // 异放倍率留在异常类触发者面板：按提供者属性从触发者增益筛选
     if (evtTriggerFinalPanel) {
       const o = overrides
-      if (event.kind === 'disorder') {
+      if (damageType === 'disorder') {
         if (o?.disorderBaseMult == null) {
           evtFinalPanel.disorderBaseMult = evtTriggerFinalPanel.disorderBaseMult
         }
@@ -1223,7 +1176,7 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
         if (o?.disorderCompMult == null) {
           evtFinalPanel.disorderCompMult = evtTriggerFinalPanel.disorderCompMult
         }
-      } else if (event.kind === 'turbulence') {
+      } else if (damageType === 'turbulence') {
         if (o?.turbulenceBaseMult == null) {
           evtFinalPanel.turbulenceBaseMult = evtTriggerFinalPanel.turbulenceBaseMult
         }
@@ -1237,8 +1190,8 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     }
   }
 
-  const sub =
-    skillBound ? resolveSubcategoryById(event.skillSubcategoryId) : null
+  // 增益锚点即旧招式小类，小类倍率仍作为未填倍率时的兜底
+  const sub = resolveSubcategoryById(hit.skill.buffAnchorId ?? null)
   const effectiveSub =
     sub && overrides
       ? {
@@ -1257,24 +1210,38 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
   const luminousMods = resolveLuminousTeamModifiers()
 
   const actualMainId = mainAgent.value?.id ?? ''
-  let mainCFinalPanel =
-    ownerAgentId === actualMainId
-      ? evtFinalPanel
-      : computeFinalPanel(
-          effectiveExternalPanel.value,
-          buildPanelCalcContextForSlot(mainSlotIndex.value),
-        ).finalPanel
-
-  if (event.kind === 'radiance') {
-    mainCFinalPanel = applyRadianceBonusMultOverrides(mainCFinalPanel, overrides)
-    if (ownerAgentId === actualMainId) {
-      evtFinalPanel = mainCFinalPanel
+  // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
+  let anomalyTriggerPanel = evtFinalPanel
+  if (needsPowerAgent) {
+    if (!hit.triggerAgentId) return null
+    if (hit.triggerAgentId !== ownerAgentId) {
+      const trigPanel = computeHitPanelForAgent(hit, hit.triggerAgentId)
+      if (!trigPanel) return null
+      anomalyTriggerPanel = trigPanel
     }
   }
 
+  if (damageType === 'radiance') {
+    anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, overrides)
+    if (hit.triggerAgentId === ownerAgentId || !hit.triggerAgentId) {
+      evtFinalPanel = anomalyTriggerPanel
+    }
+  }
+
+  const ownerResSlot = ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value
+  const ownerResistance = resolveDamageCalcResistanceElements(
+    props.teamSlots,
+    props.agents,
+    ownerResSlot,
+    evtPowerAgentId,
+  )
+  const triggerAgentDoc = hit.triggerAgentId
+    ? props.agents.find((item) => item.id === hit.triggerAgentId)
+    : undefined
+
   return {
     finalPanel: evtFinalPanel,
-    mainCFinalPanel,
+    anomalyTriggerPanel,
     piercePower: evtPierce,
     baseDamageSource: evtBaseDamageSource,
     isMbMainAgent: evtOwnerIsMb,
@@ -1285,57 +1252,79 @@ function buildEventCalcFull(event: DamageEvent): DamageCalcInput | null {
     combatStaggerVulnerableOnly: evtBreakdown.combatMods.staggerVulnerableOnly ?? 0,
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
-    staggerPhase: event.staggerPhase,
-    mainAgentElement: mainAgent.value?.element ?? '',
-    ...resolveDamageCalcResistanceElements(
-      props.teamSlots,
-      props.agents,
-      mainSlotIndex.value,
-      evtTriggerAgentId,
-    ),
+    staggerPhase: hit.staggerPhase,
+    ownerAgentElement: ownerAgent?.element ?? '',
+    ownerAgentResistanceElement: ownerResistance.mainAgentResistanceElement,
+    anomalyTriggerElement: triggerAgentDoc?.element,
+    mainAgentElement: ownerAgent?.element ?? '',
+    ...ownerResistance,
     mainAgentId: actualMainId,
     mainAgentName: mainAgent.value?.name ?? '',
     anomalySubKind: evtAnomalySubKind,
     triggerFinalPanel: evtTriggerFinalPanel,
-    triggerAgentElement: evtTriggerElement,
+    triggerAgentElement: evtPowerElement,
     triggerPiercePower: evtTriggerPierce,
     triggerIsMb: evtTriggerIsMb,
     skillSubcategory: effectiveSub,
-    mainAgentLevel: resolveAgentLevel(actualMainId),
+    mainAgentLevel: resolveAgentLevel(ownerAgentId),
     ownerAgentLevel: resolveAgentLevel(ownerAgentId),
-    triggerAgentLevel: evtTriggerAgentId
-      ? resolveAgentLevel(evtTriggerAgentId)
+    triggerAgentLevel: evtPowerAgentId
+      ? resolveAgentLevel(evtPowerAgentId)
       : resolveAgentLevel(ownerAgentId),
     mutationZone: luminousMods.mutationZone,
-    remielRadianceResPen: event.kind === 'radiance' ? luminousMods.radianceResPen : 0,
-    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForTrigger(evtTriggerAgentId),
+    remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
+    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForTrigger(evtPowerAgentId),
   }
 }
 
 const damageEventSummary = computed(() => {
-  if (props.calcSuspended || !props.damageEvents?.length) return null
-  return summarizeDamageEvents(
-    props.damageEvents,
-    buildEventCalcFull,
-    resolveSubcategoryById,
-    (event) => props.agents.find((item) => item.id === resolveEventOwnerAgentId(event, mainAgent.value?.id ?? ''))?.name,
+  if (props.calcSuspended || !props.hits?.length) return null
+  return summarizeHits(
+    props.hits,
+    buildHitCalcInput,
+    (hit) => props.agents.find((item) => item.id === hit.ownerAgentId)?.name,
   )
 })
 
-const hasDamageEvents = computed(() => (props.damageEvents?.length ?? 0) > 0)
+const previewHitSummary = computed(() => {
+  if (props.calcSuspended || !props.previewHits?.length) return null
+  return summarizeHits(props.previewHits, buildHitCalcInput)
+})
 
-const selectedEventDetailLine = computed((): DamageEventLine | null => {
+watch(
+  [damageEventSummary, previewHitSummary],
+  () => {
+    if (props.calcSuspended) return
+    const map: Record<string, number> = {}
+    const results: Record<string, DamageCalcResult> = {}
+    for (const line of damageEventSummary.value?.lines ?? []) {
+      map[line.hit.id] = line.total
+      results[line.hit.id] = line.result
+    }
+    for (const line of previewHitSummary.value?.lines ?? []) {
+      map[line.hit.id] = line.perHit
+      results[line.hit.id] = line.result
+    }
+    emit('update:hitDamages', map)
+    emit('update:hitCalcResults', results)
+  },
+  { immediate: true },
+)
+
+const hasDamageEvents = computed(() => (props.hits?.length ?? 0) > 0)
+
+const selectedEventDetailLine = computed((): HitLine | null => {
   const base = selectedDamageEventLine.value
   if (!base) return null
-  const input = buildEventCalcFull(base.event)
+  const input = buildHitCalcInput(base.hit)
   if (!input) return base
   const result = computeDamageResult(input)
-  const perHit = pickEventDamage(result, base.event.kind, base.event.critMode)
+  const perHit = pickEventDamage(result, base.hit.skill.damageType, base.hit.critMode)
   return {
     ...base,
     result,
     perHit,
-    total: perHit * Math.max(0, base.event.count),
+    total: perHit * base.hit.count,
   }
 })
 
@@ -1350,18 +1339,12 @@ const displayCalcParts = computed(
 )
 
 const damageEventSkipHints = computed(() => {
-  if (!props.damageEvents?.length) return [] as string[]
+  if (!props.hits?.length) return [] as string[]
   const hints: string[] = []
-  const ctx = {
-    teamSlots: props.teamSlots,
-    agents: props.agents,
-    mainAgentId: mainAgent.value?.id ?? '',
-  }
-  for (const event of props.damageEvents) {
-    const reason = getDamageEventSkipReason(event, ctx)
-    if (reason) {
-      hints.push(`${event.kind}：${reason}`)
-    }
+  const ctx = { teamSlots: props.teamSlots, agents: props.agents }
+  for (const hit of props.hits) {
+    const reason = getHitSkipReason(hit, ctx)
+    if (reason) hints.push(`${hit.skill.name}：${reason}`)
   }
   return hints
 })
@@ -1375,12 +1358,11 @@ const damageOwnerShareSummary = computed(() => {
   if (!lines?.length) return null
   return summarizeDamageByOwner(
     lines.map((line) => ({
-      event: line.event,
-      eventId: line.event.id,
+      ownerAgentId: line.hit.ownerAgentId,
+      eventId: line.hit.id,
       displayName: line.displayName,
       total: line.total,
     })),
-    mainAgent.value?.id ?? '',
     (id) => props.agents.find((item) => item.id === id),
   )
 })
@@ -1396,7 +1378,7 @@ const damageEventTotalLabel = computed(() =>
 
 const selectedDamageEventLine = computed(
   () =>
-    damageEventSummary.value?.lines.find((line) => line.event.id === selectedDamageEventId.value) ??
+    damageEventSummary.value?.lines.find((line) => line.hit.id === selectedDamageEventId.value) ??
     null,
 )
 
@@ -1405,7 +1387,7 @@ function toggleDamageEventSelection(eventId: string) {
 }
 
 watch(
-  () => props.damageEvents,
+  () => props.hits,
   () => {
     selectedDamageEventId.value = null
   },
@@ -1603,24 +1585,26 @@ const alignedDirectFormula = computed(() => buildAlignedDirectFormula(calcParts.
 
 const selectedEventDirectFormula = computed(() => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind !== 'direct') return null
+  if (!line || line.hit.skill.damageType !== 'direct') return null
   return buildAlignedDirectFormula(line.result, formatNumber(line.perHit))
 })
 
 const selectedEventAnomalyTitle = computed(() => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind === 'direct') return ''
-  if (line.event.kind === 'disorder') {
+  if (!line) return ''
+  const damageType = line.hit.skill.damageType
+  if (damageType === 'direct') return ''
+  if (damageType === 'disorder') {
     return `${line.displayName} · ${line.result.hasPolarDisorder ? '极性紊乱' : '紊乱'}期望伤害`
   }
-  if (line.event.kind === 'turbulence') return `${line.displayName} · 乱流期望伤害`
-  if (line.event.kind === 'anomalyRelease') return `${line.displayName} · 异放期望伤害`
-  if (line.event.kind === 'radiance') return `${line.displayName} · 耀变期望伤害`
+  if (damageType === 'turbulence') return `${line.displayName} · 乱流期望伤害`
+  if (damageType === 'anomalyRelease') return `${line.displayName} · 异放期望伤害`
+  if (damageType === 'radiance') return `${line.displayName} · 耀变期望伤害`
   return `${line.displayName} · 异常期望伤害`
 })
 
 function resolveAnomalyFormulaLabels(
-  event?: DamageEvent,
+  hit?: ResolvedHit,
   sub?: AnomalyDamageSubKind,
 ): AnomalyFormulaAgentLabels {
   const mainName = mainAgent.value?.name
@@ -1629,21 +1613,17 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === remiel.id)?.name
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
-  if (event) {
-    const mainId = mainAgent.value?.id ?? ''
-    const ownerName = props.agents.find(
-      (item) => item.id === resolveEventOwnerAgentId(event, mainId),
-    )?.name
-    const rawTrigger = event.triggerAgentId ?? props.triggerAnomalyAgentId
-    const triggerId = rawTrigger && rawTrigger !== '__at_calc__' ? rawTrigger : null
-    const triggerName = triggerId
-      ? props.agents.find((item) => item.id === triggerId)?.name
-      : undefined
+  if (hit) {
+    const nameOf = (id: string | null) =>
+      id ? props.agents.find((item) => item.id === id)?.name : undefined
+    const ownerName = nameOf(hit.ownerAgentId)
+    const powerName = nameOf(hit.anomalyPowerAgentId)
+    const triggerName = nameOf(hit.triggerAgentId)
     return {
-      baseAgent: eventNeedsAnomalyProducer(event.kind)
-        ? (triggerName ?? ownerName ?? mainName)
+      baseAgent: skillNeedsDualAgents(hit.skill.damageType)
+        ? (powerName ?? ownerName ?? mainName)
         : (ownerName ?? mainName),
-      bonusAgent: ownerName ?? mainName,
+      bonusAgent: triggerName ?? ownerName ?? mainName,
       mutationAgent: remielName,
     }
   }
@@ -1651,7 +1631,7 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === props.triggerAnomalyAgentId)?.name
     : undefined
   return {
-    baseAgent: eventNeedsAnomalyProducer(effectiveSub as DamageEventKind) ? triggerName : mainName,
+    baseAgent: (props.damageKind === 'anomaly' ? triggerName : mainName) ?? mainName,
     bonusAgent: mainName,
     mutationAgent: remielName,
   }
@@ -1684,14 +1664,14 @@ const alignedAnomalyFormulas = computed((): AlignedFormulaGroup[] =>
 
 const selectedEventAnomalyFormulas = computed((): AlignedFormulaGroup[] | null => {
   const line = selectedEventDetailLine.value
-  if (!line || line.event.kind === 'direct') return null
-  const { anomalySubKind } = mapEventKindToCalc(line.event.kind)
+  if (!line || line.hit.skill.damageType === 'direct') return null
+  const anomalySubKind = line.hit.anomalySubKind
   const disorderLabel = line.result.hasPolarDisorder ? '极性紊乱' : '紊乱伤害'
   return buildAlignedAnomalyFormulasFor(
     line.result,
     anomalySubKind,
     disorderLabel,
-    resolveAnomalyFormulaLabels(line.event, anomalySubKind),
+    resolveAnomalyFormulaLabels(line.hit, anomalySubKind),
   )
 })
 
@@ -1714,12 +1694,9 @@ function withTotal(groups: StatSourceGroup[], totalText: string, processItems?: 
 const selectedEventOwnerBreakdown = computed(() => {
   const line = selectedEventDetailLine.value
   if (!line) return null
-  const { skillCtx, ownerAgentId, ownerSlotIndex } = buildEventSkillContext(line.event)
-  const external = resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId)
-  return computeFinalPanel(
-    external,
-    buildEventPanelCalcContext(skillCtx, ownerSlotIndex, line.event),
-  )
+  const { skillCtx, ownerSlotIndex } = buildHitSkillContext(line.hit)
+  const external = resolveOwnerExternalPanel(ownerSlotIndex, line.hit.ownerAgentId)
+  return computeFinalPanel(external, buildHitPanelCalcContext(skillCtx, ownerSlotIndex, line.hit))
 })
 
 const valueTips = computed(() => {
@@ -1761,16 +1738,17 @@ const valueTips = computed(() => {
 
   const eventLine = selectedEventDetailLine.value
   const ownerBreakdown = selectedEventOwnerBreakdown.value
-  const eventOwnerCtx = eventLine ? buildEventSkillContext(eventLine.event) : null
+  const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
   const usesOwnerBonusPanel = Boolean(
     eventLine &&
       ownerBreakdown &&
       eventOwnerCtx &&
-      (eventLine.event.kind === 'turbulence' || eventLine.event.kind === 'disorder'),
+      (eventLine.hit.skill.damageType === 'turbulence' ||
+        eventLine.hit.skill.damageType === 'disorder'),
   )
   const bonusPanel = usesOwnerBonusPanel ? ownerBreakdown!.finalPanel : panel
   const bonusExternal = usesOwnerBonusPanel
-    ? resolveOwnerExternalPanel(eventOwnerCtx!.ownerSlotIndex, eventOwnerCtx!.ownerAgentId)
+    ? resolveOwnerExternalPanel(eventOwnerCtx!.ownerSlotIndex, eventLine!.hit.ownerAgentId)
     : external
   const bonusSources = usesOwnerBonusPanel ? ownerBreakdown!.sources : sources
 
@@ -1807,9 +1785,9 @@ const valueTips = computed(() => {
               ? [RADIANCE_SELF_TRIGGER_HINT]
               : usesProducerMult
                 ? [
-                    '异常基础乘区、紊乱/乱流倍率与异常持续时间取产生角色面板；乱流/紊乱增伤与异常暴击取事件产生角色；减防/无视防御取主C',
+                    '异常基础乘区、紊乱/乱流倍率与异常持续时间取异常强度提供者面板；乱流/紊乱增伤与异常暴击取招式持有者；减防/无视防御取异常类触发者',
                   ]
-                : ['异常基础乘区（含等级区）取产生角色面板；减防/无视防御取主C'],
+                : ['异常基础乘区（含等级区）取异常强度提供者面板；减防/无视防御取异常类触发者'],
         },
       ]
     : []
@@ -1941,7 +1919,7 @@ const valueTips = computed(() => {
           {
             label: usesProducerBase
               ? (triggerAgent.value?.name ?? '产生角色')
-              : (mainAgent.value?.name ?? '主C'),
+              : (mainAgent.value?.name ?? '招式持有者'),
             items: ['防御区固定为 1'],
           },
         ]
@@ -1956,7 +1934,7 @@ const valueTips = computed(() => {
             extraGroups: usesProducerBase
               ? [
                   {
-                    label: mainAgent.value?.name ?? '主C',
+                    label: '异常类触发者',
                     items: [
                       `减防 ${formatFormulaNumber(panel.reduceDefense, 2)}%`,
                       `无视防御 ${formatFormulaNumber(panel.ignoreDefense, 2)}%`,
@@ -2672,7 +2650,7 @@ const valueTips = computed(() => {
               finalValues: { penRate: remielSelfPanel?.penRate ?? 0 },
               extraGroups: [
                 {
-                  label: mainAgent.value?.name ?? '主C',
+                  label: '异常类触发者',
                   items: [
                     `减防 ${formatFormulaNumber(panel.reduceDefense, 2)}%`,
                     `无视防御 ${formatFormulaNumber(panel.ignoreDefense, 2)}%`,
@@ -2688,7 +2666,7 @@ const valueTips = computed(() => {
               ],
               showAdditiveProcess: false,
             }),
-            `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}（穿透取蕾米埃尔；减防/无视取主C）`,
+            `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}（穿透取蕾米埃尔；减防/无视取异常类触发者）`,
           )
       : [],
     remielSelfResistanceMultiplier: p.remielSelfRadianceActive
@@ -2736,10 +2714,7 @@ const selectedEventDmgMultiplierTips = computed(() => {
   const breakdown = selectedEventOwnerBreakdown.value
   const p = displayCalcParts.value
   if (!breakdown) return [] as StatSourceGroup[]
-  const ownerId = resolveEventOwnerAgentId(
-    selectedEventDetailLine.value!.event,
-    mainAgent.value?.id ?? '',
-  )
+  const ownerId = selectedEventDetailLine.value!.hit.ownerAgentId
   const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === ownerId)
   const external = resolveOwnerExternalPanel(
     ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
@@ -2817,11 +2792,17 @@ const teamWengineNotes = computed(() =>
 )
 
 function getSnapshot(): DamageCalcPanelSnapshot {
+  const id = mainAgent.value?.id
+  if (id) affixStateByAgent[id] = captureAffixState()
   return {
     baseDamageSource: baseDamageSource.value,
     externalPanel: { ...externalPanel },
     affixCounts: { ...affixCounts },
     affixDriveDiscMainStats: { ...affixDriveDiscMainStats },
+    affixStateByAgent: JSON.parse(JSON.stringify(affixStateByAgent)) as Record<
+      string,
+      AgentAffixState
+    >,
     extraMods: { ...extraMods.value },
     extraGains: extraGains.value.map((item) => ({ ...item })),
     enemyInput: { ...enemyInput.value },
@@ -2833,6 +2814,15 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
   Object.assign(externalPanel, createDefaultExternalPanel(), snapshot.externalPanel)
   Object.assign(affixCounts, snapshot.affixCounts)
   Object.assign(affixDriveDiscMainStats, snapshot.affixDriveDiscMainStats)
+  for (const key of Object.keys(affixStateByAgent)) delete affixStateByAgent[key]
+  if (snapshot.affixStateByAgent) {
+    Object.assign(affixStateByAgent, JSON.parse(JSON.stringify(snapshot.affixStateByAgent)))
+  }
+  const currentId = mainAgent.value?.id
+  if (currentId) {
+    affixStateByAgent[currentId] = captureAffixState()
+    applyAffixState(affixStateByAgent[currentId])
+  }
   if (snapshot.extraGains?.length) {
     extraGains.value = snapshot.extraGains.map((item) => ({
       id: item.id,
@@ -2868,28 +2858,31 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
   }
 }
 
-/** 事件倍率默认值：异常取主 C 最终面板；紊乱/乱流取产生角色最终面板；异放倍率取主 C（按产生角色属性筛选增益） */
+/**
+ * 招式倍率的面板默认值，供准备阶段预填。
+ * 异常取归属者面板；紊乱/乱流取异常强度提供者；异放/耀变取异常类触发者。
+ */
 function resolveMultDefaultsForEvent(
-  event: DamageEvent,
+  hit: ResolvedHit,
 ): Partial<Record<keyof DamageEventMultOverrides, number>> {
   const result: Partial<Record<keyof DamageEventMultOverrides, number>> = {}
+  const damageType = hit.skill.damageType
 
-  if (event.kind === 'anomalyRelease') {
-    const { skillCtx, triggerElement, ownerSlotIndex, ownerAgentId } = buildEventSkillContext(event)
+  if (damageType === 'anomalyRelease') {
+    const { skillCtx, ownerSlotIndex } = buildHitSkillContext(hit)
     const fields = resolveMainCAnomalyReleaseMultFields(
-      resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId),
-      buildEventPanelCalcContext(skillCtx, ownerSlotIndex, event),
-      triggerElement,
+      resolveOwnerExternalPanel(ownerSlotIndex, hit.ownerAgentId),
+      buildHitPanelCalcContext(skillCtx, ownerSlotIndex, hit),
+      resolveHitPowerElement(hit),
     )
     result.anomalyReleaseMult = fields.anomalyReleaseMult
     result.anomalyReleaseMultFactor = fields.anomalyReleaseMultFactor
     return result
   }
 
-  const probe: DamageEvent = { ...event, multOverrides: null }
-  const input = buildEventCalcFull(probe)
+  const input = buildHitCalcInput({ ...hit, multOverrides: null })
 
-  if (event.kind === 'direct') {
+  if (damageType === 'direct') {
     const panel = input?.finalPanel ?? finalPanel.value
     result.directDmgMult = panel.directDmgMult
     result.settlementDmgMult = panel.settlementDmgMult
@@ -2897,27 +2890,29 @@ function resolveMultDefaultsForEvent(
     return result
   }
 
-  if (event.kind === 'anomaly') {
+  if (damageType === 'anomaly') {
     const panel = input?.finalPanel ?? finalPanel.value
     result.anomalyMult = panel.anomalyMult
     result.anomalyMultFactor = panel.anomalyMultFactor
     return result
   }
 
-  if (event.kind === 'radiance') {
-    const bonusPanel = input?.mainCFinalPanel ?? finalPanel.value
-    Object.assign(result, resolveRadianceBonusMultDefaults(bonusPanel))
+  if (damageType === 'radiance') {
+    Object.assign(
+      result,
+      resolveRadianceBonusMultDefaults(input?.anomalyTriggerPanel ?? finalPanel.value),
+    )
     return result
   }
 
   const panel = input?.triggerFinalPanel
   if (!panel) return result
 
-  if (event.kind === 'disorder') {
+  if (damageType === 'disorder') {
     result.disorderBaseMult = panel.disorderBaseMult
     result.disorderBaseMultFactor = panel.disorderBaseMultFactor
     result.disorderCompMult = panel.disorderCompMult
-  } else if (event.kind === 'turbulence') {
+  } else if (damageType === 'turbulence') {
     result.turbulenceBaseMult = panel.turbulenceBaseMult
     result.turbulenceBaseMultFactor = panel.turbulenceBaseMultFactor
     result.turbulenceCompMult = panel.turbulenceCompMult
@@ -2951,7 +2946,7 @@ defineExpose({
           {{
             isAffixMode
               ? '录入副词条条数，由角色/音擎基础属性推导局外面板；局内面板与伤害乘区逻辑与面板计算一致。'
-              : '录入主C局外面板（初始面板），局内面板由队伍增益、音擎、邦布与额外 Buff 自动汇总。'
+              : '录入当前槽位角色的局外面板（初始面板），局内面板由队伍增益、音擎、邦布与额外 Buff 自动汇总。'
           }}
         </p>
       </div>
@@ -2959,7 +2954,7 @@ defineExpose({
 
     <p v-if="teamSummary" class="team-summary">{{ teamSummary }}</p>
     <p v-if="isMbMainAgent" class="mb-hint">
-      当前主C为命破：基础伤害来源固定为贯穿力，防御区固定为 1。
+      当前角色为命破：基础伤害来源固定为贯穿力，防御区固定为 1。
     </p>
 
     <details v-if="teamWengineNotes.length" class="team-notes team-wengine-notes">
@@ -2983,7 +2978,7 @@ defineExpose({
         </select>
       </label>
       <label class="field">
-        <span>主C角色名</span>
+        <span>当前角色</span>
         <input :value="mainAgent?.name ?? '未选择'" type="text" readonly />
       </label>
       <label class="field">
@@ -3000,7 +2995,7 @@ defineExpose({
       <header class="panel-block-header">
         <h3>驱动盘主属性</h3>
         <p>
-          2/4 件套沿用上方主C驱动盘选择（{{ mainDriveDiscSummary }}）；默认 6 盘均为 15 级，1 号
+          2/4 件套沿用上方当前槽位的驱动盘选择（{{ mainDriveDiscSummary }}）；默认 6 盘均为 15 级，1 号
           +{{ AFFIX_DRIVE_DISC_SLOT_1_HP }} 生命、2 号 +{{ AFFIX_DRIVE_DISC_SLOT_2_ATK }} 攻击。请选择
           4/5/6 号盘主属性。
         </p>
@@ -3037,10 +3032,10 @@ defineExpose({
       <header class="panel-block-header">
         <h3>词条数</h3>
         <p>
-          基于主C角色基础面板、音擎与驱动盘属性计算局外面板；每条副词条按固定数值折算（如生命 +112、攻击 +19、穿透 +9、双暴 +2.4%/+4.8%、精通 +9 等）。
+          基于当前角色基础面板、音擎与驱动盘属性计算局外面板；每条副词条按固定数值折算（如生命 +112、攻击 +19、穿透 +9、双暴 +2.4%/+4.8%、精通 +9 等）。
         </p>
       </header>
-      <p v-if="!mainAgent" class="affix-hint">请先选择主C角色，以加载其基础面板。</p>
+      <p v-if="!mainAgent" class="affix-hint">请先在编队中点选要编辑的角色，以加载其基础面板。</p>
       <div class="grid four">
         <label v-for="field in AFFIX_COUNT_FIELDS" :key="field.key" class="field">
           <span>{{ field.label }}（{{ field.unitLabel }}）</span>
@@ -3103,9 +3098,9 @@ defineExpose({
           class="panel-block anomaly-support-panels"
         >
           <header class="panel-block-header">
-            <h3>伤害事件参与者 · 局外面板</h3>
+            <h3>其他参与者 · 局外面板</h3>
             <p>
-              事件产生角色（owner）与异常产生角色若为非主 C，需在此录入局外初始面板；局内最终面板按各自槽位 Buff 勾选汇总。
+              招式持有者 / 异常强度提供者 / 异常类触发者若不是当前正在编辑的槽位，可在此改他们的局外初始面板；也可以点选编队卡片切过去编辑。
             </p>
           </header>
           <details
@@ -3210,7 +3205,9 @@ defineExpose({
         <section class="panel-block extra-mods-block">
           <header class="panel-block-header">
             <h3>额外 Buff 增益</h3>
-            <p>未录入角色/音擎/邦布数据时的补充增益，按条添加，参与局内面板与乘区汇总。</p>
+            <p>
+              未录入角色/音擎/邦布数据时的补充增益。「自身」= 编队里正在编辑的角色，不跟招式持有者走。
+            </p>
           </header>
           <ExtraBuffGainEditor v-model="extraGains" :skill-subcategories="skillSubcategories" />
         </section>
@@ -3293,18 +3290,18 @@ defineExpose({
       <ul class="event-summary-list">
         <li
           v-for="line in damageEventSummary!.lines"
-          :key="line.event.id"
+          :key="line.hit.id"
           class="event-summary-item"
-          :class="{ 'event-summary-item--active': selectedDamageEventId === line.event.id }"
+          :class="{ 'event-summary-item--active': selectedDamageEventId === line.hit.id }"
           role="button"
           tabindex="0"
-          @click="toggleDamageEventSelection(line.event.id)"
-          @keydown.enter.prevent="toggleDamageEventSelection(line.event.id)"
-          @keydown.space.prevent="toggleDamageEventSelection(line.event.id)"
+          @click="toggleDamageEventSelection(line.hit.id)"
+          @keydown.enter.prevent="toggleDamageEventSelection(line.hit.id)"
+          @keydown.space.prevent="toggleDamageEventSelection(line.hit.id)"
         >
           <span class="event-summary-name">
             {{ line.displayName }}
-            <span v-if="line.event.count > 1" class="event-summary-count">×{{ line.event.count }}</span>
+            <span v-if="line.hit.count > 1" class="event-summary-count">×{{ line.hit.count }}</span>
           </span>
           <span class="event-summary-damage">
             单次 {{ formatNumber(line.perHit) }} · 合计 {{ formatNumber(line.total) }}
@@ -3399,7 +3396,7 @@ defineExpose({
             :groups="valueTips.directDamageExpected"
           />
         </p>
-        <p v-if="selectedEventDetailLine.event.count > 1" class="result-total">
+        <p v-if="selectedEventDetailLine.hit.count > 1" class="result-total">
           合计伤害：
           <span>{{ formatNumber(selectedEventDetailLine.total) }}</span>
         </p>
@@ -3453,7 +3450,7 @@ defineExpose({
         <p class="result-total">
           单次期望：{{ formatNumber(selectedEventDetailLine.perHit) }}
         </p>
-        <p v-if="selectedEventDetailLine.event.count > 1" class="result-total">
+        <p v-if="selectedEventDetailLine.hit.count > 1" class="result-total">
           合计伤害：{{ formatNumber(selectedEventDetailLine.total) }}
         </p>
       </div>

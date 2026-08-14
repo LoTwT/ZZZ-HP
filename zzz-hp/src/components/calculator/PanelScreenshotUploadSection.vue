@@ -234,7 +234,7 @@ async function onUploadTencentOcrJson(event: Event) {
       <div>
         <h2>图片录入</h2>
         <p class="section-desc">
-          识别角色面板并填入主C配置与局外面板；词条数由识别出的局外面板按换算公式反推。也可手动上传 OCR
+          识别角色面板并填入当前正在编辑的槽位与局外面板；词条数由识别出的局外面板按换算公式反推。也可手动上传 OCR
           JSON/文本对照。
         </p>
       </div>

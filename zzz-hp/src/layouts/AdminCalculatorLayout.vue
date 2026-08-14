@@ -7,7 +7,7 @@ import AdminWengineBuffPanel from '@/components/admin/calculator/AdminWengineBuf
 import AdminBangbooBuffPanel from '@/components/admin/calculator/AdminBangbooBuffPanel.vue'
 import AdminDriveDiscBuffPanel from '@/components/admin/calculator/AdminDriveDiscBuffPanel.vue'
 import AdminSkillSubcategoryPanel from '@/components/admin/calculator/AdminSkillSubcategoryPanel.vue'
-import AdminDamageEventPanel from '@/components/admin/calculator/AdminDamageEventPanel.vue'
+import AdminSkillLibraryPanel from '@/components/admin/calculator/AdminSkillLibraryPanel.vue'
 import type { AgentBuffEditActionId, AgentBuffEditSectionId } from '@/constants/agentBuffEditNav'
 import type { BangbooBuffEditActionId, BangbooBuffEditSectionId } from '@/constants/bangbooBuffEditNav'
 import type { DriveDiscBuffEditActionId, DriveDiscBuffEditSectionId } from '@/constants/driveDiscBuffEditNav'
@@ -20,7 +20,7 @@ const agentPanelRef = ref<InstanceType<typeof AdminAgentBuffPanel> | null>(null)
 const wenginePanelRef = ref<InstanceType<typeof AdminWengineBuffPanel> | null>(null)
 const bangbooPanelRef = ref<InstanceType<typeof AdminBangbooBuffPanel> | null>(null)
 const driveDiscPanelRef = ref<InstanceType<typeof AdminDriveDiscBuffPanel> | null>(null)
-const damageEventPanelRef = ref<InstanceType<typeof AdminDamageEventPanel> | null>(null)
+const skillLibraryPanelRef = ref<InstanceType<typeof AdminSkillLibraryPanel> | null>(null)
 
 const calculatorBuffStore = useCalculatorBuffStore()
 const { loading, loaded, error } = storeToRefs(calculatorBuffStore)
@@ -33,8 +33,8 @@ const bangbooSaving = computed(() => bangbooPanelRef.value?.saving ?? false)
 const bangbooCanDelete = computed(() => Boolean(bangbooPanelRef.value?.selectedId))
 const driveDiscSaving = computed(() => driveDiscPanelRef.value?.saving ?? false)
 const driveDiscCanDelete = computed(() => Boolean(driveDiscPanelRef.value?.selectedId))
-const damageEventSaving = computed(() => damageEventPanelRef.value?.saving ?? false)
-const damageEventCanDelete = computed(() => Boolean(damageEventPanelRef.value?.selectedId))
+const skillLibrarySaving = computed(() => skillLibraryPanelRef.value?.saving ?? false)
+const skillLibraryCanDelete = computed(() => Boolean(skillLibraryPanelRef.value?.selectedId))
 
 onMounted(() => {
   void calculatorBuffStore.ensureLoaded().catch(() => {
@@ -123,14 +123,14 @@ async function handleDriveDiscAction(actionId: DriveDiscBuffEditActionId) {
   await driveDiscPanelRef.value?.removeItem()
 }
 
-async function handleDamageEventAction(actionId: 'save' | 'delete') {
-  activePanel.value = 'damage-event'
+async function handleSkillLibraryAction(actionId: 'save' | 'delete') {
+  activePanel.value = 'skill-library'
   await nextTick()
   if (actionId === 'save') {
-    await damageEventPanelRef.value?.saveItem()
+    await skillLibraryPanelRef.value?.saveItem()
     return
   }
-  await damageEventPanelRef.value?.removeItem()
+  await skillLibraryPanelRef.value?.removeItem()
 }
 </script>
 
@@ -149,8 +149,8 @@ async function handleDamageEventAction(actionId: 'save' | 'delete') {
       :bangboo-can-delete="bangbooCanDelete"
       :drive-disc-saving="driveDiscSaving"
       :drive-disc-can-delete="driveDiscCanDelete"
-      :damage-event-saving="damageEventSaving"
-      :damage-event-can-delete="damageEventCanDelete"
+      :skill-library-saving="skillLibrarySaving"
+      :skill-library-can-delete="skillLibraryCanDelete"
       @scroll-agent-section="scrollToAgentSection"
       @agent-action="handleAgentAction"
       @scroll-wengine-section="scrollToWengineSection"
@@ -159,7 +159,7 @@ async function handleDamageEventAction(actionId: 'save' | 'delete') {
       @bangboo-action="handleBangbooAction"
       @scroll-drive-disc-section="scrollToDriveDiscSection"
       @drive-disc-action="handleDriveDiscAction"
-      @damage-event-action="handleDamageEventAction"
+      @skill-library-action="handleSkillLibraryAction"
     />
 
     <main class="admin-content">
@@ -172,7 +172,7 @@ async function handleDamageEventAction(actionId: 'save' | 'delete') {
         <AdminBangbooBuffPanel v-show="activePanel === 'bangboo'" ref="bangbooPanelRef" />
         <AdminDriveDiscBuffPanel v-show="activePanel === 'drive-disc'" ref="driveDiscPanelRef" />
         <AdminSkillSubcategoryPanel v-show="activePanel === 'skill-subcategory'" />
-        <AdminDamageEventPanel v-show="activePanel === 'damage-event'" ref="damageEventPanelRef" />
+        <AdminSkillLibraryPanel v-show="activePanel === 'skill-library'" ref="skillLibraryPanelRef" />
       </template>
     </main>
   </div>

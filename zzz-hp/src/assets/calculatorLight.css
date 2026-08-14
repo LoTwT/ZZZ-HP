@@ -43,6 +43,38 @@
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
+.calculator-page.theme-light .skill-row,
+.calculator-page.theme-light .skill-card {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
+}
+
+.calculator-page.theme-light .skill-card--skip {
+  border-color: #d9a3a3 !important;
+}
+
+.calculator-page.theme-light .mini-btn {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface) !important;
+  color: var(--calc-text) !important;
+}
+
+.calculator-page.theme-light .mini-btn.danger {
+  border-color: #e4b4b4 !important;
+  color: #b42318 !important;
+}
+
+.calculator-page.theme-light .meta,
+.calculator-page.theme-light .empty-hint {
+  color: var(--calc-muted) !important;
+}
+
+.calculator-page.theme-light .warn-hint,
+.calculator-page.theme-light .missing {
+  color: #b42318 !important;
+}
+
 .calculator-page.theme-light .history-trigger,
 .calculator-page.theme-light .history-modal {
   background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%) !important;
@@ -270,6 +302,26 @@
 .calculator-page.theme-light .ocr-json-btn:hover,
 .calculator-page.theme-light .image-picker-btn:hover {
   background: var(--calc-surface-3) !important;
+}
+
+.calculator-page.theme-light .sf-agent-tab {
+  border-color: var(--calc-border) !important;
+  background: var(--calc-surface-2) !important;
+  background-color: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
+  box-shadow: none !important;
+}
+
+.calculator-page.theme-light .sf-agent-tab:hover {
+  background: var(--calc-surface-3) !important;
+  background-color: var(--calc-surface-3) !important;
+}
+
+.calculator-page.theme-light .sf-agent-tab.active {
+  border-color: var(--calc-accent) !important;
+  background: var(--calc-surface-2) !important;
+  background-color: var(--calc-surface-2) !important;
+  color: var(--calc-text) !important;
 }
 
 .calculator-page.theme-light .calc-mode-tab.active,
@@ -2684,9 +2736,249 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #fafbfc !important;
 }
 
-/* chip.highlight = 系统职业匹配提示（蓝虚线），必须与 active 视觉区分；覆盖 light 三处；无论是否 active 都强制蓝虚线 */
+/* chip.highlight = 系统职业匹配提示（蓝虚线），必须与 active 视觉区分；覆盖 light；无论是否 active 都强制蓝虚线 */
 .calculator-page.theme-light .chip.highlight,
 [data-theme='light'] .equip-picker-modal .chip.highlight,
-[data-theme='light'] .unified-modal .chip.highlight {
+[data-theme='light'] .unified-modal .chip.highlight,
+[data-theme='light'] .skill-flow-modal .chip.highlight {
   border: 1px dashed #4a90d9 !important;
+}
+
+/* 招式流程弹窗 light 覆写（Teleport 到 body，必须用 [data-theme] 不走 .calculator-page） */
+[data-theme='light'] .skill-flow-overlay {
+  background: rgba(15, 23, 42, 0.35) !important;
+}
+[data-theme='light'] .skill-flow-modal {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12) !important;
+}
+[data-theme='light'] .skill-flow-modal-header {
+  border-color: #eef1f5 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .skill-flow-modal-header h2 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .close-btn,
+[data-theme='light'] .skill-detail-panel .close-btn {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #667085 !important;
+}
+[data-theme='light'] .skill-flow-modal .close-btn:hover,
+[data-theme='light'] .skill-detail-panel .close-btn:hover {
+  border-color: #c9a55c !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-tabs {
+  border-color: #eef1f5 !important;
+  background: #ffffff !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-tab {
+  color: #667085 !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-tab:hover {
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-tab.active {
+  border-bottom-color: #c9a55c !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .flow-summary-counts {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .skill-flow-modal .modal-agent-row {
+  background: #ffffff !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-agent-tab {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .modal-agent-tab.active {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #8a6a1f !important;
+}
+
+[data-theme='light'] .sf-stats {
+  border-top-color: #d5dae3 !important;
+  background: #f7f4ee !important;
+}
+[data-theme='light'] .sf-stats-head h3,
+[data-theme='light'] .sf-pie-block h4,
+[data-theme='light'] .sf-stats-lift-head h4 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-stats-head p,
+[data-theme='light'] .sf-stats-hint,
+[data-theme='light'] .sf-stats-label,
+[data-theme='light'] .sf-pie-legend .muted {
+  color: #5c6570 !important;
+}
+[data-theme='light'] .sf-stats-num {
+  color: #24324a !important;
+}
+[data-theme='light'] .sf-stats-num.current {
+  color: #5a3d9b !important;
+}
+[data-theme='light'] .sf-stats-pct {
+  color: #2a6aa8 !important;
+}
+[data-theme='light'] .sf-stats-agent {
+  border-color: #d5dae3 !important;
+  background: #fff !important;
+}
+[data-theme='light'] .sf-rec-table,
+[data-theme='light'] .sf-pie-legend li {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-rec-table th,
+[data-theme='light'] .sf-rec-table td {
+  border-bottom-color: #d5dae3 !important;
+}
+[data-theme='light'] .skill-flow-modal .col-head {
+  border-bottom-color: #d5dae3 !important;
+}
+[data-theme='light'] .skill-flow-modal .col-head h3 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .col-desc,
+[data-theme='light'] .skill-flow-modal .empty-hint,
+[data-theme='light'] .skill-flow-modal .list-empty,
+[data-theme='light'] .skill-flow-modal .modal-empty,
+[data-theme='light'] .skill-flow-modal .drag-toggle,
+[data-theme='light'] .sf-card .sf-meta {
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-card {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+[data-theme='light'] .sf-card .sf-name {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-detail-head h3,
+[data-theme='light'] .skill-flow-modal .detail-mult,
+[data-theme='light'] .skill-flow-modal .detail-section-title,
+[data-theme='light'] .skill-detail-panel .detail-section-title {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-card .sf-mult-label {
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-card .sf-mult {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-card .sf-count {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-card .sf-stagger {
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-card .sf-index {
+  background: rgba(201, 165, 92, 0.16) !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-card .sf-damage {
+  color: #6b3fa0 !important;
+}
+[data-theme='light'] .sf-card .sf-agents {
+  background: #f3e8ff !important;
+  border-color: #d4b8f0 !important;
+  color: #6b3fa0 !important;
+}
+[data-theme='light'] .sf-dtype.is-anomaly {
+  background: #e8f4fc !important;
+  border-color: #b3d4ea !important;
+  color: #1d6fa3 !important;
+}
+[data-theme='light'] .sf-dtype.is-direct {
+  background: #fff8eb !important;
+  border-color: #c9a55c !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-stype {
+  background: #e8f6f2 !important;
+  border-color: #b2dfdb !important;
+  color: #1b6b5a !important;
+}
+[data-theme='light'] .skill-detail-overlay {
+  background: rgba(15, 23, 42, 0.28) !important;
+}
+[data-theme='light'] .skill-detail-panel {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+[data-theme='light'] .skill-detail-head {
+  border-color: #eef1f5 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .skill-detail-foot {
+  border-top-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .zone-display-item {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .zone-display-label {
+  color: #667085 !important;
+}
+[data-theme='light'] .zone-display-val {
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .warn-hint,
+[data-theme='light'] .skill-detail-panel .warn-hint {
+  color: #b42318 !important;
+}
+[data-theme='light'] .skill-flow-modal .mini-btn,
+[data-theme='light'] .skill-detail-panel .mini-btn {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .mini-btn.danger,
+[data-theme='light'] .skill-detail-panel .mini-btn.danger {
+  border-color: #e4b4b4 !important;
+  color: #b42318 !important;
+}
+[data-theme='light'] .skill-flow-modal input:not([type='checkbox']):not([type='radio']),
+[data-theme='light'] .skill-flow-modal select,
+[data-theme='light'] .skill-detail-panel input:not([type='checkbox']):not([type='radio']),
+[data-theme='light'] .skill-detail-panel select {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .chip,
+[data-theme='light'] .skill-detail-panel .chip {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+  color: #1c212a !important;
+}
+[data-theme='light'] .skill-flow-modal .chip.active,
+[data-theme='light'] .skill-detail-panel .chip.active {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .skill-flow-modal .chip-group + .chip-group {
+  border-left-color: #d5dae3 !important;
+}
+[data-theme='light'] .skill-flow-modal .agent-row label,
+[data-theme='light'] .skill-flow-modal .custom-form label,
+[data-theme='light'] .skill-flow-modal .type-checks,
+[data-theme='light'] .skill-detail-panel .agent-row label,
+[data-theme='light'] .skill-detail-panel .custom-form label,
+[data-theme='light'] .skill-detail-panel .type-checks {
+  color: #667085 !important;
 }

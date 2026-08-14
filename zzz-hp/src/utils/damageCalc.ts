@@ -39,39 +39,48 @@ export interface DamageCalcInput {
   combatPierceDmgBonus?: number
   /** 当前是否处于失衡期 */
   staggerPhase?: 'normal' | 'stagger'
-  /** 主C 属性，用于火/以太异常持续时间 ÷0.5 */
+  /** 招式持有者属性（直伤抗性区回落） */
+  ownerAgentElement?: string
+  /** 招式持有者抗性区基准属性（流明则取下一位非流明队友） */
+  ownerAgentResistanceElement?: string | null
+  /** 异常类触发者属性，用于火/以太异常持续时间 ÷0.5 */
+  anomalyTriggerElement?: string
+  /** @deprecated 结算不再取主C；未传 owner/触发者时的页级预览回落 */
   mainAgentElement?: string
-  /** 主 C 抗性区基准属性（流明时为下一位非流明队友属性；缺省同 mainAgentElement） */
+  /** @deprecated 结算不再取主C；未传 owner 抗性时的页级预览回落 */
   mainAgentResistanceElement?: string | null
-  /** 主C id（预留） */
+  /** 主C id（展示用，不参与结算） */
   mainAgentId?: string
-  /** 主C 名称 */
+  /** 主C 名称（展示用，不参与结算） */
   mainAgentName?: string
   /** 异常子类 */
   anomalySubKind?: AnomalyDamageSubKind
   /**
-   * 触发异常角色最终面板（乱流/异放的异常基础乘区）。
-   * 缺省时异常基础仍用 finalPanel（主 C）。
+   * 异常强度提供者最终面板（乱流/异放/紊乱/耀变的异常基础乘区）。
+   * 缺省时异常基础仍用 finalPanel（招式持有者）。
    */
   triggerFinalPanel?: PanelStats
-  /** 触发角色元素（影响异常有效持续时间，若走触发面板） */
+  /** 异常强度提供者元素 */
   triggerAgentElement?: string
-  /** 产生角色抗性区基准属性（流明时为下一位非流明队友属性；缺省同 triggerAgentElement） */
+  /** 异常强度提供者抗性区基准属性（流明则取下一位非流明队友） */
   triggerAgentResistanceElement?: string | null
-  /** 触发角色 piercePower（命破等）；缺省用主 C piercePower */
+  /** 异常强度提供者 piercePower（命破等）；缺省用持有者 piercePower */
   triggerPiercePower?: number
   triggerBaseDamageSource?: BaseDamageSource
   triggerIsMb?: boolean
   /** 当前招式小类（有则优先采用小类倍率） */
   skillSubcategory?: SkillSubcategory | null
-  /** 主 C 等级（直伤/非产生型异常等级区等）；缺省取 enemyInput.level */
+  /** @deprecated 直伤等级区请传 ownerAgentLevel */
   mainAgentLevel?: number
-  /** 事件 owner 等级（owner 非主 C 且无 trigger 面板时的等级区） */
+  /** 招式持有者等级（直伤等级区） */
   ownerAgentLevel?: number
-  /** 产生角色等级（异常基础等级区）；缺省与 mainAgentLevel 相同 */
+  /** 异常强度提供者等级（异常基础等级区） */
   triggerAgentLevel?: number
-  /** 主 C 局内最终面板（紊乱/乱流/异放/耀变：减防/无视防御与异常增伤等乘区） */
-  mainCFinalPanel?: PanelStats
+  /**
+   * 异常类触发者的局内最终面板：异放/耀变增伤与倍率，
+   * 以及所有异常类的减防/无视防御。
+   */
+  anomalyTriggerPanel?: PanelStats
   /** 队伍有蕾米埃尔时的异化系数乘区（预计算） */
   mutationZone?: number
   /** 耀变：蕾米埃尔耀变抗性穿透（非本人耀变时并入产生角色抗性区） */
@@ -311,11 +320,12 @@ function computeGeneralAndAnomalyBase(options: {
     options.enemyInput.vulnerableMultiplier + options.combatVulnerable / 100
   const globalStagger = options.combatGlobalStaggerVulnerable / 100
   const phaseStagger =
-    options.staggerPhase === 'stagger'
-      ? (options.combatStaggerVulnerable + options.combatStaggerVulnerableOnly) / 100
-      : 0
+    (options.combatStaggerVulnerable + options.combatStaggerVulnerableOnly) / 100
+  /** 非失衡：乘区固定为 1。失衡易伤只在流程勾了失衡时进入。 */
   const staggerMultiplier =
-    options.enemyInput.staggerMultiplier + globalStagger + phaseStagger
+    options.staggerPhase === 'stagger'
+      ? options.enemyInput.staggerMultiplier + globalStagger + phaseStagger
+      : 1
   const specialMultiplier = options.enemyInput.specialMultiplier + options.combatSpecial / 100
   const pierceDmgBonusRatio = options.combatPierceDmgBonus / 100
 
@@ -380,11 +390,16 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const mainAgentLevel = input.mainAgentLevel ?? input.enemyInput.level
   const ownerAgentLevel = input.ownerAgentLevel ?? mainAgentLevel
   const triggerAgentLevel = input.triggerAgentLevel ?? mainAgentLevel
-  const mainCPanel = input.mainCFinalPanel ?? panel
-  /** 异放/耀变增伤与倍率取主 C；紊乱/乱流增伤与暴击取 owner；异常基础取产生角色 */
+  const triggerAgentPanel = input.anomalyTriggerPanel ?? panel
+  const ownerElement = input.ownerAgentElement ?? input.mainAgentElement
+  const ownerResistanceElement =
+    input.ownerAgentResistanceElement ?? input.mainAgentResistanceElement ?? ownerElement
+  const durationElement =
+    input.anomalyTriggerElement ?? ownerElement ?? ''
+  /** 异放/耀变增伤与倍率取异常类触发者；紊乱/乱流增伤与暴击取持有者；异常基础取异常强度提供者 */
   const bonusPanel =
     useTriggerBase && (subKind === 'anomalyRelease' || subKind === 'radiance')
-      ? mainCPanel
+      ? triggerAgentPanel
       : panel
 
   const skillMults = input.skillSubcategory
@@ -409,7 +424,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     combatPierceDmgBonus: input.combatPierceDmgBonus ?? 0,
     staggerPhase,
     agentLevel: ownerAgentLevel,
-    resistanceElement: input.mainAgentResistanceElement ?? input.mainAgentElement,
+    resistanceElement: ownerResistanceElement,
+    defensePanel: {
+      penRate: panel.penRate,
+      pen: panel.pen,
+      ignoreDefense: triggerAgentPanel.ignoreDefense,
+      reduceDefense: triggerAgentPanel.reduceDefense,
+    },
   })
 
   const triggerParts = useTriggerBase
@@ -430,14 +451,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
         resistanceElement:
           input.triggerAgentResistanceElement ??
           input.triggerAgentElement ??
-          input.mainAgentResistanceElement ??
-          input.mainAgentElement,
-        // 异常基础防御区：穿透率/穿透值取产生角色，减防/无视防御取主 C
+          ownerResistanceElement,
+        // 异常基础防御区：穿透率/穿透值取异常强度提供者，减防/无视防御取异常类触发者
         defensePanel: {
           penRate: triggerPanel.penRate,
           pen: triggerPanel.pen,
-          ignoreDefense: mainCPanel.ignoreDefense,
-          reduceDefense: mainCPanel.reduceDefense,
+          ignoreDefense: triggerAgentPanel.ignoreDefense,
+          reduceDefense: triggerAgentPanel.reduceDefense,
         },
         extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
       })
@@ -460,7 +480,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const settlementDamageExpected = directBaseChain * settlementDmgMultZone
   const directDamageExpected = directDamageFromDirectMult + settlementDamageExpected
 
-  // 异常乘区：异放/耀变取主 C（bonusPanel）；紊乱/乱流/普通异常取 owner；基础期望取产生角色
+  // 异常乘区：异放/耀变取异常类触发者（bonusPanel）；紊乱/乱流/普通异常取持有者；基础期望取异常强度提供者
   const anomalyDmgBonusZone = 1 + bonusPanel.anomalyDmgBonus / 100
   const anomalyMultZone =
     Math.max(0, bonusPanel.anomalyMult / 100) * readFactor(bonusPanel.anomalyMultFactor)
@@ -494,8 +514,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       defensePanel: {
         penRate: remielSelf.penRate,
         pen: remielSelf.pen,
-        ignoreDefense: mainCPanel.ignoreDefense,
-        reduceDefense: mainCPanel.reduceDefense,
+        ignoreDefense: triggerAgentPanel.ignoreDefense,
+        reduceDefense: triggerAgentPanel.reduceDefense,
       },
       isMb: remielSelf.isMb,
       enemyDefense: input.enemyInput.defense,
@@ -547,9 +567,6 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const anomalyReleaseExpectedFullCrit =
     anomalyReleasePreCrit * anomalyCombinedFullCritZone
 
-  const durationElement = useTriggerBase
-    ? (input.triggerAgentElement ?? input.mainAgentElement ?? '')
-    : (input.mainAgentElement ?? '')
   const effectiveDuration = effectiveAnomalyDuration(
     (useTriggerBase ? triggerPanel : panel).anomalyDuration || bonusPanel.anomalyDuration,
     durationElement,
@@ -647,7 +664,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       4,
     ),
     levelZone: round(baseParts.levelZone, 4),
-    levelZoneAgentLevel: useTriggerBase ? triggerAgentLevel : mainAgentLevel,
+    levelZoneAgentLevel: useTriggerBase ? triggerAgentLevel : ownerAgentLevel,
     anomalyDmgBonusZone: round(anomalyDmgBonusZone, 4),
     anomalyMultZone: round(anomalyMultZone, 4),
     anomalyCritRateRatio: round(anomalyCritRateRatio, 4),
