@@ -5,6 +5,7 @@ import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
 import type { FlowEntry, PreparedSkill, SchemeSlot } from '@/types/damageCalcHistory'
 import SkillFlowCard from '@/components/calculator/SkillFlowCard.vue'
+import SkillFlowStatsPanel from '@/components/calculator/SkillFlowStatsPanel.vue'
 import SkillDefinitionForm from '@/components/calculator/SkillDefinitionForm.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
@@ -1156,6 +1157,13 @@ defineExpose({ expand })
               </ul>
             </div>
           </div>
+          <SkillFlowStatsPanel
+            :team-slots="teamSlots"
+            :agents="agents"
+            :hits="hits"
+            :hit-damages="hitDamages"
+            :active-slot-index="activeSlotIndex"
+          />
         </div>
     </div>
 

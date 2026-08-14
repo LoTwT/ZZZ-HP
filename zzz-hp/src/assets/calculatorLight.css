@@ -2695,6 +2695,42 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #8a6a1f !important;
 }
 
+[data-theme='light'] .sf-stats {
+  border-top-color: #d5dae3 !important;
+  background: #f7f4ee !important;
+}
+[data-theme='light'] .sf-stats-head h3,
+[data-theme='light'] .sf-pie-block h4,
+[data-theme='light'] .sf-stats-lift-head h4 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-stats-head p,
+[data-theme='light'] .sf-stats-hint,
+[data-theme='light'] .sf-stats-label,
+[data-theme='light'] .sf-pie-legend .muted {
+  color: #5c6570 !important;
+}
+[data-theme='light'] .sf-stats-num {
+  color: #24324a !important;
+}
+[data-theme='light'] .sf-stats-num.current {
+  color: #5a3d9b !important;
+}
+[data-theme='light'] .sf-stats-pct {
+  color: #2a6aa8 !important;
+}
+[data-theme='light'] .sf-stats-agent {
+  border-color: #d5dae3 !important;
+  background: #fff !important;
+}
+[data-theme='light'] .sf-rec-table,
+[data-theme='light'] .sf-pie-legend li {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-rec-table th,
+[data-theme='light'] .sf-rec-table td {
+  border-bottom-color: #d5dae3 !important;
+}
 [data-theme='light'] .skill-flow-modal .col-head {
   border-bottom-color: #d5dae3 !important;
 }
