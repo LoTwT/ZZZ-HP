@@ -75,7 +75,6 @@ import {
 import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 import {
   collectConvertSupportSlots,
   omitAgentFromAnomalySlotPanels,
@@ -92,7 +91,7 @@ import {
   DAMAGE_EVENT_KIND_OPTIONS,
   eventNeedsAnomalyProducer,
 } from '@/utils/damageEvent'
-import { getHitSkipReason } from '@/utils/resolvedHit'
+import { getHitSkipReason, buildGenericPanelSkillContext } from '@/utils/resolvedHit'
 
 const MB_PROFESSION = '命破'
 
@@ -255,16 +254,6 @@ const mainAgent = computed(() => props.agents.find((item) => item.id === mainSlo
 
 const { skillSubcategories, followUpSkillRules } = storeToRefs(useCalculatorBuffStore())
 
-const skillIsFollowUp = computed(() =>
-  resolveIsFollowUp({
-    agentId: mainAgent.value?.id,
-    categoryId: props.skillCategoryId ?? 'basic',
-    subcategoryId: props.skillSubcategoryId ?? null,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-  }),
-)
-
 const selectedBangboo = computed(
   () =>
     props.bangboos.find((item) => item.id === props.selectedBangbooId) ??
@@ -295,15 +284,10 @@ function buildBasePanelCalcContext() {
     bangbooRefine: props.bangbooRefine,
     mainSlotIndex: slotIndex,
     driveDiscs: props.driveDiscs,
-    skillContext: {
-      damageKind: damageKind.value,
-      categoryId: props.skillCategoryId ?? 'basic',
-      subcategoryId: props.skillSubcategoryId ?? null,
+    skillContext: buildGenericPanelSkillContext({
       element: mainAgent.value?.element,
       staggerPhase: props.staggerPhase ?? 'stagger',
-      isFollowUp: skillIsFollowUp.value,
-      anomalySubKind: damageKind.value === 'anomaly' ? anomalySubKind.value : undefined,
-    },
+    }),
     buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
     anomalySlotPanels: props.anomalySlotPanels,
     convertSlotPanels: props.convertSlotPanels,
@@ -472,15 +456,10 @@ const evalCtx = computed(() =>
     enemyInput: { ...enemyInput.value },
     baseDamageSource: isMb.value ? 'pierce' : baseDamageSource.value,
     extraGains: extraGains.value.map((item) => ({ ...item })),
-    skillContext: {
-      damageKind: damageKind.value,
-      categoryId: props.skillCategoryId ?? 'basic',
-      subcategoryId: props.skillSubcategoryId ?? null,
+    skillContext: buildGenericPanelSkillContext({
       element: mainAgent.value?.element,
       staggerPhase: props.staggerPhase ?? 'stagger',
-      isFollowUp: skillIsFollowUp.value,
-      anomalySubKind: damageKind.value === 'anomaly' ? anomalySubKind.value : undefined,
-    },
+    }),
     buffSelection: props.buffSelection ?? null,
     slotBuffSelections: props.slotBuffSelections ?? null,
     anomalySlotPanels: effectiveAnomalySlotPanels.value,

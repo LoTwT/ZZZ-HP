@@ -70,12 +70,12 @@ import {
   normalizeDamageEnemyInput,
   type DamageEnemyInput,
 } from '@/utils/enemyResistance'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 import { createEmptyBuffStatModifiers, createEmptyRefinementMods } from '@/utils/calculatorUi'
 import {
   ensureSchemeSlots,
   resolveFlow,
   resolveSkillPreviews,
+  buildGenericPanelSkillContext,
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 
@@ -515,16 +515,6 @@ const teamBuffSignature = computed(() =>
   }),
 )
 
-const skillIsFollowUp = computed(() =>
-  resolveIsFollowUp({
-    agentId: activeAgent.value?.id,
-    categoryId: skillCategoryId.value,
-    subcategoryId: skillSubcategoryId.value,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-  }),
-)
-
 /** 异放/乱流/紊乱有产生角色时，增益属性过滤跟随该角色属性；否则跟当前编辑槽位 */
 const damageElement = computed(() => {
   const needsTrigger =
@@ -564,21 +554,10 @@ function buildBuffCollectContext(mainSlotIdx: number) {
     mainSlotIndex: mainSlotIdx,
     driveDiscs: driveDiscs.value,
     environmentBuffs: activeEnvironmentBuffs.value,
-    skillContext: {
-      damageKind: damageKind.value,
-      categoryId: skillCategoryId.value,
-      subcategoryId: skillSubcategoryId.value,
+    skillContext: buildGenericPanelSkillContext({
       element: agent?.element ?? damageElement.value,
       staggerPhase: staggerPhase.value,
-      isFollowUp: resolveIsFollowUp({
-        agentId: agent?.id,
-        categoryId: skillCategoryId.value,
-        subcategoryId: skillSubcategoryId.value,
-        skillSubcategories: skillSubcategories.value,
-        followUpSkillRules: followUpSkillRules.value,
-      }),
-      anomalySubKind: damageKind.value === 'anomaly' ? anomalySubKind.value : undefined,
-    },
+    }),
   }
 }
 
@@ -611,15 +590,10 @@ const convertSupportSlots = computed(() =>
       buffSelection: resolveBuffSelectionForSlot(multiSlotBuffSelection, activeSlot.value),
       anomalySlotPanels,
       convertSlotPanels,
-      skillContext: {
-        damageKind: damageKind.value,
-        categoryId: skillCategoryId.value,
-        subcategoryId: skillSubcategoryId.value,
+      skillContext: buildGenericPanelSkillContext({
         element: damageElement.value,
         staggerPhase: staggerPhase.value,
-        isFollowUp: skillIsFollowUp.value,
-        anomalySubKind: damageKind.value === 'anomaly' ? anomalySubKind.value : undefined,
-      },
+      }),
     },
     { excludeAnomalyAgentIds: getParticipantAgentIds() },
   ),

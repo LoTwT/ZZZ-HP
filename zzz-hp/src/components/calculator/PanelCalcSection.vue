@@ -90,6 +90,7 @@ import {
   resolveRadianceBonusMultDefaults,
 } from '@/utils/damageEvent'
 import {
+  buildGenericPanelSkillContext,
   buildSkillContextFromHit,
   getHitSkipReason,
   skillNeedsDualAgents,
@@ -100,8 +101,6 @@ import {
 } from '@/utils/resolvedHit'
 import { summarizeDamageByOwner, RADIANCE_SELF_TRIGGER_HINT } from '@/utils/damageEventOwner'
 import {
-  extraGainMatchesProfession,
-  resolveExtraGainValue,
   mergeExtraModsForEvent,
 } from '@/utils/extraBuffCalc'
 import {
@@ -131,7 +130,6 @@ import DirectDamageFormulaAligned from '@/components/calculator/DirectDamageForm
 import DamageOwnerShareBlock from '@/components/calculator/DamageOwnerShareBlock.vue'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 
 const MB_PROFESSION = '命破'
 
@@ -282,30 +280,27 @@ function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   })
 }
 
-/** 无流程时：额外 Buff 打在当前正在编辑的角色上；有流程时按该角色招式匹配 */
+/** 局内通用面板上的额外 Buff：只吃通用，不跟流程第一条招式走 */
 function buildExtraModsForMainPanel(): BuffStatModifiers {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const phase = props.staggerPhase ?? 'stagger'
-  if (!props.hits?.length) {
-    let total = createEmptyBuffStatModifiers()
-    const mainId = mainAgent.value?.id ?? ''
-    const mainProfession = props.agents.find((item) => item.id === mainId)?.profession
-    for (const gain of extraGains.value) {
-      const situation = gain.applySituation ?? 'global'
-      if (situation === 'stagger' && phase !== 'stagger') continue
-      if (situation === 'non_stagger' && phase !== 'normal') continue
-      if (!extraGainMatchesProfession(gain, mainProfession)) continue
-      const amount = resolveExtraGainValue(gain, props.teamSlots, props.agents)
-      if (amount == null) continue
-      const next = createEmptyBuffStatModifiers()
-      next[gain.stat as BuffStatKey] = amount
-      total = mergeBuffStatModifiers(total, next)
-    }
-    return total
-  }
   const mainId = mainAgent.value?.id ?? ''
-  const ownedHit = props.hits.find((hit) => hit.ownerAgentId === mainId)
-  return buildExtraModsForHit(ownedHit ?? props.hits[0]!, mainId)
+  const phase = props.staggerPhase ?? 'stagger'
+  return mergeExtraModsForEvent(
+    extraGains.value,
+    buildGenericPanelSkillContext({
+      element: mainAgent.value?.element,
+      staggerPhase: phase,
+    }),
+    {
+      slotAgentId: mainId,
+      ownerAgentId: mainId,
+      staggerPhase: phase,
+      resolveAgentProfession: (agentId) =>
+        props.agents.find((item) => item.id === agentId)?.profession,
+      teamSlots: props.teamSlots,
+      agents: props.agents,
+    },
+  )
 }
 
 const extraMods = computed(() => buildExtraModsForMainPanel())
@@ -332,17 +327,7 @@ const mainAgent = computed(() =>
   props.agents.find((item) => item.id === mainSlot.value.agentId),
 )
 
-const { skillSubcategories, followUpSkillRules } = storeToRefs(useCalculatorBuffStore())
-
-const skillIsFollowUp = computed(() =>
-  resolveIsFollowUp({
-    agentId: mainAgent.value?.id,
-    categoryId: props.skillCategoryId ?? 'basic',
-    subcategoryId: props.skillSubcategoryId ?? null,
-    skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
-  }),
-)
+const { skillSubcategories } = storeToRefs(useCalculatorBuffStore())
 
 const resolvedSkillSubcategory = computed<SkillSubcategory | null>(() => {
   const id = props.skillSubcategoryId
@@ -479,22 +464,10 @@ function resolveLuminousTeamModifiers() {
 
 function buildSkillContextForSlot(slotIndex: number) {
   const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  return {
-    damageKind: props.damageKind ?? 'direct',
-    categoryId: props.skillCategoryId ?? 'basic',
-    subcategoryId: props.skillSubcategoryId ?? null,
+  return buildGenericPanelSkillContext({
     element: resolveBuffMatchElementForSlot(slotIndex) ?? agent?.element ?? mainAgent.value?.element,
     staggerPhase: props.staggerPhase ?? 'stagger',
-    isFollowUp: resolveIsFollowUp({
-      agentId: agent?.id,
-      categoryId: props.skillCategoryId ?? 'basic',
-      subcategoryId: props.skillSubcategoryId ?? null,
-      skillSubcategories: skillSubcategories.value,
-      followUpSkillRules: followUpSkillRules.value,
-    }),
-    anomalySubKind:
-      props.damageKind === 'anomaly' ? (props.anomalySubKind ?? 'anomaly') : undefined,
-  }
+  })
 }
 
 function buildPanelCalcContextForSlot(
@@ -681,6 +654,7 @@ const panelBreakdown = computed(() => {
 const finalPanel = computed(() => {
   const panel = { ...panelBreakdown.value.finalPanel }
   if (
+    !props.hits?.length &&
     props.damageKind === 'anomaly' &&
     (props.anomalySubKind ?? 'anomaly') === 'anomalyRelease'
   ) {

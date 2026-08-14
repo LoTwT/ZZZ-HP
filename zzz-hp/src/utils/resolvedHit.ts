@@ -326,6 +326,26 @@ export function applyHitPanelMods(
   return next
 }
 
+/**
+ * 局内通用面板：只吃通用 Buff。
+ * `coords: []` 让招式限定（如普攻 +20% 增伤）不进面板；异常子类限定也不进。
+ * 那些只在 `buildSkillContextFromHit` 结算对应招式时生效。
+ */
+export function buildGenericPanelSkillContext(options?: {
+  element?: string
+  staggerPhase?: StaggerPhase
+}): SkillCalcContext {
+  return {
+    damageKind: 'direct',
+    categoryId: 'basic',
+    subcategoryId: null,
+    coords: [],
+    element: options?.element,
+    staggerPhase: options?.staggerPhase,
+    isFollowUp: false,
+  }
+}
+
 /** 结算某一条时喂给 Buff 匹配的上下文 */
 export function buildSkillContextFromHit(
   hit: ResolvedHit,

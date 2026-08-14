@@ -807,7 +807,9 @@ function defaultSkillContext(
     damageKind,
     categoryId: 'basic',
     subcategoryId: null,
+    coords: [],
     element,
+    isFollowUp: false,
   }
 }
 
