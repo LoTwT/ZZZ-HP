@@ -2823,6 +2823,9 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #fff8eb !important;
   color: #8a6a1f !important;
 }
+[data-theme='light'] .skill-flow-modal .chip-group + .chip-group {
+  border-left-color: #d5dae3 !important;
+}
 [data-theme='light'] .skill-flow-modal .agent-row label,
 [data-theme='light'] .skill-flow-modal .custom-form label,
 [data-theme='light'] .skill-flow-modal .type-checks,
