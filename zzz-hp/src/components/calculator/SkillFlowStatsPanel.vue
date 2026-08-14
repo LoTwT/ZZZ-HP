@@ -160,7 +160,7 @@ function clearRecords() {
   <section class="sf-stats" aria-label="流程伤害统计">
     <header class="sf-stats-head">
       <h3>流程伤害</h3>
-      <p>按流程条目累加，口径与词条计算总伤相同。框架版，饼图和记录之后再补。</p>
+      <p>按流程条目累加，口径与词条计算总伤相同。</p>
     </header>
 
     <div class="sf-stats-current">
@@ -222,7 +222,7 @@ function clearRecords() {
           </button>
         </div>
       </div>
-      <p class="sf-stats-hint">阉割版：最多 5 条，只比当前角色总伤。完整「伤害计算和提升」以后再做。</p>
+      <p class="sf-stats-hint">最多记录 5 条，对比当前角色总伤相对上一条的变化。</p>
       <table v-if="records.length" class="sf-rec-table">
         <thead>
           <tr>
