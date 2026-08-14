@@ -106,6 +106,7 @@ function emitCount(event: Event) {
 .sf-card {
   box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   height: 2.15rem;
   overflow: hidden;
@@ -148,9 +149,10 @@ function emitCount(event: Event) {
 }
 .sf-name {
   box-sizing: border-box;
-  flex: 0 0 8.5rem;
-  width: 8.5rem;
-  min-width: 0;
+  flex: 1 1 5rem;
+  width: auto;
+  min-width: 3.5rem;
+  max-width: 8.5rem;
   padding: 0.08rem 0.4rem;
   border: 1px solid #2d323a;
   border-radius: 4px;

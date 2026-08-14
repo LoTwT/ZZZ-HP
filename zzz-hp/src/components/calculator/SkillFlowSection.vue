@@ -1295,11 +1295,14 @@ defineExpose({ expand })
   position: relative;
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   height: auto;
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow-x: clip;
+  container-type: inline-size;
+  container-name: skill-flow;
   background: #14181f;
   border: 1px solid #2a3038;
   border-radius: 14px;
@@ -1408,6 +1411,8 @@ defineExpose({ expand })
 
 .flow-grid {
   display: grid;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   column-gap: 0.85rem;
@@ -1415,7 +1420,10 @@ defineExpose({ expand })
 }
 .flow-col {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: subgrid;
   grid-row: 1 / span 3;
 }
@@ -1423,6 +1431,7 @@ defineExpose({ expand })
   .flow-col {
     display: flex;
     flex-direction: column;
+    grid-template-columns: none;
     grid-row: auto;
   }
   .col-head {
@@ -1515,6 +1524,7 @@ defineExpose({ expand })
   list-style: none;
   margin: 0.45rem 0 0;
   padding: 0 0.2rem 0 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -1779,6 +1789,12 @@ defineExpose({ expand })
   font-variant-numeric: tabular-nums;
 }
 
+/* 按展开区实际宽度叠列，不要只看窗口：侧栏会让内容区比 viewport 窄一截 */
+@container skill-flow (max-width: 48rem) {
+  .flow-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 800px) {
   .flow-grid {
     grid-template-columns: minmax(0, 1fr);
