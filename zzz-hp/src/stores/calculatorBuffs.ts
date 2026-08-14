@@ -41,6 +41,7 @@ import {
 } from '@/utils/skillSubcategoryMult'
 import {
   bakeFollowUpSkillTypesOnce,
+  loadCustomSkills,
   migrateLegacyModesToSkills,
   removeCustomSkill,
   upsertCustomSkill,
@@ -645,6 +646,10 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     customSkills.value = removeCustomSkill(id)
   }
 
+  function reloadCustomSkillsFromStorage() {
+    customSkills.value = loadCustomSkills()
+  }
+
   async function upsertFollowUpSkillRuleDoc(doc: FollowUpSkillRule) {
     const saved = await saveFollowUpSkillRule(doc)
     const normalized = normalizeFollowUpSkillRule(saved as unknown as Record<string, unknown>)
@@ -699,6 +704,7 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
     removePresetSkillDoc,
     upsertCustomSkillDoc,
     removeCustomSkillDoc,
+    reloadCustomSkillsFromStorage,
     loading,
     loaded,
     error,

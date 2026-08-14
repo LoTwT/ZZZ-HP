@@ -1108,6 +1108,62 @@ function onSchemeLibraryChanged() {
   historyEntries.value = listAllDamageCalcHistory()
 }
 
+function blankTeamSlots(): TeamSlot[] {
+  return [
+    {
+      agentId: '',
+      rank: 0,
+      wengineId: 'none',
+      wengineRefine: 1,
+      isMainC: true,
+      twoPieceDriveDiscId: 'none',
+      fourPieceDriveDiscId: 'none',
+    },
+    {
+      agentId: '',
+      rank: 0,
+      wengineId: 'none',
+      wengineRefine: 1,
+      isMainC: false,
+      twoPieceDriveDiscId: 'none',
+      fourPieceDriveDiscId: 'none',
+    },
+    {
+      agentId: '',
+      rank: 0,
+      wengineId: 'none',
+      wengineRefine: 1,
+      isMainC: false,
+      twoPieceDriveDiscId: 'none',
+      fourPieceDriveDiscId: 'none',
+    },
+  ]
+}
+
+function onSchemeImported(loadedId: string) {
+  calculatorBuffStore.reloadCustomSkillsFromStorage()
+  historyEntries.value = listAllDamageCalcHistory()
+  const entry = loadedId ? findDamageCalcHistory(loadedId) : null
+  if (entry) {
+    loadHistoryEntry(entry)
+    return
+  }
+  applyWorkingState({
+    teamSlots: blankTeamSlots(),
+    activeSlot: 0,
+    selectedBangbooId: 'none',
+    bangbooRefine: 1,
+    panelCalcMode: 'panel',
+    anomalySlotPanels: {},
+    convertSlotPanels: {},
+    slots: ensureSchemeSlots([], 3),
+    staggerPhase: 'stagger',
+    multiSlotBuffSelection: createEmptyMultiSlotBuffSelection(),
+  })
+  activeHistoryId.value = ''
+  setLoadedSchemeId('')
+}
+
 watch(
   [
     teamSlots,
@@ -1179,6 +1235,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       @overwrite="overwriteHistoryEntry"
       @load="loadHistoryEntry"
       @changed="onSchemeLibraryChanged"
+      @imported="onSchemeImported"
     />
 
     <PanelScreenshotUploadSection

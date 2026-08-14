@@ -1,4 +1,5 @@
 import type { AgentBuffDoc } from '@/types/calculator'
+import { loadCustomSkills, parseCustomSkillList, replaceCustomSkills } from '@/utils/skillLibrary'
 import type {
   DamageCalcHistoryEntry,
   DamageCalcHistoryExport,
@@ -775,6 +776,14 @@ export function saveWorkingDraft(draft: DamageCalcWorkingDraft): void {
   }
 }
 
+export function clearWorkingDraft(): void {
+  try {
+    localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 // ===================== 格式化辅助 =====================
 
 export function formatDamageCalcAgentSelection(
@@ -813,6 +822,85 @@ export function formatDamageCalcHistoryTime(savedAt: number): string {
 
 // ===================== 导出 / 导入（对齐 dev 的 zzz_schemes 包） =====================
 
+function emptyImportResult(errors: string[]): DamageCalcHistoryImportResult {
+  return {
+    added: 0,
+    skipped: 0,
+    errors,
+    customSkillCount: 0,
+    legacyPack: false,
+    loadedId: '',
+  }
+}
+
+function ingestSchemes(
+  target: SchemeStore,
+  incomingSchemes: Record<string, DamageCalcHistoryEntry>,
+): { added: number; skipped: number } {
+  let added = 0
+  let skipped = 0
+  for (const p of Object.keys(incomingSchemes)) {
+    const v = incomingSchemes[p]
+    if (!v || !isValidEntry(v)) {
+      skipped++
+      continue
+    }
+    const rawPath = schemeKeyToPath(p)
+    const folder = normFolder(v.folder || parentFolder(rawPath))
+    const name = v.name || baseName(rawPath)
+    const key = schemeKey(folder, name)
+    const entry: DamageCalcHistoryEntry = {
+      ...v,
+      id: key,
+      folder,
+      name,
+      order: typeof v.order === 'number' ? v.order : 0,
+    }
+    delete entry.directEvents
+    delete entry.anomalyEvents
+    target.schemes[key] = entry
+    added++
+  }
+  return { added, skipped }
+}
+
+function resolveImportedLoadedId(store: SchemeStore, requested?: string | null): string {
+  const want = String(requested ?? '').trim()
+  if (want && store.schemes[want]) return want
+  if (want) {
+    const found = Object.values(store.schemes).find((entry) => entry.id === want)
+    if (found) return found.id
+  }
+  return Object.values(store.schemes)[0]?.id ?? ''
+}
+
+function commitReplacedStore(
+  store: SchemeStore,
+  customRaw: unknown,
+  legacyPack: boolean,
+  requestedId?: string | null,
+): DamageCalcHistoryImportResult {
+  const skills = parseCustomSkillList(customRaw)
+  if (skills == null) {
+    return emptyImportResult(['自建招式数据格式错误，未改动本机数据'])
+  }
+  ensureOrders(store)
+  store.version = SCHEME_STORE_VERSION
+  writeStore(store)
+  replaceCustomSkills(skills)
+  clearWorkingDraft()
+  const loadedId = resolveImportedLoadedId(store, requestedId)
+  setLoadedSchemeId(loadedId)
+  return {
+    added: Object.keys(store.schemes).length,
+    skipped: 0,
+    errors: [],
+    customSkillCount: skills.length,
+    legacyPack,
+    loadedId,
+  }
+}
+
 export function exportDamageCalcHistory(): string {
   const store = readStore()
   const payload: DamageCalcHistoryExport = {
@@ -822,96 +910,57 @@ export function exportDamageCalcHistory(): string {
     dirs: store.dirs,
     schemes: store.schemes,
     currentId: getLoadedSchemeId(),
+    customSkills: loadCustomSkills(),
   }
   return JSON.stringify(payload, null, 2)
 }
 
-export function importDamageCalcHistory(
-  json: string,
-  mode: 'merge' | 'replace' = 'merge',
-): DamageCalcHistoryImportResult {
-  const errors: string[] = []
+/** 整包覆盖：清空本机方案库、自建招式、工作草稿后再写入。合并导入尚未做。 */
+export function importDamageCalcHistory(json: string): DamageCalcHistoryImportResult {
   let parsed: unknown
   try {
     parsed = JSON.parse(json)
   } catch {
-    return { added: 0, skipped: 0, errors: ['JSON 解析失败，请检查文件格式'] }
+    return emptyImportResult(['JSON 解析失败，请检查文件格式'])
   }
-  // 兼容旧版 { version:1, entries, folders }
+
   if (Array.isArray(parsed)) {
-    const store = migrateFromLegacyArray(parsed)
-    const current = mode === 'replace' ? createEmptyStore() : readStore()
-    for (const p of Object.keys(store.schemes)) {
-      if (mode === 'replace' || !current.schemes[p]) {
-        current.schemes[p] = store.schemes[p]!
-      }
+    const migrated = migrateFromLegacyArray(parsed)
+    const next = createEmptyStore()
+    const ingested = ingestSchemes(next, migrated.schemes)
+    for (const d of Object.keys(migrated.dirs)) next.dirs[d] = migrated.dirs[d]!
+    const result = commitReplacedStore(next, [], true, null)
+    if (!result.errors.length) {
+      result.added = ingested.added
+      result.skipped = ingested.skipped
     }
-    for (const d of Object.keys(store.dirs)) {
-      if (!current.dirs[d]) current.dirs[d] = store.dirs[d]!
-    }
-    ensureOrders(current)
-    writeStore(current)
-    return { added: Object.keys(store.schemes).length, skipped: 0, errors }
+    return result
   }
+
   const data = parsed as Partial<DamageCalcHistoryExport> & { entries?: unknown[] }
   if (data.type !== 'zzz-hp-schemes' && !Array.isArray(data.entries) && !data.schemes) {
-    return {
-      added: 0,
-      skipped: 0,
-      errors: ['文件类型错误：不是 zzz-hp-schemes 方案库文件'],
-    }
+    return emptyImportResult(['文件类型错误：不是 zzz-hp-schemes 方案库文件'])
   }
-  const store = readStore()
-  const current = mode === 'replace' ? createEmptyStore() : store
 
-  // 合并目录（本地优先）
+  const next = createEmptyStore()
   const incomingDirs = data.dirs || {}
-  for (const d of Object.keys(incomingDirs)) {
-    if (!current.dirs[d]) current.dirs[d] = incomingDirs[d]!
-  }
+  for (const d of Object.keys(incomingDirs)) next.dirs[d] = incomingDirs[d]!
 
-  // 兼容旧版 { version:1, entries: [...] }
   let incomingSchemes: Record<string, DamageCalcHistoryEntry> = data.schemes || {}
   if (Array.isArray(data.entries)) {
     const migrated = migrateFromLegacyArray(data.entries)
     incomingSchemes = migrated.schemes
     for (const d of Object.keys(migrated.dirs)) {
-      if (!current.dirs[d]) current.dirs[d] = migrated.dirs[d]!
+      if (!next.dirs[d]) next.dirs[d] = migrated.dirs[d]!
     }
   }
 
-  let added = 0
-  let skipped = 0
-  for (const p of Object.keys(incomingSchemes)) {
-    const v = incomingSchemes[p]
-    if (!v || !isValidEntry(v)) {
-      skipped++
-      continue
-    }
-    // 兼容旧版未前缀 key（/父/名）与新版已前缀 key（s:/父/名）
-    const rawPath = schemeKeyToPath(p)
-    const folder = normFolder(v.folder || parentFolder(rawPath))
-    const name = v.name || baseName(rawPath)
-    const key = schemeKey(folder, name)
-    if (mode === 'merge' && current.schemes[key]) {
-      skipped++
-      continue
-    }
-    const entry: DamageCalcHistoryEntry = {
-      ...v,
-      id: key,
-      folder,
-      name,
-      order: typeof v.order === 'number' ? v.order : 0,
-    }
-    // 旧导出包（v2 及以前）带 3.1.6.4 未上线的事件字段，一并清掉
-    delete entry.directEvents
-    delete entry.anomalyEvents
-    current.schemes[key] = entry
-    added++
+  const ingested = ingestSchemes(next, incomingSchemes)
+  const legacyPack = !Object.prototype.hasOwnProperty.call(data, 'customSkills')
+  const result = commitReplacedStore(next, legacyPack ? [] : data.customSkills, legacyPack, data.currentId)
+  if (!result.errors.length) {
+    result.added = ingested.added
+    result.skipped = ingested.skipped
   }
-  ensureOrders(current)
-  current.version = SCHEME_STORE_VERSION
-  writeStore(current)
-  return { added, skipped, errors }
+  return result
 }

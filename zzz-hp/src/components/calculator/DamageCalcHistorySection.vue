@@ -46,6 +46,7 @@ const emit = defineEmits<{
   overwrite: [path: string]
   load: [entry: DamageCalcHistoryEntry]
   changed: []
+  imported: [loadedId: string]
 }>()
 
 // ============ 2次确认锁 + 自定义弹窗（替代浏览器原生 confirm / prompt） ============
@@ -96,6 +97,11 @@ function confirmThen(opts: Omit<PendingConfirm, 'onConfirm'>, action: () => void
     action()
     return
   }
+  pendingConfirm.value = { ...opts, onConfirm: action }
+}
+
+/** 不受二次确认锁影响，导入覆盖等破坏性操作必须走这层 */
+function confirmAlways(opts: Omit<PendingConfirm, 'onConfirm'>, action: () => void) {
   pendingConfirm.value = { ...opts, onConfirm: action }
 }
 
@@ -580,7 +586,7 @@ function jumpToLoadedFolder() {
 // ============ 导出 / 导入 ============
 function exportAll() {
   confirmThen(
-    { title: '导出全部方案', message: '确认将当前方案库导出为 JSON 文件？' },
+    { title: '导出全部方案', message: '确认将当前方案库和自建招式导出为 JSON 文件？' },
     () => {
       const json = exportDamageCalcHistory()
       const blob = new Blob([json], { type: 'application/json' })
@@ -590,13 +596,33 @@ function exportAll() {
       a.download = `zzz-hp-schemes-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
-      formMessage.value = '已导出全部方案'
+      formMessage.value = '已导出全部方案和自建招式'
     },
   )
 }
 
 function triggerImport() {
-  fileInputRef.value?.click()
+  confirmAlways(
+    {
+      title: '导入会清空本机存档',
+      message:
+        '将删除本机全部方案（含准备招式、流程）、全部自建招式，以及当前工作草稿，再用文件内容替换。主题、账号、管理端登录不受影响。请先点「导出全部」在本地存档。确定已存档并继续？',
+      danger: true,
+      confirmText: '已存档，继续',
+    },
+    () => {
+      confirmThen(
+        {
+          title: '再次确认导入',
+          message: '确定清空本机方案和自建招式，然后选择导入文件？',
+          danger: true,
+        },
+        () => {
+          fileInputRef.value?.click()
+        },
+      )
+    },
+  )
 }
 
 function onFilePicked(event: Event) {
@@ -605,19 +631,27 @@ function onFilePicked(event: Event) {
   if (!file) return
   const reader = new FileReader()
   reader.onload = () => {
-    confirmThen(
+    const json = String(reader.result)
+    confirmAlways(
       {
-        title: '导入方案',
-        message: '确认从文件导入？同名路径的方案保留原方案，新增方案合并进来。',
+        title: '用文件覆盖本机',
+        message: `即将用「${file.name}」替换本机全部方案和自建招式。此操作无法撤销。`,
         danger: true,
+        confirmText: '覆盖导入',
+        highlight: file.name,
       },
       () => {
-        const result = importDamageCalcHistory(String(reader.result), 'merge')
-        if (result.errors.length) formMessage.value = result.errors.join('；')
-        else {
-          formMessage.value = `已导入 ${result.added} 个方案${result.skipped ? `（跳过 ${result.skipped} 个重复）` : ''}`
+        const result = importDamageCalcHistory(json)
+        if (result.errors.length) {
+          formMessage.value = result.errors.join('；')
+          return
         }
+        const legacyHint = result.legacyPack
+          ? '（旧文件不含自建招式，流程可能显示招式已删除）'
+          : ''
+        formMessage.value = `已覆盖导入 ${result.added} 个方案、${result.customSkillCount} 条自建招式${legacyHint}`
         emit('changed')
+        emit('imported', result.loadedId)
       },
     )
   }
@@ -667,7 +701,7 @@ onUnmounted(() => {
       <header class="history-header">
         <div>
           <h2>方案库</h2>
-          <p class="history-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
+          <p class="history-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
         </div>
         <span class="history-open-hint" aria-hidden="true">›</span>
       </header>
@@ -704,7 +738,7 @@ onUnmounted(() => {
             ×
           </button>
         </header>
-        <p class="history-modal-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
+        <p class="history-modal-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
 
         <!-- 顶部提示条：固定占位，消息出现/消失不抖动，始终可见 -->
         <div class="history-message-slot">

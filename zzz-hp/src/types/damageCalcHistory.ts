@@ -198,6 +198,8 @@ export interface DamageCalcHistoryExport {
   dirs: Record<string, SchemeFolderMeta>
   schemes: Record<string, DamageCalcHistoryEntry>
   currentId?: string | null
+  /** 浏览器自建招式库全文。与方案里的 skillId 成套，导入时整包覆盖。 */
+  customSkills?: import('@/types/calculator').Skill[]
 }
 
 /** 导入结果 */
@@ -205,4 +207,8 @@ export interface DamageCalcHistoryImportResult {
   added: number
   skipped: number
   errors: string[]
+  customSkillCount: number
+  /** 旧导出包没有自建招式字段，覆盖后流程可能变成「招式已删除」 */
+  legacyPack: boolean
+  loadedId: string
 }

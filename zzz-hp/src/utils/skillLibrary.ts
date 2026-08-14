@@ -73,6 +73,21 @@ export function saveCustomSkills(list: Skill[]): void {
   }
 }
 
+/** 导出/导入用。`raw` 不是数组时返回 null（调用方应中止，不要清空本地库）。 */
+export function parseCustomSkillList(raw: unknown): Skill[] | null {
+  if (raw == null) return []
+  if (!Array.isArray(raw)) return null
+  return raw
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map(normalizeSkill)
+    .filter((item): item is Skill => item !== null)
+}
+
+export function replaceCustomSkills(list: Skill[]): Skill[] {
+  saveCustomSkills(list)
+  return list
+}
+
 export function createCustomSkillId(): string {
   return `skill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
