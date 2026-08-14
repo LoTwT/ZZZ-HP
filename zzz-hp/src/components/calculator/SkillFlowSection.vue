@@ -1352,7 +1352,7 @@ defineExpose({ expand })
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
-  overflow-x: clip;
+  overflow: hidden;
   container-type: inline-size;
   container-name: skill-flow;
   background: #14181f;
