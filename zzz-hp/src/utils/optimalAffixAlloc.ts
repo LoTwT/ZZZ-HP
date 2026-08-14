@@ -483,9 +483,11 @@ function buildOptimalExtraModsForEvent(
   if (!gains.length) return createEmptyBuffStatModifiers()
   const ownerAgentId = hit.ownerAgentId
   const ownerElement = ctx.panelContext.agents.find((item) => item.id === ownerAgentId)?.element
+  const editedAgentId =
+    ctx.panelContext.teamSlots[ctx.panelContext.mainSlotIndex]?.agentId ?? ''
   return mergeExtraModsForEvent(gains, buildSkillContextFromHit(hit, ownerElement), {
     slotAgentId,
-    ownerAgentId,
+    editedAgentId,
     staggerPhase: hit.staggerPhase,
     resolveAgentProfession: (agentId) =>
       ctx.panelContext.agents.find((item) => item.id === agentId)?.profession,

@@ -271,7 +271,7 @@ function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   const ownerElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return mergeExtraModsForEvent(extraGains.value, buildSkillContextFromHit(hit, ownerElement), {
     slotAgentId,
-    ownerAgentId: hit.ownerAgentId,
+    editedAgentId: mainAgent.value?.id ?? '',
     staggerPhase: hit.staggerPhase,
     resolveAgentProfession: (agentId) =>
       props.agents.find((item) => item.id === agentId)?.profession,
@@ -293,7 +293,7 @@ function buildExtraModsForMainPanel(): BuffStatModifiers {
     }),
     {
       slotAgentId: mainId,
-      ownerAgentId: mainId,
+      editedAgentId: mainId,
       staggerPhase: phase,
       resolveAgentProfession: (agentId) =>
         props.agents.find((item) => item.id === agentId)?.profession,
@@ -3204,7 +3204,9 @@ defineExpose({
         <section class="panel-block extra-mods-block">
           <header class="panel-block-header">
             <h3>额外 Buff 增益</h3>
-            <p>未录入角色/音擎/邦布数据时的补充增益，按条添加，参与局内面板与乘区汇总。</p>
+            <p>
+              未录入角色/音擎/邦布数据时的补充增益。「自身」= 编队里正在编辑的角色，不跟招式持有者走。
+            </p>
           </header>
           <ExtraBuffGainEditor v-model="extraGains" :skill-subcategories="skillSubcategories" />
         </section>

@@ -83,7 +83,8 @@ export function mergeExtraModsForEvent(
   options: {
     /** 当前正在汇总面板的 agentId */
     slotAgentId: string
-    ownerAgentId: string
+    /** 编队里正在编辑的角色；「自身」打在这个人身上，不跟招式持有者走 */
+    editedAgentId: string
     staggerPhase: StaggerPhase
     resolveAgentProfession?: (agentId: string) => string | undefined
     teamSlots?: Array<{ agentId?: string | null }>
@@ -98,7 +99,7 @@ export function mergeExtraModsForEvent(
     if (!extraGainMatchesEvent(gain, skillCtx)) continue
 
     const applyTarget = gain.applyTarget ?? 'self'
-    if (applyTarget === 'self' && options.slotAgentId !== options.ownerAgentId) continue
+    if (applyTarget === 'self' && options.slotAgentId !== options.editedAgentId) continue
 
     const beneficiaryProfession = options.resolveAgentProfession?.(options.slotAgentId)
     if (!extraGainMatchesProfession(gain, beneficiaryProfession)) continue

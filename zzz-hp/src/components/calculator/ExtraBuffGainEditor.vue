@@ -74,7 +74,7 @@ const SITUATION_LABELS: Record<BuffApplySituation, string> = {
 }
 
 const APPLY_TARGET_LABELS: Record<BuffApplyTarget, string> = {
-  self: '自身',
+  self: '自身（当前编辑角色）',
   team: '全队（含自己）',
 }
 
@@ -201,7 +201,7 @@ function gainMeta(item: ExtraBuffGain): string {
       <label class="field">
         <span>目标</span>
         <select v-model="draftApplyTarget">
-          <option value="self">自身</option>
+          <option value="self">自身（当前编辑角色）</option>
           <option value="team">全队（含自己）</option>
         </select>
       </label>
