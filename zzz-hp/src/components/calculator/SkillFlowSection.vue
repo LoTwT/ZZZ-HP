@@ -1160,6 +1160,7 @@ defineExpose({ expand })
           <SkillFlowStatsPanel
             :team-slots="teamSlots"
             :agents="agents"
+            :slots="slots"
             :hits="hits"
             :hit-damages="hitDamages"
             :active-slot-index="activeSlotIndex"

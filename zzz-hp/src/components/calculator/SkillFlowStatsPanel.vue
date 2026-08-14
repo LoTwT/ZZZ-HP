@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc } from '@/types/calculator'
+import type { SchemeSlot } from '@/types/damageCalcHistory'
 import { DAMAGE_EVENT_KIND_OPTIONS } from '@/utils/damageEvent'
 import type { ResolvedHit } from '@/utils/resolvedHit'
 
@@ -10,6 +11,7 @@ const PIE_COLORS = ['#c9a55c', '#5b8def', '#e08a3c', '#4caf8a', '#9b7ed9', '#d46
 const props = defineProps<{
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
+  slots?: SchemeSlot[]
   hits?: ResolvedHit[]
   hitDamages?: Record<string, number>
   activeSlotIndex: number
@@ -51,11 +53,12 @@ function agentName(agentId: string | undefined) {
 }
 
 function slotTotal(index: number) {
-  const agentId = props.teamSlots[index]?.agentId
-  if (!agentId) return 0
+  const slot = props.slots?.[index]
+  if (!slot) return 0
   let sum = 0
-  for (const hit of props.hits ?? []) {
-    if (hit.ownerAgentId === agentId) sum += hitAmount(hit)
+  for (const entry of slot.flow) {
+    const value = props.hitDamages?.[entry.id]
+    if (Number.isFinite(value)) sum += Number(value)
   }
   return sum
 }
@@ -82,9 +85,8 @@ const slotRows = computed(() =>
 )
 
 const currentHits = computed(() => {
-  const agentId = props.teamSlots[props.activeSlotIndex]?.agentId
-  if (!agentId) return []
-  return (props.hits ?? []).filter((hit) => hit.ownerAgentId === agentId)
+  const ids = new Set((props.slots?.[props.activeSlotIndex]?.flow ?? []).map((entry) => entry.id))
+  return (props.hits ?? []).filter((hit) => ids.has(hit.id))
 })
 
 function toSlices(groups: Map<string, number>): PieSlice[] {

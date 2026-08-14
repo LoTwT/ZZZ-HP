@@ -1294,6 +1294,7 @@ const previewHitSummary = computed(() => {
 watch(
   [damageEventSummary, previewHitSummary],
   () => {
+    if (props.calcSuspended) return
     const map: Record<string, number> = {}
     const results: Record<string, DamageCalcResult> = {}
     for (const line of damageEventSummary.value?.lines ?? []) {
