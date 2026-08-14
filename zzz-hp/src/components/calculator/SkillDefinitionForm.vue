@@ -90,7 +90,7 @@ function toggleSkillType(id: SkillTypeId) {
       </div>
     </div>
     <p v-else class="empty-hint">
-      异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。此处的「异常」特指属性异常的伤害事件，如灼烧、强击等。
+      异常类不设招式类型和增益锚点，因此不会吃招式限定 Buff。此处的「异常」指异常类，包括属性异常、异放、紊乱、乱流、耀变。
     </p>
     <label v-if="!skillNeedsDualAgents(draft.damageType)">
       <span>增益锚点（仅本角色）</span>

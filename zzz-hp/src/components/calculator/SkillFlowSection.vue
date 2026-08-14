@@ -39,10 +39,11 @@ const { skillSubcategories } = storeToRefs(buffStore)
 
 const activeSlotIndex = ref(0)
 const libraryQuery = ref('')
-/** 伤害大类：直伤 vs 异常类全家（属性异常 / 异放 / 紊乱 / 乱流 / 耀变） */
-const libraryKind = ref<'direct' | 'anomaly'>('direct')
-/** 来源：当前角色+公共 / 仅该角色 / 仅公共 */
-const librarySource = ref<'all' | 'agent' | 'public'>('all')
+/** 可选筛选，全不点 = 显示全部招式（不限角色 / 来源 / 伤害大类） */
+const libraryKindDirect = ref(false)
+const libraryKindAnomaly = ref(false)
+const librarySourceAgent = ref(false)
+const librarySourcePreset = ref(false)
 const showCustomForm = ref(false)
 const expanded = ref(true)
 const modalTab = ref<'prep' | 'flow'>('prep')
@@ -127,29 +128,32 @@ const flowPreparedIds = computed(
   () => new Set(currentSlot.value.flow.map((item) => item.preparedId)),
 )
 
-const agentLibrarySkills = computed(() => {
-  if (!currentAgentId.value) return [] as Skill[]
-  const element = props.agents.find((item) => item.id === currentAgentId.value)?.element ?? ''
-  return buffStore.skillsForAgent(currentAgentId.value, element)
-})
-
 const librarySkills = computed(() => {
-  let list = agentLibrarySkills.value
-  if (librarySource.value === 'agent') {
-    list = list.filter((skill) => skill.agentId === currentAgentId.value)
-  } else if (librarySource.value === 'public') {
-    list = list.filter((skill) => !skill.agentId)
+  if (!currentAgentId.value) return [] as Skill[]
+  let list = buffStore.skills
+  const kindDirect = libraryKindDirect.value
+  const kindAnomaly = libraryKindAnomaly.value
+  if (kindDirect !== kindAnomaly) {
+    list = list.filter((skill) => skillNeedsDualAgents(skill.damageType) === kindAnomaly)
   }
-  const wantAnomaly = libraryKind.value === 'anomaly'
-  list = list.filter((skill) => skillNeedsDualAgents(skill.damageType) === wantAnomaly)
+  const srcAgent = librarySourceAgent.value
+  const srcPreset = librarySourcePreset.value
+  if (srcAgent || srcPreset) {
+    const agentId = currentAgentId.value
+    list = list.filter((skill) => {
+      const matchAgent = srcAgent && skill.agentId === agentId
+      const matchPreset = srcPreset && skill.source === 'preset'
+      return matchAgent || matchPreset
+    })
+  }
   const q = libraryQuery.value.trim().toLowerCase()
   if (!q) return list
   return list.filter((skill) => skill.name.toLowerCase().includes(q))
 })
 
 const libraryEmptyText = computed(() => {
-  if (!agentLibrarySkills.value.length) {
-    return '该角色还没有招式。可先新建自定义，或到管理端录入预设。'
+  if (!buffStore.skills.length) {
+    return '还没有招式。可先新建自定义，或到管理端录入预设。'
   }
   return '当前筛选没有招式。'
 })
@@ -874,44 +878,36 @@ defineExpose({ expand })
                     <button
                       type="button"
                       class="chip"
-                      :class="{ active: libraryKind === 'direct' }"
-                      @click="libraryKind = 'direct'"
+                      :class="{ active: libraryKindDirect }"
+                      @click="libraryKindDirect = !libraryKindDirect"
                     >
                       直伤类
                     </button>
                     <button
                       type="button"
                       class="chip"
-                      :class="{ active: libraryKind === 'anomaly' }"
-                      @click="libraryKind = 'anomaly'"
+                      :class="{ active: libraryKindAnomaly }"
+                      @click="libraryKindAnomaly = !libraryKindAnomaly"
                     >
-                      属性类
+                      异常类
                     </button>
                   </div>
                   <div class="chip-group" role="group" aria-label="招式来源">
                     <button
                       type="button"
                       class="chip"
-                      :class="{ active: librarySource === 'all' }"
-                      @click="librarySource = 'all'"
-                    >
-                      全部
-                    </button>
-                    <button
-                      type="button"
-                      class="chip"
-                      :class="{ active: librarySource === 'agent' }"
-                      @click="librarySource = 'agent'"
+                      :class="{ active: librarySourceAgent }"
+                      @click="librarySourceAgent = !librarySourceAgent"
                     >
                       角色库
                     </button>
                     <button
                       type="button"
                       class="chip"
-                      :class="{ active: librarySource === 'public' }"
-                      @click="librarySource = 'public'"
+                      :class="{ active: librarySourcePreset }"
+                      @click="librarySourcePreset = !librarySourcePreset"
                     >
-                      公共库
+                      预设库
                     </button>
                   </div>
                 </div>
