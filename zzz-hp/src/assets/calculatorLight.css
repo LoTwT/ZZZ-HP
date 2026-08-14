@@ -2778,6 +2778,10 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-color: #eef1f5 !important;
   background: #f5f7fa !important;
 }
+[data-theme='light'] .skill-detail-foot {
+  border-top-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
 [data-theme='light'] .zone-display-item {
   border-color: #d5dae3 !important;
   background: #f5f7fa !important;

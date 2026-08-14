@@ -1244,10 +1244,6 @@ defineExpose({ expand })
                 :readonly="!detailCanEditDefinition"
                 :anchors="anchorOptions"
               />
-              <div v-if="detailCanEditDefinition" class="detail-save-row">
-                <button type="button" class="mini-btn" @click="saveDetailSkill">保存招式</button>
-                <p v-if="detailSaveHint" class="empty-hint">{{ detailSaveHint }}</p>
-              </div>
 
               <p class="detail-section-title">计算过程</p>
               <div v-if="detailZoneRows.length" class="zone-display-grid">
@@ -1260,7 +1256,13 @@ defineExpose({ expand })
                 还没有结算结果。直伤在库里就能预览；异常类要先加入准备并选双代理人。
               </p>
             </div>
-            <p v-else class="empty-hint skill-detail-missing">招式已从库中删除。</p>
+            <div v-if="detailSkill && detailCanEditDefinition" class="skill-detail-foot">
+              <button type="button" class="primary-btn save-action" @click="saveDetailSkill">
+                保存招式
+              </button>
+              <p v-if="detailSaveHint" class="empty-hint">{{ detailSaveHint }}</p>
+            </div>
+            <p v-else-if="!detailSkill" class="empty-hint skill-detail-missing">招式已从库中删除。</p>
           </div>
         </div>
         </Teleport>
@@ -1274,7 +1276,11 @@ defineExpose({ expand })
             </header>
             <div class="skill-detail-body">
               <SkillDefinitionForm v-model="customDraft" :anchors="anchorOptions" />
-              <button type="button" class="mini-btn" @click="saveCustomSkill">保存并加入准备</button>
+            </div>
+            <div class="skill-detail-foot">
+              <button type="button" class="primary-btn save-action" @click="saveCustomSkill">
+                保存并加入准备
+              </button>
             </div>
           </div>
         </div>
@@ -1769,6 +1775,24 @@ defineExpose({ expand })
   overflow: auto;
   overscroll-behavior: contain;
 }
+.skill-detail-foot {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 1.1rem 1rem;
+  border-top: 1px solid #2a3038;
+  background: #14181f;
+}
+.skill-detail-foot .save-action {
+  width: 100%;
+  margin: 0;
+  padding: 0.62rem 1rem;
+  font-size: 0.92rem;
+}
+.skill-detail-foot .empty-hint {
+  text-align: center;
+}
 .skill-detail-missing {
   flex: 1 1 auto;
   padding: 0.95rem 1.1rem 1.15rem;
@@ -1813,11 +1837,6 @@ defineExpose({ expand })
 }
 .detail-section-title {
   font-weight: 700;
-}
-.detail-save-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
 }
 .zone-display-grid {
   display: grid;
