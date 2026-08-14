@@ -40,7 +40,7 @@ import {
   normalizeSkillSubcategoryMultFields,
 } from '@/utils/skillSubcategoryMult'
 import {
-  loadCustomSkills,
+  bakeFollowUpSkillTypesOnce,
   migrateLegacyModesToSkills,
   removeCustomSkill,
   upsertCustomSkill,
@@ -504,8 +504,14 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
           presetSkills.value = mergePublicAnomalyPresets([])
         }
         // 小类名要用来给迁移出的招式起名，故排在小类加载之后
-        migrateLegacyModesToSkills({ subcategories: skillSubcategories.value })
-        customSkills.value = loadCustomSkills()
+        migrateLegacyModesToSkills({
+          subcategories: skillSubcategories.value,
+          followUpSkillRules: followUpSkillRules.value,
+        })
+        customSkills.value = bakeFollowUpSkillTypesOnce(
+          skillSubcategories.value,
+          followUpSkillRules.value,
+        )
         loaded.value = true
         error.value = ''
       } catch (err) {

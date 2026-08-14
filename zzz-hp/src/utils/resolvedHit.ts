@@ -3,7 +3,6 @@ import type {
   DamageCalcKind,
   DamageEventCritMode,
   DamageEventMultOverrides,
-  FollowUpSkillRule,
   Skill,
   SkillCalcContext,
   SkillMatchCoord,
@@ -31,7 +30,6 @@ import {
   isLegacyAnomalyEventKind,
   isLuminousAgent,
 } from '@/utils/remielUtils'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 import { buildSkillMatchCoords, skillTypesIncludeFollowUp } from '@/utils/skillTypes'
 
 export function newLocalId(prefix: string): string {
@@ -156,7 +154,6 @@ export interface ResolveFlowOptions {
   teamSlots: Array<{ agentId: string }>
   findSkill: (skillId: string) => Skill | null
   skillSubcategories?: SkillSubcategory[] | null
-  followUpSkillRules?: FollowUpSkillRule[] | null
 }
 
 /** 招式被删后，引用它的准备阶段条目会解析失败，此处记下来给 UI 提示 */
@@ -184,19 +181,6 @@ function resolveOne(
     buffAnchorCategory: anchorCategory,
   })
 
-  // 追加攻击既可显式勾类型，也可由锚点所在小类 / 规则表推定
-  const isFollowUp =
-    skillTypesIncludeFollowUp(skill.skillTypes) ||
-    (anchorCategory
-      ? resolveIsFollowUp({
-          agentId: ownerAgentId,
-          categoryId: anchorCategory,
-          subcategoryId: anchorId,
-          skillSubcategories: options.skillSubcategories,
-          followUpSkillRules: options.followUpSkillRules,
-        })
-      : false)
-
   return {
     id: entry.id,
     skill,
@@ -209,7 +193,7 @@ function resolveOne(
     damageKind,
     anomalySubKind,
     coords,
-    isFollowUp,
+    isFollowUp: skillTypesIncludeFollowUp(skill.skillTypes),
     multOverrides: buildMultOverrides(skill, prepared.extraMods),
     panelMods: hasPanelMods(prepared.extraMods) ? (prepared.extraMods ?? null) : null,
   }

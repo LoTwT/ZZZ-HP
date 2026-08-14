@@ -61,7 +61,6 @@ import {
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotRecord,
 } from '@/utils/panelBuffCalc'
-import { resolveIsFollowUp } from '@/utils/buffEffect'
 
 export type OptimalDamageKind = 'direct' | 'anomaly'
 

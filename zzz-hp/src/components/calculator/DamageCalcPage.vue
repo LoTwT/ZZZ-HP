@@ -90,7 +90,7 @@ export interface TeamSlot {
 }
 
 const calculatorBuffStore = useCalculatorBuffStore()
-const { agents, wengines, bangboos, driveDiscs, skillSubcategories, followUpSkillRules } =
+const { agents, wengines, bangboos, driveDiscs, skillSubcategories } =
   storeToRefs(calculatorBuffStore)
 
 const teamSlots = reactive<TeamSlot[]>([
@@ -153,7 +153,6 @@ const resolvedFlow = computed(() =>
     teamSlots,
     findSkill: (id) => calculatorBuffStore.findSkill(id),
     skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
   }),
 )
 const hits = computed(() => resolvedFlow.value.hits)
@@ -167,7 +166,6 @@ const previewHits = computed(() =>
       return calculatorBuffStore.skillsForAgent(agentId, agent?.element)
     },
     skillSubcategories: skillSubcategories.value,
-    followUpSkillRules: followUpSkillRules.value,
   }),
 )
 const firstHit = computed(() => hits.value[0] ?? null)

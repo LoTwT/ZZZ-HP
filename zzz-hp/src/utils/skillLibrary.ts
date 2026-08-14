@@ -1,13 +1,16 @@
 import type {
   DamageEvent,
   DamageEventMode,
+  FollowUpSkillRule,
   Skill,
+  SkillCategoryId,
   SkillDamageType,
   SkillSubcategory,
   SkillTypeId,
 } from '@/types/calculator'
 import { DAMAGE_EVENT_KIND_OPTIONS } from '@/utils/damageEvent'
 import { loadCustomModes } from '@/utils/customDamageEventModes'
+import { resolveIsFollowUp } from '@/utils/buffEffect'
 import {
   skillTypeFromLegacyCategory,
   skillTypeFromLegacyPublicSubcategory,
@@ -15,6 +18,7 @@ import {
 
 const CUSTOM_KEY = 'zzz-hp-skill-library-custom'
 const MODES_MIGRATED_KEY = 'zzz-hp-skill-library-modes-migrated'
+const FOLLOWUP_TYPE_BAKED_KEY = 'zzz-hp-followup-type-baked'
 
 // ===================== 自定义招式（浏览器，全局一份） =====================
 
@@ -129,6 +133,7 @@ function eventToSkill(
   event: DamageEvent,
   mode: DamageEventMode,
   subcategories: SkillSubcategory[],
+  followUpRules: FollowUpSkillRule[],
 ): Skill {
   const isDirect = event.kind === 'direct'
   // 异常类一律不带招式类型 / 锚点（§11.2），即使旧事件勾了 skillBound
@@ -140,6 +145,20 @@ function eventToSkill(
     else skillTypes.push(skillTypeFromLegacyCategory(event.categoryId))
   }
   const anchorId = publicType ? null : rawAnchorId
+  const agentId = event.ownerAgentId?.trim() || mode.agentId || ''
+  if (
+    isDirect &&
+    resolveIsFollowUp({
+      agentId,
+      categoryId: event.categoryId,
+      subcategoryId: anchorId,
+      skillSubcategories: subcategories,
+      followUpSkillRules: followUpRules,
+    }) &&
+    !skillTypes.includes('followUp')
+  ) {
+    skillTypes.push('followUp')
+  }
 
   const nameSubId = event.skillSubcategoryId
   const sub = nameSubId ? subcategories.find((item) => item.id === nameSubId) : null
@@ -150,7 +169,7 @@ function eventToSkill(
   return {
     id: `skill-mig-${event.id}`,
     name: sub?.name?.trim() || kindLabel,
-    agentId: event.ownerAgentId?.trim() || mode.agentId || '',
+    agentId,
     source: 'custom',
     damageType: event.kind,
     skillTypes,
@@ -190,6 +209,7 @@ export function isLegacyModeMigrationDone(): boolean {
  */
 export function migrateLegacyModesToSkills(options: {
   subcategories: SkillSubcategory[]
+  followUpSkillRules?: FollowUpSkillRule[]
   force?: boolean
 }): { added: number; merged: number } {
   if (typeof localStorage === 'undefined') return { added: 0, merged: 0 }
@@ -199,10 +219,11 @@ export function migrateLegacyModesToSkills(options: {
   const seen = new Map(existing.map((item) => [dedupeKey(item), item]))
   let added = 0
   let merged = 0
+  const rules = options.followUpSkillRules ?? []
 
   for (const mode of loadCustomModes()) {
     for (const event of mode.events) {
-      const skill = eventToSkill(event, mode, options.subcategories)
+      const skill = eventToSkill(event, mode, options.subcategories, rules)
       const key = dedupeKey(skill)
       if (seen.has(key)) {
         merged++
@@ -236,4 +257,56 @@ function uniquifyNewSkillNames(all: Skill[], addedCount: number): void {
     skill.name = `${base} ${n}`
     used.add(skill.name)
   }
+}
+
+function categoryForFollowUpBake(skill: Skill, subs: SkillSubcategory[]): SkillCategoryId {
+  const anchor = skill.buffAnchorId?.trim()
+  if (anchor) {
+    const sub = subs.find((item) => item.id === anchor)
+    if (sub?.categoryId) return sub.categoryId
+  }
+  for (const type of skill.skillTypes) {
+    if (type === 'followUp') continue
+    if (type === 'dash' || type === 'dodgeCounter') return 'dodge'
+    if (type === 'specialBasic' || type === 'specialEnhanced') return 'special'
+    if (
+      type === 'basic' ||
+      type === 'dodge' ||
+      type === 'assist' ||
+      type === 'special' ||
+      type === 'chain' ||
+      type === 'ultimate'
+    ) {
+      return type
+    }
+  }
+  return 'basic'
+}
+
+/** 一次性：旧规则推定的追加，写进招式类型。之后只看勾选，结算不再推定。 */
+export function bakeFollowUpSkillTypesOnce(
+  subcategories: SkillSubcategory[],
+  followUpRules: FollowUpSkillRule[],
+): Skill[] {
+  const list = loadCustomSkills()
+  if (typeof localStorage === 'undefined') return list
+  if (localStorage.getItem(FOLLOWUP_TYPE_BAKED_KEY) === '1') return list
+
+  let changed = false
+  const next = list.map((skill) => {
+    if (skill.damageType !== 'direct' || skill.skillTypes.includes('followUp')) return skill
+    const hit = resolveIsFollowUp({
+      agentId: skill.agentId,
+      categoryId: categoryForFollowUpBake(skill, subcategories),
+      subcategoryId: skill.buffAnchorId,
+      skillSubcategories: subcategories,
+      followUpSkillRules: followUpRules,
+    })
+    if (!hit) return skill
+    changed = true
+    return { ...skill, skillTypes: [...skill.skillTypes, 'followUp'] }
+  })
+  localStorage.setItem(FOLLOWUP_TYPE_BAKED_KEY, '1')
+  if (changed) saveCustomSkills(next)
+  return next
 }
