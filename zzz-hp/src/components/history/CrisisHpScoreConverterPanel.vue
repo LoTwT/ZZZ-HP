@@ -197,18 +197,6 @@ const panelDesc = computed(() =>
         </div>
         <button type="button" class="clear-btn" @click="clearInputs">清空</button>
       </div>
-      <div class="marker-row" role="group" aria-label="快捷填入节点分数">
-        <button
-          v-for="marker in markers"
-          :key="marker.id"
-          type="button"
-          class="marker-chip"
-          :style="{ '--marker-color': marker.color }"
-          @click="applyMarker(marker)"
-        >
-          {{ marker.shortLabel }}
-        </button>
-      </div>
     </header>
 
     <div class="convert-grid">
@@ -253,12 +241,26 @@ const panelDesc = computed(() =>
             @input="editing = 'score'"
           />
         </label>
-        <p class="score-readout" aria-live="polite">
-          <span v-if="roundedScore != null">
-            <strong>{{ roundedScore.toLocaleString('zh-CN') }}</strong>
-            <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
-          </span>
-        </p>
+        <div class="score-readout">
+          <p class="score-readout-num" aria-live="polite">
+            <span v-if="roundedScore != null">
+              <strong>{{ roundedScore.toLocaleString('zh-CN') }}</strong>
+              <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
+            </span>
+          </p>
+          <div class="marker-row" role="group" aria-label="快捷填入节点分数">
+            <button
+              v-for="marker in markers"
+              :key="marker.id"
+              type="button"
+              class="marker-chip"
+              :style="{ '--marker-color': marker.color }"
+              @click="applyMarker(marker)"
+            >
+              {{ marker.shortLabel }}
+            </button>
+          </div>
+        </div>
         <p class="field-hint">3项填1</p>
       </section>
 
@@ -412,8 +414,8 @@ const panelDesc = computed(() =>
 .marker-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4rem;
+  justify-content: flex-end;
+  gap: 0.35rem;
 }
 
 .marker-chip {
@@ -528,10 +530,19 @@ const panelDesc = computed(() =>
   margin: 0;
   min-height: 2.4rem;
   display: flex;
-  align-items: baseline;
-  gap: 0.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   font-size: 0.9rem;
   color: var(--color-text);
+}
+
+.score-readout-num {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
 }
 
 .score-readout strong {
@@ -578,6 +589,14 @@ const panelDesc = computed(() =>
 
   .convert-grid {
     grid-template-columns: 1fr;
+  }
+
+  .score-readout {
+    flex-wrap: wrap;
+  }
+
+  .marker-row {
+    justify-content: flex-start;
   }
 }
 </style>
