@@ -14,9 +14,11 @@ import {
 } from '@/data/crisisScoreHpTable'
 
 type EditSource = 'hp' | 'score' | 'scorePct' | 'abs'
+type HpAbsField = 'total' | 'dealt' | null
 
 const tableMode = ref<CrisisScoreTableMode>('normal')
 const editing = ref<EditSource>('hp')
+const lastHpAbs = ref<HpAbsField>(null)
 const hpPercentInput = ref('')
 const scorePercentInput = ref('')
 const scoreInput = ref('')
@@ -70,30 +72,71 @@ watch(result, (next) => {
     scorePercentInput.value = formatHpPercent(next.score / CRISIS_SCORE_MAX)
   }
   if (editing.value !== 'abs') {
-    const total = parseLocaleNumber(totalHpInput.value)
-    if (total != null && total > 0) {
-      dealtHpInput.value = String(scaleHpByRatio(total, next.hpRatio))
-    }
+    syncActualHpFromRatio(next.hpRatio)
   }
 })
 
+function hasRatioInput(): boolean {
+  return (
+    result.value != null ||
+    parseLocaleNumber(hpPercentInput.value) != null ||
+    parseLocaleNumber(scoreInput.value) != null ||
+    parseLocaleNumber(scorePercentInput.value) != null
+  )
+}
+
+function syncActualHpFromRatio(hpRatio: number) {
+  if (hpRatio <= 0) return
+  const total = parseLocaleNumber(totalHpInput.value)
+  const dealt = parseLocaleNumber(dealtHpInput.value)
+  if (lastHpAbs.value === 'dealt' && dealt != null) {
+    totalHpInput.value = String(Math.round(dealt / hpRatio))
+    return
+  }
+  if (lastHpAbs.value === 'total' && total != null && total > 0) {
+    dealtHpInput.value = String(scaleHpByRatio(total, hpRatio))
+    return
+  }
+  if (total != null && total > 0) {
+    dealtHpInput.value = String(scaleHpByRatio(total, hpRatio))
+    return
+  }
+  if (dealt != null) {
+    totalHpInput.value = String(Math.round(dealt / hpRatio))
+  }
+}
+
 function onDealtEdit() {
+  lastHpAbs.value = 'dealt'
+  const total = parseLocaleNumber(totalHpInput.value)
+  const dealt = parseLocaleNumber(dealtHpInput.value)
+  if (!hasRatioInput() && total != null && total > 0 && dealt != null) {
+    editing.value = 'abs'
+    return
+  }
+  if (result.value) syncActualHpFromRatio(result.value.hpRatio)
+}
+
+function onTotalEdit() {
+  lastHpAbs.value = 'total'
+  if (editing.value === 'abs') return
+  if (hasRatioInput()) {
+    if (result.value) syncActualHpFromRatio(result.value.hpRatio)
+    return
+  }
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
   if (total != null && total > 0 && dealt != null) editing.value = 'abs'
 }
 
-function onTotalEdit() {
-  if (editing.value === 'abs') return
-  const total = parseLocaleNumber(totalHpInput.value)
-  const dealt = parseLocaleNumber(dealtHpInput.value)
-  const hasRatio =
-    result.value != null ||
-    parseLocaleNumber(hpPercentInput.value) != null ||
-    parseLocaleNumber(scoreInput.value) != null ||
-    parseLocaleNumber(scorePercentInput.value) != null
-  if (hasRatio) return
-  if (total != null && total > 0 && dealt != null) editing.value = 'abs'
+function clearInputs() {
+  editing.value = 'hp'
+  lastHpAbs.value = null
+  hpPercentInput.value = ''
+  scorePercentInput.value = ''
+  scoreInput.value = ''
+  totalHpInput.value = ''
+  dealtHpInput.value = ''
 }
 
 const reachedMarkers = computed(() => {
@@ -133,23 +176,26 @@ const panelDesc = computed(() =>
     <header class="panel-header">
       <h1 class="page-title">危局强袭战 · 血量分数转换器</h1>
       <p class="panel-desc">{{ panelDesc }}</p>
-      <div class="mode-toggle" role="group" aria-label="转换器模式">
-        <button
-          type="button"
-          class="mode-btn"
-          :class="{ active: tableMode === 'normal' }"
-          @click="tableMode = 'normal'"
-        >
-          正常
-        </button>
-        <button
-          type="button"
-          class="mode-btn"
-          :class="{ active: tableMode === 'hard' }"
-          @click="tableMode = 'hard'"
-        >
-          困难
-        </button>
+      <div class="header-actions">
+        <div class="mode-toggle" role="group" aria-label="转换器模式">
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ active: tableMode === 'normal' }"
+            @click="tableMode = 'normal'"
+          >
+            正常
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ active: tableMode === 'hard' }"
+            @click="tableMode = 'hard'"
+          >
+            困难
+          </button>
+        </div>
+        <button type="button" class="clear-btn" @click="clearInputs">清空</button>
       </div>
       <div class="marker-row" role="group" aria-label="快捷填入节点分数">
         <button
@@ -175,7 +221,6 @@ const panelDesc = computed(() =>
               v-model="hpPercentInput"
               type="text"
               inputmode="decimal"
-              placeholder="例如 28.12"
               aria-label="血量占比"
               @focus="editing = 'hp'"
               @input="editing = 'hp'"
@@ -190,7 +235,6 @@ const panelDesc = computed(() =>
               v-model="scorePercentInput"
               type="text"
               inputmode="decimal"
-              placeholder="例如 41.67"
               aria-label="分数占比"
               @focus="editing = 'scorePct'"
               @input="editing = 'scorePct'"
@@ -204,18 +248,16 @@ const panelDesc = computed(() =>
             v-model="scoreInput"
             type="text"
             inputmode="numeric"
-            placeholder="例如 20000"
             aria-label="分数"
             @focus="editing = 'score'"
             @input="editing = 'score'"
           />
         </label>
         <p class="score-readout" aria-live="polite">
-          <template v-if="roundedScore != null">
+          <span v-if="roundedScore != null">
             <strong>{{ roundedScore.toLocaleString('zh-CN') }}</strong>
             <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
-          </template>
-          <span v-else class="placeholder-text">改血量占比或分数占比，另一项会跟上</span>
+          </span>
         </p>
         <p class="field-hint">3项填1</p>
       </section>
@@ -228,7 +270,6 @@ const panelDesc = computed(() =>
             v-model="totalHpInput"
             type="text"
             inputmode="numeric"
-            placeholder="Boss 总血量"
             aria-label="总血量"
             @focus="onTotalEdit"
             @input="onTotalEdit"
@@ -240,7 +281,6 @@ const panelDesc = computed(() =>
             v-model="dealtHpInput"
             type="text"
             inputmode="numeric"
-            placeholder="填总血后会显示，也可手填"
             aria-label="已打血量"
             @focus="onDealtEdit"
             @input="onDealtEdit"
@@ -250,28 +290,32 @@ const panelDesc = computed(() =>
       </section>
     </div>
 
-    <section v-if="result" class="status-card">
-      <p class="status-main">{{ describeConvertSegment(result) }}</p>
-      <p class="status-line">
-        已打血量 {{ formatPercent(result.hpRatio, 4) }} · 对应
-        {{ (roundedScore ?? 0).toLocaleString('zh-CN') }} 分
-        <template v-if="result.row">
-          · 本段进度 {{ (result.progressInSegment * 100).toFixed(2) }}%
-        </template>
-      </p>
-      <p class="status-line">
-        插值区间：{{ formatPercent(result.prevHp, 4) }} / {{ result.prevScore.toLocaleString('zh-CN') }} 分
-        → {{ formatPercent(result.nextHp, 4) }} / {{ result.nextScore.toLocaleString('zh-CN') }} 分
-      </p>
-      <p v-if="formulaText" class="status-formula">{{ formulaText }}</p>
-      <p v-if="reachedMarkers.length" class="status-line">
-        已过节点：{{ reachedMarkers.map((marker) => marker.label).join('、') }}
-      </p>
-      <p v-else class="status-line">尚未到达分数节点</p>
-      <p v-if="nextMarker" class="status-line">
-        下一节点：{{ nextMarker.label }}（还需
-        {{ formatPercent(nextMarker.hpRatio - result.hpRatio, 4) }} 血量）
-      </p>
+    <section class="status-card">
+      <h2 class="card-title">计算过程</h2>
+      <template v-if="result">
+        <p class="status-main">{{ describeConvertSegment(result) }}</p>
+        <p class="status-line">
+          已打血量 {{ formatPercent(result.hpRatio, 4) }} · 对应
+          {{ (roundedScore ?? 0).toLocaleString('zh-CN') }} 分
+          <template v-if="result.row">
+            · 本段进度 {{ (result.progressInSegment * 100).toFixed(2) }}%
+          </template>
+        </p>
+        <p class="status-line">
+          插值区间：{{ formatPercent(result.prevHp, 4) }} / {{ result.prevScore.toLocaleString('zh-CN') }} 分
+          → {{ formatPercent(result.nextHp, 4) }} / {{ result.nextScore.toLocaleString('zh-CN') }} 分
+        </p>
+        <p v-if="formulaText" class="status-formula">{{ formulaText }}</p>
+        <p v-if="reachedMarkers.length" class="status-line">
+          已过节点：{{ reachedMarkers.map((marker) => marker.label).join('、') }}
+        </p>
+        <p v-else class="status-line">尚未到达分数节点</p>
+        <p v-if="nextMarker" class="status-line">
+          下一节点：{{ nextMarker.label }}（还需
+          {{ formatPercent(nextMarker.hpRatio - result.hpRatio, 4) }} 血量）
+        </p>
+      </template>
+      <p v-else class="status-line">填入占比或分数后显示换算过程</p>
     </section>
   </div>
 </template>
@@ -339,6 +383,30 @@ const panelDesc = computed(() =>
   background: var(--color-background-soft);
   color: var(--color-heading);
   box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.clear-btn {
+  min-width: 4.5rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-heading);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clear-btn:hover {
+  background: var(--color-background-mute);
 }
 
 .marker-row {
