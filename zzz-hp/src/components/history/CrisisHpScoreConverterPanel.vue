@@ -24,6 +24,7 @@ type EditSource = 'hp' | 'score' | 'scorePct' | 'abs'
 type HpAbsField = 'total' | 'dealt' | null
 
 interface ConvertRecord {
+  id: number
   dealtHp: number | null
   hpRatio: number
   scoreRatio: number
@@ -67,6 +68,7 @@ const scoreInput = ref('')
 const totalHpInput = ref('')
 const dealtHpInput = ref('')
 const records = ref<ConvertRecord[]>([])
+const recordSeq = ref(0)
 const restoringMode = ref(false)
 const modeDrafts: Record<CrisisScoreTableMode, ModeDraft> = {
   normal: emptyDraft(),
@@ -434,7 +436,9 @@ async function setTableMode(next: CrisisScoreTableMode) {
 
 function recordNow() {
   if (!result.value || records.value.length >= RECORD_LIMIT) return
+  recordSeq.value += 1
   records.value.push({
+    id: recordSeq.value,
     dealtHp: parseLocaleNumber(dealtHpInput.value),
     hpRatio: result.value.hpRatio,
     scoreRatio: result.value.score / CRISIS_SCORE_MAX,
@@ -442,29 +446,34 @@ function recordNow() {
   })
 }
 
+function removeRecord(id: number) {
+  records.value = records.value.filter((row) => row.id !== id)
+}
+
 function clearRecords() {
   records.value = []
 }
 
-function formatScoreDelta(current: number, other: number | undefined): { text: string; kind: DeltaKind } {
-  if (other == null) return { text: '—', kind: 'empty' }
+function formatDealtDelta(current: number | null, other: number | null | undefined): { text: string; kind: DeltaKind } {
+  if (current == null || other == null) return { text: '—', kind: 'empty' }
   const delta = current - other
   if (delta === 0) return { text: '0', kind: 'zero' }
-  const sign = delta > 0 ? '+' : ''
-  let text = `${sign}${delta.toLocaleString('zh-CN')}`
+  const sign = delta > 0 ? '+' : '-'
+  let text = `${sign}${formatHpAmount(Math.abs(delta))}`
   if (other > 0) {
     const pct = (delta / other) * 100
-    text = `${text}（${sign}${pct.toFixed(2)}%）`
+    const pctSign = pct >= 0 ? '+' : ''
+    text = `${text}（${pctSign}${pct.toFixed(2)}%）`
   }
   return { text, kind: delta > 0 ? 'up' : 'down' }
 }
 
 function prevCompare(index: number) {
-  return formatScoreDelta(records.value[index]!.score, records.value[index - 1]?.score)
+  return formatDealtDelta(records.value[index]!.dealtHp, records.value[index - 1]?.dealtHp)
 }
 
 function nextCompare(index: number) {
-  return formatScoreDelta(records.value[index]!.score, records.value[index + 1]?.score)
+  return formatDealtDelta(records.value[index]!.dealtHp, records.value[index + 1]?.dealtHp)
 }
 
 const recordRows = computed(() =>
@@ -475,6 +484,8 @@ const recordRows = computed(() =>
     next: nextCompare(index),
   })),
 )
+
+const emptyRecordCount = computed(() => Math.max(0, RECORD_LIMIT - records.value.length))
 
 const panelDesc = computed(() =>
   tableMode.value === 'hard'
@@ -693,9 +704,19 @@ const panelDesc = computed(() =>
           </button>
         </div>
       </div>
-      <p class="record-hint">最多记录 5 条。对比具体分数相对上一条、下一条的变化。</p>
-      <div v-if="records.length" class="record-table-wrap">
+      <p class="record-hint">最多记录 5 条。较上一条 / 较下一条以已打血量为基准。</p>
+      <div class="record-table-wrap">
         <table class="record-table">
+          <colgroup>
+            <col class="col-idx" />
+            <col class="col-dealt" />
+            <col class="col-pct" />
+            <col class="col-pct" />
+            <col class="col-score" />
+            <col class="col-delta" />
+            <col class="col-delta" />
+            <col class="col-del" />
+          </colgroup>
           <thead>
             <tr>
               <th>#</th>
@@ -705,17 +726,33 @@ const panelDesc = computed(() =>
               <th>具体分数</th>
               <th>较上一条</th>
               <th>较下一条</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in recordRows" :key="row.index">
+            <tr v-for="row in recordRows" :key="row.rec.id">
               <td>{{ row.index + 1 }}</td>
               <td>{{ row.rec.dealtHp == null ? '—' : formatHpAmount(row.rec.dealtHp) }}</td>
               <td>{{ formatPercent(row.rec.scoreRatio, 2) }}</td>
               <td>{{ formatPercent(row.rec.hpRatio, 2) }}</td>
               <td>{{ row.rec.score.toLocaleString('zh-CN') }}</td>
-              <td :class="`delta-${row.prev.kind}`">{{ row.prev.text }}</td>
-              <td :class="`delta-${row.next.kind}`">{{ row.next.text }}</td>
+              <td class="delta-cell" :class="`delta-${row.prev.kind}`" :title="row.prev.text">{{ row.prev.text }}</td>
+              <td class="delta-cell" :class="`delta-${row.next.kind}`" :title="row.next.text">{{ row.next.text }}</td>
+              <td>
+                <button type="button" class="row-del-btn" aria-label="删除这条记录" @click="removeRecord(row.rec.id)">
+                  删除
+                </button>
+              </td>
+            </tr>
+            <tr v-for="n in emptyRecordCount" :key="`empty-${n}`" class="record-empty">
+              <td>{{ records.length + n }}</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td></td>
             </tr>
           </tbody>
         </table>
@@ -1058,17 +1095,44 @@ const panelDesc = computed(() =>
 
 .record-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.78rem;
   color: var(--color-heading);
 }
 
+.col-idx {
+  width: 2.4rem;
+}
+
+.col-dealt {
+  width: 16%;
+}
+
+.col-pct {
+  width: 11%;
+}
+
+.col-score {
+  width: 12%;
+}
+
+.col-delta {
+  width: 17%;
+}
+
+.col-del {
+  width: 3.4rem;
+}
+
 .record-table th,
 .record-table td {
-  padding: 0.38rem 0.45rem;
+  padding: 0.38rem 0.4rem;
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1076,6 +1140,32 @@ const panelDesc = computed(() =>
   font-weight: 700;
   color: var(--color-text);
   opacity: 0.78;
+}
+
+.record-table td:last-child {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.record-empty td {
+  color: var(--color-text);
+  opacity: 0.38;
+  font-weight: 500;
+}
+
+.row-del-btn {
+  padding: 0.12rem 0.35rem;
+  border: 1px solid color-mix(in srgb, #c62828 35%, var(--color-border));
+  border-radius: 6px;
+  background: transparent;
+  color: #c62828;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.row-del-btn:hover {
+  background: color-mix(in srgb, #c62828 12%, transparent);
 }
 
 .delta-up {
