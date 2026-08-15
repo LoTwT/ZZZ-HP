@@ -1221,21 +1221,37 @@ const panelDesc = computed(() =>
 
 .record-table th {
   position: relative;
+  border-right: 1px solid var(--color-border);
 }
 
 .col-resizer {
   position: absolute;
   top: 0;
-  right: -4px;
-  width: 8px;
+  right: -5px;
+  width: 10px;
   height: 100%;
   cursor: col-resize;
   z-index: 2;
 }
 
-.col-resizer:hover,
-.col-resizer:active {
-  background: color-mix(in srgb, #e8a838 55%, transparent);
+.col-resizer::before {
+  content: '';
+  position: absolute;
+  top: 16%;
+  bottom: 16%;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--color-heading) 45%, transparent);
+}
+
+.col-resizer:hover::before,
+.col-resizer:active::before {
+  top: 8%;
+  bottom: 8%;
+  width: 3px;
+  background: color-mix(in srgb, #e8a838 88%, var(--color-heading));
 }
 
 .record-table th,
