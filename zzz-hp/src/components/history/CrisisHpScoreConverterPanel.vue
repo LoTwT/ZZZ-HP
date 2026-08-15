@@ -39,6 +39,7 @@ const selectedPhaseLabel = ref('')
 const bossListLoading = ref(false)
 const bossChartLoading = ref(false)
 const bossError = ref('')
+const applyingBossHp = ref(false)
 
 const markers = computed(() => getScoreMarkers(tableMode.value))
 const selectedBossInfo = computed(() =>
@@ -86,10 +87,12 @@ async function loadBossPhases() {
 
 function applyTotalHpFromBoss(hp: number) {
   if (!Number.isFinite(hp) || hp <= 0) return
+  applyingBossHp.value = true
   lastHpAbs.value = 'total'
   totalHpInput.value = String(Math.round(hp))
   onTotalEdit()
   if (result.value) syncActualHpFromRatio(result.value.hpRatio)
+  applyingBossHp.value = false
 }
 
 function onPhaseChange() {
@@ -110,6 +113,37 @@ function parseLocaleNumber(raw: string): number | null {
 
 function formatHpPercent(ratio: number): string {
   return String(Number((ratio * 100).toFixed(4)))
+}
+
+function clampPercentField(raw: string): string {
+  const value = parseLocaleNumber(raw)
+  if (value == null) return raw
+  if (value < 0) return '0'
+  if (value > 100) return '100'
+  return raw
+}
+
+function clampScoreField(raw: string): string {
+  const value = parseLocaleNumber(raw)
+  if (value == null) return raw
+  if (value < 0) return '0'
+  if (value > CRISIS_SCORE_MAX) return String(CRISIS_SCORE_MAX)
+  return raw
+}
+
+function onHpPercentEdit() {
+  editing.value = 'hp'
+  hpPercentInput.value = clampPercentField(hpPercentInput.value)
+}
+
+function onScorePercentEdit() {
+  editing.value = 'scorePct'
+  scorePercentInput.value = clampPercentField(scorePercentInput.value)
+}
+
+function onScoreEdit() {
+  editing.value = 'score'
+  scoreInput.value = clampScoreField(scoreInput.value)
 }
 
 const result = computed<CrisisHpScoreConvertResult | null>(() => {
@@ -180,10 +214,20 @@ function syncActualHpFromRatio(hpRatio: number) {
   }
 }
 
+function clearBossSelection() {
+  selectedBoss.value = ''
+  phasePoints.value = []
+  selectedPhaseLabel.value = ''
+}
+
 function onDealtEdit() {
   lastHpAbs.value = 'dealt'
   const total = parseLocaleNumber(totalHpInput.value)
-  const dealt = parseLocaleNumber(dealtHpInput.value)
+  let dealt = parseLocaleNumber(dealtHpInput.value)
+  if (total != null && total > 0 && dealt != null && dealt > total) {
+    dealtHpInput.value = String(total)
+    dealt = total
+  }
   if (!hasRatioInput() && total != null && total > 0 && dealt != null) {
     editing.value = 'abs'
     return
@@ -193,6 +237,7 @@ function onDealtEdit() {
 
 function onTotalEdit() {
   lastHpAbs.value = 'total'
+  if (!applyingBossHp.value) clearBossSelection()
   if (editing.value === 'abs') return
   if (hasRatioInput()) {
     if (result.value) syncActualHpFromRatio(result.value.hpRatio)
@@ -287,8 +332,8 @@ const panelDesc = computed(() =>
               type="text"
               inputmode="decimal"
               aria-label="血量占比"
-              @focus="editing = 'hp'"
-              @input="editing = 'hp'"
+              @focus="onHpPercentEdit"
+              @input="onHpPercentEdit"
             />
             <span class="suffix">%</span>
           </span>
@@ -301,27 +346,29 @@ const panelDesc = computed(() =>
               type="text"
               inputmode="decimal"
               aria-label="分数占比"
-              @focus="editing = 'scorePct'"
-              @input="editing = 'scorePct'"
+              @focus="onScorePercentEdit"
+              @input="onScorePercentEdit"
             />
             <span class="suffix">%</span>
           </span>
         </label>
         <label class="field">
-          <span>分数</span>
+          <span>分数（满分 {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}）</span>
           <input
             v-model="scoreInput"
             type="text"
             inputmode="numeric"
             aria-label="分数"
-            @focus="editing = 'score'"
-            @input="editing = 'score'"
+            @focus="onScoreEdit"
+            @input="onScoreEdit"
           />
         </label>
         <div class="score-readout">
           <p class="score-readout-num" aria-live="polite">
-            <span v-if="roundedScore != null">
-              <strong>{{ roundedScore.toLocaleString('zh-CN') }}</strong>
+            <span>
+              <strong>{{
+                roundedScore != null ? roundedScore.toLocaleString('zh-CN') : '—'
+              }}</strong>
               <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
             </span>
           </p>
