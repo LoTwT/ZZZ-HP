@@ -619,6 +619,7 @@ const panelDesc = computed(() =>
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.35rem;
+  margin-left: auto;
 }
 
 .marker-chip {
@@ -747,7 +748,9 @@ const panelDesc = computed(() =>
 .score-line {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.6rem;
+  width: 100%;
 }
 
 .score-short {
@@ -816,10 +819,6 @@ const panelDesc = computed(() =>
 
   .score-line {
     flex-wrap: wrap;
-  }
-
-  .marker-row {
-    justify-content: flex-start;
   }
 }
 </style>
