@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import {
+  fetchBossChart,
+  fetchBossList,
+  type BossOption,
+  type HpChartPoint,
+} from '@/api/crisisAssault'
 import {
   CRISIS_SCORE_MAX,
   convertHpRatioToScore,
@@ -12,6 +18,7 @@ import {
   type CrisisScoreMarker,
   type CrisisScoreTableMode,
 } from '@/data/crisisScoreHpTable'
+import { formatHp, resolveAssetUrl } from '@/utils/gameData'
 
 type EditSource = 'hp' | 'score' | 'scorePct' | 'abs'
 type HpAbsField = 'total' | 'dealt' | null
@@ -25,7 +32,74 @@ const scoreInput = ref('')
 const totalHpInput = ref('')
 const dealtHpInput = ref('')
 
+const bossList = ref<BossOption[]>([])
+const selectedBoss = ref('')
+const phasePoints = ref<HpChartPoint[]>([])
+const selectedPhaseLabel = ref('')
+const bossListLoading = ref(false)
+const bossChartLoading = ref(false)
+const bossError = ref('')
+
 const markers = computed(() => getScoreMarkers(tableMode.value))
+const selectedBossInfo = computed(() =>
+  bossList.value.find((boss) => boss.boss_name === selectedBoss.value),
+)
+
+async function loadBossList() {
+  bossListLoading.value = true
+  bossError.value = ''
+  selectedBoss.value = ''
+  phasePoints.value = []
+  selectedPhaseLabel.value = ''
+  try {
+    bossList.value = await fetchBossList(tableMode.value)
+  } catch (error) {
+    bossList.value = []
+    bossError.value = error instanceof Error ? error.message : '加载怪物列表失败'
+  } finally {
+    bossListLoading.value = false
+  }
+}
+
+async function loadBossPhases() {
+  if (!selectedBoss.value) {
+    phasePoints.value = []
+    selectedPhaseLabel.value = ''
+    return
+  }
+  bossChartLoading.value = true
+  bossError.value = ''
+  try {
+    const points = await fetchBossChart(selectedBoss.value, tableMode.value)
+    phasePoints.value = [...points].reverse()
+    const latest = phasePoints.value[0]
+    selectedPhaseLabel.value = latest?.label ?? ''
+    if (latest) applyTotalHpFromBoss(latest.totalHp)
+  } catch (error) {
+    phasePoints.value = []
+    selectedPhaseLabel.value = ''
+    bossError.value = error instanceof Error ? error.message : '加载怪物期数失败'
+  } finally {
+    bossChartLoading.value = false
+  }
+}
+
+function applyTotalHpFromBoss(hp: number) {
+  if (!Number.isFinite(hp) || hp <= 0) return
+  lastHpAbs.value = 'total'
+  totalHpInput.value = String(Math.round(hp))
+  onTotalEdit()
+  if (result.value) syncActualHpFromRatio(result.value.hpRatio)
+}
+
+function onPhaseChange() {
+  const point = phasePoints.value.find((item) => item.label === selectedPhaseLabel.value)
+  if (point) applyTotalHpFromBoss(point.totalHp)
+}
+
+onMounted(loadBossList)
+watch(tableMode, loadBossList)
+watch(selectedBoss, loadBossPhases)
 
 function parseLocaleNumber(raw: string): number | null {
   const text = raw.trim().replace(/,/g, '')
@@ -137,6 +211,9 @@ function clearInputs() {
   scoreInput.value = ''
   totalHpInput.value = ''
   dealtHpInput.value = ''
+  selectedBoss.value = ''
+  phasePoints.value = []
+  selectedPhaseLabel.value = ''
 }
 
 const reachedMarkers = computed(() => {
@@ -266,6 +343,44 @@ const panelDesc = computed(() =>
 
       <section class="convert-card">
         <h2 class="card-title">实际血量</h2>
+        <label class="field">
+          <span>怪物</span>
+          <span class="field-input">
+            <img
+              v-if="selectedBossInfo?.boss_image"
+              :src="resolveAssetUrl(selectedBossInfo.boss_image)"
+              :alt="selectedBoss"
+              class="boss-thumb"
+            />
+            <select
+              v-model="selectedBoss"
+              class="boss-select"
+              aria-label="从数据库选择怪物"
+              :disabled="bossListLoading || !bossList.length"
+            >
+              <option value="">{{ bossListLoading ? '加载中…' : '从数据库选择' }}</option>
+              <option v-for="boss in bossList" :key="boss.boss_name" :value="boss.boss_name">
+                {{ boss.boss_name }}
+              </option>
+            </select>
+          </span>
+        </label>
+        <label class="field">
+          <span>期数</span>
+          <select
+            v-model="selectedPhaseLabel"
+            class="boss-select"
+            aria-label="选择怪物出现期数"
+            :disabled="!phasePoints.length || bossChartLoading"
+            @change="onPhaseChange"
+          >
+            <option value="">{{ bossChartLoading ? '加载中…' : '选择期数' }}</option>
+            <option v-for="point in phasePoints" :key="point.label" :value="point.label">
+              {{ point.label }} · {{ formatHp(point.totalHp) }}
+            </option>
+          </select>
+        </label>
+        <p v-if="bossError" class="boss-error">{{ bossError }}</p>
         <label class="field">
           <span>总血量</span>
           <input
@@ -493,6 +608,40 @@ const panelDesc = computed(() =>
 .field input:focus {
   outline: 2px solid color-mix(in srgb, #e8a838 55%, transparent);
   outline-offset: 1px;
+}
+
+.boss-select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-heading);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.boss-select:focus {
+  outline: 2px solid color-mix(in srgb, #e8a838 55%, transparent);
+  outline-offset: 1px;
+}
+
+.boss-thumb {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+
+.boss-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #c62828;
 }
 
 .suffix {
