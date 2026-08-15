@@ -1234,15 +1234,20 @@ const panelDesc = computed(() =>
   z-index: 2;
 }
 
-.col-resizer:hover::before,
-.col-resizer:active::before {
+.col-resizer::before {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 2px;
+  width: 1px;
   transform: translateX(-50%);
+  background: var(--color-border);
+}
+
+.col-resizer:hover::before,
+.col-resizer:active::before {
+  width: 2px;
   background: #e8a838;
 }
 
@@ -1250,17 +1255,11 @@ const panelDesc = computed(() =>
 .record-table td {
   padding: 0.38rem 0.4rem;
   border-bottom: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
   text-align: left;
   white-space: nowrap;
   overflow: visible;
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
-}
-
-.record-table th:last-child,
-.record-table td:last-child {
-  border-right: none;
 }
 
 .record-table th {
