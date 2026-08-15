@@ -42,6 +42,7 @@ interface ModeDraft {
   selectedBoss: string
   selectedPhaseLabel: string
   records: ConvertRecord[]
+  keptHpRatio: number | null
 }
 
 function emptyDraft(): ModeDraft {
@@ -56,6 +57,7 @@ function emptyDraft(): ModeDraft {
     selectedBoss: '',
     selectedPhaseLabel: '',
     records: [],
+    keptHpRatio: null,
   }
 }
 
@@ -67,6 +69,7 @@ const scorePercentInput = ref('')
 const scoreInput = ref('')
 const totalHpInput = ref('')
 const dealtHpInput = ref('')
+const keptHpRatio = ref<number | null>(null)
 const records = ref<ConvertRecord[]>([])
 const recordSeq = ref(0)
 const processOpen = ref(true)
@@ -231,19 +234,32 @@ function clampScoreField(raw: string): string {
   return raw
 }
 
+function rememberHpRatio(ratio: number | null) {
+  if (ratio == null || !Number.isFinite(ratio) || ratio < 0) return
+  keptHpRatio.value = ratio
+}
+
 function onHpPercentEdit() {
   editing.value = 'hp'
   hpPercentInput.value = clampPercentField(hpPercentInput.value)
+  const percent = parseLocaleNumber(hpPercentInput.value)
+  if (percent != null) rememberHpRatio(percent / 100)
 }
 
 function onScorePercentEdit() {
   editing.value = 'scorePct'
   scorePercentInput.value = clampPercentField(scorePercentInput.value)
+  const percent = parseLocaleNumber(scorePercentInput.value)
+  if (percent != null) {
+    rememberHpRatio(convertScoreToHpRatio(tableMode.value, (percent / 100) * CRISIS_SCORE_MAX).hpRatio)
+  }
 }
 
 function onScoreEdit() {
   editing.value = 'score'
   scoreInput.value = clampScoreField(scoreInput.value)
+  const score = parseLocaleNumber(scoreInput.value)
+  if (score != null) rememberHpRatio(convertScoreToHpRatio(tableMode.value, score).hpRatio)
 }
 
 const result = computed<CrisisHpScoreConvertResult | null>(() => {
@@ -330,6 +346,7 @@ function onDealtEdit(event?: Event) {
   }
   if (total != null && total > 0 && dealt != null) {
     editing.value = 'abs'
+    rememberHpRatio(dealt / total)
     return
   }
   if (editing.value === 'abs') return
@@ -338,22 +355,26 @@ function onDealtEdit(event?: Event) {
 
 function onTotalEdit(event?: Event) {
   lastHpAbs.value = 'total'
+  const ratio = keptHpRatio.value ?? hpRatioFromLeft()
+  if (editing.value === 'abs' && ratio != null && ratio > 0) editing.value = 'hp'
   applyHpInputFormat(event, totalHpInput)
   if (!applyingBossHp.value) clearBossSelection()
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
-  const ratio = hpRatioFromLeft()
   if (total != null && total > 0 && ratio != null && ratio > 0) {
-    if (editing.value === 'abs') editing.value = 'hp'
     dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, ratio))
     return
   }
-  if (total != null && total > 0 && dealt != null) editing.value = 'abs'
+  if (total != null && total > 0 && dealt != null) {
+    editing.value = 'abs'
+    rememberHpRatio(dealt / total)
+  }
 }
 
 function clearInputs() {
   editing.value = 'hp'
   lastHpAbs.value = null
+  keptHpRatio.value = null
   hpPercentInput.value = ''
   scorePercentInput.value = ''
   scoreInput.value = ''
@@ -387,6 +408,7 @@ const formulaText = computed(() => {
 function applyMarker(marker: CrisisScoreMarker) {
   editing.value = 'score'
   scoreInput.value = String(marker.score)
+  rememberHpRatio(convertScoreToHpRatio(tableMode.value, marker.score).hpRatio)
 }
 
 const RECORD_LIMIT = 5
@@ -405,6 +427,7 @@ function snapshotCurrent(): ModeDraft {
     selectedBoss: selectedBoss.value,
     selectedPhaseLabel: selectedPhaseLabel.value,
     records: records.value.map((row) => ({ ...row })),
+    keptHpRatio: keptHpRatio.value,
   }
 }
 
@@ -419,6 +442,11 @@ function applyDraft(draft: ModeDraft) {
   selectedBoss.value = draft.selectedBoss
   selectedPhaseLabel.value = draft.selectedPhaseLabel
   records.value = draft.records.map((row) => ({ ...row }))
+  keptHpRatio.value = draft.keptHpRatio
+  if (keptHpRatio.value == null) {
+    const percent = parseLocaleNumber(draft.hpPercentInput)
+    if (percent != null) keptHpRatio.value = percent / 100
+  }
 }
 
 async function setTableMode(next: CrisisScoreTableMode) {
