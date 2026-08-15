@@ -328,6 +328,63 @@ function applyMarker(marker: CrisisScoreMarker) {
   scoreInput.value = String(marker.score)
 }
 
+const RECORD_LIMIT = 5
+
+interface ConvertRecord {
+  dealtHp: number | null
+  hpRatio: number
+  scoreRatio: number
+  score: number
+}
+
+type DeltaKind = 'up' | 'down' | 'zero' | 'empty'
+
+const records = ref<ConvertRecord[]>([])
+
+function recordNow() {
+  if (!result.value || records.value.length >= RECORD_LIMIT) return
+  records.value.push({
+    dealtHp: parseLocaleNumber(dealtHpInput.value),
+    hpRatio: result.value.hpRatio,
+    scoreRatio: result.value.score / CRISIS_SCORE_MAX,
+    score: Math.round(result.value.score),
+  })
+}
+
+function clearRecords() {
+  records.value = []
+}
+
+function formatScoreDelta(current: number, other: number | undefined): { text: string; kind: DeltaKind } {
+  if (other == null) return { text: '—', kind: 'empty' }
+  const delta = current - other
+  if (delta === 0) return { text: '0', kind: 'zero' }
+  const sign = delta > 0 ? '+' : ''
+  let text = `${sign}${delta.toLocaleString('zh-CN')}`
+  if (other > 0) {
+    const pct = (delta / other) * 100
+    text = `${text}（${sign}${pct.toFixed(2)}%）`
+  }
+  return { text, kind: delta > 0 ? 'up' : 'down' }
+}
+
+function prevCompare(index: number) {
+  return formatScoreDelta(records.value[index]!.score, records.value[index - 1]?.score)
+}
+
+function nextCompare(index: number) {
+  return formatScoreDelta(records.value[index]!.score, records.value[index + 1]?.score)
+}
+
+const recordRows = computed(() =>
+  records.value.map((rec, index) => ({
+    rec,
+    index,
+    prev: prevCompare(index),
+    next: nextCompare(index),
+  })),
+)
+
 const panelDesc = computed(() =>
   tableMode.value === 'hard'
     ? `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（困难）`
@@ -521,6 +578,57 @@ const panelDesc = computed(() =>
         </p>
       </template>
       <p v-else class="status-line">等待填入数据</p>
+    </section>
+
+    <section class="status-card record-card">
+      <div class="record-head">
+        <h2 class="card-title">换算记录</h2>
+        <div class="record-actions">
+          <button
+            type="button"
+            class="record-btn"
+            :disabled="!result || records.length >= RECORD_LIMIT"
+            @click="recordNow"
+          >
+            记录
+          </button>
+          <button
+            type="button"
+            class="record-btn danger"
+            :disabled="!records.length"
+            @click="clearRecords"
+          >
+            清空
+          </button>
+        </div>
+      </div>
+      <p class="record-hint">最多记录 5 条。对比具体分数相对上一条、下一条的变化。</p>
+      <div v-if="records.length" class="record-table-wrap">
+        <table class="record-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>已打血量</th>
+              <th>分数占比</th>
+              <th>伤害占比</th>
+              <th>具体分数</th>
+              <th>较上一条</th>
+              <th>较下一条</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in recordRows" :key="row.index">
+              <td>{{ row.index + 1 }}</td>
+              <td>{{ row.rec.dealtHp == null ? '—' : formatHpAmount(row.rec.dealtHp) }}</td>
+              <td>{{ formatPercent(row.rec.scoreRatio, 2) }}</td>
+              <td>{{ formatPercent(row.rec.hpRatio, 2) }}</td>
+              <td>{{ row.rec.score.toLocaleString('zh-CN') }}</td>
+              <td :class="`delta-${row.prev.kind}`">{{ row.prev.text }}</td>
+              <td :class="`delta-${row.next.kind}`">{{ row.next.text }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 </template>
@@ -806,6 +914,93 @@ const panelDesc = computed(() =>
   font-family: var(--zzz-font-mono, ui-monospace, monospace);
   font-size: 0.8rem;
   color: var(--color-heading);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.record-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.record-btn {
+  min-width: 3.6rem;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-heading);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.record-btn:hover:not(:disabled) {
+  background: var(--color-background-mute);
+}
+
+.record-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.record-btn.danger {
+  color: #c62828;
+  border-color: color-mix(in srgb, #c62828 35%, var(--color-border));
+}
+
+.record-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text);
+  opacity: 0.72;
+}
+
+.record-table-wrap {
+  overflow-x: auto;
+}
+
+.record-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  color: var(--color-heading);
+}
+
+.record-table th,
+.record-table td {
+  padding: 0.38rem 0.45rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.record-table th {
+  font-weight: 700;
+  color: var(--color-text);
+  opacity: 0.78;
+}
+
+.delta-up {
+  color: #2e7d32;
+  font-weight: 700;
+}
+
+.delta-down {
+  color: #c62828;
+  font-weight: 700;
+}
+
+.delta-zero,
+.delta-empty {
+  color: var(--color-text);
+  opacity: 0.7;
 }
 
 @media (max-width: 768px) {
