@@ -217,7 +217,7 @@ const panelDesc = computed(() =>
           </template>
           <span v-else class="placeholder-text">改血量占比或分数占比，另一项会跟上</span>
         </p>
-        <p class="field-hint">两个占比都显示。改其中一个，另一个和分数会一起变。</p>
+        <p class="field-hint">3项填1</p>
       </section>
 
       <section class="convert-card">
@@ -246,9 +246,7 @@ const panelDesc = computed(() =>
             @input="onDealtEdit"
           />
         </label>
-        <p class="field-hint">
-          只填总血：已打血量按占比算出来。总血和已打都填：自动得到血量占比和分数。
-        </p>
+        <p class="field-hint">有占比时2项填1，无占比时需要全部填</p>
       </section>
     </div>
 
@@ -449,7 +447,9 @@ const panelDesc = computed(() =>
   margin: 0;
   font-size: 0.75rem;
   line-height: 1.4;
-  opacity: 0.62;
+  font-weight: 700;
+  color: #c62828;
+  opacity: 1;
 }
 
 .score-readout {
