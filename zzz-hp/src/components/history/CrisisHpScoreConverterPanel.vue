@@ -445,10 +445,14 @@ const panelDesc = computed(() =>
 
 .field-hint {
   margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.4;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border-left: 3px solid #e8a838;
+  background: color-mix(in srgb, #e8a838 18%, transparent);
+  font-size: 0.78rem;
   font-weight: 700;
-  color: #c62828;
+  line-height: 1.4;
+  color: #b57914;
   opacity: 1;
 }
 
