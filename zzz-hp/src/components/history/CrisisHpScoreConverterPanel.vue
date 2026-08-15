@@ -1267,8 +1267,7 @@ const panelDesc = computed(() =>
 
 .record-table th {
   font-weight: 700;
-  color: var(--color-text);
-  opacity: 0.78;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
 }
 
 .record-empty td {
