@@ -479,7 +479,7 @@ const panelDesc = computed(() =>
           {{ formatPercent(nextMarker.hpRatio - result.hpRatio, 4) }} 血量）
         </p>
       </template>
-      <p v-else class="status-line">填入占比或分数后显示换算过程</p>
+      <p v-else class="status-line">等待填入数据</p>
     </section>
   </div>
 </template>
