@@ -288,8 +288,8 @@ function applyMarker(marker: CrisisScoreMarker) {
 
 const panelDesc = computed(() =>
   tableMode.value === 'hard'
-    ? `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（困难）。占比改其中一个即可；填总血后能看到已打血量，两项都填会反算占比。`
-    : `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（正常）。2 万分为满星 S（FS-HP）。占比改其中一个即可；填总血后能看到已打血量，两项都填会反算占比。`,
+    ? `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（困难）`
+    : `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（正常）；2 万分为满星 S（FS-HP）`,
 )
 </script>
 
@@ -516,7 +516,7 @@ const panelDesc = computed(() =>
   color: var(--color-text);
   opacity: 0.72;
   line-height: 1.45;
-  max-width: 44rem;
+  white-space: nowrap;
 }
 
 .mode-toggle {
