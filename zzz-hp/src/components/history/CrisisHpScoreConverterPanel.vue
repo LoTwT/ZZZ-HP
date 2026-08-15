@@ -23,6 +23,41 @@ import { formatHp, resolveAssetUrl } from '@/utils/gameData'
 type EditSource = 'hp' | 'score' | 'scorePct' | 'abs'
 type HpAbsField = 'total' | 'dealt' | null
 
+interface ConvertRecord {
+  dealtHp: number | null
+  hpRatio: number
+  scoreRatio: number
+  score: number
+}
+
+interface ModeDraft {
+  editing: EditSource
+  lastHpAbs: HpAbsField
+  hpPercentInput: string
+  scorePercentInput: string
+  scoreInput: string
+  totalHpInput: string
+  dealtHpInput: string
+  selectedBoss: string
+  selectedPhaseLabel: string
+  records: ConvertRecord[]
+}
+
+function emptyDraft(): ModeDraft {
+  return {
+    editing: 'hp',
+    lastHpAbs: null,
+    hpPercentInput: '',
+    scorePercentInput: '',
+    scoreInput: '',
+    totalHpInput: '',
+    dealtHpInput: '',
+    selectedBoss: '',
+    selectedPhaseLabel: '',
+    records: [],
+  }
+}
+
 const tableMode = ref<CrisisScoreTableMode>('normal')
 const editing = ref<EditSource>('hp')
 const lastHpAbs = ref<HpAbsField>(null)
@@ -31,6 +66,12 @@ const scorePercentInput = ref('')
 const scoreInput = ref('')
 const totalHpInput = ref('')
 const dealtHpInput = ref('')
+const records = ref<ConvertRecord[]>([])
+const restoringMode = ref(false)
+const modeDrafts: Record<CrisisScoreTableMode, ModeDraft> = {
+  normal: emptyDraft(),
+  hard: emptyDraft(),
+}
 
 const bossList = ref<BossOption[]>([])
 const selectedBoss = ref('')
@@ -46,14 +87,24 @@ const selectedBossInfo = computed(() =>
   bossList.value.find((boss) => boss.boss_name === selectedBoss.value),
 )
 
-async function loadBossList() {
+async function loadBossList(options?: { preserveSelection?: boolean }) {
   bossListLoading.value = true
   bossError.value = ''
-  selectedBoss.value = ''
-  phasePoints.value = []
-  selectedPhaseLabel.value = ''
+  const preservedBoss = options?.preserveSelection ? selectedBoss.value : ''
+  if (!options?.preserveSelection) {
+    selectedBoss.value = ''
+    phasePoints.value = []
+    selectedPhaseLabel.value = ''
+  }
   try {
     bossList.value = await fetchBossList(tableMode.value)
+    if (preservedBoss && bossList.value.some((boss) => boss.boss_name === preservedBoss)) {
+      selectedBoss.value = preservedBoss
+    } else if (options?.preserveSelection) {
+      selectedBoss.value = ''
+      phasePoints.value = []
+      selectedPhaseLabel.value = ''
+    }
   } catch (error) {
     bossList.value = []
     bossError.value = error instanceof Error ? error.message : '加载怪物列表失败'
@@ -62,7 +113,7 @@ async function loadBossList() {
   }
 }
 
-async function loadBossPhases() {
+async function loadBossPhases(options?: { preservePhase?: boolean }) {
   if (!selectedBoss.value) {
     phasePoints.value = []
     selectedPhaseLabel.value = ''
@@ -73,6 +124,11 @@ async function loadBossPhases() {
   try {
     const points = await fetchBossChart(selectedBoss.value, tableMode.value)
     phasePoints.value = [...points].reverse()
+    if (options?.preservePhase) {
+      const match = phasePoints.value.find((item) => item.label === selectedPhaseLabel.value)
+      if (!match) selectedPhaseLabel.value = phasePoints.value[0]?.label ?? ''
+      return
+    }
     const latest = phasePoints.value[0]
     selectedPhaseLabel.value = latest?.label ?? ''
     if (latest) applyTotalHpFromBoss(latest.totalHp)
@@ -141,8 +197,10 @@ function onPhaseChange() {
 }
 
 onMounted(loadBossList)
-watch(tableMode, loadBossList)
-watch(selectedBoss, loadBossPhases)
+watch(selectedBoss, () => {
+  if (restoringMode.value) return
+  loadBossPhases()
+})
 
 function parseLocaleNumber(raw: string): number | null {
   const text = raw.trim().replace(/,/g, '')
@@ -209,7 +267,7 @@ const result = computed<CrisisHpScoreConvertResult | null>(() => {
 })
 
 watch(result, (next) => {
-  if (!next) return
+  if (restoringMode.value || !next) return
   if (editing.value !== 'hp') {
     hpPercentInput.value = formatHpPercent(next.hpRatio)
   }
@@ -330,16 +388,49 @@ function applyMarker(marker: CrisisScoreMarker) {
 
 const RECORD_LIMIT = 5
 
-interface ConvertRecord {
-  dealtHp: number | null
-  hpRatio: number
-  scoreRatio: number
-  score: number
-}
-
 type DeltaKind = 'up' | 'down' | 'zero' | 'empty'
 
-const records = ref<ConvertRecord[]>([])
+function snapshotCurrent(): ModeDraft {
+  return {
+    editing: editing.value,
+    lastHpAbs: lastHpAbs.value,
+    hpPercentInput: hpPercentInput.value,
+    scorePercentInput: scorePercentInput.value,
+    scoreInput: scoreInput.value,
+    totalHpInput: totalHpInput.value,
+    dealtHpInput: dealtHpInput.value,
+    selectedBoss: selectedBoss.value,
+    selectedPhaseLabel: selectedPhaseLabel.value,
+    records: records.value.map((row) => ({ ...row })),
+  }
+}
+
+function applyDraft(draft: ModeDraft) {
+  editing.value = draft.editing
+  lastHpAbs.value = draft.lastHpAbs
+  hpPercentInput.value = draft.hpPercentInput
+  scorePercentInput.value = draft.scorePercentInput
+  scoreInput.value = draft.scoreInput
+  totalHpInput.value = draft.totalHpInput
+  dealtHpInput.value = draft.dealtHpInput
+  selectedBoss.value = draft.selectedBoss
+  selectedPhaseLabel.value = draft.selectedPhaseLabel
+  records.value = draft.records.map((row) => ({ ...row }))
+}
+
+async function setTableMode(next: CrisisScoreTableMode) {
+  if (next === tableMode.value) return
+  modeDrafts[tableMode.value] = snapshotCurrent()
+  restoringMode.value = true
+  tableMode.value = next
+  applyDraft(modeDrafts[next])
+  try {
+    await loadBossList({ preserveSelection: true })
+    if (selectedBoss.value) await loadBossPhases({ preservePhase: true })
+  } finally {
+    restoringMode.value = false
+  }
+}
 
 function recordNow() {
   if (!result.value || records.value.length >= RECORD_LIMIT) return
@@ -403,7 +494,7 @@ const panelDesc = computed(() =>
             type="button"
             class="mode-btn"
             :class="{ active: tableMode === 'normal' }"
-            @click="tableMode = 'normal'"
+            @click="setTableMode('normal')"
           >
             正常
           </button>
@@ -411,7 +502,7 @@ const panelDesc = computed(() =>
             type="button"
             class="mode-btn"
             :class="{ active: tableMode === 'hard' }"
-            @click="tableMode = 'hard'"
+            @click="setTableMode('hard')"
           >
             困难
           </button>
