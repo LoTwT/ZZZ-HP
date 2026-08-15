@@ -210,7 +210,7 @@ const result = computed<CrisisHpScoreConvertResult | null>(() => {
 
 watch(result, (next) => {
   if (!next) return
-  if (editing.value !== 'hp' && editing.value !== 'abs') {
+  if (editing.value !== 'hp') {
     hpPercentInput.value = formatHpPercent(next.hpRatio)
   }
   if (editing.value !== 'score') {
@@ -226,7 +226,6 @@ watch(result, (next) => {
 
 function hasRatioInput(): boolean {
   return (
-    result.value != null ||
     parseLocaleNumber(hpPercentInput.value) != null ||
     parseLocaleNumber(scoreInput.value) != null ||
     parseLocaleNumber(scorePercentInput.value) != null
@@ -269,6 +268,7 @@ function onDealtEdit(event?: Event) {
     dealtHpInput.value = formatHpAmount(total)
     dealt = total
   }
+  if (editing.value === 'abs') return
   if (!hasRatioInput() && total != null && total > 0 && dealt != null) {
     editing.value = 'abs'
     return
