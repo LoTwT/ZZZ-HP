@@ -832,6 +832,7 @@ const panelDesc = computed(() =>
               <th v-for="(label, index) in RECORD_COL_LABELS" :key="index">
                 {{ label }}
                 <span
+                  v-if="index < RECORD_COL_LABELS.length - 1"
                   class="col-resizer"
                   aria-hidden="true"
                   @pointerdown="onRecordColResizeStart(index, $event)"
@@ -1221,7 +1222,6 @@ const panelDesc = computed(() =>
 
 .record-table th {
   position: relative;
-  border-right: 1px solid var(--color-border);
 }
 
 .col-resizer {
@@ -1234,35 +1234,33 @@ const panelDesc = computed(() =>
   z-index: 2;
 }
 
-.col-resizer::before {
+.col-resizer:hover::before,
+.col-resizer:active::before {
   content: '';
   position: absolute;
-  top: 16%;
-  bottom: 16%;
+  top: 0;
+  bottom: 0;
   left: 50%;
   width: 2px;
   transform: translateX(-50%);
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--color-heading) 45%, transparent);
-}
-
-.col-resizer:hover::before,
-.col-resizer:active::before {
-  top: 8%;
-  bottom: 8%;
-  width: 3px;
-  background: color-mix(in srgb, #e8a838 88%, var(--color-heading));
+  background: #e8a838;
 }
 
 .record-table th,
 .record-table td {
   padding: 0.38rem 0.4rem;
   border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
   text-align: left;
   white-space: nowrap;
   overflow: visible;
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
+}
+
+.record-table th:last-child,
+.record-table td:last-child {
+  border-right: none;
 }
 
 .record-table th {
