@@ -13,11 +13,12 @@ import {
   type CrisisScoreTableMode,
 } from '@/data/crisisScoreHpTable'
 
-type EditSource = 'hp' | 'score' | 'abs'
+type EditSource = 'hp' | 'score' | 'scorePct' | 'abs'
 
 const tableMode = ref<CrisisScoreTableMode>('normal')
 const editing = ref<EditSource>('hp')
 const hpPercentInput = ref('')
+const scorePercentInput = ref('')
 const scoreInput = ref('')
 const totalHpInput = ref('')
 const dealtHpInput = ref('')
@@ -41,6 +42,11 @@ const result = computed<CrisisHpScoreConvertResult | null>(() => {
     if (score == null) return null
     return convertScoreToHpRatio(tableMode.value, score)
   }
+  if (editing.value === 'scorePct') {
+    const percent = parseLocaleNumber(scorePercentInput.value)
+    if (percent == null) return null
+    return convertScoreToHpRatio(tableMode.value, (percent / 100) * CRISIS_SCORE_MAX)
+  }
   if (editing.value === 'abs') {
     const total = parseLocaleNumber(totalHpInput.value)
     const dealt = parseLocaleNumber(dealtHpInput.value)
@@ -60,6 +66,9 @@ watch(result, (next) => {
   if (editing.value !== 'score') {
     scoreInput.value = String(Math.round(next.score))
   }
+  if (editing.value !== 'scorePct') {
+    scorePercentInput.value = formatHpPercent(next.score / CRISIS_SCORE_MAX)
+  }
   if (editing.value !== 'abs') {
     const total = parseLocaleNumber(totalHpInput.value)
     if (total != null && total > 0) {
@@ -67,6 +76,25 @@ watch(result, (next) => {
     }
   }
 })
+
+function onDealtEdit() {
+  const total = parseLocaleNumber(totalHpInput.value)
+  const dealt = parseLocaleNumber(dealtHpInput.value)
+  if (total != null && total > 0 && dealt != null) editing.value = 'abs'
+}
+
+function onTotalEdit() {
+  if (editing.value === 'abs') return
+  const total = parseLocaleNumber(totalHpInput.value)
+  const dealt = parseLocaleNumber(dealtHpInput.value)
+  const hasRatio =
+    result.value != null ||
+    parseLocaleNumber(hpPercentInput.value) != null ||
+    parseLocaleNumber(scoreInput.value) != null ||
+    parseLocaleNumber(scorePercentInput.value) != null
+  if (hasRatio) return
+  if (total != null && total > 0 && dealt != null) editing.value = 'abs'
+}
 
 const reachedMarkers = computed(() => {
   if (!result.value) return []
@@ -95,8 +123,8 @@ function applyMarker(marker: CrisisScoreMarker) {
 
 const panelDesc = computed(() =>
   tableMode.value === 'hard'
-    ? `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（困难）。按对应表累计拐点分段线性插值；节点会切开下一管。`
-    : `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（正常）。按对应表累计拐点分段线性插值；2 万节点为满星 S（FS-HP）。`,
+    ? `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（困难）。占比改其中一个即可；填总血后能看到已打血量，两项都填会反算占比。`
+    : `满分 ${CRISIS_SCORE_MAX.toLocaleString('zh-CN')} 分（正常）。2 万分为满星 S（FS-HP）。占比改其中一个即可；填总血后能看到已打血量，两项都填会反算占比。`,
 )
 </script>
 
@@ -139,7 +167,7 @@ const panelDesc = computed(() =>
 
     <div class="convert-grid">
       <section class="convert-card">
-        <h2 class="card-title">已打血量</h2>
+        <h2 class="card-title">占比</h2>
         <label class="field">
           <span>血量占比</span>
           <span class="field-input">
@@ -148,47 +176,30 @@ const panelDesc = computed(() =>
               type="text"
               inputmode="decimal"
               placeholder="例如 28.12"
-              aria-label="已打血量百分比"
+              aria-label="血量占比"
               @focus="editing = 'hp'"
               @input="editing = 'hp'"
             />
             <span class="suffix">%</span>
           </span>
         </label>
-        <div class="abs-row">
-          <label class="field field--grow">
-            <span>已打血量</span>
-            <input
-              v-model="dealtHpInput"
-              type="text"
-              inputmode="numeric"
-              placeholder="可选"
-              aria-label="已打血量数值"
-              @focus="editing = 'abs'"
-              @input="editing = 'abs'"
-            />
-          </label>
-          <span class="abs-slash" aria-hidden="true">/</span>
-          <label class="field field--grow">
-            <span>总血量</span>
-            <input
-              v-model="totalHpInput"
-              type="text"
-              inputmode="numeric"
-              placeholder="可选"
-              aria-label="Boss 总血量"
-              @focus="editing = 'abs'"
-              @input="editing = 'abs'"
-            />
-          </label>
-        </div>
-        <p class="field-hint">填总血 + 已打血量会换算成占比；只填占比也可以。</p>
-      </section>
-
-      <section class="convert-card">
-        <h2 class="card-title">对应分数</h2>
         <label class="field">
-          <span>目标 / 已得分数</span>
+          <span>分数占比</span>
+          <span class="field-input">
+            <input
+              v-model="scorePercentInput"
+              type="text"
+              inputmode="decimal"
+              placeholder="例如 41.67"
+              aria-label="分数占比"
+              @focus="editing = 'scorePct'"
+              @input="editing = 'scorePct'"
+            />
+            <span class="suffix">%</span>
+          </span>
+        </label>
+        <label class="field">
+          <span>对应分数</span>
           <input
             v-model="scoreInput"
             type="text"
@@ -204,7 +215,39 @@ const panelDesc = computed(() =>
             <strong>{{ roundedScore.toLocaleString('zh-CN') }}</strong>
             <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
           </template>
-          <span v-else class="placeholder-text">输入血量或分数后显示结果</span>
+          <span v-else class="placeholder-text">改血量占比或分数占比，另一项会跟上</span>
+        </p>
+        <p class="field-hint">两个占比都显示。改其中一个，另一个和分数会一起变。</p>
+      </section>
+
+      <section class="convert-card">
+        <h2 class="card-title">实际血量</h2>
+        <label class="field">
+          <span>总血量</span>
+          <input
+            v-model="totalHpInput"
+            type="text"
+            inputmode="numeric"
+            placeholder="Boss 总血量"
+            aria-label="总血量"
+            @focus="onTotalEdit"
+            @input="onTotalEdit"
+          />
+        </label>
+        <label class="field">
+          <span>已打血量</span>
+          <input
+            v-model="dealtHpInput"
+            type="text"
+            inputmode="numeric"
+            placeholder="填总血后会显示，也可手填"
+            aria-label="已打血量"
+            @focus="onDealtEdit"
+            @input="onDealtEdit"
+          />
+        </label>
+        <p class="field-hint">
+          只填总血：已打血量按占比算出来。总血和已打都填：自动得到血量占比和对应分数。
         </p>
       </section>
     </div>
