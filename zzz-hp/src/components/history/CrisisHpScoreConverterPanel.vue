@@ -320,13 +320,14 @@ function hpRatioFromLeft(): number | null {
 }
 
 function syncActualHpFromRatio(hpRatio: number) {
-  if (hpRatio <= 0) return
+  if (!Number.isFinite(hpRatio) || hpRatio < 0) return
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
   if (total != null && total > 0) {
     dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, hpRatio))
     return
   }
+  if (hpRatio <= 0) return
   if (dealt != null) {
     totalHpInput.value = formatHpAmount(dealt / hpRatio)
   }
