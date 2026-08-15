@@ -411,7 +411,8 @@ function applyMarker(marker: CrisisScoreMarker) {
   rememberHpRatio(convertScoreToHpRatio(tableMode.value, marker.score).hpRatio)
 }
 
-const RECORD_LIMIT = 5
+const RECORD_LIMIT = 10
+const RECORD_EMPTY_ROWS = 5
 
 type DeltaKind = 'up' | 'down' | 'zero' | 'empty'
 
@@ -518,7 +519,7 @@ const recordRows = computed(() =>
   })),
 )
 
-const emptyRecordCount = computed(() => Math.max(0, RECORD_LIMIT - records.value.length))
+const emptyRecordCount = computed(() => Math.max(0, RECORD_EMPTY_ROWS - records.value.length))
 
 const panelDesc = computed(() =>
   tableMode.value === 'hard'
@@ -749,7 +750,7 @@ const panelDesc = computed(() =>
           </button>
         </div>
       </div>
-      <p class="record-hint">最多记录 5 条。较上一条 / 较下一条以已打血量为基准。</p>
+      <p class="record-hint">最多记录 10 条。较上一条 / 较下一条以已打血量为基准。</p>
       <div class="record-table-wrap">
         <table class="record-table">
           <colgroup>
@@ -815,7 +816,7 @@ const panelDesc = computed(() =>
 <style scoped>
 .score-convert-panel {
   width: 100%;
-  max-width: 920px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 0.5rem 0.35rem 1.25rem;
   display: flex;
@@ -1146,34 +1147,38 @@ const panelDesc = computed(() =>
 
 .record-table {
   width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 0.78rem;
   color: var(--color-heading);
 }
 
 .col-idx {
-  width: 2.4rem;
+  width: 2.2rem;
 }
 
 .col-dealt {
-  width: 16%;
+  width: 13%;
+  min-width: 8.2rem;
 }
 
 .col-pct {
-  width: 11%;
+  width: 8%;
+  min-width: 4.6rem;
 }
 
 .col-score {
-  width: 12%;
+  width: 8%;
+  min-width: 4.6rem;
 }
 
 .col-delta {
-  width: 17%;
+  width: 22%;
+  min-width: 9.4rem;
 }
 
 .col-del {
-  width: 3.4rem;
+  width: 3.2rem;
 }
 
 .record-table th,
@@ -1182,29 +1187,19 @@ const panelDesc = computed(() =>
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
-  height: 2.7rem;
 }
 
 .record-table th {
   font-weight: 700;
   color: var(--color-text);
   opacity: 0.78;
-  height: auto;
-}
-
-.record-table td:last-child {
-  overflow: visible;
-  text-overflow: clip;
 }
 
 .delta-cell {
   white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
   line-height: 1.2;
 }
 
