@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   fetchBossChart,
   fetchBossList,
@@ -85,11 +85,51 @@ async function loadBossPhases() {
   }
 }
 
+function formatHpAmount(value: number): string {
+  return formatHp(Math.round(value))
+}
+
+function normalizeHpInput(raw: string): string {
+  if (!raw.trim()) return ''
+  const value = parseLocaleNumber(raw)
+  if (value == null) return raw
+  return formatHpAmount(value)
+}
+
+function restoreHpCaret(input: HTMLInputElement, formatted: string, digitsBefore: number) {
+  nextTick(() => {
+    if (digitsBefore <= 0) {
+      input.setSelectionRange(0, 0)
+      return
+    }
+    let seen = 0
+    for (let i = 0; i < formatted.length; i += 1) {
+      if (/\d/.test(formatted[i]!)) {
+        seen += 1
+        if (seen >= digitsBefore) {
+          input.setSelectionRange(i + 1, i + 1)
+          return
+        }
+      }
+    }
+    input.setSelectionRange(formatted.length, formatted.length)
+  })
+}
+
+function applyHpInputFormat(event: Event | undefined, model: { value: string }) {
+  const input = event?.target instanceof HTMLInputElement ? event.target : null
+  const digitsBefore = input
+    ? input.value.slice(0, input.selectionStart ?? input.value.length).replace(/\D/g, '').length
+    : null
+  model.value = normalizeHpInput(model.value)
+  if (input && digitsBefore != null) restoreHpCaret(input, model.value, digitsBefore)
+}
+
 function applyTotalHpFromBoss(hp: number) {
   if (!Number.isFinite(hp) || hp <= 0) return
   applyingBossHp.value = true
   lastHpAbs.value = 'total'
-  totalHpInput.value = String(Math.round(hp))
+  totalHpInput.value = formatHpAmount(hp)
   onTotalEdit()
   if (result.value) syncActualHpFromRatio(result.value.hpRatio)
   applyingBossHp.value = false
@@ -198,19 +238,19 @@ function syncActualHpFromRatio(hpRatio: number) {
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
   if (lastHpAbs.value === 'dealt' && dealt != null) {
-    totalHpInput.value = String(Math.round(dealt / hpRatio))
+    totalHpInput.value = formatHpAmount(dealt / hpRatio)
     return
   }
   if (lastHpAbs.value === 'total' && total != null && total > 0) {
-    dealtHpInput.value = String(scaleHpByRatio(total, hpRatio))
+    dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, hpRatio))
     return
   }
   if (total != null && total > 0) {
-    dealtHpInput.value = String(scaleHpByRatio(total, hpRatio))
+    dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, hpRatio))
     return
   }
   if (dealt != null) {
-    totalHpInput.value = String(Math.round(dealt / hpRatio))
+    totalHpInput.value = formatHpAmount(dealt / hpRatio)
   }
 }
 
@@ -220,12 +260,13 @@ function clearBossSelection() {
   selectedPhaseLabel.value = ''
 }
 
-function onDealtEdit() {
+function onDealtEdit(event?: Event) {
   lastHpAbs.value = 'dealt'
+  applyHpInputFormat(event, dealtHpInput)
   const total = parseLocaleNumber(totalHpInput.value)
   let dealt = parseLocaleNumber(dealtHpInput.value)
   if (total != null && total > 0 && dealt != null && dealt > total) {
-    dealtHpInput.value = String(total)
+    dealtHpInput.value = formatHpAmount(total)
     dealt = total
   }
   if (!hasRatioInput() && total != null && total > 0 && dealt != null) {
@@ -235,8 +276,9 @@ function onDealtEdit() {
   if (result.value) syncActualHpFromRatio(result.value.hpRatio)
 }
 
-function onTotalEdit() {
+function onTotalEdit(event?: Event) {
   lastHpAbs.value = 'total'
+  applyHpInputFormat(event, totalHpInput)
   if (!applyingBossHp.value) clearBossSelection()
   if (editing.value === 'abs') return
   if (hasRatioInput()) {
@@ -427,17 +469,6 @@ const panelDesc = computed(() =>
         <p v-if="bossError" class="boss-error">{{ bossError }}</p>
         <div class="hp-row">
           <label class="field">
-            <span>总血量</span>
-            <input
-              v-model="totalHpInput"
-              type="text"
-              inputmode="numeric"
-              aria-label="总血量"
-              @focus="onTotalEdit"
-              @input="onTotalEdit"
-            />
-          </label>
-          <label class="field">
             <span>已打血量</span>
             <input
               v-model="dealtHpInput"
@@ -446,6 +477,17 @@ const panelDesc = computed(() =>
               aria-label="已打血量"
               @focus="onDealtEdit"
               @input="onDealtEdit"
+            />
+          </label>
+          <label class="field">
+            <span>总血量</span>
+            <input
+              v-model="totalHpInput"
+              type="text"
+              inputmode="numeric"
+              aria-label="总血量"
+              @focus="onTotalEdit"
+              @input="onTotalEdit"
             />
           </label>
         </div>
