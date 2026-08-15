@@ -199,13 +199,13 @@ const panelDesc = computed(() =>
           </span>
         </label>
         <label class="field">
-          <span>对应分数</span>
+          <span>分数</span>
           <input
             v-model="scoreInput"
             type="text"
             inputmode="numeric"
             placeholder="例如 20000"
-            aria-label="对应分数"
+            aria-label="分数"
             @focus="editing = 'score'"
             @input="editing = 'score'"
           />
@@ -247,7 +247,7 @@ const panelDesc = computed(() =>
           />
         </label>
         <p class="field-hint">
-          只填总血：已打血量按占比算出来。总血和已打都填：自动得到血量占比和对应分数。
+          只填总血：已打血量按占比算出来。总血和已打都填：自动得到血量占比和分数。
         </p>
       </section>
     </div>
