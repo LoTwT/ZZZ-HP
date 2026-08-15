@@ -201,7 +201,10 @@ function onPhaseChange() {
   if (point) applyTotalHpFromBoss(point.totalHp)
 }
 
-onMounted(loadBossList)
+onMounted(() => {
+  loadRecordColWidths()
+  loadBossList()
+})
 watch(selectedBoss, () => {
   if (restoringMode.value) return
   loadBossPhases()
@@ -413,6 +416,71 @@ function applyMarker(marker: CrisisScoreMarker) {
 
 const RECORD_LIMIT = 10
 const RECORD_EMPTY_ROWS = 5
+const RECORD_COL_LABELS = ['#', '已打血量', '分数占比', '伤害占比', '具体分数', '较上一条', '较下一条', '']
+const RECORD_COL_DEFAULTS = [36, 140, 80, 80, 80, 220, 220, 52]
+const RECORD_COL_MIN = [28, 72, 56, 56, 56, 108, 108, 44]
+const RECORD_COL_WIDTH_KEY = 'zzz-crisis-record-col-widths'
+
+const recordColWidths = ref<number[]>([...RECORD_COL_DEFAULTS])
+const recordColResizing = ref(false)
+let recordColDrag: { index: number; startX: number; startWidth: number } | null = null
+
+function clampRecordColWidth(index: number, width: number) {
+  return Math.max(RECORD_COL_MIN[index] ?? 48, Math.round(width))
+}
+
+function loadRecordColWidths() {
+  try {
+    const raw = localStorage.getItem(RECORD_COL_WIDTH_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed) || parsed.length !== RECORD_COL_DEFAULTS.length) return
+    if (!parsed.every((value) => typeof value === 'number' && Number.isFinite(value))) return
+    recordColWidths.value = parsed.map((value, index) => clampRecordColWidth(index, value))
+  } catch {
+    /* keep defaults */
+  }
+}
+
+function saveRecordColWidths() {
+  localStorage.setItem(RECORD_COL_WIDTH_KEY, JSON.stringify(recordColWidths.value))
+}
+
+function onRecordColResizeStart(index: number, event: PointerEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  recordColDrag = {
+    index,
+    startX: event.clientX,
+    startWidth: recordColWidths.value[index] ?? RECORD_COL_DEFAULTS[index]!,
+  }
+  recordColResizing.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function onRecordColResizeMove(event: PointerEvent) {
+  if (!recordColDrag) return
+  const next = recordColDrag.startWidth + (event.clientX - recordColDrag.startX)
+  const widths = recordColWidths.value.slice()
+  widths[recordColDrag.index] = clampRecordColWidth(recordColDrag.index, next)
+  recordColWidths.value = widths
+}
+
+function onRecordColResizeEnd() {
+  if (!recordColDrag) return
+  recordColDrag = null
+  recordColResizing.value = false
+  saveRecordColWidths()
+}
+
+function resetRecordColWidth(index: number) {
+  const widths = recordColWidths.value.slice()
+  widths[index] = RECORD_COL_DEFAULTS[index]!
+  recordColWidths.value = widths
+  saveRecordColWidths()
+}
+
+const recordTableWidth = computed(() => recordColWidths.value.reduce((sum, width) => sum + width, 0))
 
 type DeltaKind = 'up' | 'down' | 'zero' | 'empty'
 
@@ -749,29 +817,30 @@ const panelDesc = computed(() =>
           </button>
         </div>
       </div>
-      <p class="record-hint">最多记录 10 条。较上一条 / 较下一条以已打血量为基准。</p>
+      <p class="record-hint">最多记录 10 条。较上一条 / 较下一条以已打血量为基准。表头竖线可拖动调整列宽。</p>
       <div class="record-table-wrap">
-        <table class="record-table">
+        <table
+          class="record-table"
+          :class="{ 'is-resizing': recordColResizing }"
+          :style="{ width: `${recordTableWidth}px` }"
+        >
           <colgroup>
-            <col class="col-idx" />
-            <col class="col-dealt" />
-            <col class="col-pct" />
-            <col class="col-pct" />
-            <col class="col-score" />
-            <col class="col-delta" />
-            <col class="col-delta" />
-            <col class="col-del" />
+            <col v-for="(width, index) in recordColWidths" :key="index" :style="{ width: `${width}px` }" />
           </colgroup>
           <thead>
             <tr>
-              <th>#</th>
-              <th>已打血量</th>
-              <th>分数占比</th>
-              <th>伤害占比</th>
-              <th>具体分数</th>
-              <th>较上一条</th>
-              <th>较下一条</th>
-              <th></th>
+              <th v-for="(label, index) in RECORD_COL_LABELS" :key="index">
+                {{ label }}
+                <span
+                  class="col-resizer"
+                  aria-hidden="true"
+                  @pointerdown="onRecordColResizeStart(index, $event)"
+                  @pointermove="onRecordColResizeMove"
+                  @pointerup="onRecordColResizeEnd"
+                  @pointercancel="onRecordColResizeEnd"
+                  @dblclick.stop.prevent="resetRecordColWidth(index)"
+                />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1139,39 +1208,34 @@ const panelDesc = computed(() =>
 }
 
 .record-table {
-  width: 100%;
-  table-layout: auto;
+  table-layout: fixed;
+  width: max-content;
   border-collapse: collapse;
   font-size: 0.78rem;
   color: var(--color-heading);
 }
 
-.col-idx {
-  width: 2.2rem;
+.record-table.is-resizing {
+  user-select: none;
 }
 
-.col-dealt {
-  width: 13%;
-  min-width: 8.2rem;
+.record-table th {
+  position: relative;
 }
 
-.col-pct {
-  width: 8%;
-  min-width: 4.6rem;
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
 }
 
-.col-score {
-  width: 8%;
-  min-width: 4.6rem;
-}
-
-.col-delta {
-  width: 24%;
-  min-width: 12.8rem;
-}
-
-.col-del {
-  width: 3.2rem;
+.col-resizer:hover,
+.col-resizer:active {
+  background: color-mix(in srgb, #e8a838 55%, transparent);
 }
 
 .record-table th,
