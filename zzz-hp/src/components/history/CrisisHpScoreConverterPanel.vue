@@ -190,7 +190,6 @@ function applyTotalHpFromBoss(hp: number) {
   lastHpAbs.value = 'total'
   totalHpInput.value = formatHpAmount(hp)
   onTotalEdit()
-  if (result.value) syncActualHpFromRatio(result.value.hpRatio)
   applyingBossHp.value = false
 }
 
@@ -285,26 +284,26 @@ watch(result, (next) => {
   }
 })
 
-function hasRatioInput(): boolean {
-  return (
-    parseLocaleNumber(hpPercentInput.value) != null ||
-    parseLocaleNumber(scoreInput.value) != null ||
-    parseLocaleNumber(scorePercentInput.value) != null
-  )
+function hpRatioFromLeft(): number | null {
+  if (editing.value === 'score') {
+    const score = parseLocaleNumber(scoreInput.value)
+    if (score == null) return null
+    return convertScoreToHpRatio(tableMode.value, score).hpRatio
+  }
+  if (editing.value === 'scorePct') {
+    const percent = parseLocaleNumber(scorePercentInput.value)
+    if (percent == null) return null
+    return convertScoreToHpRatio(tableMode.value, (percent / 100) * CRISIS_SCORE_MAX).hpRatio
+  }
+  const hpPercent = parseLocaleNumber(hpPercentInput.value)
+  if (hpPercent == null) return null
+  return hpPercent / 100
 }
 
 function syncActualHpFromRatio(hpRatio: number) {
   if (hpRatio <= 0) return
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
-  if (lastHpAbs.value === 'dealt' && dealt != null) {
-    totalHpInput.value = formatHpAmount(dealt / hpRatio)
-    return
-  }
-  if (lastHpAbs.value === 'total' && total != null && total > 0) {
-    dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, hpRatio))
-    return
-  }
   if (total != null && total > 0) {
     dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, hpRatio))
     return
@@ -329,11 +328,11 @@ function onDealtEdit(event?: Event) {
     dealtHpInput.value = formatHpAmount(total)
     dealt = total
   }
-  if (editing.value === 'abs') return
-  if (!hasRatioInput() && total != null && total > 0 && dealt != null) {
+  if (total != null && total > 0 && dealt != null) {
     editing.value = 'abs'
     return
   }
+  if (editing.value === 'abs') return
   if (result.value) syncActualHpFromRatio(result.value.hpRatio)
 }
 
@@ -341,13 +340,14 @@ function onTotalEdit(event?: Event) {
   lastHpAbs.value = 'total'
   applyHpInputFormat(event, totalHpInput)
   if (!applyingBossHp.value) clearBossSelection()
-  if (editing.value === 'abs') return
-  if (hasRatioInput()) {
-    if (result.value) syncActualHpFromRatio(result.value.hpRatio)
-    return
-  }
   const total = parseLocaleNumber(totalHpInput.value)
   const dealt = parseLocaleNumber(dealtHpInput.value)
+  const ratio = hpRatioFromLeft()
+  if (total != null && total > 0 && ratio != null && ratio > 0) {
+    if (editing.value === 'abs') editing.value = 'hp'
+    dealtHpInput.value = formatHpAmount(scaleHpByRatio(total, ratio))
+    return
+  }
   if (total != null && total > 0 && dealt != null) editing.value = 'abs'
 }
 
@@ -651,7 +651,7 @@ const panelDesc = computed(() =>
             />
           </label>
         </div>
-        <p class="field-hint">有占比时2项填1，无占比时需要全部填</p>
+        <p class="field-hint">总血量优先。改占比时已打血量跟着变；改已打血量时占比跟着变。</p>
       </section>
     </div>
 
