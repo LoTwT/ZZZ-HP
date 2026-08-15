@@ -713,7 +713,6 @@ const panelDesc = computed(() =>
   margin: 0;
   padding: 0.4rem 0.55rem;
   border-radius: 8px;
-  border-left: 3px solid #e8a838;
   background: color-mix(in srgb, #e8a838 18%, transparent);
   font-size: 0.78rem;
   font-weight: 700;
