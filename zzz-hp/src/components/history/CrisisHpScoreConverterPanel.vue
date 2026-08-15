@@ -326,7 +326,7 @@ const panelDesc = computed(() =>
         <h2 class="card-title">占比</h2>
         <label class="field">
           <span>血量占比</span>
-          <span class="field-input">
+          <span class="field-input percent-short">
             <input
               v-model="hpPercentInput"
               type="text"
@@ -340,7 +340,7 @@ const panelDesc = computed(() =>
         </label>
         <label class="field">
           <span>分数占比</span>
-          <span class="field-input">
+          <span class="field-input percent-short">
             <input
               v-model="scorePercentInput"
               type="text"
@@ -710,6 +710,16 @@ const panelDesc = computed(() =>
 
 .score-short {
   flex: 0 0 auto;
+}
+
+.percent-short {
+  width: fit-content;
+}
+
+.percent-short input {
+  width: 10ch;
+  min-width: 10ch;
+  flex: none;
 }
 
 .score-input-short,
