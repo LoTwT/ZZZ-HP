@@ -69,6 +69,7 @@ const totalHpInput = ref('')
 const dealtHpInput = ref('')
 const records = ref<ConvertRecord[]>([])
 const recordSeq = ref(0)
+const processOpen = ref(true)
 const restoringMode = ref(false)
 const modeDrafts: Record<CrisisScoreTableMode, ModeDraft> = {
   normal: emptyDraft(),
@@ -655,7 +656,18 @@ const panelDesc = computed(() =>
     </div>
 
     <section class="status-card">
-      <h2 class="card-title">计算过程</h2>
+      <div class="record-head">
+        <h2 class="card-title">计算过程</h2>
+        <button
+          type="button"
+          class="record-btn"
+          :aria-expanded="processOpen"
+          @click="processOpen = !processOpen"
+        >
+          {{ processOpen ? '收起' : '展开' }}
+        </button>
+      </div>
+      <template v-if="processOpen">
       <template v-if="result">
         <p class="status-main">{{ describeConvertSegment(result) }}</p>
         <p class="status-line">
@@ -680,6 +692,7 @@ const panelDesc = computed(() =>
         </p>
       </template>
       <p v-else class="status-line">等待填入数据</p>
+      </template>
     </section>
 
     <section class="status-card record-card">
