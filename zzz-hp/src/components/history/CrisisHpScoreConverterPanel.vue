@@ -487,19 +487,18 @@ function clearRecords() {
 function formatDealtDelta(
   current: number | null,
   other: number | null | undefined,
-): { text: string; amount: string; pct: string; kind: DeltaKind } {
-  if (current == null || other == null) return { text: '—', amount: '—', pct: '', kind: 'empty' }
+): { text: string; kind: DeltaKind } {
+  if (current == null || other == null) return { text: '—', kind: 'empty' }
   const delta = current - other
-  if (delta === 0) return { text: '0', amount: '0', pct: '', kind: 'zero' }
+  if (delta === 0) return { text: '0', kind: 'zero' }
   const sign = delta > 0 ? '+' : '-'
-  const amount = `${sign}${formatHpAmount(Math.abs(delta))}`
-  let pct = ''
+  let text = `${sign}${formatHpAmount(Math.abs(delta))}`
   if (other > 0) {
     const value = (delta / other) * 100
     const pctSign = value >= 0 ? '+' : ''
-    pct = `（${pctSign}${value.toFixed(2)}%）`
+    text = `${text}（${pctSign}${value.toFixed(2)}%）`
   }
-  return { text: `${amount}${pct}`, amount, pct, kind: delta > 0 ? 'up' : 'down' }
+  return { text, kind: delta > 0 ? 'up' : 'down' }
 }
 
 function prevCompare(index: number) {
@@ -782,14 +781,8 @@ const panelDesc = computed(() =>
               <td>{{ formatPercent(row.rec.scoreRatio, 2) }}</td>
               <td>{{ formatPercent(row.rec.hpRatio, 2) }}</td>
               <td>{{ row.rec.score.toLocaleString('zh-CN') }}</td>
-              <td class="delta-cell" :class="`delta-${row.prev.kind}`" :title="row.prev.text">
-                <span class="delta-amt">{{ row.prev.amount }}</span>
-                <span v-if="row.prev.pct" class="delta-pct">{{ row.prev.pct }}</span>
-              </td>
-              <td class="delta-cell" :class="`delta-${row.next.kind}`" :title="row.next.text">
-                <span class="delta-amt">{{ row.next.amount }}</span>
-                <span v-if="row.next.pct" class="delta-pct">{{ row.next.pct }}</span>
-              </td>
+              <td class="delta-cell" :class="`delta-${row.prev.kind}`">{{ row.prev.text }}</td>
+              <td class="delta-cell" :class="`delta-${row.next.kind}`">{{ row.next.text }}</td>
               <td>
                 <button type="button" class="row-del-btn" aria-label="删除这条记录" @click="removeRecord(row.rec.id)">
                   删除
@@ -1173,8 +1166,8 @@ const panelDesc = computed(() =>
 }
 
 .col-delta {
-  width: 22%;
-  min-width: 9.4rem;
+  width: 24%;
+  min-width: 12.8rem;
 }
 
 .col-del {
@@ -1196,21 +1189,6 @@ const panelDesc = computed(() =>
   font-weight: 700;
   color: var(--color-text);
   opacity: 0.78;
-}
-
-.delta-cell {
-  white-space: normal;
-  line-height: 1.2;
-}
-
-.delta-amt,
-.delta-pct {
-  display: block;
-}
-
-.delta-pct {
-  font-size: 0.7rem;
-  opacity: 0.85;
 }
 
 .record-empty td {
