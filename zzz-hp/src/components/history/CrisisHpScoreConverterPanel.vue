@@ -353,38 +353,35 @@ const panelDesc = computed(() =>
           </span>
         </label>
         <label class="field">
-          <span>分数（满分 {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}）</span>
-          <input
-            v-model="scoreInput"
-            type="text"
-            inputmode="numeric"
-            aria-label="分数"
-            @focus="onScoreEdit"
-            @input="onScoreEdit"
-          />
-        </label>
-        <div class="score-readout">
-          <p class="score-readout-num" aria-live="polite">
-            <span>
-              <strong>{{
-                roundedScore != null ? roundedScore.toLocaleString('zh-CN') : '—'
-              }}</strong>
-              <span> / {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
+          <span>分数</span>
+          <div class="score-line">
+            <span class="field-input score-short">
+              <input
+                v-model="scoreInput"
+                class="score-input-short"
+                type="text"
+                inputmode="numeric"
+                maxlength="5"
+                aria-label="分数"
+                @focus="onScoreEdit"
+                @input="onScoreEdit"
+              />
+              <span class="suffix">/ {{ CRISIS_SCORE_MAX.toLocaleString('zh-CN') }}</span>
             </span>
-          </p>
-          <div class="marker-row" role="group" aria-label="快捷填入节点分数">
-            <button
-              v-for="marker in markers"
-              :key="marker.id"
-              type="button"
-              class="marker-chip"
-              :style="{ '--marker-color': marker.color }"
-              @click="applyMarker(marker)"
-            >
-              {{ marker.shortLabel }}
-            </button>
+            <div class="marker-row" role="group" aria-label="快捷填入节点分数">
+              <button
+                v-for="marker in markers"
+                :key="marker.id"
+                type="button"
+                class="marker-chip"
+                :style="{ '--marker-color': marker.color }"
+                @click="applyMarker(marker)"
+              >
+                {{ marker.shortLabel }}
+              </button>
+            </div>
           </div>
-        </div>
+        </label>
         <p class="field-hint">3项填1</p>
       </section>
 
@@ -428,28 +425,30 @@ const panelDesc = computed(() =>
           </select>
         </label>
         <p v-if="bossError" class="boss-error">{{ bossError }}</p>
-        <label class="field">
-          <span>总血量</span>
-          <input
-            v-model="totalHpInput"
-            type="text"
-            inputmode="numeric"
-            aria-label="总血量"
-            @focus="onTotalEdit"
-            @input="onTotalEdit"
-          />
-        </label>
-        <label class="field">
-          <span>已打血量</span>
-          <input
-            v-model="dealtHpInput"
-            type="text"
-            inputmode="numeric"
-            aria-label="已打血量"
-            @focus="onDealtEdit"
-            @input="onDealtEdit"
-          />
-        </label>
+        <div class="hp-row">
+          <label class="field">
+            <span>总血量</span>
+            <input
+              v-model="totalHpInput"
+              type="text"
+              inputmode="numeric"
+              aria-label="总血量"
+              @focus="onTotalEdit"
+              @input="onTotalEdit"
+            />
+          </label>
+          <label class="field">
+            <span>已打血量</span>
+            <input
+              v-model="dealtHpInput"
+              type="text"
+              inputmode="numeric"
+              aria-label="已打血量"
+              @focus="onDealtEdit"
+              @input="onDealtEdit"
+            />
+          </label>
+        </div>
         <p class="field-hint">有占比时2项填1，无占比时需要全部填</p>
       </section>
     </div>
@@ -697,16 +696,27 @@ const panelDesc = computed(() =>
   color: var(--color-heading);
 }
 
-.abs-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.45rem;
+.hp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
 }
 
-.abs-slash {
-  padding-bottom: 0.55rem;
-  font-weight: 800;
-  opacity: 0.45;
+.score-line {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.score-short {
+  flex: 0 0 auto;
+}
+
+.score-input-short,
+.score-short input {
+  width: 9ch;
+  min-width: 9ch;
+  flex: none;
 }
 
 .field-hint {
@@ -719,40 +729,6 @@ const panelDesc = computed(() =>
   line-height: 1.4;
   color: #b57914;
   opacity: 1;
-}
-
-.score-readout {
-  margin: 0;
-  min-height: 2.4rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-
-.score-readout-num {
-  margin: 0;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 0.2rem;
-}
-
-.score-readout strong {
-  font-size: 1.85rem;
-  font-weight: 800;
-  color: var(--color-heading);
-  letter-spacing: 0.02em;
-}
-
-.placeholder-text {
-  opacity: 0.55;
-}
-
-.status-card {
-  gap: 0.35rem;
 }
 
 .status-main {
@@ -786,7 +762,7 @@ const panelDesc = computed(() =>
     grid-template-columns: 1fr;
   }
 
-  .score-readout {
+  .score-line {
     flex-wrap: wrap;
   }
 
