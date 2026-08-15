@@ -148,6 +148,15 @@
 
 ## 三、功能 / 实验分支
 
+### `feature/crisis-hp-score-converter`（进行中）
+
+| 项 | 说明 |
+|---|---|
+| **基线** | 从当前工作尖端 `fc8ee68`（`upstream/3.1.6.3` / 当时的 `feature/skill-flow-redesign`）拉出 |
+| **目标** | 危局强袭战侧栏「分数与血量对应表」下方增加血量↔分数转换器 |
+| **要点** | 复用 `crisisScoreHpTable.ts` 累计拐点；正常/困难；已打血量%与分数双向线性插值；可选总血+已打血量。页面展示插值区间与算式便于对数 |
+| **状态** | 本地开发，未推远程 |
+
 ### `feature/skill-flow-redesign`（进行中）
 
 | 项 | 说明 |
