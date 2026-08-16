@@ -174,3 +174,148 @@ export function formatScorePerHp(value: number | null, digits = 4): string {
   if (value == null || !Number.isFinite(value)) return '—'
   return value.toFixed(digits)
 }
+
+export interface CrisisHpScoreConvertResult {
+  hpRatio: number
+  score: number
+  row: CrisisScoreHpRow | null
+  prevHp: number
+  prevScore: number
+  nextHp: number
+  nextScore: number
+  /** 当前段进度 0–1；hp=0 时为 0 */
+  progressInSegment: number
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (value <= 0) return 0
+  if (value >= 1) return 1
+  return value
+}
+
+function clampScore(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (value <= 0) return 0
+  if (value >= CRISIS_SCORE_MAX) return CRISIS_SCORE_MAX
+  return value
+}
+
+/**
+ * 已打血量占比 → 分数。沿对应表累计拐点分段线性插值（节点切开下一管）。
+ */
+export function convertHpRatioToScore(
+  mode: CrisisScoreTableMode,
+  hpRatio: number,
+): CrisisHpScoreConvertResult {
+  const table = getCrisisScoreTable(mode)
+  const last = table[table.length - 1]
+  if (!last) {
+    return {
+      hpRatio: 0,
+      score: 0,
+      row: null,
+      prevHp: 0,
+      prevScore: 0,
+      nextHp: 0,
+      nextScore: 0,
+      progressInSegment: 0,
+    }
+  }
+  const hp = clamp01(hpRatio)
+  if (hp <= 0) {
+    return {
+      hpRatio: 0,
+      score: 0,
+      row: null,
+      prevHp: 0,
+      prevScore: 0,
+      nextHp: table[0]?.cumulativeHp ?? 0,
+      nextScore: table[0]?.cumulativeScore ?? 0,
+      progressInSegment: 0,
+    }
+  }
+
+  let prevHp = 0
+  let prevScore = 0
+  for (const row of table) {
+    if (hp <= row.cumulativeHp + 1e-12) {
+      const span = row.cumulativeHp - prevHp
+      const t = span <= 0 ? 1 : (hp - prevHp) / span
+      return {
+        hpRatio: hp,
+        score: prevScore + t * (row.cumulativeScore - prevScore),
+        row,
+        prevHp,
+        prevScore,
+        nextHp: row.cumulativeHp,
+        nextScore: row.cumulativeScore,
+        progressInSegment: Math.min(1, Math.max(0, t)),
+      }
+    }
+    prevHp = row.cumulativeHp
+    prevScore = row.cumulativeScore
+  }
+
+  return {
+    hpRatio: 1,
+    score: last.cumulativeScore,
+    row: last,
+    prevHp: last.cumulativeHp,
+    prevScore: last.cumulativeScore,
+    nextHp: last.cumulativeHp,
+    nextScore: last.cumulativeScore,
+    progressInSegment: 1,
+  }
+}
+
+/**
+ * 分数 → 已打血量占比。对应表累计分数单调递增，可按同一折线反查。
+ */
+export function convertScoreToHpRatio(
+  mode: CrisisScoreTableMode,
+  score: number,
+): CrisisHpScoreConvertResult {
+  const table = getCrisisScoreTable(mode)
+  const target = clampScore(score)
+  if (target <= 0) return convertHpRatioToScore(mode, 0)
+
+  let prevHp = 0
+  let prevScore = 0
+  for (const row of table) {
+    if (target <= row.cumulativeScore + 1e-9) {
+      const span = row.cumulativeScore - prevScore
+      const t = span <= 0 ? 1 : (target - prevScore) / span
+      const hp = prevHp + t * (row.cumulativeHp - prevHp)
+      return {
+        hpRatio: hp,
+        score: target,
+        row,
+        prevHp,
+        prevScore,
+        nextHp: row.cumulativeHp,
+        nextScore: row.cumulativeScore,
+        progressInSegment: Math.min(1, Math.max(0, t)),
+      }
+    }
+    prevHp = row.cumulativeHp
+    prevScore = row.cumulativeScore
+  }
+
+  return convertHpRatioToScore(mode, 1)
+}
+
+export function describeConvertSegment(result: CrisisHpScoreConvertResult): string {
+  if (!result.row) return '尚未造成伤害'
+  const done = result.progressInSegment >= 1 - 1e-9
+  if (result.row.isMilestone && result.row.bar == null) {
+    return done ? '已到达分数节点' : '正在通过分数节点'
+  }
+  if (result.row.bar != null) {
+    if (result.row.isMilestone) {
+      return done ? `已打完第 ${result.row.bar} 管（节点）` : `正在打第 ${result.row.bar} 管（节点）`
+    }
+    return done ? `已打完第 ${result.row.bar} 管` : `正在打第 ${result.row.bar} 管`
+  }
+  return done ? '已到达分数节点' : '正在通过分数节点'
+}

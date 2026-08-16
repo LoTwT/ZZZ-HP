@@ -10,6 +10,7 @@ export type SidebarPanel =
   | 'buff-overview'
   | 'buff-compare'
   | 'score-hp-table'
+  | 'hp-score-converter'
 
 const props = defineProps<{
   title: string
@@ -29,6 +30,7 @@ const allPanels: { id: SidebarPanel; label: string; crisisOnly?: boolean }[] = [
   { id: 'buff-overview', label: 'Buff 总览' },
   { id: 'buff-compare', label: 'Buff 对比' },
   { id: 'score-hp-table', label: '分数与血量对应表', crisisOnly: true },
+  { id: 'hp-score-converter', label: '血量分数转换器', crisisOnly: true },
 ]
 
 const panels = computed(() =>

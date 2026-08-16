@@ -8,6 +8,7 @@ import MonsterComparePanel from '@/components/history/MonsterComparePanel.vue'
 import BuffOverviewPanel from '@/components/history/BuffOverviewPanel.vue'
 import BuffComparePanel from '@/components/history/BuffComparePanel.vue'
 import CrisisScoreHpTablePanel from '@/components/history/CrisisScoreHpTablePanel.vue'
+import CrisisHpScoreConverterPanel from '@/components/history/CrisisHpScoreConverterPanel.vue'
 import DefenseDetailPanel from '@/components/defense/DefenseDetailPanel.vue'
 import DefenseHpLineChartPanel from '@/components/defense/DefenseHpLineChartPanel.vue'
 import type { ModeKey } from '@/types/history'
@@ -30,6 +31,7 @@ const panelLabels: Record<SidebarPanel, string> = {
   'buff-overview': 'Buff 总览',
   'buff-compare': 'Buff 对比',
   'score-hp-table': '分数与血量对应表',
+  'hp-score-converter': '血量分数转换器',
 }
 
 const mobileSubtitle = computed(() => panelLabels[activePanel.value])
@@ -81,7 +83,8 @@ onUnmounted(() => {
           (activePanel === 'phase-compare' && mode === 'defense') ||
           activePanel === 'buff-compare' ||
           activePanel === 'buff-overview' ||
-          activePanel === 'score-hp-table',
+          activePanel === 'score-hp-table' ||
+          activePanel === 'hp-score-converter',
       }"
     >
       <div id="mode-content-portal" class="mode-content-portal" />
@@ -136,6 +139,11 @@ onUnmounted(() => {
         <CrisisScoreHpTablePanel
           v-else-if="activePanel === 'score-hp-table' && mode === 'crisis-assault'"
           key="score-hp-table"
+          class="panel-fill panel-fill--page"
+        />
+        <CrisisHpScoreConverterPanel
+          v-else-if="activePanel === 'hp-score-converter' && mode === 'crisis-assault'"
+          key="hp-score-converter"
           class="panel-fill panel-fill--page"
         />
         <p v-else key="placeholder" class="placeholder">
