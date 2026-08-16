@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AgentFuzzySelect from '@/components/admin/calculator/AgentFuzzySelect.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
@@ -7,6 +7,11 @@ import type { Skill, SkillDamageType, SkillTypeId } from '@/types/calculator'
 import { DAMAGE_EVENT_KIND_OPTIONS } from '@/utils/damageEvent'
 import { PUBLIC_ANOMALY_ELEMENTS } from '@/utils/publicAnomalySkills'
 import { skillNeedsDualAgents } from '@/utils/resolvedHit'
+import {
+  resolveInherentSkillMultPercent,
+  skillMultNeedsAnomalyPowerProvider,
+  unsetSkillMult,
+} from '@/utils/skillSubcategoryMult'
 import { SKILL_TYPE_OPTIONS } from '@/utils/skillTypes'
 
 const store = useCalculatorBuffStore()
@@ -50,6 +55,77 @@ const anchorOptions = computed(() =>
   skillSubcategories.value.filter(
     (item) => Boolean(item.agentId) && (!form.value.agentId || item.agentId === form.value.agentId),
   ),
+)
+
+const selectedAnchor = computed(
+  () =>
+    anchorOptions.value.find((item) => item.id === form.value.buffAnchorId) ??
+    skillSubcategories.value.find((item) => item.id === form.value.buffAnchorId) ??
+    null,
+)
+
+const formAgent = computed(
+  () => agents.value.find((item) => item.id === form.value.agentId) ?? null,
+)
+
+function applyAnchorMults(force: boolean) {
+  // 紊乱/乱流不预填基础倍率（展示用最终倍率区）；异放等无固有时同样不填
+  const skipPrefill =
+    form.value.damageType === 'disorder' || form.value.damageType === 'turbulence'
+  const mult = skipPrefill
+    ? null
+    : resolveInherentSkillMultPercent({
+        damageType: form.value.damageType,
+        buffAnchorId: form.value.buffAnchorId,
+        subcategory: selectedAnchor.value,
+        agent: formAgent.value,
+        element: form.value.element || formAgent.value?.element,
+      })
+  if (mult != null && (force || unsetSkillMult(form.value.baseMult))) {
+    form.value.baseMult = mult
+  } else if (force && mult == null) {
+    form.value.baseMult = 0
+  }
+  if (form.value.damageType === 'direct' && selectedAnchor.value) {
+    const settlement = Number(selectedAnchor.value.settlementDmgMult)
+    if (!unsetSkillMult(settlement) && (force || unsetSkillMult(form.value.settlementMult))) {
+      form.value.settlementMult = settlement
+    }
+  } else if (force && form.value.damageType !== 'direct') {
+    form.value.settlementMult = 0
+  }
+}
+
+/** 用户改伤害类型：先写入新类型，再按新类型重填固有倍率 */
+function onDamageTypeUserChange(event: Event) {
+  const next = (event.target as HTMLSelectElement).value as SkillDamageType
+  form.value.damageType = next
+  if (skillNeedsDualAgents(next)) form.value.skillTypes = []
+  applyAnchorMults(true)
+}
+
+function onAnchorUserChange() {
+  applyAnchorMults(true)
+}
+
+watch(
+  () =>
+    [
+      form.value.buffAnchorId,
+      form.value.damageType,
+      selectedAnchor.value?.id ?? '',
+      form.value.agentId,
+      form.value.element,
+      formAgent.value?.element ?? '',
+    ] as const,
+  () => applyAnchorMults(false),
+  { immediate: true },
+)
+
+const baseMultPlaceholder = computed(() =>
+  skillMultNeedsAnomalyPowerProvider(form.value.damageType)
+    ? '等待选择异常强度提供者'
+    : '可不填',
 )
 
 function agentName(id: string) {
@@ -119,7 +195,7 @@ async function saveItem() {
       source: 'preset',
       damageType: form.value.damageType,
       skillTypes: anomaly ? [] : [...form.value.skillTypes],
-      buffAnchorId: anomaly ? null : form.value.buffAnchorId || null,
+      buffAnchorId: form.value.buffAnchorId || null,
       baseMult: Number(form.value.baseMult) || 0,
       baseMultFactor: Number(form.value.baseMultFactor) || 100,
       settlementMult: Number(form.value.settlementMult) || 0,
@@ -199,7 +275,11 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
             </label>
             <label class="field">
               <span class="field-label">伤害类型 *</span>
-              <select v-model="form.damageType" class="field-input">
+              <select
+                :value="form.damageType"
+                class="field-input"
+                @change="onDamageTypeUserChange"
+              >
                 <option v-for="opt in DAMAGE_EVENT_KIND_OPTIONS" :key="opt.id" :value="opt.id">
                   {{ opt.label }}
                 </option>
@@ -236,9 +316,14 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
               {{ opt.label }}
             </label>
           </div>
-          <label v-if="!skillNeedsDualAgents(form.damageType)" class="field">
+          <p v-else class="field-hint">异常类不设招式类型；可选增益锚点以命中招式限定 Buff。</p>
+          <label class="field">
             <span class="field-label">增益锚点（仅本角色）</span>
-            <select v-model="form.buffAnchorId" class="field-input">
+            <select
+              v-model="form.buffAnchorId"
+              class="field-input"
+              @change="onAnchorUserChange"
+            >
               <option value="">无</option>
               <option v-for="item in anchorOptions" :key="item.id" :value="item.id">
                 {{ item.name }}
@@ -247,8 +332,13 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
           </label>
           <div class="field-row">
             <label class="field">
-              <span class="field-label">基础倍率%</span>
-              <input v-model.number="form.baseMult" class="field-input" type="number" />
+              <span class="field-label">倍率%</span>
+              <input
+                v-model.number="form.baseMult"
+                class="field-input"
+                type="number"
+                :placeholder="baseMultPlaceholder"
+              />
             </label>
             <label class="field">
               <span class="field-label">倍率修正%</span>
@@ -256,7 +346,12 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
             </label>
             <label v-if="form.damageType === 'direct'" class="field">
               <span class="field-label">决算倍率%</span>
-              <input v-model.number="form.settlementMult" class="field-input" type="number" />
+              <input
+                v-model.number="form.settlementMult"
+                class="field-input"
+                type="number"
+                placeholder="可不填"
+              />
             </label>
           </div>
         </section>
@@ -289,5 +384,10 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
   align-items: center;
   gap: 0.25rem;
   font-size: 0.82rem;
+}
+.field-hint {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.8rem;
+  color: #8b919c;
 }
 </style>

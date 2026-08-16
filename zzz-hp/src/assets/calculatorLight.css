@@ -2962,6 +2962,9 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-color: #d4b8f0 !important;
   color: #6b3fa0 !important;
 }
+[data-theme='light'] .sf-card .sf-warn {
+  color: #b42318 !important;
+}
 [data-theme='light'] .sf-dtype.is-anomaly {
   background: #e8f4fc !important;
   border-color: #b3d4ea !important;

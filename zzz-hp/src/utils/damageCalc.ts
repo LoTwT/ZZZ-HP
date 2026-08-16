@@ -56,11 +56,12 @@ export interface DamageCalcInput {
   /** 异常子类 */
   anomalySubKind?: AnomalyDamageSubKind
   /**
-   * 异常强度提供者最终面板（乱流/异放/紊乱/耀变的异常基础乘区）。
+   * 异常强度提供者最终面板（乱流/异放/紊乱/耀变的异常基础期望等）。
+   * 命名含 trigger，实为 power provider，勿与 anomalyTriggerPanel（触发者）混淆。
    * 缺省时异常基础仍用 finalPanel（招式持有者）。
    */
   triggerFinalPanel?: PanelStats
-  /** 异常强度提供者元素 */
+  /** 异常强度提供者元素（与 triggerFinalPanel 同角色） */
   triggerAgentElement?: string
   /** 异常强度提供者抗性区基准属性（流明则取下一位非流明队友） */
   triggerAgentResistanceElement?: string | null
@@ -77,8 +78,8 @@ export interface DamageCalcInput {
   /** 异常强度提供者等级（异常基础等级区） */
   triggerAgentLevel?: number
   /**
-   * 异常类触发者的局内最终面板：异放/耀变增伤与倍率，
-   * 以及所有异常类的减防/无视防御。
+   * 异常类触发者局内最终面板（与 triggerFinalPanel 不是同一角色语义）：
+   * 异放/耀变增伤与倍率，以及所有异常类的减防/无视防御。
    */
   anomalyTriggerPanel?: PanelStats
   /** 队伍有蕾米埃尔时的异化系数乘区（预计算） */
@@ -376,7 +377,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const staggerPhase = input.staggerPhase ?? 'stagger'
   const subKind = input.anomalySubKind ?? 'anomaly'
   const useTriggerBase =
-    (subKind === 'turbulence' ||
+    (subKind === 'anomaly' ||
+      subKind === 'turbulence' ||
       subKind === 'anomalyRelease' ||
       subKind === 'disorder' ||
       subKind === 'radiance') &&
@@ -396,9 +398,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     input.ownerAgentResistanceElement ?? input.mainAgentResistanceElement ?? ownerElement
   const durationElement =
     input.anomalyTriggerElement ?? ownerElement ?? ''
-  /** 异放/耀变增伤与倍率取异常类触发者；紊乱/乱流增伤与暴击取持有者；异常基础取异常强度提供者 */
+  /** 异放/耀变/属性异常：增伤与倍率取异常类触发者；紊乱/乱流增伤取持有者；异常基础取异常强度提供者 */
   const bonusPanel =
-    useTriggerBase && (subKind === 'anomalyRelease' || subKind === 'radiance')
+    useTriggerBase &&
+    (subKind === 'anomalyRelease' || subKind === 'radiance' || subKind === 'anomaly')
       ? triggerAgentPanel
       : panel
 
@@ -480,7 +483,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const settlementDamageExpected = directBaseChain * settlementDmgMultZone
   const directDamageExpected = directDamageFromDirectMult + settlementDamageExpected
 
-  // 异常乘区：异放/耀变取异常类触发者（bonusPanel）；紊乱/乱流/普通异常取持有者；基础期望取异常强度提供者
+  // 异常乘区：属性异常/异放/耀变取异常类触发者（bonusPanel）；紊乱/乱流取持有者；基础期望取异常强度提供者
   const anomalyDmgBonusZone = 1 + bonusPanel.anomalyDmgBonus / 100
   const anomalyMultZone =
     Math.max(0, bonusPanel.anomalyMult / 100) * readFactor(bonusPanel.anomalyMultFactor)

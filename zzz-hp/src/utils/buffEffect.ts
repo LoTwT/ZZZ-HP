@@ -540,7 +540,8 @@ export function effectMatchesContext(
 
 /**
  * 未提供 coords → 回落单坐标（旧调用方行为不变）。
- * 提供了空数组 → 该招式没有任何招式类型（异常类），招式限定 Buff 一律不命中。
+ * 提供了空数组 → 该招式没有任何招式类型且无锚点时，招式限定 Buff 一律不命中。
+ * 异常类可仅靠增益锚点产出坐标以命中「限定某一招」的 Buff。
  */
 export function resolveSkillMatchCoords(ctx: SkillCalcContext): SkillMatchCoord[] {
   if (ctx.coords) return ctx.coords
@@ -934,8 +935,7 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
       return Math.max(0, n)
     })(),
     convert: normalizeConvert(entry.convert),
-    appliesToAnomaly:
-      entry.appliesToAnomaly == null ? undefined : Boolean(entry.appliesToAnomaly),
+    appliesToAnomaly: resolveAppliesToAnomaly(entry),
     enabledDefault: entry.enabledDefault === false ? false : true,
     note: typeof entry.note === 'string' ? entry.note : '',
   })
@@ -951,6 +951,43 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
     }
   }
   return effect
+}
+
+/**
+ * 耀变/异放/紊乱等天然异常乘区：招式限定时若未显式关闭，默认可用于异常伤害。
+ * 增伤类（skillDmgBonus / dmgBonus）仍须显式勾选 appliesToAnomaly。
+ */
+const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
+  'anomalyMult',
+  'anomalyMultFactor',
+  'anomalyReleaseMult',
+  'anomalyReleaseMultFactor',
+  'disorderBaseMult',
+  'disorderBaseMultFactor',
+  'disorderCompMult',
+  'disorderDmgBonus',
+  'turbulenceBaseMult',
+  'turbulenceBaseMultFactor',
+  'turbulenceCompMult',
+  'turbulenceDmgBonus',
+  'radianceMult',
+  'radianceMultFactor',
+  'radianceDmgBonus',
+  'radianceResPen',
+  'anomalyDmgBonus',
+  'anomalyCritRate',
+  'anomalyCritDmg',
+  'anomalyDuration',
+  'mutationCoeff',
+  'mutationCoeffFactor',
+])
+
+function resolveAppliesToAnomaly(entry: Record<string, unknown>): boolean | undefined {
+  if (entry.appliesToAnomaly != null) return Boolean(entry.appliesToAnomaly)
+  const scope = normalizeScope(entry.scope)
+  const stat = normalizeStat(entry.stat)
+  if (scope === 'skill' && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
+  return undefined
 }
 
 export function normalizeBuffEffects(value: unknown): BuffEffect[] {

@@ -176,6 +176,7 @@ const firstHit = computed(() => hits.value[0] ?? null)
 const anomalySubKind = computed<AnomalyDamageSubKind>(
   () => firstHit.value?.anomalySubKind ?? 'anomaly',
 )
+/** 页级回落：第一击的异常强度提供者（非触发者）；逐 hit 请用 hit 字段 */
 const triggerAnomalyAgentId = computed(() => firstHit.value?.anomalyPowerAgentId ?? null)
 const damageKind = computed<DamageCalcKind>(() => firstHit.value?.damageKind ?? 'direct')
 const skillCategoryId = computed(() => firstHit.value?.coords[0]?.category ?? 'basic')

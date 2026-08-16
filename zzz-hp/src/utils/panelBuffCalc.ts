@@ -1685,7 +1685,11 @@ function effectMatchesReleaseMultElement(effect: BuffEffect, triggerElement?: st
   return filter.includes(triggerElement)
 }
 
-export function resolveMainCAnomalyReleaseMultFields(
+/**
+ * 按异放结算上下文汇总异放倍率 / 倍率乘算修正，写到给定局外面板上。
+ * 调用方应传入触发者面板（非主 C、非强度提供者）。
+ */
+export function resolveAnomalyReleaseMultFields(
   externalPanel: PanelStats,
   ctx: PanelCalcContext,
   triggerElement?: string,

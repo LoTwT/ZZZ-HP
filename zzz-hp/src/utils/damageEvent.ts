@@ -176,7 +176,16 @@ export interface DamageEventParticipationContext {
   mainAgentId?: string
 }
 
-/** 乱流：招式持有者、异常强度提供者或异常类触发者之一须为风属性 */
+/** 乱流：异常类触发者须为风属性 */
+export function isTurbulenceWindTrigger(
+  agents: Array<{ id: string; element: string }>,
+  triggerAgentId: string | null | undefined,
+): boolean {
+  if (!triggerAgentId) return false
+  return agents.find((agent) => agent.id === triggerAgentId)?.element === '风'
+}
+
+/** @deprecated 旧规则：持有者/强度提供者/触发者之一为风；现以 isTurbulenceWindTrigger 为准 */
 export function hasTurbulenceWindRole(
   agents: Array<{ id: string; element: string }>,
   ...agentIds: Array<string | null | undefined>
@@ -188,15 +197,15 @@ export function hasTurbulenceWindRole(
 
 export function getTurbulenceParticipationFailureReason(
   ctx: Pick<DamageEventParticipationContext, 'teamSlots' | 'agents'>,
-  ownerAgentId: string,
-  powerAgentId: string | null,
+  _ownerAgentId: string,
+  _powerAgentId: string | null,
   triggerAgentId: string | null,
 ): string | null {
   if (!isTurbulenceTeamCompositionOk(ctx.teamSlots, ctx.agents)) {
     return '乱流需队伍同时包含风属性与至少一个非风属性代理人'
   }
-  if (!hasTurbulenceWindRole(ctx.agents, ownerAgentId, powerAgentId, triggerAgentId)) {
-    return '乱流伤害需招式持有者、异常强度提供者或异常类触发者之一为风属性'
+  if (!isTurbulenceWindTrigger(ctx.agents, triggerAgentId)) {
+    return '乱流仅当异常类触发者为风属性角色时才能生效'
   }
   return null
 }
@@ -227,6 +236,9 @@ export function getDamageEventSkipReason(
     const producer = ctx.agents.find((item) => item.id === triggerId)
     if (!canAgentBeAnomalyProducerForKind(producer, 'radiance')) {
       return '耀变异常产生角色须为队内代理人'
+    }
+    if (!isLuminousAgent(producer)) {
+      return '耀变仅当异常类触发者为蕾米埃尔时才能生效'
     }
     return null
   }

@@ -66,11 +66,12 @@ import {
   externalPanelToConvertPartial,
   panelToConvertAttrValues,
   resolveBuffSelectionForSlot,
-  resolveMainCAnomalyReleaseMultFields,
+  resolveAnomalyReleaseMultFields,
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
 import { computeDamageResult, type DamageCalcInput, type DamageCalcResult } from '@/utils/damageCalc'
+import { mergeSkillSubcategoryMultOverrides } from '@/utils/skillSubcategoryMult'
 import {
   normalizeDamageEnemyInput,
   resolveEnemyResistanceForElement,
@@ -79,7 +80,6 @@ import {
   type EnemyResistanceElement,
 } from '@/utils/enemyResistance'
 import {
-  isTurbulenceTeamCompositionOk,
   mapEventKindToCalc,
   pickEventDamage,
   applyOwnerPanelMultOverrides,
@@ -103,7 +103,6 @@ import {
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
-  isLuminousElement,
   isRemielSelfRadianceTrigger,
   resolveDamageCalcResistanceElements,
   isLuminousAgent,
@@ -206,6 +205,10 @@ const props = defineProps<{
   sectionId?: string
   damageKind?: import('@/types/calculator').DamageCalcKind
   anomalySubKind?: AnomalyDamageSubKind
+  /**
+   * 页级异常强度提供者 id（第一击 anomalyPowerAgentId）。
+   * 命名含 trigger，实为 power；逐 hit 结算请用 hit.anomalyPowerAgentId / hit.triggerAgentId。
+   */
   triggerAnomalyAgentId?: string | null
   /** 各角色局外面板，key = agentId；当前编辑槽位用 live 编辑器，其余读这里 */
   anomalySlotPanels?: Record<string, PanelStats>
@@ -675,7 +678,7 @@ const finalPanel = computed(() => {
     props.damageKind === 'anomaly' &&
     (props.anomalySubKind ?? 'anomaly') === 'anomalyRelease'
   ) {
-    const fields = resolveMainCAnomalyReleaseMultFields(
+    const fields = resolveAnomalyReleaseMultFields(
       effectiveExternalPanel.value,
       {
         ...buildPanelCalcContextForSlot(mainSlotIndex.value),
@@ -746,43 +749,8 @@ const triggerPanelBreakdown = computed(() => {
 
 const triggerFinalPanel = computed(() => triggerPanelBreakdown.value?.finalPanel ?? null)
 
-const turbulenceTeamOk = computed(() =>
-  isTurbulenceTeamCompositionOk(props.teamSlots, props.agents),
-)
-
 const anomalyCalcBlockedReason = computed(() => {
-  if (props.damageKind !== 'anomaly') return ''
-  if (isLuminousElement(mainAgent.value?.element)) {
-    const sub = props.anomalySubKind ?? 'anomaly'
-    if (sub !== 'radiance') {
-      return '蕾米埃尔为主 C 时仅可计算耀变伤害'
-    }
-    if (!props.triggerAnomalyAgentId) {
-      return '请先选择耀变异常产生角色'
-    }
-    return ''
-  }
-  const sub = props.anomalySubKind ?? 'anomaly'
-  if (sub === 'turbulence' && !turbulenceTeamOk.value) {
-    return '乱流需队伍同时包含风属性与至少一个非风属性'
-  }
-  if (sub === 'turbulence') {
-    const trigger = props.agents.find((item) => item.id === props.triggerAnomalyAgentId)
-    const hasWind =
-      mainAgent.value?.element === '风' || trigger?.element === '风'
-    if (!hasWind) {
-      return '乱流伤害需主 C 或异常产生角色为风属性'
-    }
-  }
-  if (sub === 'anomalyRelease' && finalPanel.value.anomalyReleaseMult <= 0) {
-    return '异放伤害仅拥有异放倍率的代理人可计算（当前异放倍率为 0，请通过增益或面板补充）'
-  }
-  if (
-    (sub === 'turbulence' || sub === 'anomalyRelease' || sub === 'disorder') &&
-    !props.triggerAnomalyAgentId
-  ) {
-    return '请先选择当前属性异常的产生角色'
-  }
+  // 招式流程按 hit 逐条 skip；不再按「第一条事件 + 主 C」整页封锁（否则主 C 蕾米时队友异常事件无法出伤）
   return ''
 })
 
@@ -1133,20 +1101,6 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     hit.panelMods,
   )
 
-  if (damageType === 'anomalyRelease') {
-    const releaseFields = resolveMainCAnomalyReleaseMultFields(
-      ownerExternal,
-      evtPanelCtx,
-      evtPowerElement,
-    )
-    if (overrides?.anomalyReleaseMult == null) {
-      evtFinalPanel.anomalyReleaseMult = releaseFields.anomalyReleaseMult
-    }
-    if (overrides?.anomalyReleaseMultFactor == null) {
-      evtFinalPanel.anomalyReleaseMultFactor = releaseFields.anomalyReleaseMultFactor
-    }
-  }
-
   const evtPierce = computePiercePower(
     evtFinalPanel.hp,
     evtFinalPanel.atk,
@@ -1171,10 +1125,18 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
         ),
         skillContext: buildSkillContextFromHit(hit, tAgent?.element),
       })
-      evtTriggerFinalPanel = tBreakdown.finalPanel
+      // 招式倍率覆写：紊乱/乱流落到强度提供者面板
+      evtTriggerFinalPanel = applyOwnerPanelMultOverrides(tBreakdown.finalPanel, {
+        disorderBaseMult: overrides?.disorderBaseMult,
+        disorderBaseMultFactor: overrides?.disorderBaseMultFactor,
+        disorderCompMult: overrides?.disorderCompMult,
+        turbulenceBaseMult: overrides?.turbulenceBaseMult,
+        turbulenceBaseMultFactor: overrides?.turbulenceBaseMultFactor,
+        turbulenceCompMult: overrides?.turbulenceCompMult,
+      })
       evtTriggerPierce = computePiercePower(
-        tBreakdown.finalPanel.hp,
-        tBreakdown.finalPanel.atk,
+        evtTriggerFinalPanel.hp,
+        evtTriggerFinalPanel.atk,
         tBreakdown.totalMods.pierce,
       )
     }
@@ -1207,27 +1169,15 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     }
   }
 
-  // 增益锚点即旧招式小类，小类倍率仍作为未填倍率时的兜底
+  // 增益锚点即旧招式小类，小类倍率仍作为未填倍率时的兜底（倍率修正只写面板，避免双重相乘）
   const sub = resolveSubcategoryById(hit.skill.buffAnchorId ?? null)
   const effectiveSub =
-    sub && overrides
-      ? {
-          ...sub,
-          directDmgMult: overrides.directDmgMult ?? sub.directDmgMult,
-          settlementDmgMult: overrides.settlementDmgMult ?? sub.settlementDmgMult,
-          directDmgMultFactor: overrides.directDmgMultFactor ?? sub.directDmgMultFactor,
-          anomalyReleaseMult: overrides.anomalyReleaseMult ?? sub.anomalyReleaseMult,
-          anomalyReleaseMultFactor:
-            overrides.anomalyReleaseMultFactor ?? sub.anomalyReleaseMultFactor,
-          disorderMult: overrides.disorderBaseMult ?? sub.disorderMult,
-          disorderMultFactor: overrides.disorderBaseMultFactor ?? sub.disorderMultFactor,
-        }
-      : sub
+    sub && overrides ? mergeSkillSubcategoryMultOverrides(sub, overrides) : sub
 
   const luminousMods = resolveLuminousTeamModifiers()
 
   const actualMainId = mainAgent.value?.id ?? ''
-  // 异常增伤等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
+  // 异常增伤/倍率等乘区取异常类触发者；直伤用不到，回落 owner 自己的面板
   let anomalyTriggerPanel = evtFinalPanel
   if (needsPowerAgent) {
     if (!hit.triggerAgentId) return null
@@ -1235,6 +1185,55 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
       const trigPanel = computeHitPanelForAgent(hit, hit.triggerAgentId)
       if (!trigPanel) return null
       anomalyTriggerPanel = trigPanel
+    }
+  }
+
+  if (damageType === 'anomaly' || damageType === 'anomalyRelease') {
+    // 属性异常/异放倍率跟着触发者：招式倍率覆写写到触发者面板
+    anomalyTriggerPanel = applyOwnerPanelMultOverrides(anomalyTriggerPanel, {
+      anomalyMult: overrides?.anomalyMult,
+      anomalyMultFactor: overrides?.anomalyMultFactor,
+      anomalyReleaseMult: overrides?.anomalyReleaseMult,
+      anomalyReleaseMultFactor: overrides?.anomalyReleaseMultFactor,
+    })
+  }
+
+  // 异放：未手填倍率时，按触发者面板 + 强度提供者属性筛选增益，写回触发者
+  if (damageType === 'anomalyRelease') {
+    const needReleaseMult = overrides?.anomalyReleaseMult == null
+    const needReleaseFactor = overrides?.anomalyReleaseMultFactor == null
+    if (needReleaseMult || needReleaseFactor) {
+      const triggerId = hit.triggerAgentId ?? ownerAgentId
+      const trigSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === triggerId)
+      const trigExternal =
+        triggerId === ownerAgentId
+          ? ownerExternal
+          : resolveOwnerExternalPanel(trigSlotIndex, triggerId)
+      const trigAgent = props.agents.find((item) => item.id === triggerId)
+      const trigPanelCtx =
+        triggerId === ownerAgentId
+          ? evtPanelCtx
+          : {
+              ...buildPanelCalcContextForSlot(
+                trigSlotIndex,
+                buildExtraModsForHit(hit, triggerId),
+              ),
+              skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+            }
+      const releaseFields = resolveAnomalyReleaseMultFields(
+        trigExternal,
+        trigPanelCtx,
+        evtPowerElement,
+      )
+      anomalyTriggerPanel = {
+        ...anomalyTriggerPanel,
+        anomalyReleaseMult: needReleaseMult
+          ? releaseFields.anomalyReleaseMult
+          : anomalyTriggerPanel.anomalyReleaseMult,
+        anomalyReleaseMultFactor: needReleaseFactor
+          ? releaseFields.anomalyReleaseMultFactor
+          : anomalyTriggerPanel.anomalyReleaseMultFactor,
+      }
     }
   }
 
@@ -1629,7 +1628,9 @@ function resolveAnomalyFormulaLabels(
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
   const usesTriggerBonus =
-    effectiveSub === 'anomalyRelease' || effectiveSub === 'radiance'
+    effectiveSub === 'anomaly' ||
+    effectiveSub === 'anomalyRelease' ||
+    effectiveSub === 'radiance'
   const mutationAgent = formatAnomalyFormulaAgentLabel('mutation', remielName)
   if (hit) {
     const nameOf = (id: string | null) =>
@@ -1638,7 +1639,9 @@ function resolveAnomalyFormulaLabels(
     const powerName = nameOf(hit.anomalyPowerAgentId)
     const triggerName = nameOf(hit.triggerAgentId)
     const hitUsesTriggerBonus =
-      hit.skill.damageType === 'anomalyRelease' || hit.skill.damageType === 'radiance'
+      hit.skill.damageType === 'anomaly' ||
+      hit.skill.damageType === 'anomalyRelease' ||
+      hit.skill.damageType === 'radiance'
     return {
       baseAgent: skillNeedsDualAgents(hit.skill.damageType)
         ? formatAnomalyFormulaAgentLabel('anomalyPower', powerName ?? ownerName ?? mainName)
@@ -1727,7 +1730,8 @@ const selectedEventOwnerBreakdown = computed(() => {
 })
 
 const valueTips = computed(() => {
-  const p = calcParts.value
+  // 与界面展示一致：有选中事件时用该事件结果，不用页级第一击
+  const p = displayCalcParts.value
   const panel = finalPanel.value
   const external = effectiveExternalPanel.value
   const sources = panelBreakdown.value.sources
@@ -1766,14 +1770,18 @@ const valueTips = computed(() => {
   const eventLine = selectedEventDetailLine.value
   const ownerBreakdown = selectedEventOwnerBreakdown.value
   const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
-  // 类型增伤/倍率/暴击：异放/耀变→异常类触发者；紊乱/乱流/属性异常→招式持有者
+  const eventHitInput = eventLine ? buildHitCalcInput(eventLine.hit) : null
+
+  // 类型增伤/倍率/暴击：属性异常/异放/耀变→异常类触发者；紊乱/乱流→招式持有者
   let bonusPanel = panel
   let bonusExternal = external
   let bonusSources = sources
   if (eventLine && eventOwnerCtx) {
     const damageType = eventLine.hit.skill.damageType
     const usesTriggerBonus =
-      damageType === 'anomalyRelease' || damageType === 'radiance'
+      damageType === 'anomaly' ||
+      damageType === 'anomalyRelease' ||
+      damageType === 'radiance'
     const bonusAgentId = usesTriggerBonus
       ? (eventLine.hit.triggerAgentId ?? eventLine.hit.ownerAgentId)
       : eventLine.hit.ownerAgentId
@@ -1796,41 +1804,119 @@ const valueTips = computed(() => {
         bonusPanel =
           damageType === 'radiance'
             ? applyRadianceBonusMultOverrides(bb.finalPanel, eventLine.hit.multOverrides)
-            : bb.finalPanel
+            : damageType === 'anomaly' || damageType === 'anomalyRelease'
+              ? applyOwnerPanelMultOverrides(bb.finalPanel, {
+                  anomalyMult: eventLine.hit.multOverrides?.anomalyMult,
+                  anomalyMultFactor: eventLine.hit.multOverrides?.anomalyMultFactor,
+                  anomalyReleaseMult: eventLine.hit.multOverrides?.anomalyReleaseMult,
+                  anomalyReleaseMultFactor:
+                    eventLine.hit.multOverrides?.anomalyReleaseMultFactor,
+                })
+              : bb.finalPanel
+        // 异放 tip：未手填时补上与结算相同的转模筛选
+        if (damageType === 'anomalyRelease') {
+          const o = eventLine.hit.multOverrides
+          const needMult = o?.anomalyReleaseMult == null
+          const needFactor = o?.anomalyReleaseMultFactor == null
+          if (needMult || needFactor) {
+            const powerElement = resolveHitPowerElement(eventLine.hit)
+            const releaseFields = resolveAnomalyReleaseMultFields(
+              be,
+              {
+                ...buildPanelCalcContextForSlot(
+                  bonusSlotIndex,
+                  buildExtraModsForHit(eventLine.hit, bonusAgentId),
+                ),
+                skillContext: buildSkillContextFromHit(eventLine.hit, bonusElement),
+              },
+              powerElement,
+            )
+            bonusPanel = {
+              ...bonusPanel,
+              anomalyReleaseMult: needMult
+                ? releaseFields.anomalyReleaseMult
+                : bonusPanel.anomalyReleaseMult,
+              anomalyReleaseMultFactor: needFactor
+                ? releaseFields.anomalyReleaseMultFactor
+                : bonusPanel.anomalyReleaseMultFactor,
+            }
+          }
+        }
         bonusExternal = be
         bonusSources = bb.sources
       }
     }
   }
 
-  const sub = effectiveAnomalySubKind.value
+  // 异常基础 / 紊乱乱流倍率 tip：按选中事件的强度提供者，不再绑页级第一击
+  const sub = (eventLine?.hit.anomalySubKind ?? effectiveAnomalySubKind.value) as AnomalyDamageSubKind
+  const eventPowerId = eventLine?.hit.anomalyPowerAgentId ?? props.triggerAnomalyAgentId
+  const eventPowerSlotIndex =
+    eventPowerId != null
+      ? props.teamSlots.findIndex((slot) => slot.agentId === eventPowerId)
+      : -1
+  const eventPowerAgent =
+    eventPowerId != null
+      ? props.agents.find((item) => item.id === eventPowerId)
+      : triggerAgent.value
+
+  let eventPowerBreakdown = triggerPanelBreakdown.value
+  let eventPowerExternal = triggerExternalPanel.value
+  if (eventLine && eventPowerId && eventPowerSlotIndex >= 0) {
+    if (eventPowerId === eventLine.hit.ownerAgentId && ownerBreakdown) {
+      eventPowerBreakdown = ownerBreakdown
+      eventPowerExternal = resolveOwnerExternalPanel(
+        eventOwnerCtx?.ownerSlotIndex ?? eventPowerSlotIndex,
+        eventPowerId,
+      )
+    } else if (eventPowerId !== props.triggerAnomalyAgentId) {
+      const pe = resolveOwnerExternalPanel(eventPowerSlotIndex, eventPowerId)
+      eventPowerExternal = pe
+      eventPowerBreakdown = computeFinalPanel(pe, {
+        ...buildPanelCalcContextForSlot(
+          eventPowerSlotIndex,
+          buildExtraModsForHit(eventLine.hit, eventPowerId),
+        ),
+        skillContext: buildSkillContextFromHit(eventLine.hit, eventPowerAgent?.element),
+      })
+    }
+  }
+
+  const eventPowerFinalPanel =
+    eventHitInput?.triggerFinalPanel ??
+    eventPowerBreakdown?.finalPanel ??
+    triggerFinalPanel.value
+
   const usesProducerBase =
-    (sub === 'turbulence' ||
+    (sub === 'anomaly' ||
+      sub === 'turbulence' ||
       sub === 'disorder' ||
       sub === 'anomalyRelease' ||
       sub === 'radiance') &&
-    Boolean(triggerFinalPanel.value && triggerExternalPanel.value && triggerPanelBreakdown.value)
+    Boolean(eventPowerFinalPanel && eventPowerExternal && eventPowerBreakdown)
   const usesProducerMult = usesProducerBase && (sub === 'turbulence' || sub === 'disorder')
-  const tipPanel = usesProducerBase ? triggerFinalPanel.value! : panel
-  const tipExternal = usesProducerBase ? triggerExternalPanel.value! : external
-  const tipSources = usesProducerBase ? triggerPanelBreakdown.value!.sources : sources
+  const tipPanel = usesProducerBase ? eventPowerFinalPanel! : panel
+  const tipExternal = usesProducerBase ? eventPowerExternal! : external
+  const tipSources = usesProducerBase ? eventPowerBreakdown!.sources : sources
   const tipPierceMod = usesProducerBase
-    ? triggerPanelBreakdown.value!.totalMods.pierce
+    ? eventPowerBreakdown!.totalMods.pierce
     : pierceMod
-  const tipPiercePower = usesProducerBase ? triggerPiercePower.value : piercePower.value
+  const tipPiercePower = usesProducerBase
+    ? (eventHitInput?.triggerPiercePower ?? triggerPiercePower.value)
+    : piercePower.value
   const tipIsMb = usesProducerBase
-    ? triggerAgent.value?.profession === MB_PROFESSION
+    ? eventPowerAgent?.profession === MB_PROFESSION
     : isMbMainAgent.value
-  const multPanel = usesProducerMult ? triggerFinalPanel.value! : panel
-  const multExternal = usesProducerMult ? triggerExternalPanel.value! : external
-  const multSources = usesProducerMult ? triggerPanelBreakdown.value!.sources : sources
-  const durationPanel = usesProducerBase ? triggerFinalPanel.value! : panel
-  const durationExternal = usesProducerBase ? triggerExternalPanel.value! : external
-  const durationSources = usesProducerBase ? triggerPanelBreakdown.value!.sources : sources
+  const multPanel = usesProducerMult ? eventPowerFinalPanel! : panel
+  const multExternal = usesProducerMult ? eventPowerExternal! : external
+  const multSources = usesProducerMult ? eventPowerBreakdown!.sources : sources
+  const durationPanel = usesProducerBase ? eventPowerFinalPanel! : panel
+  const durationExternal = usesProducerBase ? eventPowerExternal! : external
+  const durationSources = usesProducerBase ? eventPowerBreakdown!.sources : sources
   const producerExtraGroup = usesProducerBase
     ? [
         {
-          label: triggerAgent.value?.name ?? '产生角色',
+          label: eventPowerAgent?.name ?? '产生角色',
           items:
             sub === 'radiance' && p.remielSelfRadianceActive
               ? [RADIANCE_SELF_TRIGGER_HINT]
@@ -2945,27 +3031,43 @@ function loadSnapshot(snapshot: DamageCalcPanelSnapshot) {
 
 /**
  * 招式倍率的面板默认值，供准备阶段预填。
- * 异常取归属者面板；紊乱/乱流取异常强度提供者；异放/耀变取异常类触发者。
+ * 属性异常/异放/耀变取异常类触发者；紊乱/乱流取异常强度提供者；直伤取持有者。
  */
 function resolveMultDefaultsForEvent(
   hit: ResolvedHit,
 ): Partial<Record<keyof DamageEventMultOverrides, number>> {
   const result: Partial<Record<keyof DamageEventMultOverrides, number>> = {}
   const damageType = hit.skill.damageType
+  const input = buildHitCalcInput({ ...hit, multOverrides: null })
 
   if (damageType === 'anomalyRelease') {
+    const triggerId = hit.triggerAgentId ?? hit.ownerAgentId
+    const trigSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === triggerId)
     const { skillCtx, ownerSlotIndex } = buildHitSkillContext(hit)
-    const fields = resolveMainCAnomalyReleaseMultFields(
-      resolveOwnerExternalPanel(ownerSlotIndex, hit.ownerAgentId),
-      buildHitPanelCalcContext(skillCtx, ownerSlotIndex, hit),
+    const trigExternal =
+      triggerId === hit.ownerAgentId
+        ? resolveOwnerExternalPanel(ownerSlotIndex, hit.ownerAgentId)
+        : resolveOwnerExternalPanel(trigSlotIndex, triggerId)
+    const trigAgent = props.agents.find((item) => item.id === triggerId)
+    const trigPanelCtx =
+      triggerId === hit.ownerAgentId
+        ? buildHitPanelCalcContext(skillCtx, ownerSlotIndex, hit)
+        : {
+            ...buildPanelCalcContextForSlot(
+              trigSlotIndex,
+              buildExtraModsForHit(hit, triggerId),
+            ),
+            skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+          }
+    const fields = resolveAnomalyReleaseMultFields(
+      trigExternal,
+      trigPanelCtx,
       resolveHitPowerElement(hit),
     )
     result.anomalyReleaseMult = fields.anomalyReleaseMult
     result.anomalyReleaseMultFactor = fields.anomalyReleaseMultFactor
     return result
   }
-
-  const input = buildHitCalcInput({ ...hit, multOverrides: null })
 
   if (damageType === 'direct') {
     const panel = input?.finalPanel ?? finalPanel.value
@@ -2976,7 +3078,7 @@ function resolveMultDefaultsForEvent(
   }
 
   if (damageType === 'anomaly') {
-    const panel = input?.finalPanel ?? finalPanel.value
+    const panel = input?.anomalyTriggerPanel ?? input?.finalPanel ?? finalPanel.value
     result.anomalyMult = panel.anomalyMult
     result.anomalyMultFactor = panel.anomalyMultFactor
     return result

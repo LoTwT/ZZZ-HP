@@ -50,10 +50,11 @@ import {
   resolveDamageCalcResistanceElements,
 } from '@/utils/remielUtils'
 import { resolveRemielSelfRadianceCalcInput } from '@/utils/remielSelfRadiancePanel'
+import { mergeSkillSubcategoryMultOverrides } from '@/utils/skillSubcategoryMult'
 import {
   computeFinalPanel,
   convertSlotPartialToExternalPanel,
-  resolveMainCAnomalyReleaseMultFields,
+  resolveAnomalyReleaseMultFields,
   type BuffSelectionState,
   type MultiSlotBuffSelection,
   type PanelCalcContext,
@@ -253,6 +254,7 @@ export interface OptimalEvalContext {
   hits?: ResolvedHit[]
   /** 额外 Buff（按事件 scope 匹配，与面板计算共用） */
   extraGains?: ExtraBuffGain[]
+  /** 页级异常强度提供者 id（命名含 trigger，实为 power）；有 hits 时优先逐击字段 */
   triggerAnomalyAgentId?: string | null
   slotBuffSelections?: MultiSlotBuffSelection | null
   resolveSubcategory?: (id: string | null) => SkillSubcategory | null
@@ -683,20 +685,6 @@ export function evaluateOptimalEventDetail(
     hit.panelMods,
   )
 
-  if (damageType === 'anomalyRelease') {
-    const releaseFields = resolveMainCAnomalyReleaseMultFields(
-      ownerExternal,
-      evtPanelCtx,
-      evtPowerElement,
-    )
-    if (hit.multOverrides?.anomalyReleaseMult == null) {
-      evtFinalPanel.anomalyReleaseMult = releaseFields.anomalyReleaseMult
-    }
-    if (hit.multOverrides?.anomalyReleaseMultFactor == null) {
-      evtFinalPanel.anomalyReleaseMultFactor = releaseFields.anomalyReleaseMultFactor
-    }
-  }
-
   const evtPierce = computePiercePower(
     evtFinalPanel.hp,
     evtFinalPanel.atk,
@@ -736,10 +724,18 @@ export function evaluateOptimalEventDetail(
         ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainExternal, tExtraMods),
         skillContext: buildSkillContextFromHit(hit, tAgent?.element),
       })
-      evtTriggerFinalPanel = producerBreakdown.finalPanel
+      // 招式倍率覆写：紊乱/乱流落到强度提供者面板
+      evtTriggerFinalPanel = applyEventMultOverrides(producerBreakdown.finalPanel, {
+        disorderBaseMult: hit.multOverrides?.disorderBaseMult,
+        disorderBaseMultFactor: hit.multOverrides?.disorderBaseMultFactor,
+        disorderCompMult: hit.multOverrides?.disorderCompMult,
+        turbulenceBaseMult: hit.multOverrides?.turbulenceBaseMult,
+        turbulenceBaseMultFactor: hit.multOverrides?.turbulenceBaseMultFactor,
+        turbulenceCompMult: hit.multOverrides?.turbulenceCompMult,
+      })
       evtTriggerPierce = computePiercePower(
-        producerBreakdown.finalPanel.hp,
-        producerBreakdown.finalPanel.atk,
+        evtTriggerFinalPanel.hp,
+        evtTriggerFinalPanel.atk,
         producerBreakdown.totalMods.pierce,
       )
     }
@@ -772,20 +768,9 @@ export function evaluateOptimalEventDetail(
 
   const sub = ctx.resolveSubcategory?.(hit.skill.buffAnchorId ?? null) ?? null
   const overrides = hit.multOverrides
+  // 倍率修正只写面板，避免与 resolveSkillMults 双重相乘
   const effectiveSub =
-    sub && overrides
-      ? {
-          ...sub,
-          directDmgMult: overrides.directDmgMult ?? sub.directDmgMult,
-          settlementDmgMult: overrides.settlementDmgMult ?? sub.settlementDmgMult,
-          directDmgMultFactor: overrides.directDmgMultFactor ?? sub.directDmgMultFactor,
-          anomalyReleaseMult: overrides.anomalyReleaseMult ?? sub.anomalyReleaseMult,
-          anomalyReleaseMultFactor:
-            overrides.anomalyReleaseMultFactor ?? sub.anomalyReleaseMultFactor,
-          disorderMult: overrides.disorderBaseMult ?? sub.disorderMult,
-          disorderMultFactor: overrides.disorderBaseMultFactor ?? sub.disorderMultFactor,
-        }
-      : sub
+    sub && overrides ? mergeSkillSubcategoryMultOverrides(sub, overrides) : sub
 
   const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainExternal)
 
@@ -822,6 +807,58 @@ export function evaluateOptimalEventDetail(
     }
   }
 
+  if (damageType === 'anomaly' || damageType === 'anomalyRelease') {
+    anomalyTriggerPanel = applyEventMultOverrides(anomalyTriggerPanel, {
+      anomalyMult: hit.multOverrides?.anomalyMult,
+      anomalyMultFactor: hit.multOverrides?.anomalyMultFactor,
+      anomalyReleaseMult: hit.multOverrides?.anomalyReleaseMult,
+      anomalyReleaseMultFactor: hit.multOverrides?.anomalyReleaseMultFactor,
+    })
+  }
+
+  if (damageType === 'anomalyRelease') {
+    const needReleaseMult = hit.multOverrides?.anomalyReleaseMult == null
+    const needReleaseFactor = hit.multOverrides?.anomalyReleaseMultFactor == null
+    if (needReleaseMult || needReleaseFactor) {
+      const triggerId = hit.triggerAgentId ?? ownerAgentId
+      const trigSlotIndex = ctx.panelContext.teamSlots.findIndex(
+        (slot) => slot.agentId === triggerId,
+      )
+      const trigExternal =
+        triggerId === ownerAgentId
+          ? ownerExternal
+          : resolveExternalForAgent(ctx, triggerId, trigSlotIndex, mainExternal)
+      const trigAgent = ctx.panelContext.agents.find((item) => item.id === triggerId)
+      const trigPanelCtx =
+        triggerId === ownerAgentId
+          ? evtPanelCtx
+          : {
+              ...buildPanelContextForSlot(
+                ctx,
+                trigSlotIndex,
+                trigExternal,
+                mainExternal,
+                buildOptimalExtraModsForEvent(ctx, hit, triggerId),
+              ),
+              skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+            }
+      const releaseFields = resolveAnomalyReleaseMultFields(
+        trigExternal,
+        trigPanelCtx,
+        evtPowerElement,
+      )
+      anomalyTriggerPanel = {
+        ...anomalyTriggerPanel,
+        anomalyReleaseMult: needReleaseMult
+          ? releaseFields.anomalyReleaseMult
+          : anomalyTriggerPanel.anomalyReleaseMult,
+        anomalyReleaseMultFactor: needReleaseFactor
+          ? releaseFields.anomalyReleaseMultFactor
+          : anomalyTriggerPanel.anomalyReleaseMultFactor,
+      }
+    }
+  }
+
   if (damageType === 'radiance') {
     anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, hit.multOverrides)
     if (hit.triggerAgentId === ownerAgentId || !hit.triggerAgentId) {
@@ -830,7 +867,9 @@ export function evaluateOptimalEventDetail(
   }
 
   const usesTriggerBonus =
-    damageType === 'anomalyRelease' || damageType === 'radiance'
+    damageType === 'anomaly' ||
+    damageType === 'anomalyRelease' ||
+    damageType === 'radiance'
   const bonusFinalPanel = usesTriggerBonus ? anomalyTriggerPanel : evtFinalPanel
   const bonusExternalForTips = usesTriggerBonus ? bonusExternalPanel : ownerExternal
   const bonusBreakdownForTips = usesTriggerBonus ? bonusBreakdown : evtBreakdown
@@ -1881,6 +1920,7 @@ export function buildOptimalEvalContext(input: {
   anomalySlotPanels?: Record<string, PanelStats>
   convertSlotPanels?: import('@/utils/panelBuffCalc').ConvertSlotPanels
   hits?: ResolvedHit[]
+  /** 页级异常强度提供者 id（命名含 trigger，实为 power） */
   triggerAnomalyAgentId?: string | null
   resolveSubcategory?: (id: string | null) => SkillSubcategory | null
   skillSubcategories?: SkillSubcategory[]

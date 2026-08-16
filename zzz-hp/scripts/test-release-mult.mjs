@@ -4,7 +4,7 @@
  */
 import { createDefaultExternalPanel } from '../src/types/calculatorPanel.ts'
 import { createEmptySelfTeamBuffs } from '../src/utils/calculatorUi.ts'
-import { resolveMainCAnomalyReleaseMultFields } from '../src/utils/panelBuffCalc.ts'
+import { resolveAnomalyReleaseMultFields } from '../src/utils/panelBuffCalc.ts'
 
 const mainAgentId = 'main-ether'
 const external = createDefaultExternalPanel()
@@ -56,8 +56,8 @@ const ctx = {
   buffSelection: { enabledIds: {}, stacksByEffectId: {}, convertInputs: {} },
 }
 
-const fireResult = resolveMainCAnomalyReleaseMultFields(external, ctx, '火')
-const physResult = resolveMainCAnomalyReleaseMultFields(external, ctx, '物理')
+const fireResult = resolveAnomalyReleaseMultFields(external, ctx, '火')
+const physResult = resolveAnomalyReleaseMultFields(external, ctx, '物理')
 
 let failed = false
 if (fireResult.anomalyReleaseMult !== 70) {

@@ -8,7 +8,7 @@ export interface AnomalyFormulaAgentLabels {
   baseAgent?: string
   /**
    * 增伤/倍率/暴击等 bonus 乘区所属角色展示名
-   * （紊乱/乱流/异常 → 招式持有者；异放/耀变 → 异常类触发者）
+   * （紊乱/乱流 → 招式持有者；属性异常/异放/耀变 → 异常类触发者）
    */
   bonusAgent?: string
   /** 异化系数区所属角色展示名（如「异化系数 · 蕾米埃尔」） */

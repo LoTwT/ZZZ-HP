@@ -64,14 +64,8 @@ export function defaultAnomalyAgents(
   if (!skillNeedsDualAgents(damageType)) {
     return { anomalyPowerAgentId: null, triggerAgentId: null }
   }
-  if (
-    damageType === 'anomalyRelease' ||
-    damageType === 'radiance' ||
-    damageType === 'turbulence'
-  ) {
-    return { anomalyPowerAgentId: null, triggerAgentId: ownerAgentId }
-  }
-  return { anomalyPowerAgentId: null, triggerAgentId: null }
+  // 异常类：强度提供者与触发者均默认当前流程角色，倍率走角色原有面板/招式值
+  return { anomalyPowerAgentId: ownerAgentId, triggerAgentId: ownerAgentId }
 }
 
 /**
@@ -181,12 +175,13 @@ function resolveOne(
     buffAnchorCategory: anchorCategory,
   })
 
+  const defaults = defaultAnomalyAgents(skill.damageType, ownerAgentId)
   return {
     id: entry.id,
     skill,
     ownerAgentId,
-    anomalyPowerAgentId: prepared.anomalyPowerAgentId?.trim() || null,
-    triggerAgentId: prepared.triggerAgentId?.trim() || null,
+    anomalyPowerAgentId: prepared.anomalyPowerAgentId?.trim() || defaults.anomalyPowerAgentId,
+    triggerAgentId: prepared.triggerAgentId?.trim() || defaults.triggerAgentId,
     count: Math.max(0, Number(entry.count) || 0),
     staggerPhase: entry.staggerPhase,
     critMode: entry.critMode,
@@ -442,6 +437,13 @@ export function getHitSkipReason(
   }
   if (damageType !== 'radiance' && isLuminousAgent(provider)) {
     return '旧四类异常的强度提供者不能为蕾米埃尔（流明）'
+  }
+
+  if (damageType === 'radiance') {
+    const trigger = ctx.agents.find((item) => item.id === hit.triggerAgentId)
+    if (!isLuminousAgent(trigger)) {
+      return '耀变仅当异常类触发者为蕾米埃尔时才能生效'
+    }
   }
 
   if (damageType === 'turbulence') {

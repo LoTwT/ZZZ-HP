@@ -10,6 +10,8 @@ withDefaults(
     stypes?: string[]
     agentPair?: string
     agentTitle?: string
+    /** 行尾红色提醒（如乱流/耀变触发者不合规），不占倍率格 */
+    warn?: string | null
     damage?: string
     skip?: boolean
     index?: number
@@ -94,6 +96,7 @@ function emitCount(event: Event) {
       >
         {{ agentPair }}
       </span>
+      <span v-if="warn" class="sf-warn" :title="warn">{{ warn }}</span>
     </div>
     <span class="sf-damage">{{ damage || '' }}</span>
     <div class="sf-card-actions">
@@ -273,6 +276,17 @@ function emitCount(event: Event) {
 }
 .sf-agents.is-static:hover {
   filter: none;
+}
+.sf-warn {
+  flex: 1 1 6rem;
+  min-width: 4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #e07070;
+  line-height: 1.2;
 }
 .sf-damage {
   flex: 0 0 auto;

@@ -12,6 +12,7 @@ import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 import {
   DAMAGE_EVENT_KIND_OPTIONS,
+  isTurbulenceWindTrigger,
 } from '@/utils/damageEvent'
 import {
   defaultAnomalyAgents,
@@ -21,8 +22,18 @@ import {
   skillNeedsDualAgents,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
-import { buildSkillCalcZoneRows } from '@/utils/skillCalcZones'
+import { isLuminousAgent } from '@/utils/remielUtils'
+import {
+  buildSkillCalcZoneRows,
+  formatSkillMultZoneAsPercent,
+  pickSkillMultPercentRatio,
+} from '@/utils/skillCalcZones'
 import { createCustomSkillId } from '@/utils/skillLibrary'
+import {
+  resolveInherentSkillMultPercent,
+  skillMultNeedsAnomalyPowerProvider,
+  unsetSkillMult,
+} from '@/utils/skillSubcategoryMult'
 import { SKILL_TYPE_OPTIONS } from '@/utils/skillTypes'
 
 const props = defineProps<{
@@ -89,6 +100,40 @@ watch(
   },
 )
 
+/** 旧数据未选双代理人时，回填为当前角色 */
+function hydratePreparedAnomalyAgents() {
+  const next = ensureSchemeSlots(slots.value)
+  let changed = false
+  next.forEach((slot, index) => {
+    const ownerId = props.teamSlots[index]?.agentId
+    if (!ownerId) return
+    for (const item of slot.prepared) {
+      const skill = buffStore.findSkill(item.skillId)
+      if (!skill || !skillNeedsDualAgents(skill.damageType)) continue
+      const defaults = defaultAnomalyAgents(skill.damageType, ownerId)
+      if (!item.anomalyPowerAgentId && defaults.anomalyPowerAgentId) {
+        item.anomalyPowerAgentId = defaults.anomalyPowerAgentId
+        changed = true
+      }
+      if (!item.triggerAgentId && defaults.triggerAgentId) {
+        item.triggerAgentId = defaults.triggerAgentId
+        changed = true
+      }
+    }
+  })
+  if (changed) slots.value = next
+}
+
+watch(
+  () =>
+    [
+      props.teamSlots.map((slot) => slot.agentId).join(','),
+      slots.value.map((slot) => slot.prepared.map((item) => item.skillId).join('+')).join('|'),
+    ].join('#'),
+  () => hydratePreparedAnomalyAgents(),
+  { immediate: true },
+)
+
 const currentSlot = computed(() => slots.value[activeSlotIndex.value] ?? { prepared: [], flow: [] })
 /** 真正会换位时才画线；停在自己原来那条缝上不显示。 */
 const flowInsertIndex = computed(() => {
@@ -101,6 +146,9 @@ const flowInsertIndex = computed(() => {
   return drop
 })
 const currentAgentId = computed(() => props.teamSlots[activeSlotIndex.value]?.agentId ?? '')
+const currentAgent = computed(
+  () => props.agents.find((item) => item.id === currentAgentId.value) ?? null,
+)
 const currentTeamSlotLabel = computed(() => {
   const slot = props.teamSlots[activeSlotIndex.value]
   return slot ? slotLabel(slot, activeSlotIndex.value) : '空位'
@@ -184,9 +232,77 @@ function skillStypeLabels(skill: Skill) {
     .filter(Boolean)
 }
 
-function skillMultText(skill: Skill) {
-  const value = Number(skill.baseMult)
-  return Number.isFinite(value) && value !== 0 ? String(value) : ''
+/** 有结算结果时显示最终倍率区对应的百分点；否则回落招式固有/填写值 */
+function skillMultText(skill: Skill, calcKey?: string | null) {
+  if (calcKey) {
+    const result = props.hitCalcResults?.[calcKey]
+    if (result) {
+      const ratio = pickSkillMultPercentRatio(result, skill.damageType)
+      if (ratio != null) return formatSkillMultZoneAsPercent(ratio)
+    }
+  }
+  const filled = Number(skill.baseMult)
+  if (!unsetSkillMult(filled)) return String(filled)
+  const anchorId = skill.buffAnchorId?.trim()
+  const sub = anchorId
+    ? skillSubcategories.value.find((item) => item.id === anchorId)
+    : null
+  const agent = props.agents.find((item) => item.id === skill.agentId) ?? null
+  const fromInherent = resolveInherentSkillMultPercent({
+    damageType: skill.damageType,
+    buffAnchorId: anchorId,
+    subcategory: sub,
+    agent,
+    element: skill.element || agent?.element,
+  })
+  if (fromInherent != null) return String(fromInherent)
+  if (skillMultNeedsAnomalyPowerProvider(skill.damageType)) return '待选择'
+  return ''
+}
+
+function findPreparedForMultContext(
+  skill: Skill,
+  calcKey?: string | null,
+): PreparedSkill | null {
+  if (calcKey) {
+    const byPreparedId = currentSlot.value.prepared.find((item) => item.id === calcKey)
+    if (byPreparedId) return byPreparedId
+    const flow = currentSlot.value.flow.find((item) => item.id === calcKey)
+    if (flow) {
+      return currentSlot.value.prepared.find((item) => item.id === flow.preparedId) ?? null
+    }
+  }
+  return currentSlot.value.prepared.find((item) => item.skillId === skill.id) ?? null
+}
+
+function cardTriggerWarn(skill: Skill | null, calcKey?: string | null): string | null {
+  if (!skill) return null
+  const prepared = findPreparedForMultContext(skill, calcKey)
+  if (!prepared?.triggerAgentId) return null
+  return anomalyTriggerMultHint(skill, prepared.triggerAgentId)
+}
+
+function libraryMultText(skill: Skill) {
+  // 直伤等不依赖双代理人：库内可直接展示固有/填写倍率
+  if (!skillNeedsDualAgents(skill.damageType)) {
+    return skillMultText(skill, skill.id)
+  }
+  const prepared = currentSlot.value.prepared.find((item) => item.skillId === skill.id)
+  // 异放/乱流/耀变等：等准备阶段选好强度提供者与触发者后再显示
+  if (!prepared?.anomalyPowerAgentId || !prepared?.triggerAgentId) {
+    return '待选择'
+  }
+  // 乱流非风触发 / 耀变非蕾米：不展示倍率
+  if (anomalyTriggerMultHint(skill, prepared.triggerAgentId)) {
+    return '—'
+  }
+  return skillMultText(skill, prepared.id)
+}
+
+function libraryMultWarn(skill: Skill): string | null {
+  const prepared = currentSlot.value.prepared.find((item) => item.skillId === skill.id)
+  if (!prepared?.triggerAgentId) return null
+  return anomalyTriggerMultHint(skill, prepared.triggerAgentId)
 }
 
 function agentShortName(agentId: string | null | undefined) {
@@ -240,16 +356,49 @@ function dtypeKind(type: SkillDamageType) {
   return skillNeedsDualAgents(type) ? 'anomaly' : 'direct'
 }
 
+type PendingConfirm = {
+  title: string
+  message: string
+  confirmText?: string
+  cancelText?: string
+  danger?: boolean
+  onConfirm: () => void
+}
+
+const pendingConfirm = ref<PendingConfirm | null>(null)
+
+function closeConfirm() {
+  pendingConfirm.value = null
+}
+
+function runConfirm() {
+  const pending = pendingConfirm.value
+  pendingConfirm.value = null
+  pending?.onConfirm()
+}
+
+function openConfirm(opts: Omit<PendingConfirm, 'onConfirm'>, action: () => void) {
+  pendingConfirm.value = { ...opts, onConfirm: action }
+}
+
 function clearPrepared() {
   if (!currentSlot.value.prepared.length) return
-  const ok = window.confirm('清空当前角色的全部准备招式？流程里对应条目也会去掉。')
-  if (!ok) return
-  const next = ensureSchemeSlots(slots.value)
-  const slot = next[activeSlotIndex.value]!
-  slot.prepared = []
-  slot.flow = []
-  slots.value = next
-  detail.value = null
+  openConfirm(
+    {
+      title: '清空准备招式',
+      message: '清空当前角色的全部准备招式？流程里对应条目也会去掉。',
+      confirmText: '清空',
+      danger: true,
+    },
+    () => {
+      const next = ensureSchemeSlots(slots.value)
+      const slot = next[activeSlotIndex.value]!
+      slot.prepared = []
+      slot.flow = []
+      slots.value = next
+      detail.value = null
+    },
+  )
 }
 
 function closeDetail() {
@@ -345,6 +494,24 @@ const detailZoneRows = computed(() => {
   const result = props.hitCalcResults?.[key]
   if (!result) return []
   return buildSkillCalcZoneRows(result, skill.damageType)
+})
+
+/** 详情「倍率%」：最终倍率区换算为百分点；触发者不合规则不展示倍率 */
+const detailResolvedMultDisplay = computed(() => {
+  const skill = detailSkill.value
+  const key = detailCalcKey.value
+  if (!skill || !key) return null
+  if (detailCanEditDefinition.value && detailDraft.damageType !== skill.damageType) return null
+  const prepared = detailPrepared.value
+  if (prepared?.triggerAgentId) {
+    const hint = anomalyTriggerMultHint(skill, prepared.triggerAgentId)
+    if (hint) return null
+  }
+  const result = props.hitCalcResults?.[key]
+  if (!result) return null
+  const ratio = pickSkillMultPercentRatio(result, skill.damageType)
+  if (ratio == null) return null
+  return formatSkillMultZoneAsPercent(ratio)
 })
 
 function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
@@ -568,6 +735,38 @@ function dualAgentHint(prepared: PreparedSkill, skill: Skill): string | null {
   if (!teamIds.has(prepared.anomalyPowerAgentId) || !teamIds.has(prepared.triggerAgentId)) {
     return '选定的代理人已不在当前队伍'
   }
+  if (skill.damageType === 'turbulence') {
+    if (!isTurbulenceWindTrigger(props.agents, prepared.triggerAgentId)) {
+      return '乱流仅当异常类触发者为风属性角色时才能生效'
+    }
+  }
+  if (skill.damageType === 'radiance') {
+    const trigger = props.agents.find((item) => item.id === prepared.triggerAgentId)
+    if (!isLuminousAgent(trigger)) {
+      return '耀变仅当异常类触发者为蕾米埃尔时才能生效'
+    }
+  }
+  return null
+}
+
+/** 乱流/耀变触发者不合规时不展示倍率，改为提醒文案 */
+function anomalyTriggerMultHint(
+  skill: Skill,
+  triggerAgentId: string | null | undefined,
+): string | null {
+  if (skill.damageType === 'turbulence') {
+    if (!triggerAgentId || !isTurbulenceWindTrigger(props.agents, triggerAgentId)) {
+      return '乱流仅当异常类触发者为风属性角色时才能生效'
+    }
+  }
+  if (skill.damageType === 'radiance') {
+    const trigger = triggerAgentId
+      ? props.agents.find((item) => item.id === triggerAgentId)
+      : null
+    if (!isLuminousAgent(trigger)) {
+      return '耀变仅当异常类触发者为蕾米埃尔时才能生效'
+    }
+  }
   return null
 }
 
@@ -620,7 +819,7 @@ function saveCustomSkill() {
     source: 'custom',
     damageType: customDraft.damageType,
     skillTypes: anomaly ? [] : [...customDraft.skillTypes],
-    buffAnchorId: anomaly ? null : customDraft.buffAnchorId || null,
+    buffAnchorId: customDraft.buffAnchorId || null,
     baseMult: Number(customDraft.baseMult) || 0,
     element: '',
     settlementMult:
@@ -688,7 +887,7 @@ function saveDetailSkill() {
     name,
     damageType: detailDraft.damageType,
     skillTypes: anomaly ? [] : [...detailDraft.skillTypes],
-    buffAnchorId: anomaly ? null : detailDraft.buffAnchorId || null,
+    buffAnchorId: detailDraft.buffAnchorId || null,
     baseMult: Number(detailDraft.baseMult) || 0,
     settlementMult:
       !anomaly && Number(detailDraft.settlementMult)
@@ -720,8 +919,17 @@ function deleteCustomSkill(skill: Skill) {
   } else if (inSaved) {
     message = `「${skill.name}」仍被已保存的方案使用。删除后那些条目会显示招式已删除且不出伤。确定删除？`
   }
-  if (!window.confirm(message)) return
-  buffStore.removeCustomSkillDoc(skill.id)
+  openConfirm(
+    {
+      title: '删除自定义招式',
+      message,
+      confirmText: '删除',
+      danger: true,
+    },
+    () => {
+      buffStore.removeCustomSkillDoc(skill.id)
+    },
+  )
 }
 
 function flowPrepared(entry: FlowEntry): PreparedSkill | null {
@@ -934,7 +1142,8 @@ defineExpose({ expand })
                   v-for="skill in librarySkills"
                   :key="skill.id"
                   :name="skill.name"
-                  :mult="skillMultText(skill)"
+                  :mult="libraryMultText(skill)"
+                  :warn="libraryMultWarn(skill)"
                   :dtype="damageTypeLabel(skill.damageType)"
                   :dtype-kind="dtypeKind(skill.damageType)"
                   :stypes="skillStypeLabels(skill)"
@@ -1002,7 +1211,12 @@ defineExpose({ expand })
                   <SkillFlowCard
                     v-if="preparedSkill(prepared)"
                     :name="preparedSkill(prepared)!.name"
-                    :mult="skillMultText(preparedSkill(prepared)!)"
+                    :mult="
+                      cardTriggerWarn(preparedSkill(prepared)!, prepared.id)
+                        ? '—'
+                        : skillMultText(preparedSkill(prepared)!, prepared.id)
+                    "
+                    :warn="cardTriggerWarn(preparedSkill(prepared)!, prepared.id)"
                     :dtype="damageTypeLabel(preparedSkill(prepared)!.damageType)"
                     :dtype-kind="dtypeKind(preparedSkill(prepared)!.damageType)"
                     :stypes="skillStypeLabels(preparedSkill(prepared)!)"
@@ -1098,6 +1312,16 @@ defineExpose({ expand })
                   <SkillFlowCard
                     :index="index + 1"
                     :name="flowSkillName(entry)"
+                    :mult="
+                      flowSkill(entry)
+                        ? cardTriggerWarn(flowSkill(entry)!, entry.id)
+                          ? '—'
+                          : skillMultText(flowSkill(entry)!, entry.id)
+                        : ''
+                    "
+                    :warn="
+                      flowSkill(entry) ? cardTriggerWarn(flowSkill(entry)!, entry.id) : null
+                    "
                     :count="entry.count"
                     :stagger="entry.staggerPhase === 'stagger'"
                     :dtype="flowSkill(entry) ? damageTypeLabel(flowSkill(entry)!.damageType) : ''"
@@ -1256,6 +1480,8 @@ defineExpose({ expand })
                 v-model="detailDraft"
                 :readonly="!detailCanEditDefinition"
                 :anchors="anchorOptions"
+                :agent="currentAgent"
+                :resolved-mult-display="detailResolvedMultDisplay"
               />
 
               <p class="detail-section-title">计算过程</p>
@@ -1288,7 +1514,11 @@ defineExpose({ expand })
               <button type="button" class="close-btn" aria-label="关闭" @click="closeCustomForm">×</button>
             </header>
             <div class="skill-detail-body">
-              <SkillDefinitionForm v-model="customDraft" :anchors="anchorOptions" />
+              <SkillDefinitionForm
+                v-model="customDraft"
+                :anchors="anchorOptions"
+                :agent="currentAgent"
+              />
             </div>
             <div class="skill-detail-foot">
               <button type="button" class="primary-btn save-action" @click="saveCustomSkill">
@@ -1297,6 +1527,32 @@ defineExpose({ expand })
             </div>
           </div>
         </div>
+        </Teleport>
+
+        <Teleport to="body">
+          <div
+            v-if="pendingConfirm"
+            class="scheme-confirm-overlay"
+            @click.self="closeConfirm"
+          >
+            <div class="scheme-confirm" :class="{ danger: pendingConfirm.danger }">
+              <div class="scheme-confirm-title">{{ pendingConfirm.title }}</div>
+              <p class="scheme-confirm-msg">{{ pendingConfirm.message }}</p>
+              <div class="scheme-confirm-btns">
+                <button type="button" class="scheme-confirm-cancel" @click="closeConfirm">
+                  {{ pendingConfirm.cancelText || '取消' }}
+                </button>
+                <button
+                  type="button"
+                  class="scheme-confirm-ok"
+                  :class="{ danger: pendingConfirm.danger }"
+                  @click="runConfirm"
+                >
+                  {{ pendingConfirm.confirmText || '确认' }}
+                </button>
+              </div>
+            </div>
+          </div>
         </Teleport>
   </section>
 </template>

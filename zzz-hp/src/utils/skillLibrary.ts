@@ -38,7 +38,7 @@ function normalizeSkill(raw: Record<string, unknown>): Skill | null {
     source: 'custom',
     damageType,
     skillTypes: isAnomaly ? [] : skillTypes,
-    buffAnchorId: isAnomaly ? null : anchor == null || anchor === '' ? null : String(anchor),
+    buffAnchorId: anchor == null || anchor === '' ? null : String(anchor),
     baseMult: Number(raw.baseMult) || 0,
     baseMultFactor: Number.isFinite(Number(raw.baseMultFactor))
       ? Number(raw.baseMultFactor)
@@ -151,9 +151,9 @@ function eventToSkill(
   followUpRules: FollowUpSkillRule[],
 ): Skill {
   const isDirect = event.kind === 'direct'
-  // 异常类一律不带招式类型 / 锚点（§11.2），即使旧事件勾了 skillBound
-  const rawAnchorId = isDirect ? (event.skillSubcategoryId ?? null) : null
-  const publicType = skillTypeFromLegacyPublicSubcategory(rawAnchorId)
+  // 异常类不带招式类型；增益锚点可保留旧小类 id，便于招式限定 Buff 命中
+  const rawAnchorId = event.skillSubcategoryId ?? null
+  const publicType = isDirect ? skillTypeFromLegacyPublicSubcategory(rawAnchorId) : null
   const skillTypes: SkillTypeId[] = []
   if (isDirect) {
     if (publicType) skillTypes.push(publicType)
@@ -319,7 +319,8 @@ export function bakeFollowUpSkillTypesOnce(
     })
     if (!hit) return skill
     changed = true
-    return { ...skill, skillTypes: [...skill.skillTypes, 'followUp'] }
+    const skillTypes: SkillTypeId[] = [...skill.skillTypes, 'followUp']
+    return { ...skill, skillTypes }
   })
   localStorage.setItem(FOLLOWUP_TYPE_BAKED_KEY, '1')
   if (changed) saveCustomSkills(next)

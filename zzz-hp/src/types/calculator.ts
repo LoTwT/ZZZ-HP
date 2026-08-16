@@ -447,11 +447,11 @@ export interface Skill {
   element?: string
   source: SkillSource
   damageType: SkillDamageType
-  /** 招式类型，多选。异常类留空 → 招式限定 Buff 一律不命中 */
+  /** 招式类型，多选。异常类留空 → 仅靠类型的招式限定 Buff 不命中 */
   skillTypes: SkillTypeId[]
   /**
    * 增益锚点：旧「招式小类」id，至多一个，可不选。
-   * 唯一作用是让「专门加强某一招」的 Buff 认出这条招式；异常类留空。
+   * 让「专门加强某一招」的 Buff 认出这条招式；异常类也可选，用于吃招式限定增益。
    */
   buffAnchorId?: string | null
   /** 基础倍率%（0 = 未设置，回落面板值，与旧招式小类语义一致） */

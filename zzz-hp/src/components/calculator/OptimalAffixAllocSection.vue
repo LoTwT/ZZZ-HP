@@ -186,6 +186,7 @@ const props = defineProps<{
   active?: boolean
   damageKind?: import('@/utils/optimalAffixAlloc').OptimalDamageKind
   anomalySubKind?: AnomalyDamageSubKind
+  /** 页级异常强度提供者（第一击 power）；与逐 hit 字段并存时优先 hit */
   triggerAnomalyAgentId?: string | null
   anomalySlotPanels?: Record<string, PanelStats>
   convertSlotPanels?: ConvertSlotPanels

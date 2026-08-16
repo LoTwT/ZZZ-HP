@@ -24,6 +24,60 @@ function push(
   rows.push({ label, value: formatZoneValue(value, asDamage) })
 }
 
+/** 计算过程用：该伤害类型对应的最终倍率区（紊乱/乱流含持续时间×补偿） */
+export function pickSkillMultZone(
+  result: DamageCalcResult,
+  damageType: SkillDamageType,
+): number | null {
+  switch (damageType) {
+    case 'direct':
+      return result.directDmgMultZone
+    case 'anomaly':
+      return result.anomalyMultZone
+    case 'anomalyRelease':
+      return result.anomalyReleaseMultZone
+    case 'disorder':
+      return result.disorderZone
+    case 'turbulence':
+      return result.turbulenceZone
+    case 'radiance':
+      return result.radianceMultZone
+    default:
+      return null
+  }
+}
+
+/**
+ * 招式卡片 / 详情「倍率%」用：最终倍率区换算成百分点前的比率。
+ * 紊乱/乱流为含「持续时间×补偿」的完整倍率区（非基础分量）。
+ * 计算过程仍用 formatSkillMultZone 展示区小数，勿混用本函数的 % 语义。
+ */
+export function pickSkillMultPercentRatio(
+  result: DamageCalcResult,
+  damageType: SkillDamageType,
+): number | null {
+  return pickSkillMultZone(result, damageType)
+}
+
+export function formatSkillMultZone(value: number): string {
+  return formatZoneValue(value)
+}
+
+/**
+ * 招式「倍率%」字段用：比率换算成百分点（0.712 → 71.2）。
+ * 计算过程里的倍率区仍用 formatSkillMultZone，不带 %。
+ */
+export function formatSkillMultZoneAsPercent(zone: number): string {
+  if (!Number.isFinite(zone)) return '—'
+  const percent = zone * 100
+  if (Number.isInteger(percent) || Math.abs(percent - Math.round(percent)) < 1e-6) {
+    return String(Math.round(percent))
+  }
+  // 保留合理精度，去掉多余尾零
+  const text = formatCalcDecimal(percent)
+  return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+}
+
 function pushCommon(rows: SkillCalcZoneRow[], result: DamageCalcResult) {
   push(rows, '基础伤害', result.baseDamage, true)
   push(rows, '防御区', result.defenseMultiplier)
