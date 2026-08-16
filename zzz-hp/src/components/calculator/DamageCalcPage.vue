@@ -1222,9 +1222,7 @@ async function scrollToSection(sectionId: DamageCalcSectionId) {
     sectionId === 'damage-calc-affix' ||
     sectionId === 'damage-calc-optimal'
       ? 'damage-calc-mode'
-      : sectionId === 'damage-panel'
-        ? 'damage-panel'
-        : sectionId
+      : sectionId
   const target = pageRootRef.value?.querySelector<HTMLElement>(`#${anchorId}`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }

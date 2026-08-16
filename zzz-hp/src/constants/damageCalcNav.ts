@@ -6,7 +6,6 @@ export const DAMAGE_CALC_SECTIONS = [
   { id: 'damage-combat-buff', label: '局内 Buff' },
   { id: 'damage-enemy', label: '敌方与环境' },
   { id: 'damage-calc-mode', label: '计算方式' },
-  { id: 'damage-panel', label: '面板录入' },
   { id: 'skill-flow', label: '招式流程' },
 ] as const
 
