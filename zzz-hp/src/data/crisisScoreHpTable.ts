@@ -319,3 +319,40 @@ export function describeConvertSegment(result: CrisisHpScoreConvertResult): stri
   }
   return done ? '已到达分数节点' : '正在通过分数节点'
 }
+
+export function formatCrisisScoreBarLabel(row: CrisisScoreHpRow): string {
+  if (row.isMilestone && row.bar != null) return `${row.bar}/节点`
+  if (row.isMilestone || row.bar == null) return '节点'
+  return String(row.bar)
+}
+
+function rowKey(row: CrisisScoreHpRow): string {
+  return `${row.bar ?? 'm'}-${row.cumulativeScore}-${row.cumulativeHp}-${row.isMilestone ? 1 : 0}`
+}
+
+/**
+ * 计算过程用：对应表当前插值终点附近最多 3 行（上一段 / 当前 / 下一段）。
+ */
+export function getConvertContextTableRows(
+  mode: CrisisScoreTableMode,
+  result: CrisisHpScoreConvertResult | null | undefined,
+): { rows: CrisisScoreHpRow[]; currentIndex: number } {
+  if (!result?.row) return { rows: [], currentIndex: -1 }
+  const table = getCrisisScoreTable(mode)
+  const targetKey = rowKey(result.row)
+  let index = table.findIndex((row) => rowKey(row) === targetKey)
+  if (index < 0) {
+    index = table.findIndex(
+      (row) =>
+        row.cumulativeScore === result.row!.cumulativeScore &&
+        Math.abs(row.cumulativeHp - result.row!.cumulativeHp) < 1e-9,
+    )
+  }
+  if (index < 0) return { rows: [result.row], currentIndex: 0 }
+  if (table.length <= 3) return { rows: table.slice(), currentIndex: index }
+  if (index <= 0) return { rows: table.slice(0, 3), currentIndex: 0 }
+  if (index >= table.length - 1) {
+    return { rows: table.slice(-3), currentIndex: 2 }
+  }
+  return { rows: table.slice(index - 1, index + 2), currentIndex: 1 }
+}

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import {
   CRISIS_SCORE_MAX,
+  formatCrisisScoreBarLabel,
   formatPercent,
   formatScorePerHp,
   getCrisisScoreTable,
@@ -20,9 +21,7 @@ const panelDesc = computed(() =>
 )
 
 function barLabel(row: CrisisScoreHpRow): string {
-  if (row.isMilestone && row.bar != null) return `${row.bar}/节点`
-  if (row.isMilestone || row.bar == null) return '节点'
-  return String(row.bar)
+  return formatCrisisScoreBarLabel(row)
 }
 </script>
 

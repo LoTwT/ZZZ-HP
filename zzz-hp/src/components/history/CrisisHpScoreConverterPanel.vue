@@ -11,7 +11,10 @@ import {
   convertHpRatioToScore,
   convertScoreToHpRatio,
   describeConvertSegment,
+  formatCrisisScoreBarLabel,
   formatPercent,
+  formatScorePerHp,
+  getConvertContextTableRows,
   getScoreMarkers,
   scaleHpByRatio,
   type CrisisHpScoreConvertResult,
@@ -409,6 +412,9 @@ const formulaText = computed(() => {
   return `${current.prevScore.toLocaleString('zh-CN')} + ${t.toFixed(4)} × ${scoreDelta.toLocaleString('zh-CN')} = ${current.score.toFixed(2)}`
 })
 
+/** 对应表当前插值附近最多 3 管（含节点行） */
+const contextTable = computed(() => getConvertContextTableRows(tableMode.value, result.value))
+
 function applyMarker(marker: CrisisScoreMarker) {
   editing.value = 'score'
   scoreInput.value = String(marker.score)
@@ -783,6 +789,53 @@ const panelDesc = computed(() =>
           → {{ formatPercent(result.nextHp, 4) }} / {{ result.nextScore.toLocaleString('zh-CN') }} 分
         </p>
         <p v-if="formulaText" class="status-formula">{{ formulaText }}</p>
+        <div v-if="contextTable.rows.length" class="context-table-wrap">
+          <p class="status-line context-table-title">对应表 · 附近三管</p>
+          <div class="context-table-scroll">
+            <table class="context-table">
+              <colgroup>
+                <col class="col-bar" />
+                <col class="col-score" />
+                <col class="col-score-ratio" />
+                <col class="col-hp-ratio" />
+                <col class="col-eff" />
+                <col class="col-cum-score" />
+                <col class="col-cum-hp" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>第几管血</th>
+                  <th>分数</th>
+                  <th>分数占比</th>
+                  <th>血量占比</th>
+                  <th>分数/血量</th>
+                  <th>已得分数</th>
+                  <th>已打血量</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, index) in contextTable.rows"
+                  :key="`${tableMode}-${formatCrisisScoreBarLabel(row)}-${row.cumulativeScore}-${index}`"
+                  :class="{
+                    'is-current': index === contextTable.currentIndex,
+                    'is-milestone': row.isMilestone,
+                  }"
+                >
+                  <td>{{ formatCrisisScoreBarLabel(row) }}</td>
+                  <td>{{ row.score.toLocaleString('zh-CN') }}</td>
+                  <td>{{ formatPercent(row.scoreRatio) }}</td>
+                  <td>{{ formatPercent(row.hpRatio) }}</td>
+                  <td>{{ formatScorePerHp(row.scorePerHp) }}</td>
+                  <td :class="{ 'is-node-score': row.isMilestone }">
+                    {{ row.cumulativeScore.toLocaleString('zh-CN') }}
+                  </td>
+                  <td>{{ formatPercent(row.cumulativeHp) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         <p v-if="reachedMarkers.length" class="status-line">
           已过节点：{{ reachedMarkers.map((marker) => marker.label).join('、') }}
         </p>
@@ -1158,6 +1211,88 @@ const panelDesc = computed(() =>
   font-family: var(--zzz-font-mono, ui-monospace, monospace);
   font-size: 0.8rem;
   color: var(--color-heading);
+}
+
+.context-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.context-table-title {
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.context-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+}
+
+.context-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.context-table .col-bar {
+  width: 11%;
+}
+.context-table .col-score {
+  width: 11%;
+}
+.context-table .col-score-ratio,
+.context-table .col-hp-ratio {
+  width: 13%;
+}
+.context-table .col-eff {
+  width: 15%;
+}
+.context-table .col-cum-score {
+  width: 14%;
+}
+.context-table .col-cum-hp {
+  width: 13%;
+}
+
+.context-table th,
+.context-table td {
+  padding: 0.38rem 0.35rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-table thead th {
+  font-weight: 700;
+  color: var(--color-heading);
+  background: color-mix(in srgb, var(--color-background) 55%, transparent);
+}
+
+.context-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.context-table tbody tr.is-current {
+  background: color-mix(in srgb, #c9a55c 18%, transparent);
+}
+
+.context-table tbody tr.is-milestone td {
+  color: var(--color-heading);
+}
+
+.context-table td.is-node-score {
+  font-weight: 800;
+  color: #c9a55c;
 }
 
 .record-head {
