@@ -46,7 +46,7 @@ import { mergeExtraModsForEvent } from '@/utils/extraBuffCalc'
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
-  isRemielSelfRadianceTrigger,
+  isRemielSelfRadiancePowerProvider,
   resolveDamageCalcResistanceElements,
 } from '@/utils/remielUtils'
 import { resolveRemielSelfRadianceCalcInput } from '@/utils/remielSelfRadiancePanel'
@@ -555,18 +555,22 @@ function buildPanelContextForSlot(
 
 function resolveRemielSelfRadianceCalcForOptimal(
   ctx: OptimalEvalContext,
-  triggerAgentId: string | null | undefined,
+  anomalyPowerAgentId: string | null | undefined,
   mainExternal: PanelStats,
+  skillContext?: import('@/types/calculator').SkillCalcContext,
 ) {
   const remiel = findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)
-  if (!remiel || !isRemielSelfRadianceTrigger(triggerAgentId, remiel.id)) return undefined
+  if (!remiel || !isRemielSelfRadiancePowerProvider(anomalyPowerAgentId, remiel.id)) {
+    return undefined
+  }
   const external = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainExternal)
   const agent = ctx.panelContext.agents.find((item) => item.id === remiel.id)
+  const baseCtx = buildPanelContextForSlot(ctx, remiel.slotIndex, external, mainExternal)
   return resolveRemielSelfRadianceCalcInput({
     teamSlots: ctx.panelContext.teamSlots,
     agents: ctx.panelContext.agents,
     externalPanel: external,
-    panelCtx: buildPanelContextForSlot(ctx, remiel.slotIndex, external, mainExternal),
+    panelCtx: skillContext ? { ...baseCtx, skillContext } : baseCtx,
     remielSlotIndex: remiel.slotIndex,
     agentLevel: resolveProducerAgentLevel(ctx, remiel.id),
     isMb: agent?.profession === MB_PROFESSION,
@@ -923,6 +927,7 @@ export function evaluateOptimalEventDetail(
       ctx,
       evtPowerAgentId,
       mainExternal,
+      skillCtx,
     ),
   })
 

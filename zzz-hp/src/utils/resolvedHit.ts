@@ -366,26 +366,30 @@ export function summarizeHits(
   const lines: HitLine[] = []
   let grandTotal = 0
   for (const hit of hits) {
-    const input = buildInput(hit)
-    if (!input) continue
-    const result = computeDamageResult(input)
-    const perHit = pickEventDamage(result, hit.skill.damageType, hit.critMode)
-    const total = perHit * hit.count
-    const kindLabel =
-      DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === hit.skill.damageType)?.label ??
-      hit.skill.damageType
-    const suffix =
-      hit.skill.damageType === 'disorder' ? `（${disorderLabelFromResult(result)}）` : ''
-    const ownerName = resolveOwnerName?.(hit)
-    lines.push({
-      hit,
-      perHit,
-      total,
-      label: `${kindLabel}${suffix}`,
-      displayName: `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}${suffix}`,
-      result,
-    })
-    grandTotal += total
+    try {
+      const input = buildInput(hit)
+      if (!input) continue
+      const result = computeDamageResult(input)
+      const perHit = pickEventDamage(result, hit.skill.damageType, hit.critMode)
+      const total = perHit * hit.count
+      const kindLabel =
+        DAMAGE_EVENT_KIND_OPTIONS.find((item) => item.id === hit.skill.damageType)?.label ??
+        hit.skill.damageType
+      const suffix =
+        hit.skill.damageType === 'disorder' ? `（${disorderLabelFromResult(result)}）` : ''
+      const ownerName = resolveOwnerName?.(hit)
+      lines.push({
+        hit,
+        perHit,
+        total,
+        label: `${kindLabel}${suffix}`,
+        displayName: `${ownerName ? `${ownerName} · ` : ''}${hit.skill.name}${suffix}`,
+        result,
+      })
+      grandTotal += total
+    } catch (error) {
+      console.error('[summarizeHits] skip hit due to calc error', hit.skill?.name, error)
+    }
   }
   return { lines, grandTotal }
 }

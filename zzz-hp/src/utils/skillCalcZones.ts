@@ -9,7 +9,7 @@ export interface SkillCalcZoneRow {
 
 function formatZoneValue(value: number, asDamage = false) {
   if (!Number.isFinite(value)) return '—'
-  if (asDamage || Math.abs(value) >= 100) {
+  if (asDamage) {
     return Math.round(value).toLocaleString('en-US')
   }
   return formatCalcDecimal(value)
@@ -88,12 +88,35 @@ function pushCommon(rows: SkillCalcZoneRow[], result: DamageCalcResult) {
   push(rows, '特殊乘区', result.specialMultiplier)
 }
 
+/** 蕾米本人耀变：与面板公式分解同一套乘区，不用普通异常的通用/精通链 */
+function pushRemielSelfRadianceRows(rows: SkillCalcZoneRow[], result: DamageCalcResult) {
+  push(rows, '局内攻击力', result.remielSelfInCombatAtk ?? 0)
+  push(rows, '局内精通区', result.remielSelfInCombatMasteryZone ?? 0)
+  push(rows, '特殊等级区', result.remielSelfSpecialLevelZone ?? 1)
+  push(rows, '异化系数区', result.remielSelfMutationZone ?? result.mutationZone)
+  push(rows, '等级区', result.remielSelfStandardLevelZone ?? result.levelZone)
+  push(rows, '蕾米埃尔异常基础', result.anomalyBaseExpected, true)
+  push(rows, '防御区', result.remielSelfDefenseMultiplier ?? result.defenseMultiplier)
+  push(rows, '抗性区', result.remielSelfResistanceMultiplier ?? result.resistanceMultiplier)
+  push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
+  push(rows, '耀变倍率区', result.radianceMultZone)
+  push(rows, '特殊倍率乘区', result.specialMultZone)
+  push(rows, '特殊乘区', result.specialMultiplier)
+  push(rows, '期望伤害', result.radianceExpected, true)
+}
+
 /** 按伤害类型列出本条招式实际用到的乘区，风格对齐 zzz-dev 招式详情的 key / value。 */
 export function buildSkillCalcZoneRows(
   result: DamageCalcResult,
   damageType: SkillDamageType,
 ): SkillCalcZoneRow[] {
   const rows: SkillCalcZoneRow[] = []
+
+  if (damageType === 'radiance' && result.remielSelfRadianceActive) {
+    pushRemielSelfRadianceRows(rows, result)
+    return rows
+  }
+
   pushCommon(rows, result)
 
   if (damageType === 'direct') {
@@ -156,9 +179,6 @@ export function buildSkillCalcZoneRows(
   if (damageType === 'radiance') {
     push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
     push(rows, '耀变倍率区', result.radianceMultZone)
-    if (result.remielSelfRadianceActive) {
-      push(rows, '特殊倍率乘区', result.specialMultZone)
-    }
     push(rows, '期望伤害', result.radianceExpected, true)
   }
 

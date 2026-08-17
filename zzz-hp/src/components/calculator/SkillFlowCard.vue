@@ -98,7 +98,7 @@ function emitCount(event: Event) {
       </span>
       <span v-if="warn" class="sf-warn" :title="warn">{{ warn }}</span>
     </div>
-    <span class="sf-damage">{{ damage || '' }}</span>
+    <span v-if="damage" class="sf-damage">{{ damage }}</span>
     <div class="sf-card-actions">
       <slot name="actions" />
     </div>
@@ -137,6 +137,42 @@ function emitCount(event: Event) {
   min-width: 0;
   overflow: hidden;
 }
+.sf-warn {
+  flex: 1 1 4rem;
+  min-width: 0;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #e07070;
+  line-height: 1.2;
+}
+.sf-damage {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 6.5rem;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #c4a0e8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-card-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  margin-left: auto;
+  position: relative;
+  z-index: 2;
+}
 .sf-index {
   flex: 0 0 auto;
   display: inline-flex;
@@ -152,10 +188,10 @@ function emitCount(event: Event) {
 }
 .sf-name {
   box-sizing: border-box;
-  flex: 1 1 5rem;
+  flex: 1 1 4rem;
   width: auto;
-  min-width: 3.5rem;
-  max-width: 8.5rem;
+  min-width: 2.5rem;
+  max-width: 7rem;
   padding: 0.08rem 0.4rem;
   border: 1px solid #2d323a;
   border-radius: 4px;
@@ -189,9 +225,9 @@ function emitCount(event: Event) {
 }
 .sf-mult {
   box-sizing: content-box;
-  width: 6.2ch;
-  min-width: 6.2ch;
-  max-width: 6.2ch;
+  width: 5.2ch;
+  min-width: 5.2ch;
+  max-width: 5.2ch;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -276,34 +312,6 @@ function emitCount(event: Event) {
 }
 .sf-agents.is-static:hover {
   filter: none;
-}
-.sf-warn {
-  flex: 1 1 6rem;
-  min-width: 4rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: #e07070;
-  line-height: 1.2;
-}
-.sf-damage {
-  flex: 0 0 auto;
-  min-width: 4.5rem;
-  text-align: right;
-  font-size: 0.82rem;
-  font-weight: 800;
-  color: #c4a0e8;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.sf-card-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.25rem;
-  flex: 0 0 auto;
 }
 .sf-card-actions > :deep(*) {
   flex: 0 0 auto;

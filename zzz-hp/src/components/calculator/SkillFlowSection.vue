@@ -44,7 +44,11 @@ const props = defineProps<{
   hitCalcResults?: Record<string, DamageCalcResult>
 }>()
 
-const slots = defineModel<SchemeSlot[]>('slots', { default: () => ensureSchemeSlots([], 3) })
+const slots = defineModel<SchemeSlot[]>('slots', { required: true })
+
+function writeSlots(next: SchemeSlot[]) {
+  slots.value = ensureSchemeSlots(next, Math.max(3, props.teamSlots.length))
+}
 
 const buffStore = useCalculatorBuffStore()
 const { skillSubcategories } = storeToRefs(buffStore)
@@ -102,7 +106,7 @@ watch(
 
 /** 旧数据未选双代理人时，回填为当前角色 */
 function hydratePreparedAnomalyAgents() {
-  const next = ensureSchemeSlots(slots.value)
+  const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
   let changed = false
   next.forEach((slot, index) => {
     const ownerId = props.teamSlots[index]?.agentId
@@ -533,19 +537,23 @@ function slotLabel(slot: TeamSlot, index: number) {
 
 function addPrepared(skill: Skill) {
   const ownerId = currentAgentId.value
-  if (!ownerId || preparedBlockReason(skill)) return
+  if (!ownerId) return
+  if (preparedBlockReason(skill)) return
+
+  const slotIndex = activeSlotIndex.value
   const agents = defaultAnomalyAgents(skill.damageType, ownerId)
-  const next = ensureSchemeSlots(slots.value)
-  const slot = next[activeSlotIndex.value]!
+  const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
+  const slot = next[slotIndex]
+  if (!slot) return
   slot.prepared.push({
     id: newLocalId('prep'),
     skillId: skill.id,
-    skillSource: skill.source,
+    skillSource: skill.source === 'preset' ? 'preset' : 'custom',
     anomalyPowerAgentId: agents.anomalyPowerAgentId,
     triggerAgentId: agents.triggerAgentId,
     extraMods: null,
   })
-  slots.value = next
+  writeSlots(next)
 }
 
 function addFilteredToPrepared() {
@@ -553,8 +561,9 @@ function addFilteredToPrepared() {
   if (!ownerId) return
   const existingIds = new Set(currentSlot.value.prepared.map((item) => item.skillId))
   const existingNames = new Set(preparedSkillNames.value)
-  const next = ensureSchemeSlots(slots.value)
-  const slot = next[activeSlotIndex.value]!
+  const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
+  const slot = next[activeSlotIndex.value]
+  if (!slot) return
   for (const skill of librarySkills.value) {
     const name = skill.name.trim()
     if (existingIds.has(skill.id) || (name && existingNames.has(name))) continue
@@ -564,13 +573,13 @@ function addFilteredToPrepared() {
     slot.prepared.push({
       id: newLocalId('prep'),
       skillId: skill.id,
-      skillSource: skill.source,
+      skillSource: skill.source === 'preset' ? 'preset' : 'custom',
       anomalyPowerAgentId: agents.anomalyPowerAgentId,
       triggerAgentId: agents.triggerAgentId,
       extraMods: null,
     })
   }
-  slots.value = next
+  writeSlots(next)
 }
 
 function removePrepared(preparedId: string) {
@@ -969,7 +978,7 @@ watch(expanded, (open) => {
 })
 
 function compactPreparedDuplicates() {
-  const next = ensureSchemeSlots(slots.value)
+  const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
   let changed = false
   for (const slot of next) {
     const keepBySkill = new Map<string, string>()
@@ -1150,14 +1159,18 @@ defineExpose({ expand })
                   :damage="damageForLibrary(skill.id)"
                 >
                   <template #actions>
-                    <button type="button" class="mini-btn" @click="openLibraryDetail(skill.id)">
+                    <button
+                      type="button"
+                      class="mini-btn"
+                      @click.stop="openLibraryDetail(skill.id)"
+                    >
                       详情
                     </button>
                     <button
                       type="button"
-                      class="mini-btn"
+                      class="mini-btn add-prepared-btn"
                       :disabled="Boolean(preparedBlockReason(skill))"
-                      @click="addPrepared(skill)"
+                      @click.stop="addPrepared(skill)"
                     >
                       {{
                         preparedBlockReason(skill) === 'name'
@@ -1171,7 +1184,7 @@ defineExpose({ expand })
                       v-if="skill.source === 'custom'"
                       type="button"
                       class="mini-btn danger"
-                      @click="deleteCustomSkill(skill)"
+                      @click.stop="deleteCustomSkill(skill)"
                     >
                       删除
                     </button>

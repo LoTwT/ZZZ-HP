@@ -274,19 +274,15 @@ export function getDamageEventSkipReason(
 
 export function getRadianceEventHint(event: DamageEvent, ctx: DamageEventParticipationContext): string | null {
   if (event.kind !== 'radiance') return null
-  const mainSlot = ctx.teamSlots.find((slot) => slot.isMainC) ?? ctx.teamSlots[0]
-  const mainAgentId = ctx.mainAgentId ?? mainSlot?.agentId ?? ''
   const remielId = resolveRadianceOwnerAgentId(ctx.teamSlots, ctx.agents)
-  const triggerId =
+  // 旧 DamageEvent 仅有 triggerAgentId（产生角色）；本人耀变特殊公式现以强度提供者为准。
+  // 无独立 anomalyPowerAgentId 时，用产生角色作近似提示。
+  const powerOrProducerId =
     event.triggerAgentId && event.triggerAgentId !== TRIGGER_AGENT_AT_CALC
       ? event.triggerAgentId
       : null
-  if (remielId && triggerId === remielId) {
+  if (remielId && powerOrProducerId === remielId) {
     return RADIANCE_SELF_TRIGGER_HINT
-  }
-  const ownerId = resolveEventOwnerAgentId(event, mainAgentId)
-  if (remielId && ownerId === remielId && triggerId && triggerId !== remielId) {
-    return null
   }
   return null
 }

@@ -1528,6 +1528,7 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
       key: 'extra',
       label: '额外 Buff',
       mods: ctx.extraMods,
+      effects: [],
     })
   }
 

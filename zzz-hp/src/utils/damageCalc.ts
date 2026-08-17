@@ -86,7 +86,7 @@ export interface DamageCalcInput {
   mutationZone?: number
   /** 耀变：蕾米埃尔耀变抗性穿透（非本人耀变时并入产生角色抗性区） */
   remielRadianceResPen?: number
-  /** 耀变异常产生角色为蕾米埃尔本人时的专用结算输入 */
+/** 耀变：蕾米埃尔本人作异常强度提供者时的专用结算输入 */
   remielSelfRadianceCalc?: RemielSelfRadianceCalcInput | null
 }
 
@@ -139,6 +139,8 @@ export interface DamageCalcResult {
   remielSelfStandardLevelZone?: number
   remielSelfInCombatAtk?: number
   remielSelfInCombatMasteryZone?: number
+  /** 本人耀变异常基础实际使用的异化系数区（本槽口径，可能与页级 mutationZone 不同） */
+  remielSelfMutationZone?: number
   remielSelfResistanceElement?: string | null
   remielSelfDefenseMultiplier?: number
   remielSelfResistanceMultiplier?: number
@@ -503,6 +505,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   let remielSelfStandardLevelZone: number | undefined
   let remielSelfInCombatAtk: number | undefined
   let remielSelfInCombatMasteryZone: number | undefined
+  let remielSelfMutationZone: number | undefined
 
   let anomalyBaseExpected = triggerParts.anomalyBaseExpected
   if (remielSelf) {
@@ -512,6 +515,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfStandardLevelZone = computeRemielSelfRadianceStandardLevelZone(remielSelf.agentLevel)
     remielSelfInCombatAtk = remielSelf.inCombatAtk
     remielSelfInCombatMasteryZone = remielSelf.inCombatMastery / 100
+    remielSelfMutationZone = remielSelf.mutationZone
 
     const defenseParts = computeDefenseZone({
       defensePanel: {
@@ -685,9 +689,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfStandardLevelZone: remielSelfStandardLevelZone
       ? round(remielSelfStandardLevelZone, 4)
       : undefined,
-    remielSelfInCombatAtk,
+    remielSelfInCombatAtk:
+      remielSelfInCombatAtk != null ? round(remielSelfInCombatAtk, 4) : undefined,
     remielSelfInCombatMasteryZone: remielSelfInCombatMasteryZone
       ? round(remielSelfInCombatMasteryZone, 4)
+      : undefined,
+    remielSelfMutationZone: remielSelfMutationZone
+      ? round(remielSelfMutationZone, 4)
       : undefined,
     remielSelfResistanceElement: remielSelf?.resistanceElement ?? undefined,
     remielSelfDefenseMultiplier: remielSelfRadianceActive

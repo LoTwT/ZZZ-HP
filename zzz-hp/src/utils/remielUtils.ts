@@ -185,7 +185,9 @@ export function computeRemielSelfRadianceStandardLevelZone(level: number): numbe
   return 1 + (safeLevel - 1) / 59
 }
 
-/** 蕾米埃尔异常基础 = 局内攻 × 局内精通区 × 特殊等级区 × 异化系数 × 标准等级区 */
+/** 蕾米埃尔异常基础 = 局内攻 × 局内精通区 × 特殊等级区 × 异化系数 × 标准等级区
+ * 局内攻 = 局外攻 + 自身攻击转模；局内精通 = 局外精通 + 四件套/音擎全局精通（÷100 为区）
+ */
 export function computeRemielSelfAnomalyBase(
   input: Pick<
     RemielSelfRadianceCalcInput,
@@ -210,11 +212,20 @@ export function resolveWengineMasteryForSlot(
   return wengines.find((item) => item.id === wengineId)?.advancedStats.mastery ?? 0
 }
 
-export function isRemielSelfRadianceTrigger(
-  triggerAgentId: string | null | undefined,
+/** 本人耀变特殊攻/精公式：仅当异常强度提供者为蕾米埃尔时启用 */
+export function isRemielSelfRadiancePowerProvider(
+  anomalyPowerAgentId: string | null | undefined,
   remielId: string | null | undefined,
 ): boolean {
-  return Boolean(remielId && triggerAgentId && triggerAgentId === remielId)
+  return Boolean(remielId && anomalyPowerAgentId && anomalyPowerAgentId === remielId)
+}
+
+/** @deprecated 使用 isRemielSelfRadiancePowerProvider（按强度提供者，而非触发者） */
+export function isRemielSelfRadianceTrigger(
+  anomalyPowerAgentId: string | null | undefined,
+  remielId: string | null | undefined,
+): boolean {
+  return isRemielSelfRadiancePowerProvider(anomalyPowerAgentId, remielId)
 }
 
 /**

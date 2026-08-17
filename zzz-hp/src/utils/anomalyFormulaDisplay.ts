@@ -68,13 +68,13 @@ export function buildAlignedAnomalyFormulaGroups(
     ? [
         {
           label: '局内攻击力',
-          value: formatNumber(p.remielSelfInCombatAtk ?? 0),
-          tipsKey: 'anomalyBaseExpected',
+          value: formatFormulaNumber(p.remielSelfInCombatAtk ?? 0, 4),
+          tipsKey: 'remielSelfInCombatAtk',
         },
         {
           label: '局内精通区',
           value: formatFormulaNumber(p.remielSelfInCombatMasteryZone ?? 0),
-          tipsKey: 'masteryZone',
+          tipsKey: 'remielSelfInCombatMasteryZone',
         },
         {
           label: '特殊等级区',
@@ -83,7 +83,7 @@ export function buildAlignedAnomalyFormulaGroups(
         },
         {
           label: '异化系数区',
-          value: formatFormulaNumber(p.mutationZone),
+          value: formatFormulaNumber(p.remielSelfMutationZone ?? p.mutationZone),
           tipsKey: 'mutationZone',
         },
         {
