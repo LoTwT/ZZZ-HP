@@ -625,6 +625,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     ? anomalyBaseExpected *
       remielSelfDefenseMultiplier *
       remielSelfResistanceMultiplier *
+      Math.max(0, mainParts.vulnerableMultiplier) *
+      Math.max(0, mainParts.staggerMultiplier) *
       radianceCombinedDmgBonusZone *
       radianceMultZone *
       specialMultZone *

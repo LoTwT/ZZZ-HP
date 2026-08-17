@@ -98,6 +98,8 @@ function pushRemielSelfRadianceRows(rows: SkillCalcZoneRow[], result: DamageCalc
   push(rows, '蕾米埃尔异常基础', result.anomalyBaseExpected, true)
   push(rows, '防御区', result.remielSelfDefenseMultiplier ?? result.defenseMultiplier)
   push(rows, '抗性区', result.remielSelfResistanceMultiplier ?? result.resistanceMultiplier)
+  push(rows, '易伤区', result.vulnerableMultiplier)
+  push(rows, '失衡易伤区', result.staggerMultiplier)
   push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
   push(rows, '耀变倍率区', result.radianceMultZone)
   push(rows, '特殊倍率乘区', result.specialMultZone)

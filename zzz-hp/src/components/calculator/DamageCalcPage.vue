@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
@@ -196,6 +196,10 @@ const defenseSeasons = ref<DefenseSeason[]>([])
 const envBuffLoadError = ref('')
 let syncingBossFieldBuff = false
 let syncingEnemyFromEnv = false
+let draftHydrated = false
+/** 恢复草稿/方案期间跳过 Buff 默认同步与场地 Buff 反写怪物 */
+let restoringWorkingState = false
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
 const prevEnabledBossFieldKeys = ref<string[]>([])
 const prevEnabledDefenseKeys = ref<string[]>([])
 
@@ -366,6 +370,7 @@ async function loadEnvironmentBuffCatalogs() {
 }
 
 watch(envBuffMode, (mode) => {
+  if (restoringWorkingState) return
   envBuffFrontierId.value = ''
   if (mode === 'none') {
     envBuffVersion.value = ''
@@ -377,6 +382,7 @@ watch(envBuffMode, (mode) => {
 })
 
 watch(envBuffPhaseId, () => {
+  if (restoringWorkingState) return
   if (envBuffMode.value === 'defense') applyDefaultDefenseFrontier()
 })
 
@@ -392,6 +398,10 @@ onMounted(() => {
   restoreWorkingState()
   window.addEventListener('pagehide', persistWorkingDraftNow)
   document.addEventListener('visibilitychange', onDraftVisibilityChange)
+})
+
+onDeactivated(() => {
+  persistWorkingDraftNow()
 })
 
 onUnmounted(() => {
@@ -519,7 +529,7 @@ const selectedBangboo = computed(
     emptyBangboo,
 )
 
-/** 队伍/音擎/驱动盘/邦布配置签名：变化时重置 Buff 勾选 */
+/** 队伍/音擎/驱动盘/邦布配置签名：变化时补默认 Buff，不整表清空勾选 */
 const teamBuffSignature = computed(() =>
   JSON.stringify({
     slots: teamSlots.map((slot) => ({
@@ -673,12 +683,16 @@ function syncBuffDefaultsForSlot(slotIndex: number) {
 }
 
 watch(teamBuffSignature, () => {
-  Object.assign(multiSlotBuffSelection, createEmptyMultiSlotBuffSelection())
+  if (restoringWorkingState) return
+  for (const opt of buffPickerSlotOptions.value) {
+    syncBuffDefaultsForSlot(opt.index)
+  }
 })
 
 watch(
   () => teamSlots.map((slot) => slot.agentId).join(','),
   () => {
+    if (restoringWorkingState) return
     const options = buffPickerSlotOptions.value
     if (!options.length) return
     if (!options.some((opt) => opt.index === buffPickerViewSlotIndex.value)) {
@@ -694,6 +708,7 @@ watch(
 watch(
   [collectedEffectsForPicker, buffPickerViewSlotIndex],
   () => {
+    if (restoringWorkingState) return
     syncBuffDefaultsForSlot(buffPickerViewSlotIndex.value)
   },
   { immediate: true },
@@ -707,6 +722,7 @@ watch(
       ...agents.value.map((agent) => `${agent.id}:${agent.profession}`),
     ].join('|'),
   () => {
+    if (restoringWorkingState) return
     for (const opt of buffPickerSlotOptions.value) {
       const effects = collectAllBuffEffects(buildBuffCollectContext(opt.index))
       syncTeamProfessionAutoEnabled(
@@ -747,7 +763,7 @@ watch(
 watch(
   [activeEnvironmentBuffs, () => multiSlotBuffSelection, buffPickerViewSlotIndex],
   async () => {
-    if (syncingBossFieldBuff) return
+    if (syncingBossFieldBuff || restoringWorkingState) return
     const catalog = activeEnvironmentBuffs.value
     if (!catalog.length) return
     const effects = collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value))
@@ -948,9 +964,6 @@ function applyConvertSlotPanels(panels?: ConvertSlotPanels) {
   Object.assign(convertSlotPanels, JSON.parse(JSON.stringify(panels)))
 }
 
-let draftHydrated = false
-let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
-
 function applyWorkingState(entry: {
   teamSlots: DamageCalcHistoryEntry['teamSlots']
   activeSlot: number
@@ -963,7 +976,15 @@ function applyWorkingState(entry: {
   staggerPhase?: StaggerPhase
   multiSlotBuffSelection?: MultiSlotBuffSelection
   panelState?: DamageCalcHistoryEntry['panelState'] | null
+  envBuffMode?: EnvironmentBuffFilterMode
+  envBuffVersion?: string
+  envBuffPhaseId?: string
+  envBuffFrontierId?: string
 }) {
+  restoringWorkingState = true
+  const restoredBuff = entry.multiSlotBuffSelection
+    ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
+    : createEmptyMultiSlotBuffSelection()
   applyTeamSlots(entry.teamSlots)
   activeSlot.value = entry.activeSlot
   selectedBangbooId.value = entry.selectedBangbooId
@@ -973,16 +994,21 @@ function applyWorkingState(entry: {
   applyConvertSlotPanels(entry.convertSlotPanels)
   schemeSlots.value = ensureSchemeSlots(entry.slots, 3)
   staggerPhase.value = entry.staggerPhase ?? 'stagger'
-  const restoredBuff = entry.multiSlotBuffSelection
-    ? (JSON.parse(JSON.stringify(entry.multiSlotBuffSelection)) as MultiSlotBuffSelection)
-    : createEmptyMultiSlotBuffSelection()
-  multiSlotBuffSelection.team = restoredBuff.team
-  multiSlotBuffSelection.bySlot = restoredBuff.bySlot
-  if (entry.panelState) {
+  if (entry.envBuffMode != null) envBuffMode.value = entry.envBuffMode
+  if (entry.envBuffVersion != null) envBuffVersion.value = entry.envBuffVersion
+  if (entry.envBuffPhaseId != null) envBuffPhaseId.value = entry.envBuffPhaseId
+  if (entry.envBuffFrontierId != null) envBuffFrontierId.value = entry.envBuffFrontierId
+  // 等队伍签名相关 watch 跑完后再写回 Buff / 怪物，避免被默认同步覆盖
+  void nextTick(() => {
+    multiSlotBuffSelection.team = restoredBuff.team
+    multiSlotBuffSelection.bySlot = restoredBuff.bySlot
+    if (entry.panelState) {
+      panelCalcSectionRef.value?.loadSnapshot(entry.panelState)
+    }
     void nextTick(() => {
-      panelCalcSectionRef.value?.loadSnapshot(entry.panelState!)
+      restoringWorkingState = false
     })
-  }
+  })
 }
 
 function captureWorkingDraft(): DamageCalcWorkingDraft | null {
@@ -1001,6 +1027,10 @@ function captureWorkingDraft(): DamageCalcWorkingDraft | null {
     slots: JSON.parse(JSON.stringify(schemeSlots.value)),
     staggerPhase: staggerPhase.value,
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
+    envBuffMode: envBuffMode.value,
+    envBuffVersion: envBuffVersion.value,
+    envBuffPhaseId: envBuffPhaseId.value,
+    envBuffFrontierId: envBuffFrontierId.value,
   }
 }
 

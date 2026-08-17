@@ -386,20 +386,20 @@ export function mergeDefaultBuffSelectionIntoMulti(
   const effectById = new Map(effects.map((item) => [item.effect.id, item.effect]))
   const validIds = new Set(effectById.keys())
 
-  for (const store of [multi.team, ...Object.values(multi.bySlot)]) {
-    for (const id of Object.keys(store.enabledIds)) {
-      if (!validIds.has(id)) delete store.enabledIds[id]
-    }
-    for (const id of Object.keys(store.stacksByEffectId)) {
-      if (!validIds.has(id)) delete store.stacksByEffectId[id]
-    }
-    for (const id of Object.keys(store.convertInputs)) {
-      if (!validIds.has(id)) delete store.convertInputs[id]
-    }
-    if (store.manualTouchedIds) {
-      for (const id of Object.keys(store.manualTouchedIds)) {
-        if (!validIds.has(id)) delete store.manualTouchedIds[id]
-      }
+  // 只清理本槽自身勾选：全队 store 与其它槽不能按「当前主视角 effects」剪枝，否则换人/改影画会误删
+  const selfStore = ensureSlotSelfBuffSelection(multi, slotIndex)
+  for (const id of Object.keys(selfStore.enabledIds)) {
+    if (!validIds.has(id)) delete selfStore.enabledIds[id]
+  }
+  for (const id of Object.keys(selfStore.stacksByEffectId)) {
+    if (!validIds.has(id)) delete selfStore.stacksByEffectId[id]
+  }
+  for (const id of Object.keys(selfStore.convertInputs)) {
+    if (!validIds.has(id)) delete selfStore.convertInputs[id]
+  }
+  if (selfStore.manualTouchedIds) {
+    for (const id of Object.keys(selfStore.manualTouchedIds)) {
+      if (!validIds.has(id)) delete selfStore.manualTouchedIds[id]
     }
   }
 

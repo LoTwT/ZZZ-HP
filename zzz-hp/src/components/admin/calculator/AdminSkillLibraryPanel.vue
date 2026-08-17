@@ -360,9 +360,12 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
         <p v-if="error" class="form-error">{{ error }}</p>
         <div class="form-actions">
           <button type="submit" class="primary-btn" :disabled="saving">
-            {{ saving ? '保存中...' : '保存招式' }}
+            {{ saving ? '保存中…' : selectedId ? '保存修改' : '创建招式' }}
           </button>
-          <button type="button" class="danger-btn" :disabled="!selectedId" @click="removeItem">
+          <button type="button" class="secondary-btn" :disabled="saving" @click="resetForm">
+            清空表单
+          </button>
+          <button type="button" class="danger-btn" :disabled="!selectedId || saving" @click="removeItem">
             删除
           </button>
         </div>

@@ -169,7 +169,18 @@ select.field-input:disabled {
   flex-wrap: wrap;
 }
 
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border);
+}
+
 .submit-btn,
+.primary-btn,
 .secondary-btn,
 .danger-btn {
   padding: 0.55rem 1.2rem;
@@ -180,7 +191,9 @@ select.field-input:disabled {
   cursor: pointer;
   transition:
     border-color 0.2s,
-    background-color 0.2s;
+    background-color 0.2s,
+    box-shadow 0.2s,
+    opacity 0.2s;
 }
 
 .submit-btn {
@@ -191,6 +204,33 @@ select.field-input:disabled {
 .submit-btn:hover {
   border-color: #e8a838;
   background: var(--color-background-mute);
+}
+
+.primary-btn {
+  min-width: 7.5rem;
+  border-color: color-mix(in srgb, #e8a838 55%, var(--color-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #e8a838 28%, var(--color-background)) 0%,
+    color-mix(in srgb, #e8a838 14%, var(--color-background-soft)) 100%
+  );
+  color: var(--color-heading);
+  box-shadow: 0 1px 0 color-mix(in srgb, #e8a838 25%, transparent);
+}
+
+.primary-btn:hover:not(:disabled) {
+  border-color: #e8a838;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #e8a838 38%, var(--color-background)) 0%,
+    color-mix(in srgb, #e8a838 18%, var(--color-background-soft)) 100%
+  );
+}
+
+.primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .secondary-btn {
@@ -204,13 +244,19 @@ select.field-input:disabled {
 }
 
 .danger-btn {
+  margin-left: auto;
   background: color-mix(in srgb, #e85d4c 10%, var(--color-background-soft));
   color: #e85d4c;
   border-color: color-mix(in srgb, #e85d4c 35%, var(--color-border));
 }
 
-.danger-btn:hover {
+.danger-btn:hover:not(:disabled) {
   background: color-mix(in srgb, #e85d4c 18%, var(--color-background-soft));
+}
+
+.danger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .form-error {
@@ -219,6 +265,7 @@ select.field-input:disabled {
   color: #e85d4c;
 }
 
+.form-ok,
 .form-success {
   margin: 0;
   font-size: 0.82rem;

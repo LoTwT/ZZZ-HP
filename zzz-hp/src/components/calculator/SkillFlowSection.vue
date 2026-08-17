@@ -347,15 +347,6 @@ function damageForFlow(entryId: string) {
   return formatDamage(props.hitDamages?.[entryId])
 }
 
-function damageForPrepared(preparedId: string) {
-  return formatDamage(props.hitDamages?.[preparedId])
-}
-
-function damageForLibrary(skillId: string) {
-  const prepared = currentSlot.value.prepared.find((item) => item.skillId === skillId)
-  return prepared ? damageForPrepared(prepared.id) : formatDamage(props.hitDamages?.[skillId])
-}
-
 function dtypeKind(type: SkillDamageType) {
   return skillNeedsDualAgents(type) ? 'anomaly' : 'direct'
 }
@@ -1156,7 +1147,6 @@ defineExpose({ expand })
                   :dtype="damageTypeLabel(skill.damageType)"
                   :dtype-kind="dtypeKind(skill.damageType)"
                   :stypes="skillStypeLabels(skill)"
-                  :damage="damageForLibrary(skill.id)"
                 >
                   <template #actions>
                     <button
@@ -1235,7 +1225,6 @@ defineExpose({ expand })
                     :stypes="skillStypeLabels(preparedSkill(prepared)!)"
                     :agent-pair="agentPairText(prepared, preparedSkill(prepared)!)"
                     :agent-title="agentPairTitle(prepared, preparedSkill(prepared)!)"
-                    :damage="damageForPrepared(prepared.id)"
                     :skip="Boolean(dualAgentHint(prepared, preparedSkill(prepared)!))"
                     @select-agents="openPreparedDetail(prepared.id)"
                   >

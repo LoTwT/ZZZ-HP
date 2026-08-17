@@ -12,6 +12,8 @@ import '@/assets/calculatorLight.css'
 
 import { AGENT_ELEMENTS, AGENT_MINDSCAPE_RANKS, AGENT_ROLES, collectMindscapeRankBuffs, createEmptyBuffStatModifiers, createEmptySelfTeamBuffs, getMindscapeNote, getMindscapeRankOnlyBuffs, numericStatFieldLabel, REFINEMENT_RANKS, SUPPORT_STAT_OPTIONS, WENGINE_ADVANCED_STAT_FIELDS, WENGINE_RARITIES } from '@/utils/calculatorUi'
 
+defineOptions({ name: 'CharacterCalculatorView' })
+
 type CalcPage = 'damage' | 'role-buff' | 'wengine-buff' | 'bangboo-buff' | 'drive-disc-buff'
 type MindscapeBuffMode = 'current' | 'cumulative'
 

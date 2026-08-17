@@ -1140,11 +1140,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     radianceExpected: [
       {
         label: '乘区组成',
-        items: [
-          `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
-          `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
-          `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
-        ],
+        items: props.calcParts.remielSelfRadianceActive
+          ? [
+              `蕾米埃尔异常基础 ${formatNumber(anomalyBaseWithMutation.value)}`,
+              `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}`,
+              `抗性区 ${formatFormulaNumber(p.remielSelfResistanceMultiplier ?? 1)}`,
+              `易伤区 ${formatFormulaNumber(p.vulnerableMultiplier)}`,
+              `失衡易伤区 ${formatFormulaNumber(p.staggerMultiplier)}`,
+              `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+              `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
+              `特殊倍率乘区 ${formatFormulaNumber(p.specialMultZone)}`,
+              `特殊乘区 ${formatFormulaNumber(p.specialMultiplier)}`,
+            ]
+          : [
+              `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
+              `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+              `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
+            ],
       },
     ],
     radianceMutation: [

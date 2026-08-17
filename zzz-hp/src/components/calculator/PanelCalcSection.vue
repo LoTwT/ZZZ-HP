@@ -2883,6 +2883,8 @@ const valueTips = computed(() => {
               `抗性区 ${formatFormulaNumber(p.remielSelfResistanceMultiplier ?? 1)}${
                 p.remielSelfResistanceElement ? `（基准属性 ${p.remielSelfResistanceElement}）` : ''
               }`,
+              `易伤区 ${formatFormulaNumber(p.vulnerableMultiplier)}`,
+              `失衡易伤区 ${formatFormulaNumber(p.staggerMultiplier)}`,
               `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
               `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
               `特殊倍率乘区 ${formatFormulaNumber(p.specialMultZone)}`,

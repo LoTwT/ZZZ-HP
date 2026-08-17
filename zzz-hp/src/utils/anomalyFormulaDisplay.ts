@@ -217,6 +217,16 @@ export function buildAlignedAnomalyFormulaGroups(
             tipsKey: 'remielSelfResistanceMultiplier',
           },
           {
+            label: '易伤区',
+            value: formatFormulaNumber(p.vulnerableMultiplier),
+            tipsKey: 'vulnerableMultiplier',
+          },
+          {
+            label: '失衡易伤区',
+            value: formatFormulaNumber(p.staggerMultiplier),
+            tipsKey: 'staggerMultiplier',
+          },
+          {
             label: '耀变综合增伤区',
             value: formatFormulaNumber(p.radianceCombinedDmgBonusZone),
             tipsKey: 'radianceCombinedDmgBonusZone',
