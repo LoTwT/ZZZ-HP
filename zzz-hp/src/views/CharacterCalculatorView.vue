@@ -8,7 +8,6 @@ import DamageCalcPage from '@/components/calculator/DamageCalcPage.vue'
 import { DAMAGE_CALC_SECTIONS, DAMAGE_CALC_MODE_ITEMS, type DamageCalcNavItem } from '@/constants/damageCalcNav'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { useThemeStore } from '@/stores/theme'
-import { resolveCalculatorLoadState } from '@/utils/calculatorLoadState'
 
 import '@/assets/calculatorLight.css'
 
@@ -18,6 +17,7 @@ defineOptions({ name: 'CharacterCalculatorView' })
 
 type CalcPage = 'damage' | 'role-buff' | 'wengine-buff' | 'bangboo-buff' | 'drive-disc-buff'
 type MindscapeBuffMode = 'current' | 'cumulative'
+type CalculatorLoadState = 'loading' | 'error' | 'ready'
 
 const calculatorBuffStore = useCalculatorBuffStore()
 const themeStore = useThemeStore()
@@ -25,16 +25,22 @@ const { mode: themeMode } = storeToRefs(themeStore)
 const { agents, wengines: wengineDocs, bangboos: bangbooDocs, driveDiscs: driveDiscDocs, skillSubcategories, loading, loaded, error } =
   storeToRefs(calculatorBuffStore)
 
-const calculatorLoadState = computed(() =>
-  resolveCalculatorLoadState({
-    loading: loading.value,
-    loaded: loaded.value,
-    error: error.value,
-  }),
-)
+const calculatorLoadState = computed<CalculatorLoadState>(() => {
+  if (loading.value) return 'loading'
+  if (error.value) return 'error'
+  if (loaded.value) return 'ready'
+  return 'loading'
+})
 
 function ensureCalculatorData() {
   void calculatorBuffStore.ensureLoaded().catch(() => {
+    // error 已写入 store，由页面错误态展示
+  })
+}
+
+function retryCalculatorData() {
+  if (loading.value) return
+  void calculatorBuffStore.loadAll(true).catch(() => {
     // error 已写入 store，由页面错误态展示
   })
 }
@@ -350,11 +356,11 @@ const filteredDriveDiscDocs = computed(() =>
       <div class="sidebar-foot" aria-hidden="true">ZZZ-HP</div>
     </aside>
 
-    <section class="content" tabindex="-1" aria-label="计算器内容">
+    <section class="content">
       <CalculatorLoadStatus
         :state="calculatorLoadState"
         :error="error"
-        :loader="calculatorBuffStore"
+        @retry="retryCalculatorData"
       />
       <template v-if="calculatorLoadState === 'ready'">
       <DamageCalcPage
@@ -963,19 +969,10 @@ const filteredDriveDiscDocs = computed(() =>
   overflow-y: auto;
 }
 
-.content:focus-visible {
-  outline: 2px solid #d8c39a;
-  outline-offset: -2px;
-}
-
 .calculator-page.theme-light .content {
   background: transparent;
   background-image: var(--zzz-tex-dots);
   background-size: 14px 14px;
-}
-
-.calculator-page.theme-light .content:focus-visible {
-  outline-color: #8a6a20;
 }
 
 .card {

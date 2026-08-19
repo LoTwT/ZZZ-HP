@@ -1,15 +1,13 @@
 /**
- * 运行时验证：计算器初始加载、失败与重试状态
+ * 运行时验证：计算器加载状态与页面重试接线
  *
  * 运行：npm run test:calculator-loading
  */
 
-import { createRenderer, defineComponent, h, nextTick, shallowRef } from 'vue'
-import CalculatorLoadStatus from '../src/components/calculator/CalculatorLoadStatus.vue'
-import { resolveCalculatorLoadState } from '../src/utils/calculatorLoadState.ts'
+import { createRenderer, defineComponent, h, nextTick } from 'vue'
 
 let failed = 0
-const check = (name, actual, expected) => {
+function check(name, actual, expected) {
   const ok = actual === expected
   if (!ok) failed++
   console.log(
@@ -17,67 +15,35 @@ const check = (name, actual, expected) => {
   )
 }
 
-check(
-  '首次请求显示加载态',
-  resolveCalculatorLoadState({ loading: true, loaded: false, error: '' }),
-  'loading',
-)
-check(
-  '请求失败显示错误态',
-  resolveCalculatorLoadState({ loading: false, loaded: false, error: '网络错误' }),
-  'error',
-)
-check(
-  '请求成功显示内容',
-  resolveCalculatorLoadState({ loading: false, loaded: true, error: '' }),
-  'ready',
-)
-check(
-  '已有数据刷新失败仍显示错误态',
-  resolveCalculatorLoadState({ loading: false, loaded: true, error: '刷新失败' }),
-  'error',
-)
+globalThis.localStorage = {
+  getItem: () => null,
+  setItem: () => {},
+}
+globalThis.document = {
+  documentElement: { dataset: {} },
+  body: { style: {} },
+}
 
-// 内存 host 只记录 focus() 调用；真实浏览器焦点由页面 smoke test 验证。
-let focusedNode = null
-let hostNodeId = 0
+const [
+  { createPinia, setActivePinia },
+  { useCalculatorBuffStore },
+  { default: CharacterCalculatorView },
+] = await Promise.all([
+  import('pinia'),
+  import('../src/stores/calculatorBuffs.ts'),
+  import('../src/views/CharacterCalculatorView.vue'),
+])
 
-function createHostNode(type, text = '') {
-  return {
-    id: ++hostNodeId,
-    type,
-    text,
-    props: {},
-    children: [],
-    parent: null,
-    scopeIds: [],
-    focus() {
-      focusedNode = this
-    },
-    closest(selector) {
-      let node = this
-      while (node) {
-        if (
-          selector.startsWith('.') &&
-          String(node.props.class ?? '')
-            .split(/\s+/)
-            .includes(selector.slice(1))
-        ) {
-          return node
-        }
-        node = node.parent
-      }
-      return null
-    },
-  }
+function createNode(type, text = '') {
+  return { type, text, props: {}, style: {}, children: [], parent: null }
 }
 
 function insert(child, parent, anchor = null) {
   if (child.parent) remove(child)
   child.parent = parent
-  const anchorIndex = anchor ? parent.children.indexOf(anchor) : -1
-  if (anchorIndex >= 0) parent.children.splice(anchorIndex, 0, child)
-  else parent.children.push(child)
+  const index = anchor ? parent.children.indexOf(anchor) : -1
+  if (index < 0) parent.children.push(child)
+  else parent.children.splice(index, 0, child)
 }
 
 function remove(child) {
@@ -94,153 +60,116 @@ const renderer = createRenderer({
   },
   insert,
   remove,
-  createElement(type) {
-    return createHostNode(type)
-  },
-  createText(text) {
-    return createHostNode('#text', text)
-  },
-  createComment(text) {
-    return createHostNode('#comment', text)
-  },
-  setText(node, text) {
+  createElement: (type) => createNode(type),
+  createText: (text) => createNode('#text', text),
+  createComment: (text) => createNode('#comment', text),
+  setText: (node, text) => {
     node.text = text
   },
   setElementText(element, text) {
-    for (const child of element.children) child.parent = null
     element.children = []
     element.text = text
   },
-  parentNode(node) {
-    return node.parent
-  },
+  parentNode: (node) => node.parent,
   nextSibling(node) {
-    if (!node.parent) return null
-    const index = node.parent.children.indexOf(node)
-    return node.parent.children[index + 1] ?? null
+    const index = node.parent?.children.indexOf(node) ?? -1
+    return index < 0 ? null : (node.parent.children[index + 1] ?? null)
   },
-  setScopeId(element, id) {
-    element.scopeIds.push(id)
+  setScopeId: () => {},
+  insertStaticContent(content, parent, anchor) {
+    const node = createNode('#static', content)
+    insert(node, parent, anchor)
+    return [node, node]
   },
 })
 
-function walk(node, visit) {
-  if (visit(node)) return node
+function findNode(node, predicate) {
+  if (predicate(node)) return node
   for (const child of node.children) {
-    const match = walk(child, visit)
+    const match = findNode(child, predicate)
     if (match) return match
   }
   return null
 }
 
-function findElement(root, type) {
-  return walk(root, (node) => node.type === type)
-}
-
-function findByRole(root, role) {
-  return walk(root, (node) => node.props.role === role)
-}
-
 function renderedText(node) {
-  return [node.text, ...node.children.map(renderedText)]
+  return [node?.text, ...(node?.children ?? []).map(renderedText)]
     .filter(Boolean)
     .join(' ')
     .trim()
     .replace(/\s+/g, ' ')
 }
 
-const loadState = shallowRef('error')
-const loadError = shallowRef('首次加载失败')
-let retryAttempts = 0
-let lastForce = null
-let settleRetry = null
+const pinia = createPinia()
+setActivePinia(pinia)
+const store = useCalculatorBuffStore(pinia)
+store.loading = false
+store.loaded = false
+store.error = ''
 
-const loader = {
-  loadAll(force) {
-    retryAttempts++
-    lastForce = force
-    loadState.value = 'loading'
-    loadError.value = ''
-
-    return new Promise((resolve, reject) => {
-      settleRetry = (outcome) => {
-        settleRetry = null
-        if (outcome === 'success') {
-          loadState.value = 'ready'
-          resolve()
-          return
-        }
-        loadState.value = 'error'
-        loadError.value = '重试仍然失败'
-        reject(new Error(loadError.value))
-      }
-    })
-  },
+let requestCount = 0
+let rejectRequest
+const failureMessages = ['首次加载失败', '重试仍然失败']
+globalThis.fetch = () => {
+  const message = failureMessages[requestCount] ?? '加载失败'
+  requestCount++
+  return new Promise((_resolve, reject) => {
+    rejectRequest = () => reject(new Error(message))
+  })
 }
 
-const Harness = defineComponent({
-  setup() {
-    return () =>
-      h('section', { class: 'content', tabindex: -1, 'aria-label': '计算器内容' }, [
-        h(CalculatorLoadStatus, {
-          state: loadState.value,
-          error: loadError.value,
-          loader,
-        }),
-      ])
+const RouterLink = defineComponent({
+  setup(_props, { attrs, slots }) {
+    return () => h('a', attrs, slots.default?.())
   },
 })
-
-const root = createHostNode('#root')
-const app = renderer.createApp(Harness)
+const root = createNode('#root')
+const app = renderer.createApp(CharacterCalculatorView)
+app.use(pinia)
+app.component('RouterLink', RouterLink)
 app.mount(root)
 await nextTick()
 
-let contentRegion = findElement(root, 'section')
-let statusRegion = findElement(root, 'div')
-let statusMessage = findByRole(root, 'status')
-let alertMessage = findByRole(root, 'alert')
-let retryButton = findElement(root, 'button')
-check('错误态渲染可操作重试按钮', renderedText(retryButton), '重新加载')
-check('错误态通过独立 alert 文本播报', renderedText(alertMessage), '首次加载失败')
-
-const firstRetry = retryButton.props.onClick()
-void retryButton.props.onClick()
+check(
+  '首次请求期间显示加载态',
+  renderedText(findNode(root, (node) => node.props.role === 'status')),
+  '正在从数据库加载计算器数据...',
+)
+rejectRequest?.()
+await new Promise((resolve) => setTimeout(resolve, 0))
 await nextTick()
 
-statusRegion = findElement(root, 'div')
-statusMessage = findByRole(root, 'status')
-check('点击按钮发起一次重试请求', retryAttempts, 1)
-check('重试强制刷新已有状态', lastForce, true)
-check('重试期间显示明确加载文案', renderedText(statusMessage).includes('正在重新加载'), true)
-check('重试期间焦点移动到状态区', focusedNode?.id, statusRegion.id)
+let alert = findNode(root, (node) => node.props.role === 'alert')
+let retryButton = findNode(
+  root,
+  (node) => node.type === 'button' && renderedText(node) === '重新加载',
+)
+check('页面错误态显示后端消息', renderedText(alert), '首次加载失败')
+check('页面错误态提供重试按钮', Boolean(retryButton), true)
 
-settleRetry('error')
-await firstRetry
+store.loaded = true
 await nextTick()
-
-statusRegion = findElement(root, 'div')
-alertMessage = findByRole(root, 'alert')
-retryButton = findElement(root, 'button')
-check('重试失败重新播报后端错误', renderedText(alertMessage), '重试仍然失败')
-check('重试失败恢复按钮焦点', focusedNode?.id, retryButton.id)
-
-const secondRetry = retryButton.props.onClick()
+retryButton = findNode(root, (node) => node.type === 'button' && renderedText(node) === '重新加载')
+const requestsBeforeRetry = requestCount
+retryButton.props.onClick()
+retryButton.props.onClick()
 await nextTick()
-settleRetry('success')
-await secondRetry
-await nextTick()
+check('快速重复点击只发起一次强制请求', requestCount - requestsBeforeRetry, 1)
+check(
+  '重试期间显示加载态',
+  renderedText(findNode(root, (node) => node.props.role === 'status')),
+  '正在从数据库加载计算器数据...',
+)
 
-statusRegion = findElement(root, 'div')
-contentRegion = findElement(root, 'section')
-statusMessage = findByRole(root, 'status')
-check('再次重试会发起第二次请求', retryAttempts, 2)
-check('重试成功进入就绪态', loadState.value, 'ready')
-check('重试成功播报完成消息', renderedText(statusMessage), '计算器数据加载完成')
-check('重试成功后焦点进入计算器内容', focusedNode?.id, contentRegion.id)
+rejectRequest?.()
+await new Promise((resolve) => setTimeout(resolve, 0))
+await nextTick()
+alert = findNode(root, (node) => node.props.role === 'alert')
+retryButton = findNode(root, (node) => node.type === 'button' && renderedText(node) === '重新加载')
+check('重试失败后显示新错误', renderedText(alert), '重试仍然失败')
+check('重试失败后仍可再次重试', Boolean(retryButton), true)
 
 app.unmount()
-
 console.log('')
 console.log(failed === 0 ? '全部通过' : `${failed} 项失败`)
 process.exit(failed === 0 ? 0 : 1)
