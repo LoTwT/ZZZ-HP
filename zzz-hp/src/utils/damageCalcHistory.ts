@@ -804,7 +804,9 @@ export function schemeStats(entry: DamageCalcHistoryEntry): {
   skillN: number
 } {
   const charN = entry.teamSlots.filter((s) => s.agentId).length
-  const skillN = (entry.directEvents?.length ?? 0) + (entry.anomalyEvents?.length ?? 0)
+  const flowCount = entry.slots?.reduce((total, slot) => total + slot.flow.length, 0)
+  const legacyEventCount = (entry.directEvents?.length ?? 0) + (entry.anomalyEvents?.length ?? 0)
+  const skillN = flowCount ?? legacyEventCount
   return { charN, skillN }
 }
 
