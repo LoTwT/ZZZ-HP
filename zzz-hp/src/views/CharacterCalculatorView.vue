@@ -3,10 +3,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import CalculatorLoadStatus from '@/components/calculator/CalculatorLoadStatus.vue'
 import DamageCalcPage from '@/components/calculator/DamageCalcPage.vue'
 import { DAMAGE_CALC_SECTIONS, DAMAGE_CALC_MODE_ITEMS, type DamageCalcNavItem } from '@/constants/damageCalcNav'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { useThemeStore } from '@/stores/theme'
+import { resolveCalculatorLoadState } from '@/utils/calculatorLoadState'
 
 import '@/assets/calculatorLight.css'
 
@@ -23,8 +25,22 @@ const { mode: themeMode } = storeToRefs(themeStore)
 const { agents, wengines: wengineDocs, bangboos: bangbooDocs, driveDiscs: driveDiscDocs, skillSubcategories, loading, loaded, error } =
   storeToRefs(calculatorBuffStore)
 
+const calculatorLoadState = computed(() =>
+  resolveCalculatorLoadState({
+    loading: loading.value,
+    loaded: loaded.value,
+    error: error.value,
+  }),
+)
+
+function ensureCalculatorData() {
+  void calculatorBuffStore.ensureLoaded().catch(() => {
+    // error 已写入 store，由页面错误态展示
+  })
+}
+
 onMounted(() => {
-  void calculatorBuffStore.ensureLoaded()
+  ensureCalculatorData()
 })
 
 watch(loaded, (ready) => {
@@ -334,10 +350,13 @@ const filteredDriveDiscDocs = computed(() =>
       <div class="sidebar-foot" aria-hidden="true">ZZZ-HP</div>
     </aside>
 
-    <section class="content">
-      <p v-if="loading || !loaded" class="load-hint">正在从数据库加载计算器数据...</p>
-      <p v-else-if="error" class="load-error">{{ error }}</p>
-      <template v-else>
+    <section class="content" tabindex="-1" aria-label="计算器内容">
+      <CalculatorLoadStatus
+        :state="calculatorLoadState"
+        :error="error"
+        :loader="calculatorBuffStore"
+      />
+      <template v-if="calculatorLoadState === 'ready'">
       <DamageCalcPage
         v-show="activePage === 'damage'"
         ref="damageCalcPageRef"
@@ -944,30 +963,19 @@ const filteredDriveDiscDocs = computed(() =>
   overflow-y: auto;
 }
 
+.content:focus-visible {
+  outline: 2px solid #d8c39a;
+  outline-offset: -2px;
+}
+
 .calculator-page.theme-light .content {
   background: transparent;
   background-image: var(--zzz-tex-dots);
   background-size: 14px 14px;
 }
 
-.load-hint,
-.load-error {
-  margin: 0 0 1rem;
-  padding: 0.85rem 1rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
-}
-
-.load-hint {
-  border: 1px solid #34302a;
-  background: #14120f;
-  color: #d8c39a;
-}
-
-.load-error {
-  border: 1px solid #5a2f2f;
-  background: #241515;
-  color: #ffb4b4;
+.calculator-page.theme-light .content:focus-visible {
+  outline-color: #8a6a20;
 }
 
 .card {
@@ -1292,12 +1300,6 @@ const filteredDriveDiscDocs = computed(() =>
   border-color: #c9a55c;
   background: #fff8eb;
   color: #5c4818;
-}
-
-.calculator-page.theme-light .load-hint {
-  border-color: #e6d7b0;
-  background: #fff9ef;
-  color: #6b5420;
 }
 
 @media (max-width: 768px) {
