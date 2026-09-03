@@ -166,119 +166,161 @@ export function computeExternalPanelFromTeamSlot(input: {
   })
 }
 
-export function computeExternalPanelFromAffixes(input: AffixPanelCalcInput): PanelStats {
+/** 局外里不随词条数变化的部分。改词条时只再套 `applyAffixCountsToFixedParts`。 */
+export type AffixExternalFixedParts = {
+  agentHp: number
+  atkBase: number
+  agentDef: number
+  fixedHpPercent: number
+  fixedAtkPercent: number
+  fixedDefPercent: number
+  critRate: number
+  critDmg: number
+  dmgBonus: number
+  reduceDefense: number
+  penRate: number
+  pen: number
+  resPen: number
+  mastery: number
+  anomalyControl: number
+  energyRegen: number
+  anomalyCritRate: number
+  anomalyCritDmg: number
+  anomalyDmgBonus: number
+  directDmgMult: number
+  anomalyMult: number
+  disorderBaseMult: number
+  anomalyDuration: number
+  disorderCompMult: number
+  turbulenceBaseMult: number
+  turbulenceCompMult: number
+  disorderDmgBonus: number
+  turbulenceDmgBonus: number
+  radianceMult: number
+  radianceDmgBonus: number
+  radianceResPen: number
+  specialMult: number
+}
+
+export function buildAffixExternalFixedParts(
+  input: Omit<AffixPanelCalcInput, 'affixCounts'>,
+): AffixExternalFixedParts {
   const agentBase = input.agentBase ?? createEmptyAgentBasePanel()
   const wengineAdvanced = input.wengineAdvanced ?? createEmptyWengineAdvancedStats()
-  const counts = input.affixCounts
   const twoPieceMods = collectAffixTwoPieceMods(input.driveDiscs, input.driveDiscSelection)
   const mainStats = collectAffixDriveDiscMainStatContribution(input.driveDiscMainStats)
-
-  const hpFlatFromAffix = affixStatTotal(counts.hpFlat, AFFIX_VALUE_PER_COUNT.hpFlat)
-  const hpPercentFromAffix = affixStatTotal(counts.hpPercent, AFFIX_VALUE_PER_COUNT.hpPercent)
-  const atkFlatFromAffix = affixStatTotal(counts.atkFlat, AFFIX_VALUE_PER_COUNT.atkFlat)
-  const atkPercentFromAffix = affixStatTotal(counts.atkPercent, AFFIX_VALUE_PER_COUNT.atkPercent)
-  const defFlatFromAffix = affixStatTotal(counts.defFlat, AFFIX_VALUE_PER_COUNT.defFlat)
-  const defPercentFromAffix = affixStatTotal(counts.defPercent, AFFIX_VALUE_PER_COUNT.defPercent)
-
-  const externalPercents = sumExternalPercents(
-    hpPercentFromAffix,
-    atkPercentFromAffix,
-    defPercentFromAffix,
-    wengineAdvanced,
-    twoPieceMods,
-    mainStats,
-  )
-
-  const hp =
-    agentBase.hp * (1 + externalPercents.hpPercent / 100) +
-    hpFlatFromAffix +
-    AFFIX_DRIVE_DISC_SLOT_1_HP
-
-  const atk =
-    (agentBase.atk + input.wengineBaseAtk) * (1 + externalPercents.atkPercent / 100) +
-    atkFlatFromAffix +
-    AFFIX_DRIVE_DISC_SLOT_2_ATK
-
-  const def =
-    agentBase.def * (1 + externalPercents.defPercent / 100) +
-    defFlatFromAffix +
-    AFFIX_DRIVE_DISC_SLOT_3_DEF
-
+  const externalPercents = sumExternalPercents(0, 0, 0, wengineAdvanced, twoPieceMods, mainStats)
   return {
-    hp: roundPanelValue(hp),
-    atk: roundPanelValue(atk),
-    def: roundPanelValue(def),
-    critRate: roundPanelValue(
-      agentBase.critRate +
-        wengineAdvanced.critRate +
-        twoPieceMods.critRate +
-        mainStats.critRate +
-        affixStatTotal(counts.critRate, AFFIX_VALUE_PER_COUNT.critRate),
-    ),
-    critDmg: roundPanelValue(
-      agentBase.critDmg +
-        wengineAdvanced.critDmg +
-        twoPieceMods.critDmg +
-        mainStats.critDmg +
-        affixStatTotal(counts.critDmg, AFFIX_VALUE_PER_COUNT.critDmg),
-    ),
-    dmgBonus: roundPanelValue(agentBase.dmgBonus + twoPieceMods.dmgBonus + mainStats.dmgBonus),
-    ignoreDefense: 0,
-    reduceDefense: roundPanelValue(twoPieceMods.reduceDefense),
-    penRate: roundPanelValue(
-      agentBase.penRate + wengineAdvanced.penRate + twoPieceMods.penRate + mainStats.penRate,
-    ),
-    pen: roundPanelValue(
-      agentBase.pen + affixStatTotal(counts.pen, AFFIX_VALUE_PER_COUNT.pen),
-    ),
-    resPen: roundPanelValue(twoPieceMods.resPen),
-    mastery: roundPanelValue(
-      agentBase.mastery +
-        wengineAdvanced.mastery +
-        twoPieceMods.mastery +
-        mainStats.mastery +
-        affixStatTotal(counts.mastery, AFFIX_VALUE_PER_COUNT.mastery),
-    ),
-    anomalyControl: roundPanelValue(
+    agentHp: agentBase.hp,
+    atkBase: agentBase.atk + input.wengineBaseAtk,
+    agentDef: agentBase.def,
+    fixedHpPercent: externalPercents.hpPercent,
+    fixedAtkPercent: externalPercents.atkPercent,
+    fixedDefPercent: externalPercents.defPercent,
+    critRate: agentBase.critRate + wengineAdvanced.critRate + twoPieceMods.critRate + mainStats.critRate,
+    critDmg: agentBase.critDmg + wengineAdvanced.critDmg + twoPieceMods.critDmg + mainStats.critDmg,
+    dmgBonus: agentBase.dmgBonus + twoPieceMods.dmgBonus + mainStats.dmgBonus,
+    reduceDefense: twoPieceMods.reduceDefense,
+    penRate: agentBase.penRate + wengineAdvanced.penRate + twoPieceMods.penRate + mainStats.penRate,
+    pen: agentBase.pen,
+    resPen: twoPieceMods.resPen,
+    mastery: agentBase.mastery + wengineAdvanced.mastery + twoPieceMods.mastery + mainStats.mastery,
+    anomalyControl:
       agentBase.anomalyControl *
         (1 +
           (wengineAdvanced.anomalyControlPercent +
             twoPieceMods.anomalyControlPercent +
             mainStats.anomalyControl) /
             100) +
-        twoPieceMods.anomalyControl,
-    ),
-    energyRegen: roundPanelValue(
+      twoPieceMods.anomalyControl,
+    energyRegen:
       agentBase.energyRegen *
         (1 +
-          (wengineAdvanced.energyRegen +
-            twoPieceMods.energyRegen +
-            mainStats.energyRegen) /
-            100) +
-        twoPieceMods.energyRegenFlat,
+          (wengineAdvanced.energyRegen + twoPieceMods.energyRegen + mainStats.energyRegen) / 100) +
+      twoPieceMods.energyRegenFlat,
+    anomalyCritRate: agentBase.anomalyCritRate,
+    anomalyCritDmg: agentBase.anomalyCritDmg,
+    anomalyDmgBonus: agentBase.anomalyDmgBonus,
+    directDmgMult: agentBase.directDmgMult,
+    anomalyMult: agentBase.anomalyMult,
+    disorderBaseMult: agentBase.disorderBaseMult,
+    anomalyDuration: agentBase.anomalyDuration,
+    disorderCompMult: agentBase.disorderCompMult,
+    turbulenceBaseMult: agentBase.turbulenceBaseMult,
+    turbulenceCompMult: agentBase.turbulenceCompMult,
+    disorderDmgBonus: agentBase.disorderDmgBonus,
+    turbulenceDmgBonus: agentBase.turbulenceDmgBonus,
+    radianceMult: agentBase.radianceMult,
+    radianceDmgBonus: agentBase.radianceDmgBonus,
+    radianceResPen: agentBase.radianceResPen,
+    specialMult: agentBase.specialMult,
+  }
+}
+
+export function applyAffixCountsToFixedParts(
+  parts: AffixExternalFixedParts,
+  counts: AffixCounts,
+): PanelStats {
+  const hpPercent =
+    parts.fixedHpPercent + affixStatTotal(counts.hpPercent, AFFIX_VALUE_PER_COUNT.hpPercent)
+  const atkPercent =
+    parts.fixedAtkPercent + affixStatTotal(counts.atkPercent, AFFIX_VALUE_PER_COUNT.atkPercent)
+  const defPercent =
+    parts.fixedDefPercent + affixStatTotal(counts.defPercent, AFFIX_VALUE_PER_COUNT.defPercent)
+  return {
+    hp: roundPanelValue(
+      parts.agentHp * (1 + hpPercent / 100) +
+        affixStatTotal(counts.hpFlat, AFFIX_VALUE_PER_COUNT.hpFlat) +
+        AFFIX_DRIVE_DISC_SLOT_1_HP,
     ),
-    anomalyCritRate: roundPanelValue(agentBase.anomalyCritRate),
-    anomalyCritDmg: roundPanelValue(agentBase.anomalyCritDmg),
-    anomalyDmgBonus: roundPanelValue(agentBase.anomalyDmgBonus),
+    atk: roundPanelValue(
+      parts.atkBase * (1 + atkPercent / 100) +
+        affixStatTotal(counts.atkFlat, AFFIX_VALUE_PER_COUNT.atkFlat) +
+        AFFIX_DRIVE_DISC_SLOT_2_ATK,
+    ),
+    def: roundPanelValue(
+      parts.agentDef * (1 + defPercent / 100) +
+        affixStatTotal(counts.defFlat, AFFIX_VALUE_PER_COUNT.defFlat) +
+        AFFIX_DRIVE_DISC_SLOT_3_DEF,
+    ),
+    critRate: roundPanelValue(
+      parts.critRate + affixStatTotal(counts.critRate, AFFIX_VALUE_PER_COUNT.critRate),
+    ),
+    critDmg: roundPanelValue(
+      parts.critDmg + affixStatTotal(counts.critDmg, AFFIX_VALUE_PER_COUNT.critDmg),
+    ),
+    dmgBonus: roundPanelValue(parts.dmgBonus),
+    ignoreDefense: 0,
+    reduceDefense: roundPanelValue(parts.reduceDefense),
+    penRate: roundPanelValue(parts.penRate),
+    pen: roundPanelValue(parts.pen + affixStatTotal(counts.pen, AFFIX_VALUE_PER_COUNT.pen)),
+    resPen: roundPanelValue(parts.resPen),
+    mastery: roundPanelValue(
+      parts.mastery + affixStatTotal(counts.mastery, AFFIX_VALUE_PER_COUNT.mastery),
+    ),
+    anomalyControl: roundPanelValue(parts.anomalyControl),
+    energyRegen: roundPanelValue(parts.energyRegen),
+    anomalyCritRate: roundPanelValue(parts.anomalyCritRate),
+    anomalyCritDmg: roundPanelValue(parts.anomalyCritDmg),
+    anomalyDmgBonus: roundPanelValue(parts.anomalyDmgBonus),
     anomalyReleaseCritRate: 0,
     anomalyReleaseCritDmg: 0,
     anomalyReleaseMult: 0,
     anomalyReleaseDmgBonus: 0,
-    directDmgMult: roundPanelValue(agentBase.directDmgMult),
+    directDmgMult: roundPanelValue(parts.directDmgMult),
     settlementDmgMult: 0,
-    anomalyMult: roundPanelValue(agentBase.anomalyMult),
-    disorderBaseMult: roundPanelValue(agentBase.disorderBaseMult),
-    anomalyDuration: roundPanelValue(agentBase.anomalyDuration),
-    disorderCompMult: roundPanelValue(agentBase.disorderCompMult),
-    turbulenceBaseMult: roundPanelValue(agentBase.turbulenceBaseMult),
-    turbulenceCompMult: roundPanelValue(agentBase.turbulenceCompMult),
-    disorderDmgBonus: roundPanelValue(agentBase.disorderDmgBonus),
-    turbulenceDmgBonus: roundPanelValue(agentBase.turbulenceDmgBonus),
-    radianceMult: roundPanelValue(agentBase.radianceMult),
-    radianceDmgBonus: roundPanelValue(agentBase.radianceDmgBonus),
-    radianceResPen: roundPanelValue(agentBase.radianceResPen),
-    specialMult: roundPanelValue(agentBase.specialMult),
-    // 基数 1 只在乘区公式里加；词条重建不能把初始异化系数（常被写成 100%）再叠进去。
+    anomalyMult: roundPanelValue(parts.anomalyMult),
+    disorderBaseMult: roundPanelValue(parts.disorderBaseMult),
+    anomalyDuration: roundPanelValue(parts.anomalyDuration),
+    disorderCompMult: roundPanelValue(parts.disorderCompMult),
+    turbulenceBaseMult: roundPanelValue(parts.turbulenceBaseMult),
+    turbulenceCompMult: roundPanelValue(parts.turbulenceCompMult),
+    disorderDmgBonus: roundPanelValue(parts.disorderDmgBonus),
+    turbulenceDmgBonus: roundPanelValue(parts.turbulenceDmgBonus),
+    radianceMult: roundPanelValue(parts.radianceMult),
+    radianceDmgBonus: roundPanelValue(parts.radianceDmgBonus),
+    radianceResPen: roundPanelValue(parts.radianceResPen),
+    specialMult: roundPanelValue(parts.specialMult),
     mutationCoeff: 0,
     directDmgMultFactor: 100,
     anomalyMultFactor: 100,
@@ -289,6 +331,11 @@ export function computeExternalPanelFromAffixes(input: AffixPanelCalcInput): Pan
     specialMultFactor: 100,
     mutationCoeffFactor: 100,
   }
+}
+
+export function computeExternalPanelFromAffixes(input: AffixPanelCalcInput): PanelStats {
+  const { affixCounts, ...fixedInput } = input
+  return applyAffixCountsToFixedParts(buildAffixExternalFixedParts(fixedInput), affixCounts)
 }
 
 function clampCount(value: number, max = 40) {

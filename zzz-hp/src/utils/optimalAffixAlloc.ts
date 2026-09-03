@@ -22,8 +22,10 @@ import {
 } from '@/types/calculatorPanel'
 import {
   AFFIX_VALUE_PER_COUNT,
-  computeExternalPanelFromAffixes,
+  applyAffixCountsToFixedParts,
+  buildAffixExternalFixedParts,
   computeExternalPanelFromTeamSlot,
+  type AffixExternalFixedParts,
   type AffixPanelCalcInput,
 } from '@/utils/affixPanelCalc'
 import {
@@ -1252,15 +1254,7 @@ export function evaluateAffixCountsForSweep(
   const cached = affixSweepCache.get(cacheKey)
   if (cached) return cached
 
-  const external = computeExternalPanelFromAffixes({
-    agentBase: ctx.agentBase ?? createEmptyAgentBasePanel(),
-    wengineBaseAtk: ctx.wengineBaseAtk,
-    wengineAdvanced: ctx.wengineAdvanced ?? createEmptyWengineAdvancedStats(),
-    affixCounts,
-    driveDiscSelection: ctx.driveDiscSelection,
-    driveDiscMainStats: ctx.driveDiscMainStats,
-    driveDiscs: ctx.driveDiscs,
-  })
+  const external = computeExternalForEval(ctx, affixCounts)
 
   let payload: { grandTotal: number; eventLines: OptimalEventDamageLine[] }
   if (ctx.hits?.length) {
@@ -1391,11 +1385,14 @@ function affixEvalContextSignature(ctx: OptimalEvalContext): string {
   ].join('|')
 }
 
+let affixExternalFixedParts: AffixExternalFixedParts | null = null
+
 function resetAffixEvalCacheIfNeeded(ctx: OptimalEvalContext) {
   const sig = affixEvalContextSignature(ctx)
   if (sig !== affixEvalCacheCtxSig) {
     affixEvalCache.clear()
     affixSweepCache.clear()
+    affixExternalFixedParts = null
     affixEvalCacheCtxSig = sig
   }
 }
@@ -1403,7 +1400,26 @@ function resetAffixEvalCacheIfNeeded(ctx: OptimalEvalContext) {
 export function clearAffixEvalCache() {
   affixEvalCache.clear()
   affixSweepCache.clear()
+  affixExternalFixedParts = null
   affixEvalCacheCtxSig = ''
+}
+
+function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixedParts {
+  if (!affixExternalFixedParts) {
+    affixExternalFixedParts = buildAffixExternalFixedParts({
+      agentBase: ctx.agentBase ?? createEmptyAgentBasePanel(),
+      wengineBaseAtk: ctx.wengineBaseAtk,
+      wengineAdvanced: ctx.wengineAdvanced ?? createEmptyWengineAdvancedStats(),
+      driveDiscSelection: ctx.driveDiscSelection,
+      driveDiscMainStats: ctx.driveDiscMainStats,
+      driveDiscs: ctx.driveDiscs,
+    })
+  }
+  return affixExternalFixedParts
+}
+
+function computeExternalForEval(ctx: OptimalEvalContext, affixCounts: AffixCounts): PanelStats {
+  return applyAffixCountsToFixedParts(getAffixExternalFixedParts(ctx), affixCounts)
 }
 
 function evaluateAffixCountsUncached(
@@ -1418,15 +1434,7 @@ function evaluateAffixCountsUncached(
   grandTotal: number
   eventLines: OptimalEventDamageLine[]
 } {
-  const external = computeExternalPanelFromAffixes({
-    agentBase: ctx.agentBase ?? createEmptyAgentBasePanel(),
-    wengineBaseAtk: ctx.wengineBaseAtk,
-    wengineAdvanced: ctx.wengineAdvanced ?? createEmptyWengineAdvancedStats(),
-    affixCounts,
-    driveDiscSelection: ctx.driveDiscSelection,
-    driveDiscMainStats: ctx.driveDiscMainStats,
-    driveDiscs: ctx.driveDiscs,
-  })
+  const external = computeExternalForEval(ctx, affixCounts)
 
   if (ctx.hits?.length) {
     const { grandTotal, eventLines, firstResult, firstBreakdown } = computeEventDamageLines(
