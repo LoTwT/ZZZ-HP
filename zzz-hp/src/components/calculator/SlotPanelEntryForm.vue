@@ -235,7 +235,7 @@ function formatValue(key: keyof PanelStats, value: number) {
       <div class="grid four">
         <label v-for="field in AFFIX_COUNT_FIELDS" :key="field.key" class="field">
           <span>{{ field.label }}（{{ field.unitLabel }}）</span>
-          <input v-model.number="affixCounts[field.key]" type="number" min="0" step="1" />
+          <input v-model.lazy.number="affixCounts[field.key]" type="number" min="0" step="1" />
           <span class="field-hint">每条 +{{ field.perCount }}</span>
         </label>
       </div>

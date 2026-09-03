@@ -2336,34 +2336,34 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <div class="grid two">
             <label class="field">
               <span>{{ isMb ? '攻击力' : flatLabel }}</span>
-              <input v-model.number="directAlloc.flatStat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.flatStat" type="number" min="0" step="1" />
             </label>
             <label v-if="isMb" class="field">
               <span>生命值</span>
-              <input v-model.number="directAlloc.hpFlat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.hpFlat" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>穿透值</span>
-              <input v-model.number="directAlloc.pen" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.pen" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>精通</span>
-              <input v-model.number="directAlloc.mastery" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.mastery" type="number" min="0" step="1" />
               <small class="hint">固定填写，不计入总词条分配</small>
             </label>
             <label v-if="isMb" class="field">
               <span>局外大攻击</span>
-              <input v-model.number="directAlloc.atkPercent" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.atkPercent" type="number" min="0" step="1" />
               <small class="hint">固定填写，计入总词条数</small>
             </label>
             <label class="field">
               <span>暴击</span>
-              <input v-model.number="directAlloc.critRate" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
               <small class="hint">默认：局内暴击刚好 &gt; 100%</small>
             </label>
             <label class="field">
               <span>总词条数</span>
-              <input v-model.number="directAlloc.totalRolls" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.totalRolls" type="number" min="0" step="1" />
               <small class="hint">
                 可分配余量 {{ remainDirect }}（{{
                   isMb ? '局外大生命+爆伤' : `${outLabel}+爆伤`
@@ -2384,15 +2384,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <div class="grid two">
             <label class="field">
               <span>{{ flatLabel }}</span>
-              <input v-model.number="anomalyAlloc.flatStat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.flatStat" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>穿透值</span>
-              <input v-model.number="anomalyAlloc.pen" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.pen" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>总词条数</span>
-              <input v-model.number="anomalyAlloc.totalRolls" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.totalRolls" type="number" min="0" step="1" />
             </label>
           </div>
           <p v-if="anomalyError" class="err">{{ anomalyError }}</p>
