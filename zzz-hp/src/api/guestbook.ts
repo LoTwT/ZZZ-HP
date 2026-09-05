@@ -752,22 +752,25 @@ export async function fetchMyComments(): Promise<GuestbookComment[]> {
 }
 
 export async function uploadGuestbookImage(file: File): Promise<{ url: string; filename: string }> {
+  const requestToken = getUserToken()
   const formData = new FormData()
   formData.append('image', file)
   const response = await fetch('/api/upload/guestbook', {
     method: 'POST',
     // 后端 requireUser 鉴权；FormData 不手动设置 Content-Type，保留浏览器边界
-    headers: withAuthHeaders(),
+    headers: requestToken ? { Authorization: `Bearer ${requestToken}` } : {},
     body: formData,
   })
   const json = (await response.json()) as ApiResponse<{ url: string; filename: string }>
   if (!response.ok || (json.code !== 200 && json.code !== 201)) {
-    // 会话失效：清理本地登录态并引导重新登录（与 requestJson 的 403 封禁处理同模式）
     if (response.status === 401) {
       const { useUserAuthStore } = await import('@/stores/userAuth')
       const auth = useUserAuthStore()
-      auth.clearSession()
-      auth.openLoginDialog()
+      // 异步回包期间可能已切换账号；同时核对其他标签共享的 token 和本页登录态。
+      if (getUserToken() === requestToken && auth.token === requestToken) {
+        auth.clearSession()
+        auth.openLoginDialog()
+      }
     }
     throw new Error(json.message || `上传失败: ${response.status}`)
   }
