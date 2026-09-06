@@ -38,6 +38,7 @@ import {
 import {
   AFFIX_DRIVE_DISC_SLOT_1_HP,
   AFFIX_DRIVE_DISC_SLOT_2_ATK,
+  AFFIX_DRIVE_DISC_SLOT_3_DEF,
   DRIVE_DISC_SLOT_4_OPTIONS,
   DRIVE_DISC_SLOT_5_OPTIONS,
   DRIVE_DISC_SLOT_6_OPTIONS,
@@ -62,11 +63,13 @@ import {
   clearAffixEvalCache,
   findMinCritRollsForOvercap,
   evaluateOptimalEventDetail,
+  optimalHitDependsOnMainAffixPanel,
   buildDirectAffixCounts,
   buildAnomalyAffixCounts,
   type OptimalEventEvalDetail,
   flatStatLabel,
   outPercentLabel,
+  outPercentFromAffixCounts,
   sweepAnomalyDamageAsync,
   sweepDirectDamageAsync,
   validateAnomalyAlloc,
@@ -99,10 +102,12 @@ import {
 import { getHitSkipReason, buildGenericPanelSkillContext } from '@/utils/resolvedHit'
 
 const MB_PROFESSION = '命破'
+const FENGYU_PROFESSION = '锋御'
 
 const PANEL_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'hp', label: '生命值' },
   { key: 'atk', label: '攻击力' },
+  { key: 'def', label: '防御力' },
   { key: 'critRate', label: '暴击率%' },
   { key: 'critDmg', label: '暴伤%' },
   { key: 'dmgBonus', label: '增伤%' },
@@ -425,10 +430,12 @@ const effectiveAnomalySlotPanels = computed(() => {
 })
 
 const isMb = computed(() => mainAgent.value?.profession === MB_PROFESSION)
+const isFengYu = computed(() => mainAgent.value?.profession === FENGYU_PROFESSION)
 
 const evalCtx = computed(() =>
   buildOptimalEvalContext({
     isMb: isMb.value,
+    isFengYu: isFengYu.value,
     teamSlots: props.teamSlots,
     agents: props.agents,
     wengines: props.wengines,
@@ -438,7 +445,7 @@ const evalCtx = computed(() =>
     mainSlotIndex: mainSlotIndex.value,
     driveDiscMainStats: { ...driveDiscMainStats },
     enemyInput: { ...enemyInput.value },
-    baseDamageSource: isMb.value ? 'pierce' : baseDamageSource.value,
+    baseDamageSource: isMb.value ? 'pierce' : isFengYu.value ? 'def' : baseDamageSource.value,
     extraGains: extraGains.value.map((item) => ({ ...item })),
     skillContext: buildGenericPanelSkillContext({
       element: mainAgent.value?.element,
@@ -458,14 +465,14 @@ const evalCtx = computed(() =>
   }),
 )
 
-const flatLabel = computed(() => flatStatLabel(isMb.value))
-const outLabel = computed(() => outPercentLabel(isMb.value))
+const flatLabel = computed(() => flatStatLabel(isMb.value, isFengYu.value))
+const outLabel = computed(() => outPercentLabel(isMb.value, isFengYu.value))
 
 const directError = computed(() =>
-  validateDirectAlloc(directAlloc, isMb.value, driveDiscMainStats),
+  validateDirectAlloc(directAlloc, isMb.value, driveDiscMainStats, isFengYu.value),
 )
 const anomalyError = computed(() =>
-  validateAnomalyAlloc(anomalyAlloc, isMb.value, driveDiscMainStats),
+  validateAnomalyAlloc(anomalyAlloc, isMb.value, driveDiscMainStats, isFengYu.value),
 )
 
 const sweepConfigFingerprint = computed(() =>
@@ -493,8 +500,6 @@ const sweepConfigFingerprint = computed(() =>
   }),
 )
 
-const SWEEP_DEBOUNCE_MS = 320
-const EVENT_SWEEP_DEBOUNCE_MS = 700
 const DIFF_DEBOUNCE_MS = 450
 const DIFF_EVENT_DEBOUNCE_MS = 900
 const SKILL_FLOW_EMIT_DEBOUNCE_MS = 200
@@ -504,14 +509,13 @@ const PANEL_PREVIEW_DEBOUNCE_MS = 180
 const directPoints = ref<DirectSweepPoint[]>([])
 const anomalyPoints = ref<AnomalySweepPoint[]>([])
 const sweepComputing = ref(false)
-/** 配置（主属性/敌人/增益等）变更后需手动点开始计算 */
+/** 配置或词条分配变更后需手动点「开始计算」 */
 const sweepNeedsCommit = ref(true)
-/** 已提交配置后，仅词条分配变化会自动重算柱状图 */
+/** 已点过「开始计算」，且之后配置/分配未再改 */
 const sweepCommitted = ref(false)
 
 const hasEventMode = computed(() => (props.hits?.length ?? 0) > 0)
 
-let sweepTimer: ReturnType<typeof setTimeout> | null = null
 let diffTimer: ReturnType<typeof setTimeout> | null = null
 let skillFlowEmitTimer: ReturnType<typeof setTimeout> | null = null
 let panelPreviewTimer: ReturnType<typeof setTimeout> | null = null
@@ -647,6 +651,7 @@ async function refreshDirectSweepFixedStats(
       { ...state },
       point.outPercent,
       point.critDmg,
+      ctx.isFengYu,
     )
     const swept = evaluateAffixCountsForSweep(ctx, affixCounts)
     next.push({
@@ -667,15 +672,6 @@ async function refreshDirectSweepFixedStats(
     }
   }
   return next
-}
-
-function scheduleSweepRecompute() {
-  if (!isSectionActive.value || !sweepCommitted.value || !damageKind.value) return
-  if (sweepTimer) clearTimeout(sweepTimer)
-  const delay = hasEventMode.value ? EVENT_SWEEP_DEBOUNCE_MS : SWEEP_DEBOUNCE_MS
-  sweepTimer = setTimeout(() => {
-    void runSweepRecompute()
-  }, delay)
 }
 
 watch(isSectionActive, (active) => {
@@ -710,10 +706,9 @@ const allocSweepFingerprint = computed(() =>
   }),
 )
 
-watch(allocSweepFingerprint, scheduleSweepRecompute)
+watch(allocSweepFingerprint, markSweepConfigDirty)
 
 onBeforeUnmount(() => {
-  if (sweepTimer) clearTimeout(sweepTimer)
   if (diffTimer) clearTimeout(diffTimer)
   if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
   if (panelPreviewTimer) clearTimeout(panelPreviewTimer)
@@ -1047,12 +1042,19 @@ const allocPreviewCounts = computed(() => {
       { ...directAlloc, critRate: crit, totalRolls: total },
       0,
       remain,
+      isFengYu.value,
     )
   }
   if (anomalyPoints.value[0]?.affixCounts) return null
   if (anomalyError.value || !damageKind.value || !mainAgent.value?.id) return null
   const total = Math.round(anomalyAlloc.totalRolls)
-  return buildAnomalyAffixCounts(isMb.value, { ...anomalyAlloc, totalRolls: total }, 0, total)
+  return buildAnomalyAffixCounts(
+    isMb.value,
+    { ...anomalyAlloc, totalRolls: total },
+    0,
+    total,
+    isFengYu.value,
+  )
 })
 
 /** 防抖后的预览词条，避免输入时每个按键都同步 evaluate */
@@ -1126,31 +1128,12 @@ watch(
 )
 
 /**
- * 招式流程用的局外面板：优先当前选中/展示柱体的最优词条面板；
- * 尚未开始计算时，按「第一个扫掠点」规则（余量全给爆伤/精通）现场推导，避免残留面板计算数值。
+ * 招式流程用的局外面板：只跟「开始计算」产出的柱体走。
+ * 未扫过、或改数字尚未再点开始：不算招式总伤（未扫过返回空；已有柱则沿用上次选中柱）。
  */
 const skillFlowExternal = computed(() => {
-  if (analysisEval.value?.external) return analysisEval.value.external
-  if (!damageKind.value) return null
-  if (damageKind.value === 'direct') {
-    if (directError.value) return null
-    const crit = Math.round(directAlloc.critRate)
-    const total = Math.round(directAlloc.totalRolls)
-    const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
-    const remain = isMb.value ? total - crit - fixedAtk : total - crit
-    if (remain < 0) return null
-    const counts = buildDirectAffixCounts(
-      isMb.value,
-      { ...directAlloc, critRate: crit, totalRolls: total },
-      0,
-      remain,
-    )
-    return evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts).external
-  }
-  if (anomalyError.value) return null
-  const total = Math.round(anomalyAlloc.totalRolls)
-  const counts = buildAnomalyAffixCounts(isMb.value, { ...anomalyAlloc, totalRolls: total }, 0, total)
-  return evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts).external
+  if (!sweepPoints.value.length) return null
+  return analysisEval.value?.external ?? null
 })
 
 /** 用最优词条面板重算流程/准备招式预览伤害，供招式流程展示（防抖 + per-hit 缓存） */
@@ -1262,7 +1245,10 @@ function recomputeSkillFlowHitMaps() {
   const nextSignatures: Record<string, string> = {}
 
   const resolveLine = (hit: import('@/utils/resolvedHit').ResolvedHit, usePerHit: boolean) => {
-    const signature = `${hitFingerprint(hit)}|${globalSig}|${usePerHit ? '1' : '0'}`
+    const dependsOnMain = optimalHitDependsOnMainAffixPanel(ctx, hit)
+    const signature = dependsOnMain
+      ? `${hitFingerprint(hit)}|${globalSig}|${usePerHit ? '1' : '0'}`
+      : `${hitFingerprint(hit)}|${skillFlowContextFingerprint.value}|stable-affix|${usePerHit ? '1' : '0'}`
     nextSignatures[hit.id] = signature
     const cached = skillFlowLineStore.lineById[hit.id]
     if (cached && skillFlowLineStore.signatureById[hit.id] === signature) {
@@ -1270,7 +1256,9 @@ function recomputeSkillFlowHitMaps() {
       results[hit.id] = cached.result
       return
     }
-    const detail = evaluateOptimalEventDetail(ctx, external, hit)
+    const detail = evaluateOptimalEventDetail(ctx, external, hit, {
+      includeDetails: false,
+    })
     if (!detail) {
       delete skillFlowLineStore.lineById[hit.id]
       return
@@ -2105,9 +2093,17 @@ function applyDefaultCrit() {
 
 // 调整 4/5/6 号盘主属性时不重置暴击/总词条数，仅在切换角色时重算默认值
 watch(
-  () => [mainAgent.value?.id, isMb.value],
+  () => [mainAgent.value?.id, isMb.value, isFengYu.value],
   () => {
     if (damageKind.value === 'direct') applyDefaultCrit()
+  },
+  { immediate: true },
+)
+
+watch(
+  isFengYu,
+  (fengYu) => {
+    if (fengYu) baseDamageSource.value = 'def'
   },
   { immediate: true },
 )
@@ -2204,6 +2200,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
     return computeFinalPanel(
       fillPanelStatsDefaults(external),
       buildPreviewPanelContext(index),
+      { includeDetails: false },
     ).finalPanel
   } catch {
     return null
@@ -2250,12 +2247,13 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
     <div class="grid three">
       <label class="field">
         <span>基础伤害来源</span>
-        <select v-model="baseDamageSource" :disabled="isMb">
+        <select v-model="baseDamageSource" :disabled="isMb || isFengYu">
           <option value="atk">攻击力</option>
           <option value="def">防御力</option>
           <option value="pierce">贯穿力</option>
         </select>
         <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
+        <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
       </label>
       <label class="field">
         <span>4号主属性</span>
@@ -2282,7 +2280,8 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         </select>
       </label>
       <p class="hint span-2">
-        1号固定生命 {{ AFFIX_DRIVE_DISC_SLOT_1_HP }} · 2号固定攻击 {{ AFFIX_DRIVE_DISC_SLOT_2_ATK }}（已计入词条推导）
+        1号固定生命 {{ AFFIX_DRIVE_DISC_SLOT_1_HP }} · 2号固定攻击 {{ AFFIX_DRIVE_DISC_SLOT_2_ATK }} · 3号固定防御
+        {{ AFFIX_DRIVE_DISC_SLOT_3_DEF }}（已计入词条推导）
       </p>
     </div>
 
@@ -2305,34 +2304,34 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <div class="grid two">
             <label class="field">
               <span>{{ isMb ? '攻击力' : flatLabel }}</span>
-              <input v-model.number="directAlloc.flatStat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.flatStat" type="number" min="0" step="1" />
             </label>
             <label v-if="isMb" class="field">
               <span>生命值</span>
-              <input v-model.number="directAlloc.hpFlat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.hpFlat" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>穿透值</span>
-              <input v-model.number="directAlloc.pen" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.pen" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>精通</span>
-              <input v-model.number="directAlloc.mastery" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.mastery" type="number" min="0" step="1" />
               <small class="hint">固定填写，不计入总词条分配</small>
             </label>
             <label v-if="isMb" class="field">
               <span>局外大攻击</span>
-              <input v-model.number="directAlloc.atkPercent" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.atkPercent" type="number" min="0" step="1" />
               <small class="hint">固定填写，计入总词条数</small>
             </label>
             <label class="field">
               <span>暴击</span>
-              <input v-model.number="directAlloc.critRate" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
               <small class="hint">默认：局内暴击刚好 &gt; 100%</small>
             </label>
             <label class="field">
               <span>总词条数</span>
-              <input v-model.number="directAlloc.totalRolls" type="number" min="0" step="1" />
+              <input v-model.lazy.number="directAlloc.totalRolls" type="number" min="0" step="1" />
               <small class="hint">
                 可分配余量 {{ remainDirect }}（{{
                   isMb ? '局外大生命+爆伤' : `${outLabel}+爆伤`
@@ -2353,15 +2352,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <div class="grid two">
             <label class="field">
               <span>{{ flatLabel }}</span>
-              <input v-model.number="anomalyAlloc.flatStat" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.flatStat" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>穿透值</span>
-              <input v-model.number="anomalyAlloc.pen" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.pen" type="number" min="0" step="1" />
             </label>
             <label class="field">
               <span>总词条数</span>
-              <input v-model.number="anomalyAlloc.totalRolls" type="number" min="0" step="1" />
+              <input v-model.lazy.number="anomalyAlloc.totalRolls" type="number" min="0" step="1" />
             </label>
           </div>
           <p v-if="anomalyError" class="err">{{ anomalyError }}</p>
@@ -2418,10 +2417,10 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         {{ sweepComputing ? '计算中…' : '开始计算' }}
       </button>
       <p v-if="sweepNeedsCommit" class="hint calc-commit-hint">
-        配好词条分配后点击开始；修改主属性、敌人、增益或转模后也需重新计算。
+        配好后点「开始计算」。改暴击、总词条、固定条、主属性、敌人或增益后，也需再点一次。
       </p>
       <p v-else-if="sweepCommitted && !sweepComputing" class="hint calc-commit-hint calc-commit-hint--synced">
-        已按当前配置计算；继续调整词条分配会自动刷新柱状图。
+        已按当前配置计算。再改暴击、总词条或其他配置后，请再点「开始计算」。
       </p>
     </div>
 
@@ -2580,7 +2579,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <template v-else-if="analysisCounts">
               暴击 {{ analysisCounts.critRate }} · 爆伤 {{ analysisCounts.critDmg }} ·
               {{ outLabel }}
-              {{ isMb ? analysisCounts.hpPercent : analysisCounts.atkPercent }} · 精通
+              {{ outPercentFromAffixCounts(analysisCounts, isMb, isFengYu) }} · 精通
               {{ analysisCounts.mastery }}
               <template v-if="isMb"> · 局外大攻击 {{ analysisCounts.atkPercent }}</template>
               <span class="hint-inline">（未点柱时按预览/首柱）</span>
@@ -2591,7 +2590,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           </template>
           <template v-else-if="analysisCounts">
             {{ outLabel }}
-            {{ isMb ? analysisCounts.hpPercent : analysisCounts.atkPercent }} · 精通
+            {{ outPercentFromAffixCounts(analysisCounts, isMb, isFengYu) }} · 精通
             {{ analysisCounts.mastery }}
             <span class="hint-inline">（未点柱时按预览/首柱）</span>
           </template>

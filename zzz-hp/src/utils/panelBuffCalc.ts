@@ -901,6 +901,19 @@ export function resolveBaseEnergyRegen(ctx: PanelCalcContext): number {
   return ctx.agents.find((item) => item.id === agentId)?.basePanel.energyRegen ?? 0
 }
 
+function resolveMainAgent(ctx: PanelCalcContext) {
+  const agentId = ctx.teamSlots[ctx.mainSlotIndex]?.agentId
+  if (!agentId) return undefined
+  return ctx.agents.find((item) => item.id === agentId)
+}
+
+/** 锋御：仅角色基础面板的初始锐爆计入锐爆区；音擎/驱动盘/Buff 的爆伤仍走面板爆伤 */
+function applyFengYuSharpenCritMods(combatMods: CombatBuffMods, ctx: PanelCalcContext) {
+  const mainAgent = resolveMainAgent(ctx)
+  if (mainAgent?.profession !== '锋御') return
+  combatMods.sharpenCritDmgBonus += mainAgent.basePanel.sharpenCritDmgBonus
+}
+
 export interface CombatBuffMods {
   vulnerable: number
   directVulnerable: number
@@ -1429,11 +1442,35 @@ type BuffCatalogPack = {
   note?: string
   blockName?: string
   effects: BuffEffect[]
+  nonConvertEffects: BuffEffect[]
+  convertEffects: BuffEffect[]
   slotIndex?: number
 }
 
-const buffCatalogCache = new Map<string, BuffCatalogPack[]>()
-const BUFF_CATALOG_CACHE_LIMIT = 32
+type BuffCatalogEntry = {
+  packs: BuffCatalogPack[]
+  nonConvertModsByPackKey: Record<string, BuffStatModifiers>
+  nonConvertMods?: BuffStatModifiers
+}
+
+const buffCatalogCache = new Map<string, BuffCatalogEntry>()
+/** 每条招式上下文 × 结算槽位各占一条；32 在长流程扫掠时会挤掉还要用的条目 */
+const BUFF_CATALOG_CACHE_LIMIT = 128
+
+function touchBuffCatalogEntry(key: string, entry: BuffCatalogEntry) {
+  buffCatalogCache.delete(key)
+  buffCatalogCache.set(key, entry)
+}
+
+function splitConvertEffects(effects: BuffEffect[]) {
+  const nonConvertEffects: BuffEffect[] = []
+  const convertEffects: BuffEffect[] = []
+  for (const effect of effects) {
+    if (effect.kind === 'convert') convertEffects.push(effect)
+    else nonConvertEffects.push(effect)
+  }
+  return { nonConvertEffects, convertEffects }
+}
 
 function buildBuffCatalogKey(ctx: PanelCalcContext): string {
   return JSON.stringify({
@@ -1457,8 +1494,17 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
 
 function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
   return sources.map((source) => {
+    const effects = source.effects ?? []
+    const split = splitConvertEffects(effects)
     if (source.key === 'extra') {
-      return { kind: 'extra', key: source.key, label: source.label, effects: [] }
+      return {
+        kind: 'extra',
+        key: source.key,
+        label: source.label,
+        effects: [],
+        nonConvertEffects: [],
+        convertEffects: [],
+      }
     }
     if (source.key === 'bangboo') {
       return {
@@ -1466,7 +1512,8 @@ function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
         key: source.key,
         label: source.label,
         blockName: source.blockName,
-        effects: source.effects ?? [],
+        effects,
+        ...split,
       }
     }
     const slotIndex = parseSourceKeySlotIndex(source.key)
@@ -1477,8 +1524,9 @@ function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
         label: source.label,
         note: source.note,
         blockName: source.blockName,
-        effects: source.effects ?? [],
+        effects,
         slotIndex,
+        ...split,
       }
     }
     return {
@@ -1487,82 +1535,133 @@ function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
       label: source.label,
       note: source.note,
       blockName: source.blockName,
-      effects: source.effects ?? [],
+      effects,
+      ...split,
     }
   })
 }
 
+function resolvePackEffectMods(
+  pack: BuffCatalogPack,
+  effects: BuffEffect[],
+  ctx: PanelCalcContext,
+  skipConvert: boolean,
+): BuffStatModifiers {
+  if (pack.kind === 'extra') return resolveContextExtraMods(ctx)
+  const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
+  if (pack.kind === 'bangboo') {
+    if (!effects.length) return createEmptyBuffStatModifiers()
+    return resolveEffectsToMods(effects, {
+      ctx: skillCtx,
+      stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
+      convertInputs: ctx.buffSelection?.convertInputs,
+      attrValues: ctx.attrValues,
+      panelSourceValues:
+        ctx.panelSourceValuesBySlot?.get(ctx.mainSlotIndex) ?? ctx.panelSourceValues,
+      skipConvert,
+      selection: ctx.buffSelection,
+      resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
+    })
+  }
+  if (!effects.length) return createEmptyBuffStatModifiers()
+  const isMain = pack.kind !== 'slot' || pack.slotIndex === ctx.mainSlotIndex
+  return resolvePackMods(
+    effects,
+    isMain,
+    { ...ctx, skillContext: skillCtx, skipConvert },
+    pack.slotIndex,
+  )
+}
+
+function ensureNonConvertMods(entry: BuffCatalogEntry, ctx: PanelCalcContext) {
+  if (entry.nonConvertMods) return
+  let merged = createEmptyBuffStatModifiers()
+  for (const pack of entry.packs) {
+    let mods = entry.nonConvertModsByPackKey[pack.key]
+    if (!mods) {
+      mods =
+        pack.kind === 'extra'
+          ? resolveContextExtraMods(ctx)
+          : resolvePackEffectMods(pack, pack.nonConvertEffects, ctx, true)
+      entry.nonConvertModsByPackKey[pack.key] = mods
+    }
+    merged = mergeBuffStatModifiers(merged, mods)
+  }
+  entry.nonConvertMods = merged
+}
+
+function collectConvertOnlyMods(packs: BuffCatalogPack[], ctx: PanelCalcContext): BuffStatModifiers {
+  let total = createEmptyBuffStatModifiers()
+  for (const pack of packs) {
+    if (!pack.convertEffects.length) continue
+    total = mergeBuffStatModifiers(
+      total,
+      resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
+    )
+  }
+  return total
+}
+
 function materializeBuffCatalogPacks(
-  packs: BuffCatalogPack[],
+  entry: BuffCatalogEntry,
   ctx: PanelCalcContext,
 ): BuffModSource[] {
-  const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
-  const mainIndex = ctx.mainSlotIndex
-  return packs.map((pack) => {
-    if (pack.kind === 'extra') {
-      return {
-        key: pack.key,
-        label: pack.label,
-        mods: resolveContextExtraMods(ctx),
-        effects: [],
-      }
-    }
-    if (pack.kind === 'bangboo') {
-      return {
-        key: pack.key,
-        label: pack.label,
-        blockName: pack.blockName,
-        effects: pack.effects,
-        mods: resolveEffectsToMods(pack.effects, {
-          ctx: skillCtx,
-          stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
-          convertInputs: ctx.buffSelection?.convertInputs,
-          attrValues: ctx.attrValues,
-          panelSourceValues:
-            ctx.panelSourceValuesBySlot?.get(mainIndex) ?? ctx.panelSourceValues,
-          skipConvert: ctx.skipConvert,
-          selection: ctx.buffSelection,
-          resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
-        }),
-      }
-    }
-    if (pack.kind === 'env') {
-      return {
-        key: pack.key,
-        label: pack.label,
-        note: pack.note,
-        blockName: pack.blockName,
-        effects: pack.effects,
-        mods: resolvePackMods(pack.effects, true, { ...ctx, skillContext: skillCtx }),
-      }
-    }
-    const isMain = pack.slotIndex === mainIndex
+  ensureNonConvertMods(entry, ctx)
+  return entry.packs.map((pack) => {
+    const nonConvert =
+      entry.nonConvertModsByPackKey[pack.key] ?? createEmptyBuffStatModifiers()
+    const mods = ctx.skipConvert
+      ? nonConvert
+      : pack.convertEffects.length
+        ? mergeBuffStatModifiers(
+            nonConvert,
+            resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
+          )
+        : nonConvert
     return {
       key: pack.key,
       label: pack.label,
       note: pack.note,
       blockName: pack.blockName,
       effects: pack.effects,
-      mods: pack.effects.length
-        ? resolvePackMods(pack.effects, isMain, { ...ctx, skillContext: skillCtx }, pack.slotIndex)
-        : createEmptyBuffStatModifiers(),
+      mods,
     }
   })
 }
 
-function rememberBuffCatalog(key: string, sources: BuffModSource[]) {
-  buffCatalogCache.set(key, packsFromSources(sources))
+function rememberBuffCatalogEntry(key: string, entry: BuffCatalogEntry) {
+  touchBuffCatalogEntry(key, entry)
   if (buffCatalogCache.size <= BUFF_CATALOG_CACHE_LIMIT) return
   const oldest = buffCatalogCache.keys().next().value
   if (oldest != null) buffCatalogCache.delete(oldest)
 }
 
+function makeCatalogEntryFromSources(
+  sources: BuffModSource[],
+  ctx: PanelCalcContext,
+): BuffCatalogEntry {
+  const entry: BuffCatalogEntry = {
+    packs: packsFromSources(sources),
+    nonConvertModsByPackKey: {},
+  }
+  if (ctx.skipConvert) {
+    for (const source of sources) {
+      entry.nonConvertModsByPackKey[source.key] = source.mods
+    }
+    entry.nonConvertMods = mergeModsFromSources(sources)
+  }
+  return entry
+}
+
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
   const key = buildBuffCatalogKey(ctx)
   const cached = buffCatalogCache.get(key)
-  if (cached) return materializeBuffCatalogPacks(cached, ctx)
+  if (cached) {
+    touchBuffCatalogEntry(key, cached)
+    return materializeBuffCatalogPacks(cached, ctx)
+  }
   const sources = collectPanelBuffModSourcesUncached(ctx)
-  rememberBuffCatalog(key, sources)
+  rememberBuffCatalogEntry(key, makeCatalogEntryFromSources(sources, ctx))
   return sources
 }
 
@@ -1838,7 +1937,25 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 }
 
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
-  return mergeModsFromSources(collectPanelBuffModSources(ctx))
+  const key = buildBuffCatalogKey(ctx)
+  let entry = buffCatalogCache.get(key)
+  if (!entry) {
+    const sources = collectPanelBuffModSourcesUncached(ctx)
+    entry = makeCatalogEntryFromSources(sources, ctx)
+    rememberBuffCatalogEntry(key, entry)
+    if (ctx.skipConvert) {
+      ensureNonConvertMods(entry, ctx)
+      return entry.nonConvertMods ?? mergeModsFromSources(sources)
+    }
+    return mergeModsFromSources(sources)
+  }
+  touchBuffCatalogEntry(key, entry)
+  ensureNonConvertMods(entry, ctx)
+  if (ctx.skipConvert) return entry.nonConvertMods ?? createEmptyBuffStatModifiers()
+  return mergeBuffStatModifiers(
+    entry.nonConvertMods ?? createEmptyBuffStatModifiers(),
+    collectConvertOnlyMods(entry.packs, ctx),
+  )
 }
 
 export function applyBuffModsToPanel(
@@ -2096,15 +2213,20 @@ export function computeFinalPanel(
       final: finalAttrs,
     },
   }
-  const totalSources = collectPanelBuffModSources(fullCtx)
-  const totalMods = mergeModsFromSources(totalSources)
+  const totalSources = includeDetails ? collectPanelBuffModSources(fullCtx) : []
+  const totalMods = includeDetails
+    ? mergeModsFromSources(totalSources)
+    : collectPanelBuffMods(fullCtx)
+  const finalPanel = applyBuffModsToPanel(externalPanel, totalMods, {
+    baseAnomalyControl,
+    baseEnergyRegen,
+  })
+  const combatMods = extractCombatMods(totalMods)
+  applyFengYuSharpenCritMods(combatMods, fullCtx)
   return {
     totalMods,
-    combatMods: extractCombatMods(totalMods),
-    finalPanel: applyBuffModsToPanel(externalPanel, totalMods, {
-      baseAnomalyControl,
-      baseEnergyRegen,
-    }),
+    combatMods,
+    finalPanel,
     sources: includeDetails ? totalSources : [],
     collectedEffects: [],
   }
