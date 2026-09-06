@@ -1454,7 +1454,13 @@ type BuffCatalogEntry = {
 }
 
 const buffCatalogCache = new Map<string, BuffCatalogEntry>()
-const BUFF_CATALOG_CACHE_LIMIT = 32
+/** 每条招式上下文 × 结算槽位各占一条；32 在长流程扫掠时会挤掉还要用的条目 */
+const BUFF_CATALOG_CACHE_LIMIT = 128
+
+function touchBuffCatalogEntry(key: string, entry: BuffCatalogEntry) {
+  buffCatalogCache.delete(key)
+  buffCatalogCache.set(key, entry)
+}
 
 function splitConvertEffects(effects: BuffEffect[]) {
   const nonConvertEffects: BuffEffect[] = []
@@ -1624,7 +1630,7 @@ function materializeBuffCatalogPacks(
 }
 
 function rememberBuffCatalogEntry(key: string, entry: BuffCatalogEntry) {
-  buffCatalogCache.set(key, entry)
+  touchBuffCatalogEntry(key, entry)
   if (buffCatalogCache.size <= BUFF_CATALOG_CACHE_LIMIT) return
   const oldest = buffCatalogCache.keys().next().value
   if (oldest != null) buffCatalogCache.delete(oldest)
@@ -1650,7 +1656,10 @@ function makeCatalogEntryFromSources(
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
   const key = buildBuffCatalogKey(ctx)
   const cached = buffCatalogCache.get(key)
-  if (cached) return materializeBuffCatalogPacks(cached, ctx)
+  if (cached) {
+    touchBuffCatalogEntry(key, cached)
+    return materializeBuffCatalogPacks(cached, ctx)
+  }
   const sources = collectPanelBuffModSourcesUncached(ctx)
   rememberBuffCatalogEntry(key, makeCatalogEntryFromSources(sources, ctx))
   return sources
@@ -1940,6 +1949,7 @@ export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
     }
     return mergeModsFromSources(sources)
   }
+  touchBuffCatalogEntry(key, entry)
   ensureNonConvertMods(entry, ctx)
   if (ctx.skipConvert) return entry.nonConvertMods ?? createEmptyBuffStatModifiers()
   return mergeBuffStatModifiers(

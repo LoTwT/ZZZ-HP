@@ -63,6 +63,7 @@ import {
   clearAffixEvalCache,
   findMinCritRollsForOvercap,
   evaluateOptimalEventDetail,
+  optimalHitDependsOnMainAffixPanel,
   buildDirectAffixCounts,
   buildAnomalyAffixCounts,
   type OptimalEventEvalDetail,
@@ -499,8 +500,6 @@ const sweepConfigFingerprint = computed(() =>
   }),
 )
 
-const SWEEP_DEBOUNCE_MS = 320
-const EVENT_SWEEP_DEBOUNCE_MS = 700
 const DIFF_DEBOUNCE_MS = 450
 const DIFF_EVENT_DEBOUNCE_MS = 900
 const SKILL_FLOW_EMIT_DEBOUNCE_MS = 200
@@ -510,14 +509,13 @@ const PANEL_PREVIEW_DEBOUNCE_MS = 180
 const directPoints = ref<DirectSweepPoint[]>([])
 const anomalyPoints = ref<AnomalySweepPoint[]>([])
 const sweepComputing = ref(false)
-/** 配置（主属性/敌人/增益等）变更后需手动点开始计算 */
+/** 配置或词条分配变更后需手动点「开始计算」 */
 const sweepNeedsCommit = ref(true)
-/** 已提交配置后，仅词条分配变化会自动重算柱状图 */
+/** 已点过「开始计算」，且之后配置/分配未再改 */
 const sweepCommitted = ref(false)
 
 const hasEventMode = computed(() => (props.hits?.length ?? 0) > 0)
 
-let sweepTimer: ReturnType<typeof setTimeout> | null = null
 let diffTimer: ReturnType<typeof setTimeout> | null = null
 let skillFlowEmitTimer: ReturnType<typeof setTimeout> | null = null
 let panelPreviewTimer: ReturnType<typeof setTimeout> | null = null
@@ -676,15 +674,6 @@ async function refreshDirectSweepFixedStats(
   return next
 }
 
-function scheduleSweepRecompute() {
-  if (!isSectionActive.value || !sweepCommitted.value || !damageKind.value) return
-  if (sweepTimer) clearTimeout(sweepTimer)
-  const delay = hasEventMode.value ? EVENT_SWEEP_DEBOUNCE_MS : SWEEP_DEBOUNCE_MS
-  sweepTimer = setTimeout(() => {
-    void runSweepRecompute()
-  }, delay)
-}
-
 watch(isSectionActive, (active) => {
   if (!active) {
     sweepAbort?.abort()
@@ -717,10 +706,9 @@ const allocSweepFingerprint = computed(() =>
   }),
 )
 
-watch(allocSweepFingerprint, scheduleSweepRecompute)
+watch(allocSweepFingerprint, markSweepConfigDirty)
 
 onBeforeUnmount(() => {
-  if (sweepTimer) clearTimeout(sweepTimer)
   if (diffTimer) clearTimeout(diffTimer)
   if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
   if (panelPreviewTimer) clearTimeout(panelPreviewTimer)
@@ -1140,38 +1128,12 @@ watch(
 )
 
 /**
- * 招式流程用的局外面板：优先当前选中/展示柱体的最优词条面板；
- * 尚未开始计算时，按「第一个扫掠点」规则（余量全给爆伤/精通）现场推导，避免残留面板计算数值。
+ * 招式流程用的局外面板：只跟「开始计算」产出的柱体走。
+ * 未扫过、或改数字尚未再点开始：不算招式总伤（未扫过返回空；已有柱则沿用上次选中柱）。
  */
 const skillFlowExternal = computed(() => {
-  if (analysisEval.value?.external) return analysisEval.value.external
-  if (!damageKind.value) return null
-  if (damageKind.value === 'direct') {
-    if (directError.value) return null
-    const crit = Math.round(directAlloc.critRate)
-    const total = Math.round(directAlloc.totalRolls)
-    const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
-    const remain = isMb.value ? total - crit - fixedAtk : total - crit
-    if (remain < 0) return null
-    const counts = buildDirectAffixCounts(
-      isMb.value,
-      { ...directAlloc, critRate: crit, totalRolls: total },
-      0,
-      remain,
-      isFengYu.value,
-    )
-    return evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts).external
-  }
-  if (anomalyError.value) return null
-  const total = Math.round(anomalyAlloc.totalRolls)
-  const counts = buildAnomalyAffixCounts(
-    isMb.value,
-    { ...anomalyAlloc, totalRolls: total },
-    0,
-    total,
-    isFengYu.value,
-  )
-  return evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts).external
+  if (!sweepPoints.value.length) return null
+  return analysisEval.value?.external ?? null
 })
 
 /** 用最优词条面板重算流程/准备招式预览伤害，供招式流程展示（防抖 + per-hit 缓存） */
@@ -1283,7 +1245,10 @@ function recomputeSkillFlowHitMaps() {
   const nextSignatures: Record<string, string> = {}
 
   const resolveLine = (hit: import('@/utils/resolvedHit').ResolvedHit, usePerHit: boolean) => {
-    const signature = `${hitFingerprint(hit)}|${globalSig}|${usePerHit ? '1' : '0'}`
+    const dependsOnMain = optimalHitDependsOnMainAffixPanel(ctx, hit)
+    const signature = dependsOnMain
+      ? `${hitFingerprint(hit)}|${globalSig}|${usePerHit ? '1' : '0'}`
+      : `${hitFingerprint(hit)}|${skillFlowContextFingerprint.value}|stable-affix|${usePerHit ? '1' : '0'}`
     nextSignatures[hit.id] = signature
     const cached = skillFlowLineStore.lineById[hit.id]
     if (cached && skillFlowLineStore.signatureById[hit.id] === signature) {
@@ -1291,7 +1256,9 @@ function recomputeSkillFlowHitMaps() {
       results[hit.id] = cached.result
       return
     }
-    const detail = evaluateOptimalEventDetail(ctx, external, hit)
+    const detail = evaluateOptimalEventDetail(ctx, external, hit, {
+      includeDetails: false,
+    })
     if (!detail) {
       delete skillFlowLineStore.lineById[hit.id]
       return
@@ -2233,6 +2200,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
     return computeFinalPanel(
       fillPanelStatsDefaults(external),
       buildPreviewPanelContext(index),
+      { includeDetails: false },
     ).finalPanel
   } catch {
     return null
@@ -2449,10 +2417,10 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         {{ sweepComputing ? '计算中…' : '开始计算' }}
       </button>
       <p v-if="sweepNeedsCommit" class="hint calc-commit-hint">
-        配好词条分配后点击开始；修改主属性、敌人、增益或转模后也需重新计算。
+        配好后点「开始计算」。改暴击、总词条、固定条、主属性、敌人或增益后，也需再点一次。
       </p>
       <p v-else-if="sweepCommitted && !sweepComputing" class="hint calc-commit-hint calc-commit-hint--synced">
-        已按当前配置计算；继续调整词条分配会自动刷新柱状图。
+        已按当前配置计算。再改暴击、总词条或其他配置后，请再点「开始计算」。
       </p>
     </div>
 

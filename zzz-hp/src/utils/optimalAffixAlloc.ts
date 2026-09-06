@@ -64,8 +64,11 @@ import {
   resolveRemielSelfRadianceCalcInput,
 } from '@/utils/remielSelfRadiancePanel'
 import { mergeSkillSubcategoryMultOverrides } from '@/utils/skillSubcategoryMult'
+import { isEffectEnabled } from '@/utils/buffEffect'
 import {
+  collectAllBuffEffects,
   computeFinalPanel,
+  parseSourceKeySlotIndex,
   resolveAnomalyReleaseMultFields,
   type BuffSelectionState,
   type MultiSlotBuffSelection,
@@ -75,6 +78,9 @@ import {
   buildPanelSourceValuesBySlotRecord,
 } from '@/utils/panelBuffCalc'
 import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
+
+/** 扫掠 / 流程总伤只要面板数字，不拼「增益来自哪」明细 */
+const PANEL_NUMBERS_ONLY = { includeDetails: false } as const
 
 export type OptimalDamageKind = 'direct' | 'anomaly'
 
@@ -672,6 +678,49 @@ function resolveExternalForAgent(
   return createDefaultExternalPanel()
 }
 
+/** A 是否有「按自己面板折算再给全队」且已勾选的转模。有则队友招式会跟着 A 词条变。 */
+let mainAgentTeamConvertReadsPanelCached: boolean | null = null
+
+function mainAgentTeamConvertReadsPanel(ctx: OptimalEvalContext): boolean {
+  if (mainAgentTeamConvertReadsPanelCached != null) return mainAgentTeamConvertReadsPanelCached
+  const mainIndex = ctx.panelContext.mainSlotIndex
+  const selection = ctx.slotBuffSelections
+    ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, mainIndex)
+    : ctx.panelContext.buffSelection
+  for (const item of collectAllBuffEffects(ctx.panelContext)) {
+    if (parseSourceKeySlotIndex(item.sourceKey) !== mainIndex) continue
+    if (item.effect.applyTarget !== 'team') continue
+    if (item.effect.kind !== 'convert' || !item.effect.convert) continue
+    if ((item.effect.convert.panelSource ?? 'external') === 'manual') continue
+    if (!isEffectEnabled(item.effect, selection)) continue
+    mainAgentTeamConvertReadsPanelCached = true
+    return true
+  }
+  mainAgentTeamConvertReadsPanelCached = false
+  return false
+}
+
+/**
+ * 这招算伤害时有没有用到 A 正在变的那张面板。
+ * 用不到则整次「开始计算」只算一次，每根柱共用。拿不准当用到。
+ */
+export function optimalHitDependsOnMainAffixPanel(
+  ctx: OptimalEvalContext,
+  hit: ResolvedHit,
+): boolean {
+  const mainId = ctx.mainAgentId
+  if (!mainId) return true
+  if (hit.ownerAgentId === mainId) return true
+  if (hit.anomalyPowerAgentId === mainId) return true
+  if (hit.triggerAgentId === mainId) return true
+  if (mainAgentTeamConvertReadsPanel(ctx)) return true
+  const remiel = findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)
+  if (remiel?.id === mainId) {
+    if (hit.skill.damageType === 'radiance' || hit.anomalySubKind === 'radiance') return true
+  }
+  return false
+}
+
 function resolveProducerAgentLevel(_ctx: OptimalEvalContext, agentId: string | null | undefined): number {
   if (!agentId || agentId === _ctx.mainAgentId) return _ctx.enemyInput.level
   return 60
@@ -687,6 +736,7 @@ function applyEventMultOverrides(
 function resolveLuminousTeamModifiersForOptimal(
   ctx: OptimalEvalContext,
   mainExternal: PanelStats,
+  includeDetails = true,
 ): {
   mutationZone: number
   radianceResPen: number
@@ -699,18 +749,22 @@ function resolveLuminousTeamModifiersForOptimal(
   if (!found) return { mutationZone: 1, radianceResPen: 0 }
   const tSlotIndex = found.slotIndex
   const producerExternal = resolveExternalForAgent(ctx, found.id, tSlotIndex, mainExternal)
-  const breakdown = computeFinalPanel(producerExternal, {
-    ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
-    skillContext: {
-      damageKind: 'anomaly',
-      categoryId: 'basic',
-      subcategoryId: null,
-      element: found.element,
-      staggerPhase: 'stagger',
-      isFollowUp: false,
-      anomalySubKind: 'radiance',
+  const breakdown = computeFinalPanel(
+    producerExternal,
+    {
+      ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
+      skillContext: {
+        damageKind: 'anomaly',
+        categoryId: 'basic',
+        subcategoryId: null,
+        element: found.element,
+        staggerPhase: 'stagger',
+        isFollowUp: false,
+        anomalySubKind: 'radiance',
+      },
     },
-  })
+    includeDetails ? undefined : PANEL_NUMBERS_ONLY,
+  )
   const panel = breakdown.finalPanel
   const agent = ctx.panelContext.agents.find((item) => item.id === found.id)
   return {
@@ -727,7 +781,10 @@ export function evaluateOptimalEventDetail(
   ctx: OptimalEvalContext,
   mainExternal: PanelStats,
   hit: ResolvedHit,
+  options?: { includeDetails?: boolean },
 ): OptimalEventEvalDetail | null {
+  const includeDetails = options?.includeDetails !== false
+  const panelOpts = includeDetails ? undefined : PANEL_NUMBERS_ONLY
   const skipReason = getHitSkipReason(hit, {
     teamSlots: ctx.panelContext.teamSlots,
     agents: ctx.panelContext.agents,
@@ -782,7 +839,7 @@ export function evaluateOptimalEventDetail(
     ),
     skillContext: skillCtx,
   }
-  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx)
+  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
   const panelOverrides = zoneMultResolved.panelOverrides
   let evtFinalPanel = applyHitPanelMods(
@@ -825,10 +882,14 @@ export function evaluateOptimalEventDetail(
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainExternal)
       producerExternalPanel = tExternal
       const tExtraMods = buildOptimalExtraModsForEvent(ctx, hit, evtPowerAgentId)
-      producerBreakdown = computeFinalPanel(tExternal, {
-        ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainExternal, tExtraMods),
-        skillContext: buildSkillContextFromHit(hit, tAgent?.element),
-      })
+      producerBreakdown = computeFinalPanel(
+        tExternal,
+        {
+          ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainExternal, tExtraMods),
+          skillContext: buildSkillContextFromHit(hit, tAgent?.element),
+        },
+        panelOpts,
+      )
       // 招式倍率覆写：紊乱/乱流落到强度提供者面板（最终倍率区填写不进面板基础字段）
       evtTriggerFinalPanel = applyEventMultOverrides(producerBreakdown.finalPanel, {
         disorderBaseMult: panelOverrides?.disorderBaseMult,
@@ -877,7 +938,7 @@ export function evaluateOptimalEventDetail(
   const effectiveSub =
     sub && panelOverrides ? mergeSkillSubcategoryMultOverrides(sub, panelOverrides) : sub
 
-  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainExternal)
+  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainExternal, includeDetails)
 
   // 属性异常/异放/耀变类型增伤取触发者；紊乱/乱流取持有者；直伤回落 owner
   let anomalyTriggerPanel = evtFinalPanel
@@ -897,16 +958,20 @@ export function evaluateOptimalEventDetail(
         mainExternal,
       )
       const trigAgent = ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)
-      bonusBreakdown = computeFinalPanel(trigExternal, {
-        ...buildPanelContextForSlot(
-          ctx,
-          trigSlotIndex,
-          trigExternal,
-          mainExternal,
-          buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
-        ),
-        skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
-      })
+      bonusBreakdown = computeFinalPanel(
+        trigExternal,
+        {
+          ...buildPanelContextForSlot(
+            ctx,
+            trigSlotIndex,
+            trigExternal,
+            mainExternal,
+            buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
+          ),
+          skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+        },
+        panelOpts,
+      )
       anomalyTriggerPanel = bonusBreakdown.finalPanel
       bonusExternalPanel = trigExternal
     }
@@ -1069,7 +1134,7 @@ export function evaluateOptimalEventDetail(
   let remielSelfExternalPanel: PanelStats | undefined
   let remielSelfSources: OptimalPanelBreakdown['sources'] | undefined
   let remielSelfFinalPanel: PanelStats | undefined
-  if (result.remielSelfRadianceActive && remiel) {
+  if (includeDetails && result.remielSelfRadianceActive && remiel) {
     const remielExternal = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainExternal)
     const remielCtx = buildPanelContextForSlot(ctx, remiel.slotIndex, remielExternal, mainExternal)
     const restricted = collectRemielSelfRestrictedContributions(
@@ -1141,7 +1206,7 @@ function evaluateOptimalDamageEvent(
   mainExternal: PanelStats,
   hit: ResolvedHit,
 ): OptimalEventDamageLine | null {
-  const detail = evaluateOptimalEventDetail(ctx, mainExternal, hit)
+  const detail = evaluateOptimalEventDetail(ctx, mainExternal, hit, PANEL_NUMBERS_ONLY)
   if (!detail) return null
   return {
     eventId: detail.eventId,
@@ -1228,10 +1293,23 @@ function computeEventDamageLinesForSweep(
   const hits = ctx.hits ?? []
   if (!hits.length) return { grandTotal: 0, eventLines: [] }
 
+  if (!sweepStableEventLines) sweepStableEventLines = new Map()
+
   let grandTotal = 0
   const eventLines: OptimalEventDamageLine[] = []
   for (const hit of hits) {
-    const line = evaluateOptimalDamageEvent(ctx, external, hit)
+    let line: OptimalEventDamageLine | null
+    if (!optimalHitDependsOnMainAffixPanel(ctx, hit)) {
+      const cached = sweepStableEventLines.get(hit.id)
+      if (cached) {
+        line = cached
+      } else {
+        line = evaluateOptimalDamageEvent(ctx, external, hit)
+        if (line) sweepStableEventLines.set(hit.id, line)
+      }
+    } else {
+      line = evaluateOptimalDamageEvent(ctx, external, hit)
+    }
     if (!line) continue
     eventLines.push(line)
     grandTotal += line.total
@@ -1260,10 +1338,14 @@ export function evaluateAffixCountsForSweep(
   if (ctx.hits?.length) {
     payload = computeEventDamageLinesForSweep(ctx, external)
   } else {
-    const breakdown = computeFinalPanel(external, {
-      ...buildPanelContextForSlot(ctx, ctx.panelContext.mainSlotIndex, external, external),
-      skillContext: ctx.panelContext.skillContext ?? undefined,
-    })
+    const breakdown = computeFinalPanel(
+      external,
+      {
+        ...buildPanelContextForSlot(ctx, ctx.panelContext.mainSlotIndex, external, external),
+        skillContext: ctx.panelContext.skillContext ?? undefined,
+      },
+      PANEL_NUMBERS_ONLY,
+    )
     const piercePower = computePiercePower(
       breakdown.finalPanel.hp,
       breakdown.finalPanel.atk,
@@ -1386,6 +1468,7 @@ function affixEvalContextSignature(ctx: OptimalEvalContext): string {
 }
 
 let affixExternalFixedParts: AffixExternalFixedParts | null = null
+let sweepStableEventLines: Map<string, OptimalEventDamageLine> | null = null
 
 function resetAffixEvalCacheIfNeeded(ctx: OptimalEvalContext) {
   const sig = affixEvalContextSignature(ctx)
@@ -1393,6 +1476,8 @@ function resetAffixEvalCacheIfNeeded(ctx: OptimalEvalContext) {
     affixEvalCache.clear()
     affixSweepCache.clear()
     affixExternalFixedParts = null
+    sweepStableEventLines = null
+    mainAgentTeamConvertReadsPanelCached = null
     affixEvalCacheCtxSig = sig
   }
 }
@@ -1401,6 +1486,8 @@ export function clearAffixEvalCache() {
   affixEvalCache.clear()
   affixSweepCache.clear()
   affixExternalFixedParts = null
+  sweepStableEventLines = null
+  mainAgentTeamConvertReadsPanelCached = null
   affixEvalCacheCtxSig = ''
 }
 

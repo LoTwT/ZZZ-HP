@@ -88,5 +88,5 @@
 - 招式命中路径不再用 `ensureAnomalySlotPanel` 顶替词条局外（持有者、强度提供者、触发者、其他参与者局内）。
 - `optimalAffixAlloc.resolveExternalForAgent` 优先 `slotExternalPanels`，不再把残缺 `convertSlotPanels` 当完整局外。
 - `panelBuffCalc`：增益目录按编队缓存；改词条只 `resolvePackMods`，不扫角色文档。`computeFinalPanel` 同一轮不再扫第三遍来源。
-- 2026-09-03 续：`feature/affix-preagg` 把非转模加成按目录记住，改词条只重折转模。对照 `affix-perf-vs-zzz-dev.md`。
+- 2026-09-03～04：`feature/affix-preagg` 预聚合 + 点框外提交 + 「计算过程」细账延后。对照与还可动：`affix-perf-vs-zzz-dev.md`。
 - 「其他参与者 · 局外面板」在词条模式下只读。
