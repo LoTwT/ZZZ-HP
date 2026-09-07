@@ -175,6 +175,8 @@ export interface BuffStatModifiers {
   pierce: number
   /** 贯穿增伤% */
   pierceDmgBonus: number
+  /** 锐化伤害提升%（独立乘区，仅锐化路径；锋御专属，对标命破贯穿增伤） */
+  sharpenDmgBonus: number
   /**
    * 锐爆伤害加成%（仅锐化）：锐爆伤害 B = 1.2 + 本值/100，
    * 替换常规暴伤区。

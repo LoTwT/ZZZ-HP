@@ -195,6 +195,12 @@ const FINAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'disorderDmgBonus', kind: 'stat', key: 'disorderDmgBonus', label: '紊乱增伤%' },
   { id: 'turbulenceDmgBonus', kind: 'stat', key: 'turbulenceDmgBonus', label: '乱流增伤%' },
   { id: 'pierceDmgBonus', kind: 'mod', key: 'pierceDmgBonus', label: '贯穿增伤%' },
+  {
+    id: 'sharpenDmgBonus',
+    kind: 'mod',
+    key: 'sharpenDmgBonus',
+    label: '锐化伤害提升%',
+  },
   { id: 'special', kind: 'mod', key: 'special', label: '特殊补充%' },
 ]
 
@@ -1229,6 +1235,7 @@ const calcParts = computed(() =>
     combatStaggerVulnerableOnly: panelBreakdown.value.combatMods.staggerVulnerableOnly,
     combatSpecial: panelBreakdown.value.combatMods.special,
     combatPierceDmgBonus: panelBreakdown.value.combatMods.pierceDmgBonus,
+    combatSharpenDmgBonus: panelBreakdown.value.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: panelBreakdown.value.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: panelBreakdown.value.combatMods.dmgPenalty,
     useSharpenFormula: isFengYuMainAgent.value,
@@ -1538,6 +1545,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     combatStaggerVulnerableOnly: evtBreakdown.combatMods.staggerVulnerableOnly ?? 0,
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
+    combatSharpenDmgBonus: evtBreakdown.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: evtBreakdown.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: evtBreakdown.combatMods.dmgPenalty,
     useSharpenFormula: evtUseSharpen,
