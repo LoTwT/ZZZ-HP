@@ -535,12 +535,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   // （乱流触发者固定为风，若误用触发者属性会导致火/以太补偿永远不 ×2）
   const durationElement =
     input.triggerAgentElement ?? input.anomalyTriggerElement ?? ownerElement ?? ''
-  /** 属性异常/异放/耀变：类型增伤与倍率取异常类触发者；紊乱/乱流取招式持有者 */
-  const bonusPanel =
-    useTriggerBase &&
-    (subKind === 'anomalyRelease' || subKind === 'anomaly' || subKind === 'radiance')
-      ? triggerAgentPanel
-      : panel
+  /**
+   * 异常类（属性异常/异放/耀变/紊乱/乱流）：类型增伤、倍率与异常暴击均取异常类触发者。
+   * 紊乱/乱流的类型增伤与异常暴击此前取招式持有者，与规则不符，已改为异常类触发者。
+   * 直伤不启用双代理人，取招式持有者（finalPanel）。
+   * 注：招式持有者仅标记「这个伤害事件属于谁」，不参与异常类伤害的乘区归属。
+   */
+  const bonusPanel = useTriggerBase ? triggerAgentPanel : panel
 
   const skillMults = input.skillSubcategory
     ? resolveSkillMults(
@@ -672,7 +673,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     directDamageExpected = directDamageFromDirectMult + settlementDamageExpected
   }
 
-  // 异常乘区：属性异常/异放/耀变取异常类触发者（bonusPanel）；紊乱/乱流取招式持有者；基础期望取异常强度提供者
+  // 异常乘区：全部异常子类（属性异常/异放/耀变/紊乱/乱流）的类型增伤、倍率与异常暴击均取异常类触发者（bonusPanel）；基础期望取异常强度提供者
   const anomalyDmgBonusZone = 1 + bonusPanel.anomalyDmgBonus / 100
   const anomalyMultZone =
     Math.max(0, bonusPanel.anomalyMult / 100) * readFactor(bonusPanel.anomalyMultFactor)

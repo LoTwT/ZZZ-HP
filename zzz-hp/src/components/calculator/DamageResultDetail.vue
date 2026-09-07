@@ -358,7 +358,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           label: props.producerAgentLabel ?? '异常强度提供者',
           items: usesProducerMult
             ? [
-                '异常基础乘区（含通用增伤区）、紊乱/乱流倍率与持续时间取异常强度提供者；类型增伤（紊乱/乱流增伤）与异常暴击取招式持有者；减防/无视取异常类触发者',
+                '异常基础乘区（含通用增伤区）、紊乱/乱流倍率与持续时间取异常强度提供者；类型增伤（紊乱/乱流增伤）与异常暴击取异常类触发者；减防/无视取异常类触发者',
               ]
             : sub === 'radiance'
               ? [
@@ -371,7 +371,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       ]
     : []
 
-  // 类型增伤/倍率/暴击：属性异常/异放/耀变→异常类触发者；紊乱/乱流→招式持有者
+  // 类型增伤/倍率/暴击：全部异常子类（属性异常/异放/耀变/紊乱/乱流）→异常类触发者
   const bonusPanel = props.bonusFinalPanel ?? ownerPanel
   const bonusExternal = props.bonusExternalPanel ?? ownerExternal
   const bonusSources = props.bonusSources ?? ownerSources
