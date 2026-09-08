@@ -111,6 +111,23 @@ if (Array.isArray(data.bangboos)) {
     fixedMods: scrubMods(b.fixedMods),
   }))
 }
+if (Array.isArray(data.skillSubcategories)) {
+  const skillFactorKeys = [
+    'directDmgMultFactor',
+    'anomalyReleaseMultFactor',
+    'disorderMultFactor',
+  ]
+  data.skillSubcategories = data.skillSubcategories.map((s) => {
+    const next = { ...s }
+    for (const key of skillFactorKeys) {
+      if (next[key] == null) continue
+      const num = Number(next[key])
+      if (!Number.isFinite(num) || num <= 0) next[key] = 100
+      else if (num <= 10) next[key] = num * 100
+    }
+    return next
+  })
+}
 
 fs.writeFileSync(mainFile, JSON.stringify(data, null, 2) + '\n', 'utf8')
 console.log('seed scrubbed (minimal):', mainFile)
