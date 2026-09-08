@@ -78,6 +78,9 @@ export function removeWengineStatSuggestion(fieldKey: string, value: unknown): n
 
 export const WENGINE_BASE_ATK_FIELD_KEY = 'baseAtk'
 
+/** 音擎基础防御力（锋御音擎的基础属性） */
+export const WENGINE_BASE_DEF_FIELD_KEY = 'baseDef'
+
 export function wengineAdvancedStatFieldKey(key: string) {
   return `advancedStats.${key}`
 }

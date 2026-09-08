@@ -17,6 +17,7 @@ import {
 import {
   rememberWengineStatValue,
   WENGINE_BASE_ATK_FIELD_KEY,
+  WENGINE_BASE_DEF_FIELD_KEY,
   wengineAdvancedStatFieldKey,
 } from '@/utils/wengineStatSuggestions'
 import {
@@ -50,6 +51,7 @@ const form = ref({
   rarity: 'A' as WengineBuffDoc['rarity'],
   note: '',
   baseAtk: 0,
+  baseDef: 0,
   advancedStats: createEmptyWengineAdvancedStats(),
   fixedBuffs: createEmptySelfTeamBuffs(),
   refinementForm: createEmptyWengineRefinementBuffs(),
@@ -109,6 +111,7 @@ function loadForm(doc: WengineBuffDoc) {
     rarity: doc.rarity,
     note: doc.note ?? '',
     baseAtk: doc.baseAtk,
+    baseDef: doc.baseDef ?? 0,
     advancedStats: normalizeWengineAdvancedStats(doc.advancedStats),
     fixedBuffs: cloneSelfTeamBuffs(doc.fixedBuffs),
     refinementForm: loadRefinementForm(doc.refinementBuffs),
@@ -127,6 +130,7 @@ function resetForm() {
     rarity: 'A',
     note: '',
     baseAtk: 0,
+    baseDef: 0,
     advancedStats: createEmptyWengineAdvancedStats(),
     fixedBuffs: createEmptySelfTeamBuffs(),
     refinementForm: createEmptyWengineRefinementBuffs(),
@@ -154,6 +158,16 @@ function buildRefinementBuffs() {
   )
 }
 
+function copyRefinementFrom(sourceRank: number) {
+  const source = form.value.refinementForm[sourceRank - 1]
+  const target = form.value.refinementForm[activeRefinementRank.value - 1]
+  if (!source || !target) return
+  // 深拷贝，避免精2~精5与精1共享同一批 effect 对象
+  target.effectBlocks = cloneSelfTeamBuffs(source).effectBlocks
+  message.value = `已把精${sourceRank}的配置复制到精${activeRefinementRank.value}，请修改数值`
+  error.value = ''
+}
+
 function syncRefinementAppliesToAnomaly(effect: import('@/types/calculator').BuffEffect, value: boolean) {
   syncAppliesToAnomalyAcrossRefinementBlocks(
     form.value.refinementForm.map((rank) => rank.effectBlocks ?? []),
@@ -164,6 +178,7 @@ function syncRefinementAppliesToAnomaly(effect: import('@/types/calculator').Buf
 
 function rememberWenginePanelStats() {
   rememberWengineStatValue(WENGINE_BASE_ATK_FIELD_KEY, form.value.baseAtk)
+  rememberWengineStatValue(WENGINE_BASE_DEF_FIELD_KEY, form.value.baseDef)
   for (const field of WENGINE_ADVANCED_STAT_FIELDS) {
     rememberWengineStatValue(
       wengineAdvancedStatFieldKey(field.key),
@@ -208,6 +223,7 @@ async function saveItem() {
       avatar_image,
       clearAvatar: Boolean(avatarFieldRef.value?.clearedByUser),
       baseAtk: Number(form.value.baseAtk) || 0,
+      baseDef: Number(form.value.baseDef) || 0,
       advancedStats: normalizeWengineAdvancedStats(form.value.advancedStats),
       fixedBuffs: packFromBlocks(form.value.fixedBuffs.effectBlocks ?? []),
       refinementBuffs: buildRefinementBuffs(),
@@ -376,6 +392,13 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
             label="基础攻击力"
             :refresh-token="suggestionRefreshToken"
           />
+          <AdminRememberedNumberField
+            v-model="form.baseDef"
+            :field-key="WENGINE_BASE_DEF_FIELD_KEY"
+            label="基础防御力"
+            :refresh-token="suggestionRefreshToken"
+          />
+          <p class="hint">锋御音擎的基础属性为防御力，填在此处；其余职业填基础攻击力。</p>
           <p class="mods-section-title">高级属性</p>
           <AdminWengineAdvancedStatsGrid
             v-model="form.advancedStats"
@@ -409,6 +432,13 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
             </button>
           </div>
 
+          <div v-if="activeRefinementRank > 1" class="refinement-copy-row">
+            <button type="button" class="secondary-btn" @click="copyRefinementFrom(1)">
+              从精1复制
+            </button>
+            <span class="hint">精2~精5通常只有数值差别，复制后再改数值即可。</span>
+          </div>
+
           <p class="mods-section-title">精{{ activeRefinementRank }} · 效果块</p>
           <AdminBuffEffectEditor
             :key="`wengine-refinement-${activeRefinementRank}`"
@@ -438,5 +468,12 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
 <style scoped>
 .editor-anchor {
   scroll-margin-top: 1rem;
+}
+
+.refinement-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
 }
 </style>

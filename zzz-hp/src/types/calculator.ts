@@ -626,6 +626,8 @@ export interface WengineBuffDoc {
   avatar_image: string | null
   note: string
   baseAtk: number
+  /** 基础防御力。锋御音擎的基础属性为防御力（非攻击力），参与局内防御力基数 */
+  baseDef?: number
   advancedStats: WengineAdvancedStats
   fixedBuffs: AgentMindscapeRankBuffs
   refinementBuffs: AgentMindscapeRankBuffs[]

@@ -283,6 +283,7 @@ export interface OptimalEvalContext {
   isFengYu: boolean
   agentBase: AffixPanelCalcInput['agentBase']
   wengineBaseAtk: number
+  wengineBaseDef?: number
   wengineAdvanced: AffixPanelCalcInput['wengineAdvanced']
   driveDiscSelection: AffixPanelCalcInput['driveDiscSelection']
   driveDiscMainStats: AffixDriveDiscMainStats
@@ -1050,8 +1051,8 @@ export function evaluateOptimalEventDetail(
     anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, hit.multOverrides)
   }
 
-  const usesTriggerBonus =
   // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
+  const usesTriggerBonus =
     damageType === 'anomaly' ||
     damageType === 'anomalyRelease' ||
     damageType === 'radiance' ||
@@ -1474,6 +1475,7 @@ function affixEvalContextSignature(ctx: OptimalEvalContext): string {
     ctx.isMb ? '1' : '0',
     ctx.isFengYu ? '1' : '0',
     ctx.wengineBaseAtk ?? 0,
+    ctx.wengineBaseDef ?? 0,
     ctx.baseDamageSource ?? '',
     JSON.stringify(ctx.driveDiscMainStats),
     // 主词条组合试算会改 2/4 件套；缺失会导致同词条数命中旧缓存，伤害不变
@@ -1518,6 +1520,7 @@ function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixed
     affixExternalFixedParts = buildAffixExternalFixedParts({
       agentBase: ctx.agentBase ?? createEmptyAgentBasePanel(),
       wengineBaseAtk: ctx.wengineBaseAtk,
+      wengineBaseDef: ctx.wengineBaseDef ?? 0,
       wengineAdvanced: ctx.wengineAdvanced ?? createEmptyWengineAdvancedStats(),
       driveDiscSelection: ctx.driveDiscSelection,
       driveDiscMainStats: ctx.driveDiscMainStats,
@@ -2361,6 +2364,7 @@ export function buildOptimalEvalContext(input: {
     isFengYu: Boolean(input.isFengYu),
     agentBase: mainAgent?.basePanel ?? createEmptyAgentBasePanel(),
     wengineBaseAtk: mainWengine?.baseAtk ?? 0,
+    wengineBaseDef: mainWengine?.baseDef ?? 0,
     wengineAdvanced: mainWengine?.advancedStats ?? createEmptyWengineAdvancedStats(),
     driveDiscSelection: {
       twoPieceDriveDiscId: mainSlot.twoPieceDriveDiscId,

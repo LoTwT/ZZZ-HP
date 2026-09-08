@@ -42,6 +42,8 @@ export interface AffixDriveDiscSelection {
 export interface AffixPanelCalcInput {
   agentBase: AgentBasePanel
   wengineBaseAtk: number
+  /** 音擎基础防御力。锋御音擎的基础属性为防御力，计入局内防御力基数 */
+  wengineBaseDef?: number
   wengineAdvanced: WengineAdvancedStats
   affixCounts: AffixCounts
   driveDiscSelection: AffixDriveDiscSelection
@@ -132,7 +134,12 @@ export type TeamSlotAffixPanelInput = {
 export function computeExternalPanelFromTeamSlot(input: {
   slot: TeamSlotAffixPanelInput
   agents: Array<{ id: string; basePanel: AgentBasePanel }>
-  wengines: Array<{ id: string; baseAtk: number; advancedStats?: WengineAdvancedStats }>
+  wengines: Array<{
+    id: string
+    baseAtk: number
+    baseDef?: number
+    advancedStats?: WengineAdvancedStats
+  }>
   driveDiscs: DriveDiscBuffDoc[]
   overrideAffix?: {
     affixCounts: AffixCounts
@@ -149,6 +156,7 @@ export function computeExternalPanelFromTeamSlot(input: {
   return computeExternalPanelFromAffixes({
     agentBase: agent?.basePanel ?? createEmptyAgentBasePanel(),
     wengineBaseAtk: wengine?.baseAtk ?? 0,
+    wengineBaseDef: wengine?.baseDef ?? 0,
     wengineAdvanced: wengine?.advancedStats ?? createEmptyWengineAdvancedStats(),
     affixCounts: {
       ...createEmptyAffixCounts(),
@@ -213,7 +221,7 @@ export function buildAffixExternalFixedParts(
   return {
     agentHp: agentBase.hp,
     atkBase: agentBase.atk + input.wengineBaseAtk,
-    agentDef: agentBase.def,
+    agentDef: agentBase.def + (input.wengineBaseDef ?? 0),
     fixedHpPercent: externalPercents.hpPercent,
     fixedAtkPercent: externalPercents.atkPercent,
     fixedDefPercent: externalPercents.defPercent,
