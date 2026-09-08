@@ -207182,9 +207182,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "all-dodge-ms4e5xea",
@@ -207210,9 +207210,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "anby-basic-ms47yaat",
@@ -207336,9 +207336,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "astrayao-basic-ms38tv67",
@@ -207350,9 +207350,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "astrayao-special-ms38sp46",
@@ -207364,9 +207364,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "astrayao-special-ms38sz0g",
@@ -207378,9 +207378,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-basic-ms32zs37",
@@ -207392,9 +207392,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-basic-ms32zwl2",
@@ -207406,9 +207406,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-special-ms32zcnw",
@@ -207420,9 +207420,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-special-ms32zi9k",
@@ -207434,9 +207434,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-special-ms32yx5u",
@@ -207448,9 +207448,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "banyue-special-ms32z5ea",
@@ -207462,9 +207462,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "burnice-assist-ms4ng8ye",
@@ -207490,9 +207490,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "burnice-special-ms4ncv27",
@@ -207532,9 +207532,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "caesar-special-ms20ojw9",
@@ -207546,9 +207546,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "cissia-basic-ms4ljiqj",
@@ -207728,9 +207728,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "miyabi-basic-ms4mtpk5",
@@ -207812,9 +207812,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "orphie&magus-special-ms4ilk1b",
@@ -208036,9 +208036,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "s0anby-special-ms0bqshd",
@@ -208050,9 +208050,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "sbilly-basic-ms321kv5",
@@ -208064,9 +208064,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "sbilly-special-ms324f3w",
@@ -208078,9 +208078,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "seed-basic-ms4kv1p2",
@@ -208120,9 +208120,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "soukaku-basic-ms38ejmz",
@@ -208134,9 +208134,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "soukaku-dodge-ms38f8n8",
@@ -208148,9 +208148,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "trigger-basic-ms0bzb1a",
@@ -208162,9 +208162,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "trigger-basic-ms0bz0a5",
@@ -208176,9 +208176,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "trigger-basic-ms4bryob",
@@ -208190,9 +208190,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "velina-special-ms4tnzvq",
@@ -208274,9 +208274,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yeshunguang-special-ms0g7si1",
@@ -208288,9 +208288,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yeshunguang-ultimate-ms0g8853",
@@ -208302,9 +208302,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yidhari-basic-ms31qkq2",
@@ -208316,9 +208316,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yixuan-basic-ms319ks9",
@@ -208330,9 +208330,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yixuan-basic-ms319tsl",
@@ -208344,9 +208344,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yixuan-special-ms31byco",
@@ -208358,9 +208358,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yixuan-special-ms31c4nx",
@@ -208372,9 +208372,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "yuzuha-assist-ms44kaqg",
@@ -208400,9 +208400,9 @@
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
-      "directDmgMultFactor": 1,
-      "anomalyReleaseMultFactor": 1,
-      "disorderMultFactor": 1
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
     },
     {
       "id": "zhuyuan-basic-ms4hd701",
