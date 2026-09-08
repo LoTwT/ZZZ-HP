@@ -118,9 +118,28 @@ export const WENGINE_ADVANCED_STAT_KEYS = [
   'penRate',
 ]
 
+export const BUFF_MULT_FACTOR_KEYS = [
+  'directDmgMultFactor',
+  'anomalyMultFactor',
+  'anomalyReleaseMultFactor',
+  'disorderBaseMultFactor',
+  'turbulenceBaseMultFactor',
+  'radianceMultFactor',
+  'specialMultFactor',
+  'mutationCoeffFactor',
+]
+
 export function readNumber(value) {
   const num = Number(value)
   return Number.isFinite(num) ? num : 0
+}
+
+/** 增益倍率修正百分点增量；历史脏数据 1（误当 ×1）归零 */
+export function normalizeBuffMultFactorDelta(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num) || num === 0) return 0
+  if (num === 1) return 0
+  return num
 }
 
 export function createEmptyBuffStatModifiers() {
@@ -143,7 +162,10 @@ export function normalizeBuffStatModifiers(value) {
   const result = createEmptyBuffStatModifiers()
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result
   for (const key of BUFF_STAT_KEYS) {
-    result[key] = readNumber(value[key])
+    const raw = readNumber(value[key])
+    result[key] = BUFF_MULT_FACTOR_KEYS.includes(key)
+      ? normalizeBuffMultFactorDelta(raw)
+      : raw
   }
   if (readNumber(value.externalAtkPercent) && !result.inCombatAtkPercent) {
     result.inCombatAtkPercent = readNumber(value.externalAtkPercent)

@@ -337,12 +337,18 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
                 v-model.number="form.baseMult"
                 class="field-input"
                 type="number"
+                step="any"
                 :placeholder="baseMultPlaceholder"
               />
             </label>
             <label class="field">
               <span class="field-label">倍率修正%</span>
-              <input v-model.number="form.baseMultFactor" class="field-input" type="number" />
+              <input
+                v-model.number="form.baseMultFactor"
+                class="field-input"
+                type="number"
+                step="any"
+              />
             </label>
             <label v-if="form.damageType === 'direct'" class="field">
               <span class="field-label">决算倍率%</span>
@@ -350,6 +356,7 @@ defineExpose({ selectedId, saving, saveItem, removeItem })
                 v-model.number="form.settlementMult"
                 class="field-input"
                 type="number"
+                step="any"
                 placeholder="可不填"
               />
             </label>

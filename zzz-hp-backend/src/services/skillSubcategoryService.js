@@ -37,9 +37,9 @@ async function ensureTable() {
     ['settlement_dmg_mult', 'DOUBLE NOT NULL DEFAULT 0'],
     ['anomaly_release_mult', 'DOUBLE NOT NULL DEFAULT 0'],
     ['disorder_mult', 'DOUBLE NOT NULL DEFAULT 0'],
-    ['direct_dmg_mult_factor', 'DOUBLE NOT NULL DEFAULT 1'],
-    ['anomaly_release_mult_factor', 'DOUBLE NOT NULL DEFAULT 1'],
-    ['disorder_mult_factor', 'DOUBLE NOT NULL DEFAULT 1'],
+    ['direct_dmg_mult_factor', 'DOUBLE NOT NULL DEFAULT 100'],
+    ['anomaly_release_mult_factor', 'DOUBLE NOT NULL DEFAULT 100'],
+    ['disorder_mult_factor', 'DOUBLE NOT NULL DEFAULT 100'],
   ]
   for (const [col, def] of multColumns) {
     try {
@@ -48,6 +48,20 @@ async function ensureTable() {
       )
     } catch {
       // column may already exist
+    }
+  }
+  // 旧默认 1（乘数 ×1）改为百分点 100
+  for (const col of [
+    'direct_dmg_mult_factor',
+    'anomaly_release_mult_factor',
+    'disorder_mult_factor',
+  ]) {
+    try {
+      await pool.query(
+        `ALTER TABLE calculator_skill_subcategories MODIFY COLUMN ${col} DOUBLE NOT NULL DEFAULT 100`,
+      )
+    } catch {
+      // ignore
     }
   }
   await pool.query(`
@@ -67,6 +81,14 @@ function readNumber(value, fallback) {
   return Number.isFinite(num) ? num : fallback
 }
 
+/** 招式小类倍率修正存百分点；旧乘数 1 / 1.2 迁为 100 / 120 */
+function readSkillMultFactorPercent(value, fallback = 100) {
+  const num = readNumber(value, fallback)
+  if (!Number.isFinite(num) || num <= 0) return fallback
+  if (num <= 10) return num * 100
+  return num
+}
+
 function rowToDoc(row) {
   return {
     id: String(row.id),
@@ -78,9 +100,12 @@ function rowToDoc(row) {
     settlementDmgMult: readNumber(row.settlement_dmg_mult, 0),
     anomalyReleaseMult: readNumber(row.anomaly_release_mult, 0),
     disorderMult: readNumber(row.disorder_mult, 0),
-    directDmgMultFactor: readNumber(row.direct_dmg_mult_factor, 1),
-    anomalyReleaseMultFactor: readNumber(row.anomaly_release_mult_factor, 1),
-    disorderMultFactor: readNumber(row.disorder_mult_factor, 1),
+    directDmgMultFactor: readSkillMultFactorPercent(row.direct_dmg_mult_factor, 100),
+    anomalyReleaseMultFactor: readSkillMultFactorPercent(
+      row.anomaly_release_mult_factor,
+      100,
+    ),
+    disorderMultFactor: readSkillMultFactorPercent(row.disorder_mult_factor, 100),
   }
 }
 
@@ -123,9 +148,12 @@ export async function upsertSkillSubcategory(doc) {
   const settlementDmgMult = readNumber(doc.settlementDmgMult, 0)
   const anomalyReleaseMult = readNumber(doc.anomalyReleaseMult, 0)
   const disorderMult = readNumber(doc.disorderMult, 0)
-  const directDmgMultFactor = readNumber(doc.directDmgMultFactor, 1)
-  const anomalyReleaseMultFactor = readNumber(doc.anomalyReleaseMultFactor, 1)
-  const disorderMultFactor = readNumber(doc.disorderMultFactor, 1)
+  const directDmgMultFactor = readSkillMultFactorPercent(doc.directDmgMultFactor, 100)
+  const anomalyReleaseMultFactor = readSkillMultFactorPercent(
+    doc.anomalyReleaseMultFactor,
+    100,
+  )
+  const disorderMultFactor = readSkillMultFactorPercent(doc.disorderMultFactor, 100)
   if (!categoryId || !name) {
     throw new Error('招式小类大类与名称为必填项')
   }

@@ -214,7 +214,7 @@ export const BUFF_STAT_FIELDS: {
     key: 'directDmgMultFactor',
     label: '直伤倍率修正',
     unit: 'percent',
-    hint: '百分点，与面板倍率修正加算；默认 100% 表示 ×1',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20（面板默认 100）',
   },
   {
     key: 'anomalyMult',
@@ -226,7 +226,7 @@ export const BUFF_STAT_FIELDS: {
     key: 'anomalyMultFactor',
     label: '异常倍率修正',
     unit: 'percent',
-    hint: '百分点，与面板倍率修正加算',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'disorderBaseMult',
@@ -238,7 +238,7 @@ export const BUFF_STAT_FIELDS: {
     key: 'disorderBaseMultFactor',
     label: '紊乱倍率修正',
     unit: 'percent',
-    hint: '百分点，与面板倍率修正加算',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'anomalyDuration',
@@ -262,7 +262,7 @@ export const BUFF_STAT_FIELDS: {
     key: 'turbulenceBaseMultFactor',
     label: '乱流倍率修正',
     unit: 'percent',
-    hint: '百分点，与面板倍率修正加算',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'turbulenceCompMult',
@@ -291,8 +291,8 @@ export const BUFF_STAT_FIELDS: {
   {
     key: 'radianceMultFactor',
     label: '耀变倍率修正',
-    unit: 'factor',
-    hint: '乘算修正，默认 100',
+    unit: 'percent',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'specialMult',
@@ -303,8 +303,8 @@ export const BUFF_STAT_FIELDS: {
   {
     key: 'specialMultFactor',
     label: '特殊倍率修正',
-    unit: 'factor',
-    hint: '乘算修正，默认 100',
+    unit: 'percent',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'radianceDmgBonus',
@@ -327,8 +327,8 @@ export const BUFF_STAT_FIELDS: {
   {
     key: 'mutationCoeffFactor',
     label: '异化系数修正',
-    unit: 'factor',
-    hint: '乘算修正，默认 100',
+    unit: 'percent',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   { key: 'hp', label: '固定生命', unit: 'flat', hint: '固定数值，直接加到局内生命' },
   {
@@ -383,7 +383,7 @@ export const BUFF_STAT_FIELDS: {
     key: 'anomalyReleaseMultFactor',
     label: '异放倍率修正',
     unit: 'percent',
-    hint: '百分点，与面板倍率修正加算',
+    hint: '百分点增量，与面板倍率修正加算；提升 20% 填 20',
   },
   {
     key: 'skillDmgBonus',

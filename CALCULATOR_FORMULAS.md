@@ -45,15 +45,16 @@
 - `pierceDmgBonus`：贯穿增伤百分点；仅基础伤害来源为贯穿力时形成独立乘区。
 - `directDmgMult`：直伤倍率百分点；进入直伤倍率区。
 - `skillMultiplierBonus`：特定招式倍率百分点；命中招式条件时与 `directDmgMult` 加算。
-- `directDmgMultFactor`：直伤倍率修正增量（增益已减 1，默认 0）；与面板倍率修正（默认 1）加算成修正区。
-- `anomalyMultFactor`：异常倍率修正增量（已减 1，默认 0）。
-- `anomalyReleaseMultFactor`：异放倍率修正增量（已减 1，默认 0）。
-- `disorderBaseMultFactor`：紊乱基础倍率修正增量（已减 1，默认 0）。
-- `turbulenceBaseMultFactor`：乱流基础倍率修正增量（已减 1，默认 0）。
+- `directDmgMultFactor`：直伤倍率修正增量（百分点，默认 0）；与面板倍率修正（百分点，默认 100）加算成修正区。
+- `anomalyMultFactor`：异常倍率修正增量（百分点，默认 0）。
+- `anomalyReleaseMultFactor`：异放倍率修正增量（百分点，默认 0）。
+- `disorderBaseMultFactor`：紊乱基础倍率修正增量（百分点，默认 0）。
+- `turbulenceBaseMultFactor`：乱流基础倍率修正增量（百分点，默认 0）。
 
 **综合倍率区**（直伤 / 异放 / 紊乱等）= 加算区 × 倍率修正区。  
 加算区来自面板与小类配置的百分点；  
-**倍率修正区** = 面板倍率修正（默认 1）+ Σ增益倍率修正增量（已减 1，如 +0.2 填 0.2）。
+**倍率修正区** =（面板倍率修正百分点 + Σ增益倍率修正百分点增量）/ 100。  
+例：面板 100 + 增益 +20 → 修正区 ×1.2；蕾米特殊倍率修正 -75 → 100 − 75 = 25 → ×0.25。
 
 ### 1.3 异常相关乘区
 

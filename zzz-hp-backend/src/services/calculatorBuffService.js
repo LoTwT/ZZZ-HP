@@ -1,8 +1,10 @@
 import pool from '../config/db.js'
 import {
   BUFF_STAT_KEYS,
+  BUFF_MULT_FACTOR_KEYS,
   createEmptyBuffStatModifiers,
   normalizeAgentBasePanel,
+  normalizeBuffMultFactorDelta,
   normalizeBuffStatModifiers,
   normalizeTwoPieceMods,
   normalizeWengineAdvancedStats,
@@ -31,7 +33,10 @@ function normalizeScopeValue(value) {
 function flatModsToEffects(mods, applyTarget) {
   const effects = []
   for (const key of BUFF_STAT_KEYS) {
-    const value = readNumber(mods?.[key])
+    let value = readNumber(mods?.[key])
+    if (BUFF_MULT_FACTOR_KEYS.includes(key)) {
+      value = normalizeBuffMultFactorDelta(value)
+    }
     if (!value) continue
     effects.push({
       id: `legacy-${applyTarget}-${key}`,
@@ -51,8 +56,12 @@ function effectsToFlatMods(effects, applyTarget) {
   for (const effect of effects || []) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
     if (effect.scope && effect.scope !== 'general') continue
-    const amount = readNumber(effect.value ?? effect.valuePerStack)
-    if (!amount || !BUFF_STAT_KEYS.includes(effect.stat)) continue
+    let amount = readNumber(effect.value ?? effect.valuePerStack)
+    if (!BUFF_STAT_KEYS.includes(effect.stat)) continue
+    if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
+      amount = normalizeBuffMultFactorDelta(amount)
+    }
+    if (!amount) continue
     result[effect.stat] += amount
   }
   return result
@@ -162,7 +171,7 @@ function normalizeEffectList(value) {
           ? null
           : String(item.applyProfession).trim()
 
-      return {
+      const effect = {
         id: typeof item.id === 'string' && item.id ? item.id : `eff-${index}`,
         origin: typeof item.origin === 'string' ? item.origin : '',
         scope: normalizeScopeValue(item.scope),
@@ -206,7 +215,19 @@ function normalizeEffectList(value) {
         enabledDefault: item.enabledDefault === false ? false : true,
         note: typeof item.note === 'string' ? item.note : '',
       }
+      if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
+        effect.value = normalizeBuffMultFactorDelta(effect.value)
+        effect.valuePerStack = normalizeBuffMultFactorDelta(effect.valuePerStack)
+        if (
+          Math.abs(effect.value) < 1e-12 &&
+          (effect.kind !== 'stacked' || Math.abs(effect.valuePerStack) < 1e-12)
+        ) {
+          return null
+        }
+      }
+      return effect
     })
+    .filter(Boolean)
 }
 
 function normalizeSelfTeamBuffs(value) {

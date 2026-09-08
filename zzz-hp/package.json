@@ -19,6 +19,7 @@
     "test:affix-preagg": "npx vite-node scripts/test-affix-preagg.mjs",
     "test:buff-catalog-cache": "npx vite-node scripts/test-buff-catalog-cache.mjs",
     "test:user-auth-session": "npx vite-node scripts/test-user-auth-session-race.mjs",
+    "test:mult-factor-percent": "npx vite-node scripts/test-mult-factor-percent.mjs",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
