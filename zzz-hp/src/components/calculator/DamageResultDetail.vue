@@ -22,6 +22,7 @@ import {
   buildRemielSpecialLevelZoneGroups,
   buildRemielStandardLevelZoneGroups,
   buildResistanceZoneProcessItems,
+  buildSharpenDmgZoneProcessItems,
 } from '@/utils/zoneSourceTips'
 import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 import {
@@ -244,6 +245,7 @@ type ValueTipsKey =
   | 'radianceMultZone'
   | 'mutationZone'
   | 'pierceDmgMultiplier'
+  | 'sharpenDmgMultiplier'
   | 'remielSelfInCombatAtk'
   | 'remielSelfInCombatMasteryZone'
   | 'remielSelfSpecialLevelZone'
@@ -358,7 +360,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           label: props.producerAgentLabel ?? '异常强度提供者',
           items: usesProducerMult
             ? [
-                '异常基础乘区（含通用增伤区）、紊乱/乱流倍率与持续时间取异常强度提供者；类型增伤（紊乱/乱流增伤）与异常暴击取招式持有者；减防/无视取异常类触发者',
+                '异常基础乘区（含通用增伤区）、紊乱/乱流倍率与持续时间取异常强度提供者；类型增伤（紊乱/乱流增伤）与异常暴击取异常类触发者；减防/无视取异常类触发者',
               ]
             : sub === 'radiance'
               ? [
@@ -371,7 +373,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       ]
     : []
 
-  // 类型增伤/倍率/暴击：属性异常/异放/耀变→异常类触发者；紊乱/乱流→招式持有者
+  // 类型增伤/倍率/暴击：全部异常子类（属性异常/异放/耀变/紊乱/乱流）→异常类触发者
   const bonusPanel = props.bonusFinalPanel ?? ownerPanel
   const bonusExternal = props.bonusExternalPanel ?? ownerExternal
   const bonusSources = props.bonusSources ?? ownerSources
@@ -716,7 +718,9 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         sources,
         finalValues: { critRate: panel.critRate, critDmg: panel.critDmg },
       }),
-      `暴击区 1 + ${formatFormulaNumber(p.critRateRatio)} × ${formatFormulaNumber(p.critDmgRatio)} = ${formatFormulaNumber(p.critMultiplier)}`,
+      p.useSharpenFormula
+        ? `锐爆区 = ${formatFormulaNumber(p.critMultiplier)}（暴击率上限 200%，不乘常规暴伤）`
+        : `暴击区 1 + ${formatFormulaNumber(p.critRateRatio)} × ${formatFormulaNumber(p.critDmgRatio)} = ${formatFormulaNumber(p.critMultiplier)}`,
     ),
     specialMultiplier: withTotal(
       [
@@ -763,6 +767,28 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         active: p.baseDamageSource === 'pierce',
         bonusPercent: Math.max(0, (p.pierceDmgMultiplier - 1) * 100),
         zone: p.pierceDmgMultiplier,
+      }),
+    ),
+    sharpenDmgMultiplier: withTotal(
+      [
+        {
+          label: '乘区说明',
+          items: p.useSharpenFormula
+            ? ['锐化路径（锋御职业或招式伤害类型为锐化），锐化伤害提升作为独立乘区生效']
+            : ['非锐化路径，锐化伤害提升区固定为 1'],
+        },
+        ...buildStatSourceGroups({
+          keys: ['sharpenDmgBonus'],
+          externalPanel: external,
+          sources,
+          externalKeyMap: { sharpenDmgBonus: null },
+        }),
+      ],
+      `锐化伤害提升区 ${formatFormulaNumber(p.sharpenDmgMultiplier)}`,
+      buildSharpenDmgZoneProcessItems({
+        active: p.useSharpenFormula,
+        bonusPercent: Math.max(0, (p.sharpenDmgMultiplier - 1) * 100),
+        zone: p.sharpenDmgMultiplier,
       }),
     ),
     directDmgMultZone: withTotal(
@@ -860,11 +886,13 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         label: '乘区组成',
         items: [
           `通用乘区 ${directFormulaParts.value[0]}`,
-          `暴击区 ${directFormulaParts.value[1]}`,
+          `${p.useSharpenFormula ? '锐爆区' : '暴击区'} ${directFormulaParts.value[1]}`,
           `特殊乘区 ${directFormulaParts.value[2]}`,
-          ...(p.baseDamageSource === 'pierce'
-            ? [`贯穿增伤区 ${formatFormulaNumber(p.pierceDmgMultiplier)}`]
-            : []),
+          ...(p.useSharpenFormula
+            ? [`锐化伤害提升区 ${formatFormulaNumber(p.sharpenDmgMultiplier)}`]
+            : p.baseDamageSource === 'pierce'
+              ? [`贯穿增伤区 ${formatFormulaNumber(p.pierceDmgMultiplier)}`]
+              : []),
           `直伤倍率区 ${formatFormulaNumber(p.directDmgMultZone)} → 直伤分量 ${formatNumber(p.directDamageFromDirectMult)}`,
           ...(p.settlementDmgMultZone > 0
             ? [
@@ -1222,24 +1250,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         ],
       },
     ],
-    turbulenceCombinedDmgBonusZone: [
-      {
-        label: '乘区组成',
-        items: [
-          `乱流增伤区 ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
-          `异常增伤区 ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `乱流增伤区+异常增伤区 ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-      {
-        label: '加减过程',
-        fullWidth: true,
-        items: [
-          `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
-          `= ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-    ],
+    turbulenceCombinedDmgBonusZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          turbulenceDmgBonus: bonusPanel.turbulenceDmgBonus,
+          anomalyDmgBonus: bonusPanel.anomalyDmgBonus,
+        },
+      }),
+      `乱流增伤区+异常增伤区 1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      [
+        `乱流增伤 ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}%`,
+        `异常增伤 ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
+        `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      ],
+    ),
     turbulenceExpected: [
       {
         label: '乘区组成',

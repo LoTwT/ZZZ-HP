@@ -200,6 +200,7 @@ function normalizeWengine(item: Record<string, unknown>): WengineBuffDoc {
       normalizeAvatarImage(item.avatar_image) ?? normalizeAvatarImage(item.avatar),
     note: typeof item.note === 'string' ? item.note : '',
     baseAtk: Number(item.baseAtk) || 0,
+    baseDef: Number(item.baseDef) || 0,
     advancedStats: normalizeWengineAdvancedStats(item.advancedStats),
     fixedBuffs: normalizeSelfTeamBuffs(item.fixedBuffs),
     refinementBuffs: normalizeWengineRefinementBuffs(item.refinementBuffs).map(

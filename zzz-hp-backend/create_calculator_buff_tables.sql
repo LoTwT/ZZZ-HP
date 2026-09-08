@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS `W-Engine` (
   `avatar_image` VARCHAR(500) DEFAULT NULL COMMENT '头像路径',
   `note` TEXT NOT NULL COMMENT '音擎注释',
   `base_atk` DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '基础攻击力',
+  `base_def` DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT '基础防御力（锋御音擎基础属性）',
   `advanced_stats` JSON NOT NULL COMMENT '高级属性',
   `fixed_buffs` JSON NOT NULL COMMENT '固定自身/队友增益',
   `refinement_buffs` JSON NOT NULL COMMENT '精炼1-5增益数组',

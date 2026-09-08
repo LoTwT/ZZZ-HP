@@ -70,3 +70,6 @@ __screenshots__/
 # Local notes (not project source)
 *.txt
 !**/README*.txt
+
+# Developer handbook (lives outside repo, never committed)
+dev-docs/

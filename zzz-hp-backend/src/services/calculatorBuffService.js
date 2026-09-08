@@ -525,6 +525,7 @@ function rowToWengine(row) {
     avatar_image: row.avatar_image ?? null,
     note: row.note ?? raw.note ?? '',
     baseAtk: readNumber(row.base_atk ?? raw.baseAtk),
+    baseDef: readNumber(row.base_def ?? raw.baseDef),
     advancedStats: normalizeWengineAdvancedStats(
       parseJson(row.advanced_stats, raw.advancedStats),
     ),
@@ -831,6 +832,7 @@ export async function upsertWengine(doc) {
     avatar_image,
     note: typeof doc.note === 'string' ? doc.note : '',
     baseAtk: readNumber(doc.baseAtk),
+    baseDef: readNumber(doc.baseDef),
     advancedStats: normalizeWengineAdvancedStats(doc.advancedStats),
     fixedBuffs: normalizeSelfTeamBuffs(doc.fixedBuffs ?? {}),
     refinementBuffs: Array.isArray(doc.refinementBuffs)
@@ -842,8 +844,8 @@ export async function upsertWengine(doc) {
 
   await pool.execute(
     `INSERT INTO ${WENGINE_TABLE}
-      (id, name, profession, rarity, avatar_image, note, base_atk, advanced_stats, fixed_buffs, refinement_buffs, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON))
+      (id, name, profession, rarity, avatar_image, note, base_atk, base_def, advanced_stats, fixed_buffs, refinement_buffs, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON))
      ON DUPLICATE KEY UPDATE
        name = VALUES(name),
        profession = VALUES(profession),
@@ -851,6 +853,7 @@ export async function upsertWengine(doc) {
        avatar_image = VALUES(avatar_image),
        note = VALUES(note),
        base_atk = VALUES(base_atk),
+       base_def = VALUES(base_def),
        advanced_stats = VALUES(advanced_stats),
        fixed_buffs = VALUES(fixed_buffs),
        refinement_buffs = VALUES(refinement_buffs),
@@ -863,6 +866,7 @@ export async function upsertWengine(doc) {
       payload.avatar_image,
       payload.note,
       payload.baseAtk,
+      payload.baseDef,
       toJson(payload.advancedStats),
       toJson(payload.fixedBuffs),
       toJson(payload.refinementBuffs),

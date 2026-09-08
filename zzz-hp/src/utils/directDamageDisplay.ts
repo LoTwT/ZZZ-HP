@@ -24,6 +24,15 @@ export interface AlignedDirectFormulaGroup {
 }
 
 export function computeDirectBaseChain(p: DamageCalcResult): number {
+  if (p.useSharpenFormula) {
+    return (
+      p.generalMultiplier *
+      Math.max(0, p.directVulnerableMultiplier) *
+      p.critMultiplier *
+      Math.max(0, p.specialMultiplier) *
+      Math.max(0, p.sharpenDmgMultiplier)
+    )
+  }
   return (
     p.generalMultiplier *
     Math.max(0, p.directVulnerableMultiplier) *
@@ -40,7 +49,9 @@ export function buildDirectBaseChainFactorLabels(p: DamageCalcResult): string[] 
     String(p.critMultiplier),
     String(p.specialMultiplier),
   ]
-  if (p.baseDamageSource === 'pierce') {
+  if (p.useSharpenFormula) {
+    parts.push(String(p.sharpenDmgMultiplier))
+  } else if (p.baseDamageSource === 'pierce') {
     parts.push(String(p.pierceDmgMultiplier))
   }
   return parts
@@ -63,14 +74,24 @@ export function buildAlignedDirectFormulaGroup(
       value: formatFormulaNumber(p.directVulnerableMultiplier),
       tipsKey: 'directVulnerableMultiplier',
     },
-    { label: '暴击区', value: formatFormulaNumber(p.critMultiplier), tipsKey: 'critMultiplier' },
+    {
+      label: p.useSharpenFormula ? '锐爆区' : '暴击区',
+      value: formatFormulaNumber(p.critMultiplier),
+      tipsKey: 'critMultiplier',
+    },
     {
       label: '特殊乘区',
       value: formatFormulaNumber(p.specialMultiplier),
       tipsKey: 'specialMultiplier',
     },
   ]
-  if (p.baseDamageSource === 'pierce') {
+  if (p.useSharpenFormula) {
+    baseTerms.push({
+      label: '锐化伤害提升区',
+      value: formatFormulaNumber(p.sharpenDmgMultiplier),
+      tipsKey: 'sharpenDmgMultiplier',
+    })
+  } else if (p.baseDamageSource === 'pierce') {
     baseTerms.push({
       label: '贯穿增伤区',
       value: formatFormulaNumber(p.pierceDmgMultiplier),

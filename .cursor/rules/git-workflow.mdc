@@ -1,0 +1,13 @@
+---
+description: ZZZ-HP 仓库 Git、分支、提交与发版约定
+alwaysApply: true
+---
+
+# Git 与协作约定
+
+- 本机手册：`dev-docs/github-guide.md`。仓库政策：`ZZZ-HP/docs/policies/git-workflow.md`。
+- **「拉最新 / 覆盖本地」**：GitHub 各分支 Updated 哪个最新拉哪个，不要猜版本号、不要默认 `main`。
+- 短命分支 `feature/*` / `fix/*` / `chore/*` / `release/x.y.z`，PR 合入 `main`。不要在 `3.1.x` 版本分支上 commit / push，不要直推日常改动到 `main`。
+- 提交用 Conventional Commits；一件事一个提交。版本三段 SemVer。
+- 勿提交 `.env`、证书、用户上传、`data/*`、`node_modules`；管理员密码永不入库。
+- **用户明确要求再 push**；本地有意义改动可直接 commit。

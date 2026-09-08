@@ -47,6 +47,8 @@ export interface DamageCalcInput {
   combatSpecial: number
   /** 贯穿增伤%（独立乘区，仅贯穿力基础直伤生效） */
   combatPierceDmgBonus?: number
+  /** 锐化伤害提升%（独立乘区，仅锐化路径生效；锋御专属） */
+  combatSharpenDmgBonus?: number
   /** 锐爆伤害加成%（仅锐化路径） */
   combatSharpenCritDmgBonus?: number
   /**
@@ -143,6 +145,8 @@ export interface DamageCalcResult {
   specialMultiplier: number
   /** 贯穿增伤乘区（非贯穿基础时为 1） */
   pierceDmgMultiplier: number
+  /** 锐化伤害提升乘区（非锐化路径时为 1） */
+  sharpenDmgMultiplier: number
   /** 是否走锐化公式 */
   useSharpenFormula: boolean
   /** 锐爆伤害 B（= 1.2 + 锐爆伤害加成） */
@@ -388,6 +392,7 @@ function computeGeneralAndAnomalyBase(options: {
   combatStaggerVulnerableOnly: number
   combatSpecial: number
   combatPierceDmgBonus: number
+  combatSharpenDmgBonus?: number
   staggerPhase: 'normal' | 'stagger'
   /** 防御区穿透/减防分项；缺省与 panel 一致 */
   defensePanel?: Pick<PanelStats, 'penRate' | 'pen' | 'ignoreDefense' | 'reduceDefense'>
@@ -397,6 +402,12 @@ function computeGeneralAndAnomalyBase(options: {
   resistanceElement?: string | null
   /** 抗性穿透额外加算（耀变：蕾米埃尔耀变抗性穿透） */
   extraResPen?: number
+  /**
+   * 抗性穿透数值来源面板。双代理异常下，抗性穿透/减少/无视等效果来自
+   * 异常类触发者面板（触发者携带此类 buff），而非异常强度提供者；
+   * 缺省回落 options.panel。
+   */
+  resPenSource?: PanelStats
 }) {
   const panel = options.panel
   const defense = options.defensePanel ?? panel
@@ -427,7 +438,8 @@ function computeGeneralAndAnomalyBase(options: {
   const defenseAfterModifiers = options.enemyInput.defense * defenseFactor * (1 - penRateRatio)
   const effectiveDefense = Math.max(0, defenseAfterModifiers) - defense.pen
   const defenseMultiplier = options.isMb ? 1 : 794 / (794 + effectiveDefense)
-  const resistanceMultiplier = 1 - enemyRes + clamp((panel.resPen + extraResPen) / 100, -2, 2)
+  const resPenPanel = options.resPenSource ?? panel
+  const resistanceMultiplier = 1 - enemyRes + clamp((resPenPanel.resPen + extraResPen) / 100, -2, 2)
 
   const enemyVulnerableBase = options.enemyInput.vulnerableMultiplier
   const directVulnerableMultiplier = computeVulnerableZone({
@@ -469,6 +481,10 @@ function computeGeneralAndAnomalyBase(options: {
 
   const pierceDmgMultiplier =
     usedBaseSource === 'pierce' ? 1 + pierceDmgBonusRatio : 1
+  /** 锐化伤害提升：独立乘区，仅锐化路径生效（锋御专属，对标命破贯穿增伤） */
+  const sharpenDmgMultiplier = options.useSharpenFormula
+    ? Math.max(0, 1 + (options.combatSharpenDmgBonus ?? 0) / 100)
+    : 1
 
   const masteryZone = panel.mastery / 100
   const levelZone = computeLevelZone(options.agentLevel)
@@ -499,6 +515,7 @@ function computeGeneralAndAnomalyBase(options: {
     staggerMultiplier,
     specialMultiplier,
     pierceDmgMultiplier,
+    sharpenDmgMultiplier,
     generalMultiplier,
     masteryZone,
     levelZone,
@@ -535,12 +552,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   // （乱流触发者固定为风，若误用触发者属性会导致火/以太补偿永远不 ×2）
   const durationElement =
     input.triggerAgentElement ?? input.anomalyTriggerElement ?? ownerElement ?? ''
-  /** 属性异常/异放/耀变：类型增伤与倍率取异常类触发者；紊乱/乱流取招式持有者 */
-  const bonusPanel =
-    useTriggerBase &&
-    (subKind === 'anomalyRelease' || subKind === 'anomaly' || subKind === 'radiance')
-      ? triggerAgentPanel
-      : panel
+  /**
+   * 异常类（属性异常/异放/耀变/紊乱/乱流）：类型增伤、倍率与异常暴击均取异常类触发者。
+   * 紊乱/乱流的类型增伤与异常暴击此前取招式持有者，与规则不符，已改为异常类触发者。
+   * 直伤不启用双代理人，取招式持有者（finalPanel）。
+   * 注：招式持有者仅标记「这个伤害事件属于谁」，不参与异常类伤害的乘区归属。
+   */
+  const bonusPanel = useTriggerBase ? triggerAgentPanel : panel
 
   const skillMults = input.skillSubcategory
     ? resolveSkillMults(
@@ -568,6 +586,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     combatStaggerVulnerableOnly: input.combatStaggerVulnerableOnly ?? 0,
     combatSpecial: input.combatSpecial,
     combatPierceDmgBonus: input.combatPierceDmgBonus ?? 0,
+    combatSharpenDmgBonus: input.combatSharpenDmgBonus ?? 0,
     staggerPhase,
     agentLevel: ownerAgentLevel,
     resistanceElement: ownerResistanceElement,
@@ -610,6 +629,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
           ignoreDefense: triggerAgentPanel.ignoreDefense,
           reduceDefense: triggerAgentPanel.reduceDefense,
         },
+        // 抗性穿透/减少/无视等效果数值来自异常类触发者面板（触发者携带此类 buff）
+        resPenSource: input.anomalyTriggerPanel ?? triggerPanel,
         extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
       })
     : mainParts
@@ -654,7 +675,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       directDmgPenaltyFactor *
       Math.max(0, mainParts.directVulnerableMultiplier) *
       sharpenCritZone *
-      Math.max(0, mainParts.specialMultiplier)
+      Math.max(0, mainParts.specialMultiplier) *
+      Math.max(0, mainParts.sharpenDmgMultiplier)
     directDamageFromDirectMult = sharpenBaseChain * directDmgMultZone
     settlementDamageExpected = 0
     directDamageExpected = directDamageFromDirectMult
@@ -672,7 +694,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     directDamageExpected = directDamageFromDirectMult + settlementDamageExpected
   }
 
-  // 异常乘区：属性异常/异放/耀变取异常类触发者（bonusPanel）；紊乱/乱流取招式持有者；基础期望取异常强度提供者
+  // 异常乘区：全部异常子类（属性异常/异放/耀变/紊乱/乱流）的类型增伤、倍率与异常暴击均取异常类触发者（bonusPanel）；基础期望取异常强度提供者
   const anomalyDmgBonusZone = 1 + bonusPanel.anomalyDmgBonus / 100
   const anomalyMultZone =
     Math.max(0, bonusPanel.anomalyMult / 100) * readFactor(bonusPanel.anomalyMultFactor)
@@ -889,6 +911,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     staggerMultiplier: round(mainParts.staggerMultiplier, 4),
     specialMultiplier: round(mainParts.specialMultiplier, 4),
     pierceDmgMultiplier: round(reportedPierceDmg, 4),
+    sharpenDmgMultiplier: round(mainParts.sharpenDmgMultiplier, 4),
     useSharpenFormula,
     sharpenCritDmgRatio: round(sharpenCritDmgRatio, 4),
     sharpenCritZone: round(sharpenCritZone, 4),

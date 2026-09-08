@@ -152,7 +152,7 @@ export interface OptimalEventEvalDetail {
   producerExternalPanel?: PanelStats
   producerBreakdown?: OptimalPanelBreakdown
   producerAgentLabel?: string
-  /** 类型增伤/倍率面板（属性异常/异放/耀变=异常类触发者；紊乱/乱流=招式持有者） */
+  /** 类型增伤/倍率面板（全部异常子类含紊乱/乱流=异常类触发者） */
   bonusFinalPanel?: PanelStats
   bonusExternalPanel?: PanelStats
   bonusBreakdown?: OptimalPanelBreakdown
@@ -283,6 +283,7 @@ export interface OptimalEvalContext {
   isFengYu: boolean
   agentBase: AffixPanelCalcInput['agentBase']
   wengineBaseAtk: number
+  wengineBaseDef?: number
   wengineAdvanced: AffixPanelCalcInput['wengineAdvanced']
   driveDiscSelection: AffixPanelCalcInput['driveDiscSelection']
   driveDiscMainStats: AffixDriveDiscMainStats
@@ -592,7 +593,15 @@ function buildOptimalExtraModsForEvent(
   const gains = ctx.extraGains ?? []
   if (!gains.length) return createEmptyBuffStatModifiers()
   const ownerAgentId = hit.ownerAgentId
-  const ownerElement = ctx.panelContext.agents.find((item) => item.id === ownerAgentId)?.element
+  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
+  const isAnomalyHit = hit.skill.damageType !== 'direct'
+  const powerElement =
+    isAnomalyHit && hit.anomalyPowerAgentId
+      ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+      : undefined
+  const ownerElement =
+    powerElement ||
+    ctx.panelContext.agents.find((item) => item.id === ownerAgentId)?.element
   const slotIndex = ctx.panelContext.teamSlots.findIndex((slot) => slot.agentId === slotAgentId)
   return mergeExtraModsForEvent(gains, buildSkillContextFromHit(hit, ownerElement), {
     slotIndex,
@@ -820,7 +829,8 @@ export function evaluateOptimalEventDetail(
   const evtPowerElement = eventNeedsTrigger ? tAgent?.element : ownerAgent?.element
   const evtTriggerIsMb = tAgent?.profession === MB_PROFESSION
 
-  const skillCtx = buildSkillContextFromHit(hit, ownerAgent?.element)
+  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
+  const skillCtx = buildSkillContextFromHit(hit, evtPowerElement)
 
   const ownerExternal = resolveExternalForAgent(
     ctx,
@@ -968,7 +978,13 @@ export function evaluateOptimalEventDetail(
             mainExternal,
             buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
           ),
-          skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+          // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+          skillContext: buildSkillContextFromHit(
+            hit,
+            (hit.anomalyPowerAgentId
+              ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+              : undefined) || trigAgent?.element,
+          ),
         },
         panelOpts,
       )
@@ -1010,7 +1026,8 @@ export function evaluateOptimalEventDetail(
                 mainExternal,
                 buildOptimalExtraModsForEvent(ctx, hit, triggerId),
               ),
-              skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+              // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+              skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
             }
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,
@@ -1034,10 +1051,13 @@ export function evaluateOptimalEventDetail(
     anomalyTriggerPanel = applyRadianceBonusMultOverrides(anomalyTriggerPanel, hit.multOverrides)
   }
 
+  // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
   const usesTriggerBonus =
     damageType === 'anomaly' ||
     damageType === 'anomalyRelease' ||
-    damageType === 'radiance'
+    damageType === 'radiance' ||
+    damageType === 'disorder' ||
+    damageType === 'turbulence'
   const bonusFinalPanel = usesTriggerBonus ? anomalyTriggerPanel : evtFinalPanel
   const bonusExternalForTips = usesTriggerBonus ? bonusExternalPanel : ownerExternal
   const bonusBreakdownForTips = usesTriggerBonus ? bonusBreakdown : evtBreakdown
@@ -1070,6 +1090,7 @@ export function evaluateOptimalEventDetail(
     combatStaggerVulnerableOnly: evtBreakdown.combatMods.staggerVulnerableOnly,
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
+    combatSharpenDmgBonus: evtBreakdown.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: evtBreakdown.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: evtBreakdown.combatMods.dmgPenalty,
     useSharpenFormula: evtUseSharpen,
@@ -1268,6 +1289,7 @@ function computeEventDamageLines(
         combatStaggerVulnerableOnly: firstBreakdown.combatMods.staggerVulnerableOnly,
         combatSpecial: firstBreakdown.combatMods.special,
         combatPierceDmgBonus: firstBreakdown.combatMods.pierceDmgBonus,
+        combatSharpenDmgBonus: firstBreakdown.combatMods.sharpenDmgBonus,
         combatSharpenCritDmgBonus: firstBreakdown.combatMods.sharpenCritDmgBonus,
         combatDmgPenalty: firstBreakdown.combatMods.dmgPenalty,
         mainAgentElement: ctx.mainAgentElement,
@@ -1367,6 +1389,7 @@ export function evaluateAffixCountsForSweep(
       combatStaggerVulnerableOnly: breakdown.combatMods.staggerVulnerableOnly,
       combatSpecial: breakdown.combatMods.special,
       combatPierceDmgBonus: breakdown.combatMods.pierceDmgBonus,
+      combatSharpenDmgBonus: breakdown.combatMods.sharpenDmgBonus,
       combatSharpenCritDmgBonus: breakdown.combatMods.sharpenCritDmgBonus,
       combatDmgPenalty: breakdown.combatMods.dmgPenalty,
       mainAgentElement: ctx.mainAgentElement,
@@ -1452,6 +1475,7 @@ function affixEvalContextSignature(ctx: OptimalEvalContext): string {
     ctx.isMb ? '1' : '0',
     ctx.isFengYu ? '1' : '0',
     ctx.wengineBaseAtk ?? 0,
+    ctx.wengineBaseDef ?? 0,
     ctx.baseDamageSource ?? '',
     JSON.stringify(ctx.driveDiscMainStats),
     // 主词条组合试算会改 2/4 件套；缺失会导致同词条数命中旧缓存，伤害不变
@@ -1496,6 +1520,7 @@ function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixed
     affixExternalFixedParts = buildAffixExternalFixedParts({
       agentBase: ctx.agentBase ?? createEmptyAgentBasePanel(),
       wengineBaseAtk: ctx.wengineBaseAtk,
+      wengineBaseDef: ctx.wengineBaseDef ?? 0,
       wengineAdvanced: ctx.wengineAdvanced ?? createEmptyWengineAdvancedStats(),
       driveDiscSelection: ctx.driveDiscSelection,
       driveDiscMainStats: ctx.driveDiscMainStats,
@@ -1557,6 +1582,7 @@ function evaluateAffixCountsUncached(
         combatStaggerVulnerableOnly: breakdown.combatMods.staggerVulnerableOnly,
         combatSpecial: breakdown.combatMods.special,
         combatPierceDmgBonus: breakdown.combatMods.pierceDmgBonus,
+      combatSharpenDmgBonus: breakdown.combatMods.sharpenDmgBonus,
       combatSharpenCritDmgBonus: breakdown.combatMods.sharpenCritDmgBonus,
       combatDmgPenalty: breakdown.combatMods.dmgPenalty,
         mainAgentElement: ctx.mainAgentElement,
@@ -1607,6 +1633,7 @@ function evaluateAffixCountsUncached(
     combatStaggerVulnerableOnly: breakdown.combatMods.staggerVulnerableOnly,
     combatSpecial: breakdown.combatMods.special,
     combatPierceDmgBonus: breakdown.combatMods.pierceDmgBonus,
+      combatSharpenDmgBonus: breakdown.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: breakdown.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: breakdown.combatMods.dmgPenalty,
     mainAgentElement: ctx.mainAgentElement,
@@ -2337,6 +2364,7 @@ export function buildOptimalEvalContext(input: {
     isFengYu: Boolean(input.isFengYu),
     agentBase: mainAgent?.basePanel ?? createEmptyAgentBasePanel(),
     wengineBaseAtk: mainWengine?.baseAtk ?? 0,
+    wengineBaseDef: mainWengine?.baseDef ?? 0,
     wengineAdvanced: mainWengine?.advancedStats ?? createEmptyWengineAdvancedStats(),
     driveDiscSelection: {
       twoPieceDriveDiscId: mainSlot.twoPieceDriveDiscId,

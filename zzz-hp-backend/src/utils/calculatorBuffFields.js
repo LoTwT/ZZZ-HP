@@ -27,6 +27,7 @@ export const BUFF_STAT_KEYS = [
   'energyRegenFlat',
   'pierce',
   'pierceDmgBonus',
+  'sharpenDmgBonus',
   'sharpenCritDmgBonus',
   'dmgPenalty',
   'vulnerable',

@@ -133,6 +133,7 @@ import {
   buildRemielSpecialLevelZoneGroups,
   buildRemielStandardLevelZoneGroups,
   buildResistanceZoneProcessItems,
+  buildSharpenDmgZoneProcessItems,
 } from '@/utils/zoneSourceTips'
 import DirectDamageFormulaAligned from '@/components/calculator/DirectDamageFormulaAligned.vue'
 import DamageOwnerShareBlock from '@/components/calculator/DamageOwnerShareBlock.vue'
@@ -195,6 +196,12 @@ const FINAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'disorderDmgBonus', kind: 'stat', key: 'disorderDmgBonus', label: '紊乱增伤%' },
   { id: 'turbulenceDmgBonus', kind: 'stat', key: 'turbulenceDmgBonus', label: '乱流增伤%' },
   { id: 'pierceDmgBonus', kind: 'mod', key: 'pierceDmgBonus', label: '贯穿增伤%' },
+  {
+    id: 'sharpenDmgBonus',
+    kind: 'mod',
+    key: 'sharpenDmgBonus',
+    label: '锐化伤害提升%',
+  },
   { id: 'special', kind: 'mod', key: 'special', label: '特殊补充%' },
 ]
 
@@ -387,7 +394,14 @@ function slotIndexForAgent(agentId: string) {
 
 function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const ownerElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
+  const isAnomalyHit = hit.skill.damageType !== 'direct'
+  const powerElement =
+    isAnomalyHit && hit.anomalyPowerAgentId
+      ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+      : undefined
+  const ownerElement =
+    powerElement || props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return mergeExtraModsForEvent(extraGains.value, buildSkillContextFromHit(hit, ownerElement), {
     slotIndex: slotIndexForAgent(slotAgentId),
     slotAgentId,
@@ -1229,6 +1243,7 @@ const calcParts = computed(() =>
     combatStaggerVulnerableOnly: panelBreakdown.value.combatMods.staggerVulnerableOnly,
     combatSpecial: panelBreakdown.value.combatMods.special,
     combatPierceDmgBonus: panelBreakdown.value.combatMods.pierceDmgBonus,
+    combatSharpenDmgBonus: panelBreakdown.value.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: panelBreakdown.value.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: panelBreakdown.value.combatMods.dmgPenalty,
     useSharpenFormula: isFengYuMainAgent.value,
@@ -1274,7 +1289,14 @@ function resolveHitPowerElement(hit: ResolvedHit): string | undefined {
 
 function buildHitSkillContext(hit: ResolvedHit) {
   const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === hit.ownerAgentId)
-  const ownerBuffElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  // 直伤用招式持有者属性；异常类一律改用异常强度提供者属性（元素恒取强度提供者）
+  const isAnomalyHit = hit.skill.damageType !== 'direct'
+  const powerElement =
+    isAnomalyHit && hit.anomalyPowerAgentId
+      ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+      : undefined
+  const ownerBuffElement =
+    powerElement || props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return {
     skillCtx: buildSkillContextFromHit(hit, ownerBuffElement),
     ownerSlotIndex: ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
@@ -1305,7 +1327,13 @@ function computeHitPanelForAgent(hit: ResolvedHit, agentId: string): PanelStats 
   const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
   if (slotIndex < 0) return null
   const external = resolveExternalPanelForSlotIndex(slotIndex)
-  const element = props.agents.find((item) => item.id === agentId)?.element
+  // 元素（属性系别）恒取异常强度提供者：增益的元素条件按强度提供者属性匹配，
+  // 不能按被计算角色自身属性（如触发者），否则会误匹配其专属元素增益
+  const powerElement = hit.anomalyPowerAgentId
+    ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+    : undefined
+  const element =
+    powerElement || props.agents.find((item) => item.id === agentId)?.element
   return computeHitBreakdownForAgent(hit, agentId, slotIndex, external, {
     ...buildPanelCalcContextForSlot(slotIndex, buildExtraModsForHit(hit, agentId)),
     skillContext: buildSkillContextFromHit(hit, element),
@@ -1485,7 +1513,8 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
                 trigSlotIndex,
                 buildExtraModsForHit(hit, triggerId),
               ),
-              skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+              // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+              skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
             }
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,
@@ -1538,6 +1567,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     combatStaggerVulnerableOnly: evtBreakdown.combatMods.staggerVulnerableOnly ?? 0,
     combatSpecial: evtBreakdown.combatMods.special,
     combatPierceDmgBonus: evtBreakdown.combatMods.pierceDmgBonus,
+    combatSharpenDmgBonus: evtBreakdown.combatMods.sharpenDmgBonus,
     combatSharpenCritDmgBonus: evtBreakdown.combatMods.sharpenCritDmgBonus,
     combatDmgPenalty: evtBreakdown.combatMods.dmgPenalty,
     useSharpenFormula: evtUseSharpen,
@@ -1564,7 +1594,8 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
     remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForPowerProvider(
       evtPowerAgentId,
-      buildSkillContextFromHit(hit, ownerAgent?.element),
+      // 该分支仅当蕾米埃尔为异常强度提供者时生效，元素应取强度提供者（蕾米埃尔）属性
+      buildSkillContextFromHit(hit, evtPowerElement || ownerAgent?.element),
     ),
     disorderZoneMultOverride: zoneMultResolved.disorderZoneMult,
     disorderZoneMultFactorOverride: zoneMultResolved.disorderZoneMultFactor,
@@ -2191,10 +2222,13 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === remiel.id)?.name
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
+  // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
   const usesTriggerBonus =
     effectiveSub === 'anomaly' ||
     effectiveSub === 'anomalyRelease' ||
-    effectiveSub === 'radiance'
+    effectiveSub === 'radiance' ||
+    effectiveSub === 'disorder' ||
+    effectiveSub === 'turbulence'
   const mutationAgent = formatAnomalyFormulaAgentLabel('mutation', remielName)
   if (hit) {
     const nameOf = (id: string | null) =>
@@ -2202,10 +2236,13 @@ function resolveAnomalyFormulaLabels(
     const ownerName = nameOf(hit.ownerAgentId)
     const powerName = nameOf(hit.anomalyPowerAgentId)
     const triggerName = nameOf(hit.triggerAgentId)
+    // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
     const hitUsesTriggerBonus =
       hit.skill.damageType === 'anomaly' ||
       hit.skill.damageType === 'anomalyRelease' ||
-      hit.skill.damageType === 'radiance'
+      hit.skill.damageType === 'radiance' ||
+      hit.skill.damageType === 'disorder' ||
+      hit.skill.damageType === 'turbulence'
     return {
       baseAgent: skillNeedsDualAgents(hit.skill.damageType)
         ? formatAnomalyFormulaAgentLabel('anomalyPower', powerName ?? ownerName ?? mainName)
@@ -2329,7 +2366,7 @@ const valueTips = computed(() => {
   const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
   const eventHitInput = eventLine ? buildHitCalcInput(eventLine.hit) : null
 
-  // 类型增伤/倍率/暴击：属性异常/异放/耀变→异常类触发者；紊乱/乱流→招式持有者
+  // 类型增伤/倍率/暴击：全部异常子类（含紊乱/乱流）→ 异常类触发者
   let bonusPanel = panel
   let bonusExternal = external
   let bonusSources = sources
@@ -2338,7 +2375,9 @@ const valueTips = computed(() => {
     const usesTriggerBonus =
       damageType === 'anomaly' ||
       damageType === 'anomalyRelease' ||
-      damageType === 'radiance'
+      damageType === 'radiance' ||
+      damageType === 'disorder' ||
+      damageType === 'turbulence'
     const bonusAgentId = usesTriggerBonus
       ? (eventLine.hit.triggerAgentId ?? eventLine.hit.ownerAgentId)
       : eventLine.hit.ownerAgentId
@@ -2350,7 +2389,14 @@ const valueTips = computed(() => {
         bonusSources = ownerBreakdown.sources
       } else {
         const be = resolveOwnerExternalPanel(bonusSlotIndex, bonusAgentId)
-        const bonusElement = props.agents.find((item) => item.id === bonusAgentId)?.element
+        // 元素（属性系别）恒取「异常强度提供者」：增益的元素条件按强度提供者属性匹配，
+        // 不能用触发者自身属性（否则触发者为风时，风元素增益会错误作用于物理招式）
+        const bonusPowerElement = eventLine.hit.anomalyPowerAgentId
+          ? props.agents.find((item) => item.id === eventLine.hit.anomalyPowerAgentId)?.element
+          : undefined
+        const bonusElement =
+          bonusPowerElement ||
+          props.agents.find((item) => item.id === bonusAgentId)?.element
         const bb = computeFinalPanel(be, {
           ...buildPanelCalcContextForSlot(
             bonusSlotIndex,
@@ -2430,7 +2476,12 @@ const valueTips = computed(() => {
         const trigSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === trigId)
         if (trigSlotIndex >= 0) {
           const te = resolveOwnerExternalPanel(trigSlotIndex, trigId)
-          const trigElement = props.agents.find((item) => item.id === trigId)?.element
+          // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+          const trigPowerElement = eventLine.hit.anomalyPowerAgentId
+            ? props.agents.find((item) => item.id === eventLine.hit.anomalyPowerAgentId)?.element
+            : undefined
+          const trigElement =
+            trigPowerElement || props.agents.find((item) => item.id === trigId)?.element
           const tb = computeFinalPanel(te, {
             ...buildPanelCalcContextForSlot(
               trigSlotIndex,
@@ -2898,7 +2949,9 @@ const valueTips = computed(() => {
         sources: tipSources,
         finalValues: { critRate: tipPanel.critRate, critDmg: tipPanel.critDmg },
       }),
-      `暴击区 1 + ${formatFormulaNumber(p.critRateRatio)} × ${formatFormulaNumber(p.critDmgRatio)} = ${formatFormulaNumber(p.critMultiplier)}`,
+      p.useSharpenFormula
+        ? `锐爆区 = ${formatFormulaNumber(p.critMultiplier)}（暴击率上限 200%，不乘常规暴伤）`
+        : `暴击区 1 + ${formatFormulaNumber(p.critRateRatio)} × ${formatFormulaNumber(p.critDmgRatio)} = ${formatFormulaNumber(p.critMultiplier)}`,
     ),
     specialMultiplier: withTotal(
       [
@@ -2945,6 +2998,28 @@ const valueTips = computed(() => {
         active: p.baseDamageSource === 'pierce',
         bonusPercent: Math.max(0, (p.pierceDmgMultiplier - 1) * 100),
         zone: p.pierceDmgMultiplier,
+      }),
+    ),
+    sharpenDmgMultiplier: withTotal(
+      [
+        {
+          label: '乘区说明',
+          items: p.useSharpenFormula
+            ? ['锐化路径（锋御职业或招式伤害类型为锐化），锐化伤害提升作为独立乘区生效']
+            : ['非锐化路径，锐化伤害提升区固定为 1'],
+        },
+        ...buildStatSourceGroups({
+          keys: ['sharpenDmgBonus'],
+          externalPanel: tipExternal,
+          sources: tipSources,
+          externalKeyMap: { sharpenDmgBonus: null },
+        }),
+      ],
+      `锐化伤害提升区 ${formatFormulaNumber(p.sharpenDmgMultiplier)}`,
+      buildSharpenDmgZoneProcessItems({
+        active: p.useSharpenFormula,
+        bonusPercent: Math.max(0, (p.sharpenDmgMultiplier - 1) * 100),
+        zone: p.sharpenDmgMultiplier,
       }),
     ),
     directDmgMultZone: withTotal(
@@ -3426,24 +3501,23 @@ const valueTips = computed(() => {
         ],
       },
     ],
-    turbulenceCombinedDmgBonusZone: [
-      {
-        label: '乘区组成',
-        items: [
-          `乱流增伤区 ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
-          `异常增伤区 ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `乱流增伤区+异常增伤区 ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-      {
-        label: '加减过程',
-        fullWidth: true,
-        items: [
-          `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
-          `= ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-    ],
+    turbulenceCombinedDmgBonusZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          turbulenceDmgBonus: bonusPanel.turbulenceDmgBonus,
+          anomalyDmgBonus: bonusPanel.anomalyDmgBonus,
+        },
+      }),
+      `乱流增伤区+异常增伤区 1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      [
+        `乱流增伤 ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}%`,
+        `异常增伤 ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
+        `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      ],
+    ),
     turbulenceExpected: [
       {
         label: '乘区组成',
@@ -3860,7 +3934,11 @@ function resolveMultDefaultsForEvent(
               trigSlotIndex,
               buildExtraModsForHit(hit, triggerId),
             ),
-            skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+            // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+            skillContext: buildSkillContextFromHit(
+              hit,
+              resolveHitPowerElement(hit) || trigAgent?.element,
+            ),
           }
     const fields = resolveAnomalyReleaseMultFields(
       trigExternal,
