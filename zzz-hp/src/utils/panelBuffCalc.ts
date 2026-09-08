@@ -926,6 +926,8 @@ export interface CombatBuffMods {
   staggerVulnerableOnly: number
   special: number
   pierceDmgBonus: number
+  /** 锐化伤害提升%（独立乘区，仅锐化路径；锋御专属） */
+  sharpenDmgBonus: number
   sharpenCritDmgBonus: number
   dmgPenalty: number
 }
@@ -2092,6 +2094,7 @@ export function extractCombatMods(mods: BuffStatModifiers): CombatBuffMods {
     staggerVulnerableOnly: mods.staggerVulnerableOnly,
     special: mods.special,
     pierceDmgBonus: mods.pierceDmgBonus,
+    sharpenDmgBonus: mods.sharpenDmgBonus,
     sharpenCritDmgBonus: mods.sharpenCritDmgBonus,
     dmgPenalty: mods.dmgPenalty,
   }

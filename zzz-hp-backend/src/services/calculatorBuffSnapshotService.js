@@ -59,7 +59,7 @@ export function coerceCalculatorBuffSnapshot(raw) {
   if (doc.twoPieceMods || doc.fourPieceBuffs || doc.twoPieceNote != null || doc.fourPieceNote != null) {
     return { driveDiscs: [doc] }
   }
-  if (doc.baseAtk != null || doc.advancedStats || doc.refinementBuffs || doc.fixedBuffs) {
+  if (doc.baseAtk != null || doc.baseDef != null || doc.advancedStats || doc.refinementBuffs || doc.fixedBuffs) {
     return { wengines: [doc] }
   }
   if (doc.fixedMods || doc.refinementMods) return { bangboos: [doc] }

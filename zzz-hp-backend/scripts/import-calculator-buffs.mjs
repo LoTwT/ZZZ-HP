@@ -143,6 +143,7 @@ function normalizeDriveDisc(item) {
 function normalizeWengine(item) {
   const advancedStats = normalizeWengineAdvancedStats(item.advancedStats)
   const baseAtk = Number(item.baseAtk) || 0
+  const baseDef = Number(item.baseDef) || 0
   return {
     id: String(item.id ?? ''),
     name: String(item.name ?? ''),
@@ -151,10 +152,11 @@ function normalizeWengine(item) {
     avatar_image: item.avatar_image ?? item.avatar ?? null,
     note: typeof item.note === 'string' ? item.note : '',
     base_atk: baseAtk,
+    base_def: baseDef,
     advanced_stats: advancedStats,
     fixed_buffs: item.fixedBuffs ?? {},
     refinement_buffs: item.refinementBuffs ?? [],
-    raw_json: { ...item, baseAtk, advancedStats, note: typeof item.note === 'string' ? item.note : '' },
+    raw_json: { ...item, baseAtk, baseDef, advancedStats, note: typeof item.note === 'string' ? item.note : '' },
   }
 }
 
@@ -320,8 +322,8 @@ async function main() {
     const wengineCount = await upsertMany(
       conn,
       `INSERT INTO \`W-Engine\`
-        (id, name, profession, rarity, avatar_image, note, base_atk, advanced_stats, fixed_buffs, refinement_buffs, raw_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON))
+        (id, name, profession, rarity, avatar_image, note, base_atk, base_def, advanced_stats, fixed_buffs, refinement_buffs, raw_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON))
        ON DUPLICATE KEY UPDATE
          name = VALUES(name),
          profession = VALUES(profession),
@@ -329,6 +331,7 @@ async function main() {
          avatar_image = VALUES(avatar_image),
          note = VALUES(note),
          base_atk = VALUES(base_atk),
+         base_def = VALUES(base_def),
          advanced_stats = VALUES(advanced_stats),
          fixed_buffs = VALUES(fixed_buffs),
          refinement_buffs = VALUES(refinement_buffs),
@@ -342,6 +345,7 @@ async function main() {
         row.avatar_image,
         row.note,
         row.base_atk,
+        row.base_def,
         asJson(row.advanced_stats),
         asJson(row.fixed_buffs),
         asJson(row.refinement_buffs),

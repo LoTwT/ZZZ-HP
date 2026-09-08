@@ -338,6 +338,12 @@ export const BUFF_STAT_FIELDS: {
     hint: '独立乘区，仅当直伤基础来源为贯穿力时生效，不进增伤区',
   },
   {
+    key: 'sharpenDmgBonus',
+    label: '锐化伤害提升',
+    unit: 'percent',
+    hint: '独立乘区，仅锐化路径生效（锋御专属，对标命破贯穿增伤），不进增伤区',
+  },
+  {
     key: 'sharpenCritDmgBonus',
     label: '锐爆伤害加成',
     unit: 'percent',
@@ -560,6 +566,7 @@ export function createEmptyBuffStatModifiers(): BuffStatModifiers {
     energyRegenFlat: 0,
     pierce: 0,
     pierceDmgBonus: 0,
+    sharpenDmgBonus: 0,
     sharpenCritDmgBonus: 0,
     dmgPenalty: 0,
     vulnerable: 0,
