@@ -3501,24 +3501,23 @@ const valueTips = computed(() => {
         ],
       },
     ],
-    turbulenceCombinedDmgBonusZone: [
-      {
-        label: '乘区组成',
-        items: [
-          `乱流增伤区 ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
-          `异常增伤区 ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `乱流增伤区+异常增伤区 ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-      {
-        label: '加减过程',
-        fullWidth: true,
-        items: [
-          `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
-          `= ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-        ],
-      },
-    ],
+    turbulenceCombinedDmgBonusZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          turbulenceDmgBonus: bonusPanel.turbulenceDmgBonus,
+          anomalyDmgBonus: bonusPanel.anomalyDmgBonus,
+        },
+      }),
+      `乱流增伤区+异常增伤区 1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      [
+        `乱流增伤 ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}%`,
+        `异常增伤 ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
+        `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+      ],
+    ),
     turbulenceExpected: [
       {
         label: '乘区组成',
