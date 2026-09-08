@@ -394,7 +394,14 @@ function slotIndexForAgent(agentId: string) {
 
 function buildExtraModsForHit(hit: ResolvedHit, slotAgentId: string) {
   if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const ownerElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
+  const isAnomalyHit = hit.skill.damageType !== 'direct'
+  const powerElement =
+    isAnomalyHit && hit.anomalyPowerAgentId
+      ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+      : undefined
+  const ownerElement =
+    powerElement || props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return mergeExtraModsForEvent(extraGains.value, buildSkillContextFromHit(hit, ownerElement), {
     slotIndex: slotIndexForAgent(slotAgentId),
     slotAgentId,
@@ -1282,7 +1289,14 @@ function resolveHitPowerElement(hit: ResolvedHit): string | undefined {
 
 function buildHitSkillContext(hit: ResolvedHit) {
   const ownerSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === hit.ownerAgentId)
-  const ownerBuffElement = props.agents.find((item) => item.id === hit.ownerAgentId)?.element
+  // 直伤用招式持有者属性；异常类一律改用异常强度提供者属性（元素恒取强度提供者）
+  const isAnomalyHit = hit.skill.damageType !== 'direct'
+  const powerElement =
+    isAnomalyHit && hit.anomalyPowerAgentId
+      ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+      : undefined
+  const ownerBuffElement =
+    powerElement || props.agents.find((item) => item.id === hit.ownerAgentId)?.element
   return {
     skillCtx: buildSkillContextFromHit(hit, ownerBuffElement),
     ownerSlotIndex: ownerSlotIndex >= 0 ? ownerSlotIndex : mainSlotIndex.value,
@@ -1313,7 +1327,13 @@ function computeHitPanelForAgent(hit: ResolvedHit, agentId: string): PanelStats 
   const slotIndex = props.teamSlots.findIndex((slot) => slot.agentId === agentId)
   if (slotIndex < 0) return null
   const external = resolveExternalPanelForSlotIndex(slotIndex)
-  const element = props.agents.find((item) => item.id === agentId)?.element
+  // 元素（属性系别）恒取异常强度提供者：增益的元素条件按强度提供者属性匹配，
+  // 不能按被计算角色自身属性（如触发者），否则会误匹配其专属元素增益
+  const powerElement = hit.anomalyPowerAgentId
+    ? props.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
+    : undefined
+  const element =
+    powerElement || props.agents.find((item) => item.id === agentId)?.element
   return computeHitBreakdownForAgent(hit, agentId, slotIndex, external, {
     ...buildPanelCalcContextForSlot(slotIndex, buildExtraModsForHit(hit, agentId)),
     skillContext: buildSkillContextFromHit(hit, element),
@@ -1493,7 +1513,8 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
                 trigSlotIndex,
                 buildExtraModsForHit(hit, triggerId),
               ),
-              skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+              // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+              skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
             }
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,
@@ -1573,7 +1594,8 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
     remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForPowerProvider(
       evtPowerAgentId,
-      buildSkillContextFromHit(hit, ownerAgent?.element),
+      // 该分支仅当蕾米埃尔为异常强度提供者时生效，元素应取强度提供者（蕾米埃尔）属性
+      buildSkillContextFromHit(hit, evtPowerElement || ownerAgent?.element),
     ),
     disorderZoneMultOverride: zoneMultResolved.disorderZoneMult,
     disorderZoneMultFactorOverride: zoneMultResolved.disorderZoneMultFactor,
@@ -2200,10 +2222,13 @@ function resolveAnomalyFormulaLabels(
     ? props.agents.find((item) => item.id === remiel.id)?.name
     : undefined
   const effectiveSub = sub ?? effectiveAnomalySubKind.value
+  // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
   const usesTriggerBonus =
     effectiveSub === 'anomaly' ||
     effectiveSub === 'anomalyRelease' ||
-    effectiveSub === 'radiance'
+    effectiveSub === 'radiance' ||
+    effectiveSub === 'disorder' ||
+    effectiveSub === 'turbulence'
   const mutationAgent = formatAnomalyFormulaAgentLabel('mutation', remielName)
   if (hit) {
     const nameOf = (id: string | null) =>
@@ -2211,10 +2236,13 @@ function resolveAnomalyFormulaLabels(
     const ownerName = nameOf(hit.ownerAgentId)
     const powerName = nameOf(hit.anomalyPowerAgentId)
     const triggerName = nameOf(hit.triggerAgentId)
+    // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
     const hitUsesTriggerBonus =
       hit.skill.damageType === 'anomaly' ||
       hit.skill.damageType === 'anomalyRelease' ||
-      hit.skill.damageType === 'radiance'
+      hit.skill.damageType === 'radiance' ||
+      hit.skill.damageType === 'disorder' ||
+      hit.skill.damageType === 'turbulence'
     return {
       baseAgent: skillNeedsDualAgents(hit.skill.damageType)
         ? formatAnomalyFormulaAgentLabel('anomalyPower', powerName ?? ownerName ?? mainName)
@@ -2338,7 +2366,7 @@ const valueTips = computed(() => {
   const eventOwnerCtx = eventLine ? buildHitSkillContext(eventLine.hit) : null
   const eventHitInput = eventLine ? buildHitCalcInput(eventLine.hit) : null
 
-  // 类型增伤/倍率/暴击：属性异常/异放/耀变→异常类触发者；紊乱/乱流→招式持有者
+  // 类型增伤/倍率/暴击：全部异常子类（含紊乱/乱流）→ 异常类触发者
   let bonusPanel = panel
   let bonusExternal = external
   let bonusSources = sources
@@ -2347,7 +2375,9 @@ const valueTips = computed(() => {
     const usesTriggerBonus =
       damageType === 'anomaly' ||
       damageType === 'anomalyRelease' ||
-      damageType === 'radiance'
+      damageType === 'radiance' ||
+      damageType === 'disorder' ||
+      damageType === 'turbulence'
     const bonusAgentId = usesTriggerBonus
       ? (eventLine.hit.triggerAgentId ?? eventLine.hit.ownerAgentId)
       : eventLine.hit.ownerAgentId
@@ -2359,7 +2389,14 @@ const valueTips = computed(() => {
         bonusSources = ownerBreakdown.sources
       } else {
         const be = resolveOwnerExternalPanel(bonusSlotIndex, bonusAgentId)
-        const bonusElement = props.agents.find((item) => item.id === bonusAgentId)?.element
+        // 元素（属性系别）恒取「异常强度提供者」：增益的元素条件按强度提供者属性匹配，
+        // 不能用触发者自身属性（否则触发者为风时，风元素增益会错误作用于物理招式）
+        const bonusPowerElement = eventLine.hit.anomalyPowerAgentId
+          ? props.agents.find((item) => item.id === eventLine.hit.anomalyPowerAgentId)?.element
+          : undefined
+        const bonusElement =
+          bonusPowerElement ||
+          props.agents.find((item) => item.id === bonusAgentId)?.element
         const bb = computeFinalPanel(be, {
           ...buildPanelCalcContextForSlot(
             bonusSlotIndex,
@@ -2439,7 +2476,12 @@ const valueTips = computed(() => {
         const trigSlotIndex = props.teamSlots.findIndex((slot) => slot.agentId === trigId)
         if (trigSlotIndex >= 0) {
           const te = resolveOwnerExternalPanel(trigSlotIndex, trigId)
-          const trigElement = props.agents.find((item) => item.id === trigId)?.element
+          // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+          const trigPowerElement = eventLine.hit.anomalyPowerAgentId
+            ? props.agents.find((item) => item.id === eventLine.hit.anomalyPowerAgentId)?.element
+            : undefined
+          const trigElement =
+            trigPowerElement || props.agents.find((item) => item.id === trigId)?.element
           const tb = computeFinalPanel(te, {
             ...buildPanelCalcContextForSlot(
               trigSlotIndex,
@@ -3893,7 +3935,11 @@ function resolveMultDefaultsForEvent(
               trigSlotIndex,
               buildExtraModsForHit(hit, triggerId),
             ),
-            skillContext: buildSkillContextFromHit(hit, trigAgent?.element),
+            // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
+            skillContext: buildSkillContextFromHit(
+              hit,
+              resolveHitPowerElement(hit) || trigAgent?.element,
+            ),
           }
     const fields = resolveAnomalyReleaseMultFields(
       trigExternal,

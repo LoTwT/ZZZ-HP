@@ -402,6 +402,12 @@ function computeGeneralAndAnomalyBase(options: {
   resistanceElement?: string | null
   /** 抗性穿透额外加算（耀变：蕾米埃尔耀变抗性穿透） */
   extraResPen?: number
+  /**
+   * 抗性穿透数值来源面板。双代理异常下，抗性穿透/减少/无视等效果来自
+   * 异常类触发者面板（触发者携带此类 buff），而非异常强度提供者；
+   * 缺省回落 options.panel。
+   */
+  resPenSource?: PanelStats
 }) {
   const panel = options.panel
   const defense = options.defensePanel ?? panel
@@ -432,7 +438,8 @@ function computeGeneralAndAnomalyBase(options: {
   const defenseAfterModifiers = options.enemyInput.defense * defenseFactor * (1 - penRateRatio)
   const effectiveDefense = Math.max(0, defenseAfterModifiers) - defense.pen
   const defenseMultiplier = options.isMb ? 1 : 794 / (794 + effectiveDefense)
-  const resistanceMultiplier = 1 - enemyRes + clamp((panel.resPen + extraResPen) / 100, -2, 2)
+  const resPenPanel = options.resPenSource ?? panel
+  const resistanceMultiplier = 1 - enemyRes + clamp((resPenPanel.resPen + extraResPen) / 100, -2, 2)
 
   const enemyVulnerableBase = options.enemyInput.vulnerableMultiplier
   const directVulnerableMultiplier = computeVulnerableZone({
@@ -622,6 +629,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
           ignoreDefense: triggerAgentPanel.ignoreDefense,
           reduceDefense: triggerAgentPanel.reduceDefense,
         },
+        // 抗性穿透/减少/无视等效果数值来自异常类触发者面板（触发者携带此类 buff）
+        resPenSource: input.anomalyTriggerPanel ?? triggerPanel,
         extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
       })
     : mainParts
