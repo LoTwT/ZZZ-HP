@@ -288,6 +288,7 @@ function toggleSkillType(id: SkillTypeId) {
         v-else
         v-model="baseMultInput"
         type="number"
+        step="any"
         :placeholder="baseMultPlaceholder"
       />
     </label>
@@ -300,7 +301,13 @@ function toggleSkillType(id: SkillTypeId) {
         readonly
         tabindex="-1"
       />
-      <input v-else v-model="settlementMultInput" type="number" placeholder="可不填" />
+      <input
+        v-else
+        v-model="settlementMultInput"
+        type="number"
+        step="any"
+        placeholder="可不填"
+      />
     </label>
   </div>
 </template>
