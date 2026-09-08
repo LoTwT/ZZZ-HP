@@ -8872,8 +8872,8 @@
         "atk": 626,
         "def": 441,
         "critRate": 33.8,
-        "critDmg": 150,
-        "sharpenCritDmgBonus": 0,
+        "critDmg": 0,
+        "sharpenCritDmgBonus": 150,
         "mastery": 79,
         "anomalyControl": 80,
         "energyRegen": 0,
@@ -8906,8 +8906,8 @@
           "effectBlocks": [
             {
               "id": "blk-mtrf598z-wr4jqt",
-              "name": "暴击率增加",
-              "note": "需要猩红铭刻状态",
+              "name": "核心被动：苍白血宴",
+              "note": "克拉蕾每拥有1%的初始暴击伤害，初始暴击率提升0.35%；\n\n克拉蕾处于[猩红铭刻]，或是在发动[连携技]、[终结技]、[反制支援]、[支援突击]期间，暴击率提升30%，残痕积蓄效率提升50%，在[普通攻击：血华誓·锻星]和[普通攻击：血华誓·伏钺]招式攻击期间触发极限闪避时，使招式剩余时间内造成的伤害提升15%。",
               "effects": [
                 {
                   "id": "eff-mtrf598z-80y7hh",
@@ -8930,17 +8930,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtrgh7uv-6tqjl6",
-              "name": "部分普攻招式伤害提升15%",
-              "note": "需要猩红铭刻状态，且招式攻击期间触发极限闪避",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtrgh7uv-1j3q1e",
+                  "id": "eff-mtskn62y-3w5nq8",
                   "origin": "",
                   "scope": "skill",
                   "applyTarget": "self",
@@ -8950,15 +8942,15 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillCategory": "basic",
-                  "skillSubcategoryId": "claret-basic-mtrgimzn",
+                  "skillSubcategoryId": "claret-basic-mtskq8rr",
                   "skillTargets": [
                     {
                       "category": "basic",
-                      "subcategoryId": "claret-basic-mtrgimzn"
+                      "subcategoryId": "claret-basic-mtskq8rr"
                     },
                     {
                       "category": "basic",
-                      "subcategoryId": "claret-basic-mtrgix23"
+                      "subcategoryId": "claret-basic-mtskqn2n"
                     }
                   ],
                   "elementFilter": "all",
@@ -8969,19 +8961,11 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "enabledDefault": false,
+                  "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtrgk63q-7e7hff",
-              "name": "爆伤转模暴击",
-              "note": "仅限局外爆伤",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtrgk63q-lyo0k2",
+                  "id": "eff-mtskqyss-1toefw",
                   "origin": "",
                   "scope": "general",
                   "applyTarget": "self",
@@ -9002,7 +8986,7 @@
                   "convert": {
                     "from": "critDmg",
                     "panelSource": "external",
-                    "ratioPercent": 0.35,
+                    "ratioPercent": 35,
                     "cap": null,
                     "defaultBase": null,
                     "initialBase": 0
@@ -9015,7 +8999,7 @@
             },
             {
               "id": "blk-mtrgmqhd-srsnon",
-              "name": "锐暴伤害提升25%",
+              "name": "额外能力：血裔传承",
               "note": "队伍中存在[击破]角色、其他[锋御]或与自身属性相同的角色时\n克拉蕾或队友触发[毁伤]时，全队[锋御]代理人进入[残锋]，[残锋]状态下，锐暴伤害提升25%，持续40秒；",
               "effects": [
                 {
@@ -9068,7 +9052,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtrgh7uv-1j3q1e",
+              "id": "eff-mtskn62y-3w5nq8",
               "origin": "",
               "scope": "skill",
               "applyTarget": "self",
@@ -9078,15 +9062,15 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillCategory": "basic",
-              "skillSubcategoryId": "claret-basic-mtrgimzn",
+              "skillSubcategoryId": "claret-basic-mtskq8rr",
               "skillTargets": [
                 {
                   "category": "basic",
-                  "subcategoryId": "claret-basic-mtrgimzn"
+                  "subcategoryId": "claret-basic-mtskq8rr"
                 },
                 {
                   "category": "basic",
-                  "subcategoryId": "claret-basic-mtrgix23"
+                  "subcategoryId": "claret-basic-mtskqn2n"
                 }
               ],
               "elementFilter": "all",
@@ -9097,11 +9081,11 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "enabledDefault": false,
+              "enabledDefault": true,
               "note": ""
             },
             {
-              "id": "eff-mtrgk63q-lyo0k2",
+              "id": "eff-mtskqyss-1toefw",
               "origin": "",
               "scope": "general",
               "applyTarget": "self",
@@ -9122,7 +9106,7 @@
               "convert": {
                 "from": "critDmg",
                 "panelSource": "external",
-                "ratioPercent": 0.35,
+                "ratioPercent": 35,
                 "cap": null,
                 "defaultBase": null,
                 "initialBase": 0
@@ -9296,8 +9280,8 @@
           "effectBlocks": [
             {
               "id": "blk-mtrkovf7-dqmjh3",
-              "name": "效果块 1",
-              "note": "",
+              "name": "影画1",
+              "note": "克拉蕾攻击命中敌人并造成锐暴时，残痕积蓄效率提升20%；克拉蕾触发[毁伤]造成的伤害倍率提升至原本的130%。",
               "effects": [
                 {
                   "id": "eff-mtse9xm8-q641yp",
@@ -9506,7 +9490,7 @@
           "effectBlocks": [
             {
               "id": "blk-mtrkrmdk-tyez3h",
-              "name": "18%电属性伤害抗性",
+              "name": "影画2",
               "note": "几乎全覆盖\n[猩红铭刻]最大持续时间延长2秒；克拉蕾处于[猩红铭刻]，或是在发动[连携技]、[终结技]、[反制支援]、[支援突击]期间，攻击命中时无视目标18%电属性伤害抗性。",
               "effects": [
                 {
@@ -9848,8 +9832,8 @@
           "effectBlocks": [
             {
               "id": "blk-mtseebl3-k0eoh9",
-              "name": "效果块 1",
-              "note": "",
+              "name": "影画4",
+              "note": "[普通攻击：血华誓·锻星]第三段招式发动期间，连续斩击的可延长时间增加；[普通攻击：血华誓·锻星]第三段、[连携技：血华誓·血契共鸣]、[终结技：血华誓·千锤百炼]造成的伤害提升20%\n###未完成",
               "effects": [
                 {
                   "id": "eff-mtseebl3-6j53ci",
@@ -10357,10 +10341,10 @@
       ],
       "mindscapeNotes": [
         "",
-        "克拉蕾攻击命中敌人并造成锐暴时，残痕积蓄效率提升20%；克拉蕾触发[毁伤]造成的伤害倍率提升至原本的130%。",
-        "18%电属性伤害抗性\n几乎全覆盖\n[猩红铭刻]最大持续时间延长2秒；克拉蕾处于[猩红铭刻]，或是在发动[连携技]、[终结技]、[反制支援]、[支援突击]期间，攻击命中时无视目标18%电属性伤害抗性。",
         "",
-        "[普通攻击：血华誓·锻星]第三段招式发动期间，连续斩击的可延长时间增加；[普通攻击：血华誓·锻星]第三段、[连携技：血华誓·血契共鸣]、[终结技：血华誓·千锤百炼]造成的伤害提升20%\n###未完成",
+        "",
+        "",
+        "",
         "",
         "克拉蕾发动[连携技：血华誓·血契共鸣]、[终结技：血华誓·千锤百炼]重击命中敌人时，不消耗[残痕]直接触发1次单体[毁伤]。\n应在招式事件中自行添加"
       ]
@@ -170135,7 +170119,7 @@
       "name": "猩红渴望",
       "profession": "锋御",
       "rarity": "S",
-      "avatar_image": null,
+      "avatar_image": "/wengine/Scarlet-Craving.webp",
       "note": "",
       "baseAtk": 0,
       "baseDef": 431,
@@ -184754,7 +184738,7 @@
       "name": "血髓秘匣",
       "profession": "锋御",
       "rarity": "A",
-      "avatar_image": null,
+      "avatar_image": "/wengine/BloodCasket.webp",
       "note": "大月卡武器",
       "baseAtk": 0,
       "baseDef": 356,
@@ -228564,6 +228548,34 @@
       "disorderMultFactor": 100
     },
     {
+      "id": "claret-basic-mtskqn2n",
+      "agentId": "claret",
+      "categoryId": "basic",
+      "name": "血华誓·伏钺",
+      "countsAsFollowUp": false,
+      "directDmgMult": 100,
+      "settlementDmgMult": 0,
+      "anomalyReleaseMult": 0,
+      "disorderMult": 0,
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
+    },
+    {
+      "id": "claret-basic-mtskq8rr",
+      "agentId": "claret",
+      "categoryId": "basic",
+      "name": "血华誓·锻星",
+      "countsAsFollowUp": false,
+      "directDmgMult": 100,
+      "settlementDmgMult": 0,
+      "anomalyReleaseMult": 0,
+      "disorderMult": 0,
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
+    },
+    {
       "id": "claret-basic-mtsef46o",
       "agentId": "claret",
       "categoryId": "basic",
@@ -229784,6 +229796,21 @@
       "baseMultFactor": 100,
       "settlementMult": 0,
       "element": "霜"
+    },
+    {
+      "id": "sk-yeshunguang-direct-mtsgty6b",
+      "agentId": "yeshunguang",
+      "name": "登场技：照影",
+      "source": "preset",
+      "damageType": "direct",
+      "skillTypes": [
+        "assist"
+      ],
+      "buffAnchorId": null,
+      "baseMult": 800.8,
+      "baseMultFactor": 100,
+      "settlementMult": 0,
+      "element": ""
     }
   ]
 }
