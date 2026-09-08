@@ -22,6 +22,7 @@ import type {
 import { CHARACTER_ATTR_OPTIONS } from '@/types/calculator'
 import { isLuminousElement } from '@/utils/remielUtils'
 import { formatCalcDecimal, roundCalc } from '@/utils/calcNumberFormat'
+import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
 
 const BUFF_SCOPE_SET = new Set<string>([
   'general',
@@ -183,7 +184,11 @@ const BUFF_MULT_FACTOR_KEYS: BuffStatKey[] = [
   'anomalyReleaseMultFactor',
   'disorderBaseMultFactor',
   'turbulenceBaseMultFactor',
+  'radianceMultFactor',
+  'specialMultFactor',
+  'mutationCoeffFactor',
 ]
+
 
 function isBuffMultFactorKey(key: string): boolean {
   return (BUFF_MULT_FACTOR_KEYS as string[]).includes(key)
@@ -983,6 +988,10 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
     enabledDefault: entry.enabledDefault === false ? false : true,
     note: typeof entry.note === 'string' ? entry.note : '',
   })
+  if (isBuffMultFactorKey(effect.stat)) {
+    effect.value = normalizeBuffMultFactorDelta(effect.value)
+    effect.valuePerStack = normalizeBuffMultFactorDelta(effect.valuePerStack)
+  }
   if (effect.kind === 'convert' && !effect.convert) {
     effect.kind = 'fixed'
   }
@@ -992,6 +1001,14 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
       setEffectSkillTargets(effect, [{ category: 'basic', subcategoryId: null }])
     } else {
       setEffectSkillTargets(effect, targets)
+    }
+  }
+  // 倍率修正增量为 0 的脏条目不保留
+  const factorValue = Number(effect.value ?? 0)
+  const factorPerStack = Number(effect.valuePerStack ?? 0)
+  if (isBuffMultFactorKey(effect.stat) && Math.abs(factorValue) < 1e-12) {
+    if (effect.kind !== 'stacked' || Math.abs(factorPerStack) < 1e-12) {
+      return null
     }
   }
   return effect
