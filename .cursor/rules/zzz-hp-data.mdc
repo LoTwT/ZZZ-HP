@@ -1,0 +1,13 @@
+---
+description: 后端与游戏主数据约定
+globs:
+  - ZZZ-HP/zzz-hp-backend/**
+---
+
+# 后端与主数据
+
+- 角色/音擎/驱动盘/邦布主数据**唯一来源**：`scripts/data/zzz-hp-calculator-buffs.json`（不是 `.sql`）。
+- 改主数据：JSON 与库同步；import 为 ON DUPLICATE KEY UPDATE，删记录须「库 DELETE + JSON 删对象」。
+- 改武器 id/头像：同步 `raw_json`；头像改 `zzz-hp/public/wengine/` 与 `zzz-hp-backend/wengine/` 两处。
+- `seed_changelog.mjs` 对旧版本 DELETE+INSERT，执行前确认是否覆盖手动 changelog。
+- 双机 DB 大同步：`zzz_full_dump.sql`（Gitee）。
