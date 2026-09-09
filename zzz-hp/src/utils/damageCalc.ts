@@ -90,7 +90,12 @@ export interface DamageCalcInput {
   triggerAgentResistanceElement?: string | null
   /** 异常强度提供者 piercePower（命破等）；缺省用持有者 piercePower */
   triggerPiercePower?: number
+  /**
+   * 异常强度提供者基础伤害来源。须按强度提供者职业传入（命破 pierce / 锋御 def / 其余 atk）；
+   * 缺省时不得回落招式持有者来源，引擎默认 atk；命破仍可由 triggerIsMb 强制 pierce。
+   */
   triggerBaseDamageSource?: BaseDamageSource
+  /** 异常强度提供者是否为命破（强制贯穿力 + 防御区=1） */
   triggerIsMb?: boolean
   /** 当前招式小类（有则优先采用小类倍率） */
   skillSubcategory?: SkillSubcategory | null
@@ -354,6 +359,16 @@ export function computeSharpenCritFullCritZone(
   return (1 + B) * (1 + B * (r - 1))
 }
 
+/** 按职业解析基础伤害来源：命破→贯穿力，锋御→防御力，其余→fallback（默认攻击力） */
+export function resolveBaseDamageSourceForProfession(
+  profession: string | null | undefined,
+  fallback: BaseDamageSource = 'atk',
+): BaseDamageSource {
+  if (profession === '命破') return 'pierce'
+  if (profession === '锋御') return 'def'
+  return fallback
+}
+
 function resolveBaseDamageParts(options: {
   panel: PanelStats
   piercePower: number
@@ -598,12 +613,18 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     },
   })
 
+  // 异常基础跟强度提供者：命破/锋御不得继承招式持有者的 baseDamageSource
+  const triggerIsMb = Boolean(input.triggerIsMb)
+  const triggerBaseDamageSource: BaseDamageSource = triggerIsMb
+    ? 'pierce'
+    : (input.triggerBaseDamageSource ?? 'atk')
+
   const triggerParts = useTriggerBase
     ? computeGeneralAndAnomalyBase({
         panel: triggerPanel,
         piercePower: input.triggerPiercePower ?? input.piercePower,
-        baseDamageSource: input.triggerBaseDamageSource ?? input.baseDamageSource,
-        isMb: input.triggerIsMb ?? false,
+        baseDamageSource: triggerBaseDamageSource,
+        isMb: triggerIsMb,
         enemyInput: input.enemyInput,
         combatVulnerable: input.combatVulnerable,
         combatDirectVulnerable: input.combatDirectVulnerable ?? 0,
