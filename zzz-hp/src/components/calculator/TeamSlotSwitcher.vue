@@ -31,26 +31,29 @@ const emit = defineEmits<{
 }>()
 
 const hoverIndex = ref<number | null>(null)
-let hoverClearTimer: ReturnType<typeof setTimeout> | null = null
+let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
 
-function enterSlotHover(index: number) {
-  if (hoverClearTimer) {
-    clearTimeout(hoverClearTimer)
-    hoverClearTimer = null
-  }
+function clearHoverHideTimer() {
+  if (hoverHideTimer == null) return
+  clearTimeout(hoverHideTimer)
+  hoverHideTimer = null
+}
+
+function showHover(index: number) {
+  clearHoverHideTimer()
   hoverIndex.value = index
 }
 
-function leaveSlotHover() {
-  if (hoverClearTimer) clearTimeout(hoverClearTimer)
-  hoverClearTimer = setTimeout(() => {
+function scheduleHideHover() {
+  clearHoverHideTimer()
+  hoverHideTimer = setTimeout(() => {
     hoverIndex.value = null
-    hoverClearTimer = null
-  }, 280)
+    hoverHideTimer = null
+  }, 220)
 }
 
 onUnmounted(() => {
-  if (hoverClearTimer) clearTimeout(hoverClearTimer)
+  clearHoverHideTimer()
 })
 
 function isConvertSlot(index: number) {
@@ -126,6 +129,12 @@ const FINAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
 ]
 
+function finalPreviewFieldsFor(index: number) {
+  const agent = agentOf(props.teamSlots[index]!)
+  if (agent?.profession === '锋御') return FINAL_PREVIEW_FIELDS
+  return FINAL_PREVIEW_FIELDS.filter((field) => field.key !== 'sharpenCritDmgBonus')
+}
+
 const activeSlot = computed(() => props.teamSlots[props.activeIndex])
 const activeAgent = computed(() => (activeSlot.value ? agentOf(activeSlot.value) : undefined))
 const activeWengine = computed(() => (activeSlot.value ? wengineOf(activeSlot.value) : undefined))
@@ -190,8 +199,8 @@ const driveDiscLine = computed(() => {
         v-for="(slot, index) in teamSlots"
         :key="index"
         class="slot-wrap"
-        @mouseenter="enterSlotHover(index)"
-        @mouseleave="leaveSlotHover"
+        @mouseenter="showHover(index)"
+        @mouseleave="scheduleHideHover"
       >
         <button
           type="button"
@@ -216,6 +225,8 @@ const driveDiscLine = computed(() => {
           class="panel-hover-card"
           :class="{ 'panel-hover-card--end': index === teamSlots.length - 1 }"
           role="tooltip"
+          @mouseenter="showHover(index)"
+          @mouseleave="scheduleHideHover"
         >
           <p class="panel-hover-title">局外面板</p>
           <dl class="panel-hover-grid">
@@ -232,7 +243,7 @@ const driveDiscLine = computed(() => {
             <p class="panel-hover-title panel-hover-title--final">局内面板</p>
             <dl class="panel-hover-grid">
               <div
-                v-for="field in FINAL_PREVIEW_FIELDS"
+                v-for="field in finalPreviewFieldsFor(index)"
                 :key="`fin-${field.key}`"
                 class="panel-hover-item"
               >
@@ -541,21 +552,29 @@ const driveDiscLine = computed(() => {
 
 .panel-hover-card {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 0.55rem);
   left: 0;
   z-index: 50;
   width: min(38rem, 94vw);
   max-height: min(70vh, 36rem);
   overflow: auto;
-  /* 上边距作为可命中桥接区，避免慢速移入时离开 slot-wrap */
-  padding: 0.45rem 0.8rem 0.65rem;
+  padding: 0.65rem 0.8rem;
   border: 1px solid rgba(201, 165, 92, 0.45);
-  border-top-width: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 10px;
   background: #1a1e26;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   color: #d7dde8;
   pointer-events: auto;
+}
+
+/* 桥接槽位与卡片之间的空隙，避免慢速移入时断开 */
+.panel-hover-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -0.7rem;
+  height: 0.7rem;
 }
 
 .panel-hover-card--end {

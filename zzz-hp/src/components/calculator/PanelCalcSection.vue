@@ -163,6 +163,7 @@ const EXTERNAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'def', kind: 'stat', key: 'def', label: '防御力' },
   { id: 'critRate', kind: 'stat', key: 'critRate', label: '暴击率%' },
   { id: 'critDmg', kind: 'stat', key: 'critDmg', label: '爆伤%' },
+  { id: 'sharpenCritDmgBonus', kind: 'stat', key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
   { id: 'dmgBonus', kind: 'stat', key: 'dmgBonus', label: '增伤%' },
   { id: 'penRate', kind: 'stat', key: 'penRate', label: '穿透率%' },
   { id: 'pen', kind: 'stat', key: 'pen', label: '穿透值' },

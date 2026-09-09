@@ -152,6 +152,11 @@ const FINAL_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
 ]
 
+const visibleFinalFields = computed(() => {
+  if (agent.value?.profession === '锋御') return FINAL_FIELDS
+  return FINAL_FIELDS.filter((field) => field.key !== 'sharpenCritDmgBonus')
+})
+
 function formatValue(key: keyof PanelStats, value: number) {
   if (
     key === 'hp' ||
@@ -306,7 +311,7 @@ function formatValue(key: keyof PanelStats, value: number) {
       <p v-if="!finalPanel" class="hint">暂无局内结果，录入局外或确认增益后可在此查看。</p>
       <div v-else class="grid four">
         <label
-          v-for="field in FINAL_FIELDS"
+          v-for="field in visibleFinalFields"
           :key="field.key"
           class="field"
           :class="fieldConvertClass(field.key, 'final')"
@@ -338,16 +343,6 @@ function formatValue(key: keyof PanelStats, value: number) {
   background: #14181f;
   color: #9aa3b0;
   font-size: 0.78rem;
-}
-
-:global([data-theme='light']) .disabled-hint {
-  border-color: #c5ccd8;
-  background: #f3f5f8;
-  color: #5a6475;
-}
-
-:global([data-theme='light']) .slot-panel-entry.is-disabled {
-  opacity: 0.72;
 }
 
 .entry-mode-row {

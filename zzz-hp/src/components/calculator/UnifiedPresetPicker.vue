@@ -719,7 +719,11 @@ const canConfirm = computed(() => !!selected.value.agentId)
         <!-- Tab: Panel -->
         <div v-if="activeTab === 'panel'" class="tab-panel tab-panel--panel">
           <div class="tab-grid-wrap tab-grid-wrap--panel">
-            <div class="panel-import-stack" :class="{ 'is-locked': !selected.agentId }">
+            <div v-if="!selected.agentId" class="panel-locked-state" role="status">
+              <p class="panel-locked-title">面板暂不可导入</p>
+              <p class="panel-locked-desc">请先在「角色」Tab 选择代理人，再录入或识别局外面板。</p>
+            </div>
+            <div v-else class="panel-import-stack">
               <PanelScreenshotUploadSection
                 embedded
                 :agents="agents"
@@ -741,7 +745,6 @@ const canConfirm = computed(() => !!selected.value.agentId)
                 :four-piece-id="selected.fourPieceId"
                 :final-panel="liveFinalPanel"
                 :convert-source-marks="draftConvertSourceMarks"
-                :disabled="!selected.agentId"
               />
             </div>
           </div>
@@ -891,9 +894,33 @@ const canConfirm = computed(() => !!selected.value.agentId)
   gap: 0.75rem;
 }
 
-.panel-import-stack.is-locked > :first-child {
-  opacity: 0.55;
-  pointer-events: none;
+.panel-locked-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 16rem;
+  padding: 1.5rem 1.25rem;
+  border: 1px dashed #3a4250;
+  border-radius: 12px;
+  background: #14181f;
+  text-align: center;
+}
+
+.panel-locked-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #c9a55c;
+}
+
+.panel-locked-desc {
+  margin: 0;
+  max-width: 22rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #9aa3b0;
 }
 
 .tab-toolbar {
@@ -1262,10 +1289,6 @@ const canConfirm = computed(() => !!selected.value.agentId)
 :global([data-theme='light']) .disc-col-header p,
 :global([data-theme='light']) .trigger-hint {
   color: #4d6a80;
-}
-
-:global([data-theme='light']) .panel-import-stack.is-locked > :first-child {
-  opacity: 0.72;
 }
 
 :global([data-theme='light']) .modal-footer {
