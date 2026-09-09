@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
@@ -31,6 +31,27 @@ const emit = defineEmits<{
 }>()
 
 const hoverIndex = ref<number | null>(null)
+let hoverClearTimer: ReturnType<typeof setTimeout> | null = null
+
+function enterSlotHover(index: number) {
+  if (hoverClearTimer) {
+    clearTimeout(hoverClearTimer)
+    hoverClearTimer = null
+  }
+  hoverIndex.value = index
+}
+
+function leaveSlotHover() {
+  if (hoverClearTimer) clearTimeout(hoverClearTimer)
+  hoverClearTimer = setTimeout(() => {
+    hoverIndex.value = null
+    hoverClearTimer = null
+  }, 280)
+}
+
+onUnmounted(() => {
+  if (hoverClearTimer) clearTimeout(hoverClearTimer)
+})
 
 function isConvertSlot(index: number) {
   if (!props.convertSlotIndexes) return false
@@ -97,6 +118,7 @@ const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
 
 const FINAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   ...EXTERNAL_PREVIEW_FIELDS,
+  { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
   { key: 'anomalyCritRate', label: '异常暴击%' },
   { key: 'anomalyCritDmg', label: '异常爆伤%' },
   { key: 'anomalyDmgBonus', label: '异常增伤%' },
@@ -168,8 +190,8 @@ const driveDiscLine = computed(() => {
         v-for="(slot, index) in teamSlots"
         :key="index"
         class="slot-wrap"
-        @mouseenter="hoverIndex = index"
-        @mouseleave="hoverIndex = null"
+        @mouseenter="enterSlotHover(index)"
+        @mouseleave="leaveSlotHover"
       >
         <button
           type="button"
@@ -519,29 +541,21 @@ const driveDiscLine = computed(() => {
 
 .panel-hover-card {
   position: absolute;
-  top: calc(100% + 0.35rem);
+  top: 100%;
   left: 0;
   z-index: 50;
   width: min(38rem, 94vw);
   max-height: min(70vh, 36rem);
   overflow: auto;
-  padding: 0.65rem 0.8rem;
+  /* 上边距作为可命中桥接区，避免慢速移入时离开 slot-wrap */
+  padding: 0.45rem 0.8rem 0.65rem;
   border: 1px solid rgba(201, 165, 92, 0.45);
-  border-radius: 10px;
+  border-top-width: 0;
+  border-radius: 0 0 10px 10px;
   background: #1a1e26;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   color: #d7dde8;
   pointer-events: auto;
-}
-
-/* 桥接槽位与卡片之间的空隙，避免移入面板时触发 mouseleave */
-.panel-hover-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -0.4rem;
-  height: 0.4rem;
 }
 
 .panel-hover-card--end {

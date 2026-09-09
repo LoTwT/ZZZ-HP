@@ -134,6 +134,7 @@ const FINAL_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'def', label: '防御力' },
   { key: 'critRate', label: '暴击率%' },
   { key: 'critDmg', label: '爆伤%' },
+  { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
   { key: 'dmgBonus', label: '增伤%' },
   { key: 'penRate', label: '穿透率%' },
   { key: 'pen', label: '穿透值' },
@@ -337,6 +338,16 @@ function formatValue(key: keyof PanelStats, value: number) {
   background: #14181f;
   color: #9aa3b0;
   font-size: 0.78rem;
+}
+
+:global([data-theme='light']) .disabled-hint {
+  border-color: #c5ccd8;
+  background: #f3f5f8;
+  color: #5a6475;
+}
+
+:global([data-theme='light']) .slot-panel-entry.is-disabled {
+  opacity: 0.72;
 }
 
 .entry-mode-row {

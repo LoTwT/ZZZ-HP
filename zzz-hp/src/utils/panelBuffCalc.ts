@@ -1978,6 +1978,7 @@ export function applyBuffModsToPanel(
     def: externalPanel.def * (1 + mods.inCombatDefPercent / 100) + mods.def,
     critRate: externalPanel.critRate + mods.critRate,
     critDmg: externalPanel.critDmg + mods.critDmg,
+    sharpenCritDmgBonus: mods.sharpenCritDmgBonus,
     dmgBonus: externalPanel.dmgBonus + mods.dmgBonus + mods.skillDmgBonus,
     ignoreDefense: externalPanel.ignoreDefense,
     reduceDefense: externalPanel.reduceDefense + mods.reduceDefense,

@@ -4,6 +4,11 @@ export interface PanelStats {
   def: number
   critRate: number
   critDmg: number
+  /**
+   * 锐爆伤害加成%（锋御；局内展示用，来自角色基础 + 相关增益）。
+   * 锐爆 B = 1.2 + 本值/100。
+   */
+  sharpenCritDmgBonus: number
   dmgBonus: number
   ignoreDefense: number
   reduceDefense: number
@@ -181,6 +186,7 @@ export function createDefaultExternalPanel(): PanelStats {
     def: 0,
     critRate: 48.2,
     critDmg: 186,
+    sharpenCritDmgBonus: 0,
     dmgBonus: 10,
     ignoreDefense: 0,
     reduceDefense: 0,
