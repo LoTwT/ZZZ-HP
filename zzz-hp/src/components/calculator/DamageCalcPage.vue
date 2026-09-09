@@ -1504,7 +1504,7 @@ function restoreWorkingState() {
 
 function saveHistoryEntry(payload: { name: string; folder: string }) {
   if (panelCalcMode.value === 'optimal') {
-    historyMessage.value = '最优词条分配模式暂不支持写入历史，请切换到面板/词条计算后再保存'
+    historyMessage.value = '最优词条分配模式暂不支持写入历史，请切换到面板/词条导入后再保存'
     return
   }
   const panelState = captureSchemePanelState()
@@ -1555,7 +1555,7 @@ function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
 /** 用当前页面配置覆盖指定方案（保留其 id / 名称 / 目录） */
 function overwriteHistoryEntry(id: string) {
   if (panelCalcMode.value === 'optimal') {
-    historyMessage.value = '最优词条分配模式暂不支持写入，请切换到面板/词条计算后再保存'
+    historyMessage.value = '最优词条分配模式暂不支持写入，请切换到面板/词条导入后再保存'
     return
   }
   const panelState = captureSchemePanelState()
@@ -1920,7 +1920,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       <EnemyEnvironmentSection
         v-model="enemyInput"
         title="敌方与环境"
-        description="选择 Boss 或手动录入防御、抗性与失衡倍率，供面板计算与最优词条共用。"
+        description="选择 Boss 或手动录入防御、抗性与失衡倍率，供面板导入与最优词条共用。"
       />
     </section>
 
@@ -1928,10 +1928,10 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
       <header class="calc-mode-header">
         <h2>计算方式</h2>
         <p class="calc-mode-desc">
-          局外 / 词条在「代理人 → 导入」的面板 Tab 录入（含截图识别）；面板计算用手填局外，词条计算用副词条推导；最优词条在约束下扫描并绘制期望伤害曲线。
+          局外 / 词条在「代理人 → 导入」的面板 Tab 录入（含截图识别）；面板导入用手填局外，词条导入用副词条推导；最优词条在约束下扫描并绘制期望伤害曲线。
         </p>
       </header>
-      <div class="calc-mode-tabs" role="tablist" aria-label="面板计算方式">
+      <div class="calc-mode-tabs" role="tablist" aria-label="面板导入方式">
         <button
           type="button"
           role="tab"
@@ -1940,7 +1940,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
           :aria-selected="panelCalcMode === 'panel'"
           @click="selectPanelCalcMode('panel')"
         >
-          面板计算
+          面板导入
         </button>
         <button
           type="button"
@@ -1950,7 +1950,7 @@ defineExpose({ scrollToSection, setCalcMode, panelCalcMode })
           :aria-selected="panelCalcMode === 'affix'"
           @click="selectPanelCalcMode('affix')"
         >
-          词条计算
+          词条导入
         </button>
         <button
           type="button"

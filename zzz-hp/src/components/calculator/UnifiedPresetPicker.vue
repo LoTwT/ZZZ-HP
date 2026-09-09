@@ -94,7 +94,7 @@ const selected = ref({
 const draftExternalPanel = reactive<PanelStats>(createDefaultExternalPanel())
 const draftAffixCounts = reactive(createEmptyAffixCounts())
 const draftAffixMains = reactive(createDefaultAffixDriveDiscMainStats())
-/** 面板 Tab 独立切换：面板计算 / 词条计算 */
+/** 面板 Tab 独立切换：面板导入 / 词条导入 */
 const entryMode = ref<Extract<PanelCalcMode, 'panel' | 'affix'>>(
   props.preferredEntryMode ?? 'panel',
 )
@@ -210,12 +210,14 @@ watch(
   (newId, oldId) => {
     if (!open.value || !newId || newId === oldId) return
     const agent = props.agents.find((item) => item.id === newId)
-    const saved = props.anomalySlotPanels?.[newId]
-    if (saved) {
-      Object.assign(draftExternalPanel, createDefaultExternalPanel(), saved)
-    } else if (agent) {
+    // 选中代理人后面板草稿固定回落该角色基础面板（不沿用旧导入）
+    if (agent) {
       Object.assign(draftExternalPanel, createExternalPanelFromAgentBase(agent.basePanel))
+    } else {
+      Object.assign(draftExternalPanel, createDefaultExternalPanel())
     }
+    Object.assign(draftAffixCounts, createEmptyAffixCounts())
+    Object.assign(draftAffixMains, createDefaultAffixDriveDiscMainStats())
   },
 )
 
@@ -352,12 +354,8 @@ const selectedWengine = computed(() => props.wengines.find((w) => w.id === selec
 const selectedTwoPiece = computed(() => props.driveDiscs.find((d) => d.id === selected.value.twoPieceId))
 const selectedFourPiece = computed(() => props.driveDiscs.find((d) => d.id === selected.value.fourPieceId))
 
-const panelTabFilled = computed(() => {
-  if (entryMode.value === 'affix') {
-    return Object.values(draftAffixCounts).some((n) => Number(n) > 0)
-  }
-  return draftExternalPanel.hp > 0 || draftExternalPanel.atk > 0
-})
+/** 面板 Tab：确定导入前不画 √（基础面板有攻/生命时也不算已填） */
+const panelTabFilled = computed(() => false)
 
 const summary = computed(() => {
   const parts: string[] = []
@@ -721,28 +719,31 @@ const canConfirm = computed(() => !!selected.value.agentId)
         <!-- Tab: Panel -->
         <div v-if="activeTab === 'panel'" class="tab-panel tab-panel--panel">
           <div class="tab-grid-wrap tab-grid-wrap--panel">
-            <PanelScreenshotUploadSection
-              embedded
-              :agents="agents"
-              :wengines="wengines"
-              :drive-discs="driveDiscs"
-              @apply-recognition="applyRecognitionToDraft"
-            />
-            <SlotPanelEntryForm
-              v-model:external-panel="draftExternalPanel"
-              v-model:affix-counts="draftAffixCounts"
-              v-model:affix-drive-disc-main-stats="draftAffixMains"
-              v-model:calc-mode="entryMode"
-              :agents="agents"
-              :wengines="wengines"
-              :drive-discs="driveDiscs"
-              :agent-id="selected.agentId"
-              :wengine-id="selected.wengineId"
-              :two-piece-id="selected.twoPieceId"
-              :four-piece-id="selected.fourPieceId"
-              :final-panel="liveFinalPanel"
-              :convert-source-marks="draftConvertSourceMarks"
-            />
+            <div class="panel-import-stack" :class="{ 'is-locked': !selected.agentId }">
+              <PanelScreenshotUploadSection
+                embedded
+                :agents="agents"
+                :wengines="wengines"
+                :drive-discs="driveDiscs"
+                @apply-recognition="applyRecognitionToDraft"
+              />
+              <SlotPanelEntryForm
+                v-model:external-panel="draftExternalPanel"
+                v-model:affix-counts="draftAffixCounts"
+                v-model:affix-drive-disc-main-stats="draftAffixMains"
+                v-model:calc-mode="entryMode"
+                :agents="agents"
+                :wengines="wengines"
+                :drive-discs="driveDiscs"
+                :agent-id="selected.agentId"
+                :wengine-id="selected.wengineId"
+                :two-piece-id="selected.twoPieceId"
+                :four-piece-id="selected.fourPieceId"
+                :final-panel="liveFinalPanel"
+                :convert-source-marks="draftConvertSourceMarks"
+                :disabled="!selected.agentId"
+              />
+            </div>
           </div>
         </div>
 
@@ -882,6 +883,17 @@ const canConfirm = computed(() => !!selected.value.agentId)
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.panel-import-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panel-import-stack.is-locked > :first-child {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .tab-toolbar {

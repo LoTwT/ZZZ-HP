@@ -93,11 +93,6 @@ const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'mastery', label: '精通' },
   { key: 'anomalyControl', label: '异常掌控' },
   { key: 'energyRegen', label: '能量回复效率%' },
-  { key: 'anomalyDuration', label: '异常持续时间(s)' },
-  { key: 'disorderBaseMult', label: '紊乱基础倍率%' },
-  { key: 'disorderCompMult', label: '紊乱补偿倍率%' },
-  { key: 'turbulenceBaseMult', label: '乱流基础倍率%' },
-  { key: 'turbulenceCompMult', label: '乱流补偿倍率%' },
 ]
 
 const FINAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
@@ -536,7 +531,17 @@ const driveDiscLine = computed(() => {
   background: #1a1e26;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   color: #d7dde8;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+/* 桥接槽位与卡片之间的空隙，避免移入面板时触发 mouseleave */
+.panel-hover-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -0.4rem;
+  height: 0.4rem;
 }
 
 .panel-hover-card--end {

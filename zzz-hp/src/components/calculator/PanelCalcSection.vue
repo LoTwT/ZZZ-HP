@@ -170,11 +170,6 @@ const EXTERNAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'mastery', kind: 'stat', key: 'mastery', label: '精通' },
   { id: 'anomalyControl', kind: 'stat', key: 'anomalyControl', label: '异常掌控' },
   { id: 'energyRegen', kind: 'stat', key: 'energyRegen', label: '能量回复效率%' },
-  { id: 'anomalyDuration', kind: 'stat', key: 'anomalyDuration', label: '异常持续时间(s)' },
-  { id: 'disorderBaseMult', kind: 'stat', key: 'disorderBaseMult', label: '紊乱基础倍率%' },
-  { id: 'disorderCompMult', kind: 'stat', key: 'disorderCompMult', label: '紊乱补偿倍率%' },
-  { id: 'turbulenceBaseMult', kind: 'stat', key: 'turbulenceBaseMult', label: '乱流基础倍率%' },
-  { id: 'turbulenceCompMult', kind: 'stat', key: 'turbulenceCompMult', label: '乱流补偿倍率%' },
 ]
 
 /** 局内最终面板字段 — 倍率/factor/finalRate 移至伤害事件详情 */
