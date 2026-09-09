@@ -374,7 +374,9 @@ const summary = computed(() => {
     discParts.push(`${selectedTwoPiece.value.name}（2件）`)
   }
   parts.push(discParts.join(' + ') || '未佩戴驱动盘')
-  if (entryMode.value === 'affix') {
+  if (!selectedAgent.value) {
+    parts.push('面板暂无')
+  } else if (entryMode.value === 'affix') {
     const total = Object.values(draftAffixCounts).reduce((sum, n) => sum + (Number(n) || 0), 0)
     parts.push(`词条 ${total} 条`)
   } else {
