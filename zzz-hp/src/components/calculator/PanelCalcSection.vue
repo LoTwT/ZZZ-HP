@@ -163,6 +163,7 @@ const EXTERNAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'def', kind: 'stat', key: 'def', label: '防御力' },
   { id: 'critRate', kind: 'stat', key: 'critRate', label: '暴击率%' },
   { id: 'critDmg', kind: 'stat', key: 'critDmg', label: '爆伤%' },
+  { id: 'sharpenCritDmgBonus', kind: 'stat', key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
   { id: 'dmgBonus', kind: 'stat', key: 'dmgBonus', label: '增伤%' },
   { id: 'penRate', kind: 'stat', key: 'penRate', label: '穿透率%' },
   { id: 'pen', kind: 'stat', key: 'pen', label: '穿透值' },
@@ -170,11 +171,6 @@ const EXTERNAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'mastery', kind: 'stat', key: 'mastery', label: '精通' },
   { id: 'anomalyControl', kind: 'stat', key: 'anomalyControl', label: '异常掌控' },
   { id: 'energyRegen', kind: 'stat', key: 'energyRegen', label: '能量回复效率%' },
-  { id: 'anomalyDuration', kind: 'stat', key: 'anomalyDuration', label: '异常持续时间(s)' },
-  { id: 'disorderBaseMult', kind: 'stat', key: 'disorderBaseMult', label: '紊乱基础倍率%' },
-  { id: 'disorderCompMult', kind: 'stat', key: 'disorderCompMult', label: '紊乱补偿倍率%' },
-  { id: 'turbulenceBaseMult', kind: 'stat', key: 'turbulenceBaseMult', label: '乱流基础倍率%' },
-  { id: 'turbulenceCompMult', kind: 'stat', key: 'turbulenceCompMult', label: '乱流补偿倍率%' },
 ]
 
 /** 局内最终面板字段 — 倍率/factor/finalRate 移至伤害事件详情 */
@@ -185,6 +181,7 @@ const FINAL_PANEL_SLOTS: PanelFieldSlot[] = [
   { id: 'def', kind: 'stat', key: 'def', label: '防御力' },
   { id: 'critRate', kind: 'stat', key: 'critRate', label: '暴击率%' },
   { id: 'critDmg', kind: 'stat', key: 'critDmg', label: '爆伤%' },
+  { id: 'sharpenCritDmgBonus', kind: 'stat', key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
   { id: 'dmgBonus', kind: 'stat', key: 'dmgBonus', label: '增伤%' },
   { id: 'penRate', kind: 'stat', key: 'penRate', label: '穿透率%' },
   { id: 'pen', kind: 'stat', key: 'pen', label: '穿透值' },
