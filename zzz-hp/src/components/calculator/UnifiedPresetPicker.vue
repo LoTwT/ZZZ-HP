@@ -1291,6 +1291,19 @@ const canConfirm = computed(() => !!selected.value.agentId)
   color: #4d6a80;
 }
 
+:global([data-theme='light']) .panel-locked-state {
+  border-color: #b7d3e8;
+  background: #ffffff;
+}
+
+:global([data-theme='light']) .panel-locked-title {
+  color: #8a6a2e;
+}
+
+:global([data-theme='light']) .panel-locked-desc {
+  color: #4d6a80;
+}
+
 :global([data-theme='light']) .modal-footer {
   background: #eef6fc;
 }
