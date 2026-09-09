@@ -64,7 +64,12 @@ import {
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
-import { computeDamageResult, type DamageCalcInput, type DamageCalcResult } from '@/utils/damageCalc'
+import {
+  computeDamageResult,
+  resolveBaseDamageSourceForProfession,
+  type DamageCalcInput,
+  type DamageCalcResult,
+} from '@/utils/damageCalc'
 import { mergeSkillSubcategoryMultOverrides } from '@/utils/skillSubcategoryMult'
 import {
   normalizeDamageEnemyInput,
@@ -1261,6 +1266,7 @@ const calcParts = computed(() =>
     triggerFinalPanel: triggerFinalPanel.value ?? undefined,
     triggerAgentElement: triggerAgent.value?.element,
     triggerPiercePower: triggerPiercePower.value,
+    triggerBaseDamageSource: resolveBaseDamageSourceForProfession(triggerAgent.value?.profession),
     triggerIsMb: triggerAgent.value?.profession === MB_PROFESSION,
     skillSubcategory: resolvedSkillSubcategory.value,
     mainAgentLevel: enemyInput.value.level,
@@ -1371,6 +1377,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
       ? props.agents.find((a) => a.id === evtPowerAgentId)
       : undefined
   const evtTriggerIsMb = tAgent?.profession === MB_PROFESSION
+  const evtTriggerBaseDamageSource = resolveBaseDamageSourceForProfession(tAgent?.profession)
 
   const ownerExternal = resolveOwnerExternalPanel(ownerSlotIndex, ownerAgentId)
   const evtPanelCtx = buildHitPanelCalcContext(evtSkillCtx, ownerSlotIndex, hit)
@@ -1583,6 +1590,7 @@ function buildHitCalcInput(hit: ResolvedHit): DamageCalcInput | null {
     triggerFinalPanel: evtTriggerFinalPanel,
     triggerAgentElement: evtPowerElement,
     triggerPiercePower: evtTriggerPierce,
+    triggerBaseDamageSource: evtTriggerBaseDamageSource,
     triggerIsMb: evtTriggerIsMb,
     skillSubcategory: effectiveSub,
     mainAgentLevel: resolveAgentLevel(ownerAgentId),
