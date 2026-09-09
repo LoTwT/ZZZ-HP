@@ -95,7 +95,7 @@ import {
 import type { EnvironmentBuffFilterMode } from '@/components/calculator/EnvironmentBuffFilterBar.vue'
 import { mapBossInfoToDamageEnemyInput } from '@/utils/enemyInputFromBoss'
 import {
-  DEFAULT_ENEMY_STAGGER_MULTIPLIER,
+  createDefaultDamageEnemyInput,
   normalizeDamageEnemyInput,
   type DamageEnemyInput,
 } from '@/utils/enemyResistance'
@@ -159,15 +159,7 @@ const activeSlot = ref(0)
 const selectedBangbooId = ref('none')
 const bangbooRefine = ref(1)
 const panelCalcMode = ref<PanelCalcMode>('panel')
-const enemyInput = ref<DamageEnemyInput>(
-  normalizeDamageEnemyInput({
-    defense: 953,
-    vulnerableMultiplier: 1,
-    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
-    specialMultiplier: 1,
-    level: 60,
-  }),
-)
+const enemyInput = ref<DamageEnemyInput>(createDefaultDamageEnemyInput())
 const historyEntries = ref<DamageCalcHistoryEntry[]>(listAllDamageCalcHistory())
 const activeHistoryId = ref('')
 const historyMessage = ref('')
@@ -1622,13 +1614,7 @@ function blankTeamSlots(): TeamSlot[] {
 }
 
 function defaultEnemyInput(): DamageEnemyInput {
-  return normalizeDamageEnemyInput({
-    defense: 953,
-    vulnerableMultiplier: 1,
-    staggerMultiplier: DEFAULT_ENEMY_STAGGER_MULTIPLIER,
-    specialMultiplier: 1,
-    level: 60,
-  })
+  return createDefaultDamageEnemyInput()
 }
 
 /** 方案边界内的空白页：队伍/面板/额外 Buff/准备流程/敌方。不含方案库、自建招式、流程伤害记录、危局筛选、公式开关。 */
