@@ -10,6 +10,8 @@
     "import:nanoka": "node scripts/import-nanoka.mjs",
     "import:nanoka:dry": "node scripts/import-nanoka.mjs --dry-run",
     "import:nanoka:range": "node scripts/import-nanoka-range.mjs",
+    "import:nanoka-skills": "node scripts/import-nanoka-skills.mjs",
+    "import:nanoka-skills:write": "node scripts/import-nanoka-skills.mjs --write",
     "delete:defense-season": "node scripts/delete-defense-season.mjs",
     "export:calculator-buffs": "node scripts/export-calculator-buffs.mjs",
     "sync:calculator-avatars": "node scripts/sync-calculator-public-avatars.mjs",
