@@ -932,7 +932,18 @@ export function findDamageCalcHistory(id: string): DamageCalcHistoryEntry | null
   return listAllDamageCalcHistory().find((entry) => entry.id === id) ?? null
 }
 
-export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
+/**
+ * 本标签页「最后一次看到的草稿时间戳」。
+ * 用来发现**别的标签页**写过更新的草稿：比自己看到的新 → 本页不再覆盖（避免把对方的新数据冲掉）。
+ */
+let lastSeenDraftSavedAt = 0
+
+export function markWorkingDraftSeen(savedAt: number): void {
+  lastSeenDraftSavedAt = Math.max(lastSeenDraftSavedAt, savedAt || 0)
+}
+
+/** 只读不标记：给写入前的比较用（标记了就看不出「别人写过」） */
+function readStoredDraft(): DamageCalcWorkingDraft | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     if (!raw) return null
@@ -944,16 +955,30 @@ export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
   }
 }
 
-export function saveWorkingDraft(draft: DamageCalcWorkingDraft): void {
+export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
+  const parsed = readStoredDraft()
+  if (parsed) markWorkingDraftSeen(parsed.savedAt)
+  return parsed
+}
+
+export type SaveWorkingDraftResult = 'ok' | 'failed' | 'stale'
+
+/**
+ * 写工作草稿。**绝不静默丢数据**：
+ * - 取不到面板快照的那次落盘（子组件已拆）不能抹掉已存快照 → 没带 `panelState` 就沿用旧的那份；
+ * - 发现别的标签页写过更新的草稿 → 返回 `'stale'` 且**不覆盖**（调用方必须提示用户）；
+ * - 配额满 / 隐私模式等写入失败 → 返回 `'failed'`（调用方必须提示用户，不能装作已保存）。
+ */
+export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraftResult {
   try {
-    // 取不到面板快照的那次落盘（卸载 / 页面隐藏时子组件模板 ref 已被清空）**不能**把已存的快照抹掉：
-    // 新草稿没带 panelState 就沿用旧草稿那份 —— 否则「敌方与环境 / 额外 Buff」会被默认值永久覆盖。
-    const payload = draft.panelState
-      ? draft
-      : { ...draft, panelState: loadWorkingDraft()?.panelState ?? null }
+    const stored = readStoredDraft()
+    if (stored && stored.savedAt > lastSeenDraftSavedAt) return 'stale'
+    const payload = draft.panelState ? draft : { ...draft, panelState: stored?.panelState ?? null }
     localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+    markWorkingDraftSeen(payload.savedAt)
+    return 'ok'
   } catch {
-    /* quota / private mode */
+    return 'failed'
   }
 }
 
