@@ -897,6 +897,8 @@ export function evaluateOptimalEventDetail(
       ownerExtraMods,
     ),
     skillContext: skillCtx,
+    // 行级增益例外：只影响本行结算（不动面板、不动层数累计）
+    rowBuffOverride: hit.buffOverride ?? null,
   }
   const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
@@ -946,6 +948,8 @@ export function evaluateOptimalEventDetail(
         {
           ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainPanel, tExtraMods),
           skillContext: buildSkillContextFromHit(hit, tAgent?.element),
+          // 同上：异常强度提供者那一侧也要吃本行的增益例外
+          rowBuffOverride: hit.buffOverride ?? null,
         },
         panelOpts,
       )
