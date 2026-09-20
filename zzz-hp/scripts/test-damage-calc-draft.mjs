@@ -23,8 +23,14 @@ globalThis.localStorage = {
   },
 }
 
-const { loadWorkingDraft, saveWorkingDraft, localStorageUsageBytes, saveDamageCalcHistory, schemeStoreWriteFailed } =
-  await import('../src/utils/damageCalcHistory.ts')
+const {
+  loadWorkingDraft,
+  saveWorkingDraft,
+  localStorageUsageBytes,
+  saveDamageCalcHistory,
+  schemeStoreWriteFailed,
+  clearWorkingDraft,
+} = await import('../src/utils/damageCalcHistory.ts')
 
 let passed = 0
 let failed = 0
@@ -192,8 +198,21 @@ saveWorkingDraft(draftBase({ savedAt: 30, activeSlot: 1 }))
 saveWorkingDraft(draftBase({ savedAt: 31, activeSlot: 2 }))
 check('正常保存不写 draft-prev（避免存储翻倍）', !memory.has(prevKey))
 
-// 4.5 存储用量可测
+// 4.5 存储用量可测（先量，后面会清空）
 check('localStorageUsageBytes() 能报出用量', localStorageUsageBytes() > 0)
+
+// 4.6 残留 meta（没有草稿）不能把保存永久挡住 —— 这是我自己复核时发现的 bug
+memory.clear()
+memory.set(metaKey, JSON.stringify({ savedAt: 9999, writerId: 'ghost-tab' }))
+const ghostResult = saveWorkingDraft(draftBase({ savedAt: 40 }))
+check(
+  '只有 meta、没有草稿 → 仍能保存（不被幽灵 meta 挡住）',
+  ghostResult === 'ok',
+  `result=${ghostResult}`,
+)
+// clearWorkingDraft 要连 meta 一起清
+clearWorkingDraft()
+check('clearWorkingDraft() 同时清掉 meta', !memory.has(metaKey) && !memory.has(draftKey))
 
 // 4.6 方案库写失败要能被调用方发现
 const originalSchemeSetItem = globalThis.localStorage.setItem

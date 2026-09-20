@@ -1033,7 +1033,9 @@ export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
 export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraftResult {
   try {
     const stored = readStoredDraft()
-    const meta = readDraftMeta()
+    // 只有「确实存着一份草稿」时才谈冲突：没有草稿就没有要保护的东西。
+    // 否则一条残留的 meta（例如 clearWorkingDraft() 之后）会把本页的保存**永久挡住**。
+    const meta = stored ? readDraftMeta() : null
     if (
       meta &&
       meta.writerId &&
@@ -1062,6 +1064,8 @@ export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraf
 export function clearWorkingDraft(): void {
   try {
     localStorage.removeItem(DRAFT_KEY)
+    // meta 一起删：留着它会在别的标签页里被当成「有人写过更新的草稿」，把保存挡住
+    localStorage.removeItem(DRAFT_META_KEY)
   } catch {
     /* ignore */
   }
