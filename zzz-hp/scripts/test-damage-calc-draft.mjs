@@ -119,5 +119,22 @@ check(
   ),
 )
 
+console.log('[3] slots 回退：只在「压根没有 slots 字段」的老草稿上生效')
+
+const { schemeSlotsHaveContent } = await import('../src/utils/resolvedHit.ts')
+check('空 slots 视为无内容（所以只能靠「字段在不在」区分）', schemeSlotsHaveContent([]) === false)
+check('有准备内容的 slots 视为有内容', schemeSlotsHaveContent([{ prepared: [{ id: 'p' }], flow: [] }]) === true)
+check('只有流程内容也算有内容', schemeSlotsHaveContent([{ prepared: [], flow: [{ id: 'f' }] }]) === true)
+check(
+  '源码：显式写下的空 slots 不再回退方案库',
+  page.includes('if (entry.slots != null) return entry.slots'),
+)
+check(
+  '源码：载入方案时先登记 id 再灌状态（回退读到的才是当前方案）',
+  /function loadHistoryEntry\(entry: DamageCalcHistoryEntry\) \{[\s\S]{0,300}activeHistoryId\.value = entry\.id[\s\S]{0,160}applyWorkingState\(/.test(
+    page,
+  ),
+)
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

@@ -1591,6 +1591,10 @@ function applyConvertSlotPanels(panels?: ConvertSlotPanels) {
 
 function pickSlotsToRestore(entry: { slots?: SchemeSlot[]; loadedSchemeId?: string }) {
   if (schemeSlotsHaveContent(entry.slots)) return entry.slots
+  // 只有「压根没有 slots 字段」的老草稿才回退方案库（迁移用）。
+  // 显式写下的空流程必须原样保留：用户清空准备/流程后刷新，不能被方案库「复活」；
+  // 载入一个流程为空的方案时，也不能去取上一个高亮方案的流程。
+  if (entry.slots != null) return entry.slots
   const schemeId = entry.loadedSchemeId || getLoadedSchemeId()
   const scheme = findDamageCalcHistory(schemeId)
   if (schemeSlotsHaveContent(scheme?.slots)) return scheme!.slots
@@ -1831,9 +1835,11 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
 }
 
 function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
-  applyWorkingState({ ...entry, preserveBaseDamageSource: false })
+  // 先登记 id 再灌状态：pickSlotsToRestore 的老草稿回退会读 getLoadedSchemeId()，
+  // 顺序反了会读到「上一个高亮方案」，把别的方案的流程串进来。
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
+  applyWorkingState({ ...entry, preserveBaseDamageSource: false })
   historyMessage.value = `已加载「${entry.name}」`
 }
 
