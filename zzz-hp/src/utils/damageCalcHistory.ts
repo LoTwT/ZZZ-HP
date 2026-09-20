@@ -946,7 +946,12 @@ export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
 
 export function saveWorkingDraft(draft: DamageCalcWorkingDraft): void {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+    // 取不到面板快照的那次落盘（卸载 / 页面隐藏时子组件模板 ref 已被清空）**不能**把已存的快照抹掉：
+    // 新草稿没带 panelState 就沿用旧草稿那份 —— 否则「敌方与环境 / 额外 Buff」会被默认值永久覆盖。
+    const payload = draft.panelState
+      ? draft
+      : { ...draft, panelState: loadWorkingDraft()?.panelState ?? null }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
   } catch {
     /* quota / private mode */
   }

@@ -817,6 +817,9 @@ watch(envBuffFrontierId, () => {
 })
 
 watch(defenseFrontierOptions, (options) => {
+  if (restoringWorkingState) return
+  // 目录还没加载完（options 为空）时**不能清**：否则已存的环境筛选会被加载时序清成空串。
+  if (!options.length) return
   if (!envBuffFrontierId.value) return
   if (!options.some((opt) => opt.id === envBuffFrontierId.value)) {
     envBuffFrontierId.value = options[0]?.id ?? ''
@@ -1723,7 +1726,9 @@ function captureWorkingDraft(): DamageCalcWorkingDraft | null {
     selectedBangbooId: selectedBangbooId.value,
     bangbooRefine: bangbooRefine.value,
     panelCalcMode: panelCalcMode.value,
-    panelState: withTalent,
+    // 取不到快照时**不带这个键**（不是写 null）：落盘端（saveWorkingDraft）会沿用已存的那份，
+    // 避免卸载 / 页面隐藏瞬间把「敌方与环境 / 额外 Buff」抹成默认。
+    ...(withTalent ? { panelState: withTalent } : {}),
     slotPanels: captureSchemeSlotPanels(),
     convertSlotPanels: cloneConvertSlotPanels(),
     slots: JSON.parse(JSON.stringify(schemeSlots.value)),
@@ -1762,8 +1767,14 @@ function restoreWorkingState() {
   activeHistoryId.value = loadedId
   const draft = loadWorkingDraft()
   if (draft) {
+    // 历史坏数据：草稿缺 panelState（曾被子组件 ref 失效的那次落盘写成 null）。
+    // 当前高亮方案里还留着的话就补回来 —— 用户不必手动去方案库重载。
+    const fallbackPanelState = draft.panelState
+      ? null
+      : (findDamageCalcHistory(draft.loadedSchemeId || loadedId)?.panelState ?? null)
     applyWorkingState({
       ...draft,
+      panelState: draft.panelState ?? fallbackPanelState,
       loadedSchemeId: draft.loadedSchemeId || loadedId,
       preserveBaseDamageSource: true,
     })
@@ -1950,6 +1961,12 @@ watch(
     slotPanels,
     convertSlotPanels,
     multiSlotBuffSelection,
+    // 环境筛选（危局 / 防卫 / 临界）也在草稿里，别只等 pagehide / 失活才落盘
+    envBuffMode,
+    envBuffVersion,
+    envBuffPhaseId,
+    envBuffFrontierId,
+    envBuffNodeId,
   ],
   schedulePersistWorkingDraft,
   { deep: true },

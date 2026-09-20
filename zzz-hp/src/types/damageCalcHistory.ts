@@ -216,7 +216,12 @@ export interface DamageCalcWorkingDraft {
   selectedBangbooId: string
   bangbooRefine: number
   panelCalcMode: PanelCalcMode
-  panelState: DamageCalcPanelSnapshot | null
+  /**
+   * 面板快照 —— 「敌方与环境」与「额外 Buff」**只在这里**，没有顶层字段。
+   * **可缺省**：取不到子组件快照时落盘不写这个键；写 `null` 会在恢复端被静默跳过，
+   * 导致这两块被默认值覆盖（见 dev-docs/damage-calc-state-storage.md）。
+   */
+  panelState?: DamageCalcPanelSnapshot | null
   /** @deprecated v4 起改用 `slotPanels`（迁移时读取，写完即清） */
   anomalySlotPanels?: Record<string, PanelStats>
   /** 每个角色的两份局外面板（面板导入 / 词条导入）与当前激活那份 */
