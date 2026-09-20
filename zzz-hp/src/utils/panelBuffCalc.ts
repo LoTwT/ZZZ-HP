@@ -16,6 +16,7 @@ import type {
   SkillCategoryId,
   WengineBuffDoc,
 } from '@/types/calculator'
+import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 import {
   createEmptyExternalPanel,
   createDefaultExternalPanel,
@@ -519,6 +520,16 @@ export interface PanelCalcContext {
   mainSlotIndex: number
   driveDiscs: DriveDiscBuffDoc[]
   extraMods?: BuffStatModifiers
+  /**
+   * 行级增益例外（**只有命中链的 `buildInput(hit)` 才设**；面板级/目录缓存路径一律不设）。
+   *
+   * - 语义：只关"这一刀吃不吃"，**不改计算**（不碰面板、不碰层数累计）
+   * - 为什么放 ctx：`buildInput(hit)` 手里有 hit，而 mods 组装要经过
+   *   `resolvePackModsViaEffectSpec` → `resolveEffectsToMods` 多层；
+   *   从 ctx 透传比逐层加参数小得多
+   * - ⚠️ 目录级缓存（`buffCatalogCache`）**不得**读到它，否则会跨行串味
+   */
+  rowBuffOverride?: FlowBuffOverride | null
   /**
    * 额外 Buff 条目。转模按来源槽位取局内时，必须按该槽重算，
    * 不能把当前结算角色的 extraMods 整包套到蕾米等人身上。
@@ -1874,16 +1885,50 @@ function materializeBuffCatalogPacks(
   entry: BuffCatalogEntry,
   ctx: PanelCalcContext,
 ): BuffModSource[] {
-  ensureNonConvertMods(entry, ctx)
+  const rowOverride = ctx.rowBuffOverride ?? null
+  if (!rowOverride) {
+    // 老路径：目录级缓存（绝大多数行走这里，行为与改前完全一致）
+    ensureNonConvertMods(entry, ctx)
+    return entry.packs.map((pack) => {
+      const nonConvert =
+        entry.nonConvertModsByPackKey[pack.key] ?? createEmptyBuffStatModifiers()
+      const mods = ctx.skipConvert
+        ? nonConvert
+        : pack.convertEffects.length
+          ? mergeBuffStatModifiers(
+              nonConvert,
+              resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
+            )
+          : nonConvert
+      return {
+        key: pack.key,
+        label: pack.label,
+        note: pack.note,
+        blockName: pack.blockName,
+        effects: pack.effects,
+        mods,
+      }
+    })
+  }
+
+  // 行级例外：**不读也不写目录缓存**（避免跨行串味），只影响本行结算。
+  // 实现方式是"先把效果列表滤掉，再重算"——不改面板、不动层数累计。
+  const disabledBlocks = new Set(rowOverride.disabledBlockIds ?? [])
+  const disabledEffects = new Set(rowOverride.disabledEffectIds ?? [])
   return entry.packs.map((pack) => {
-    const nonConvert =
-      entry.nonConvertModsByPackKey[pack.key] ?? createEmptyBuffStatModifiers()
+    const blockOff = disabledBlocks.has(pack.key)
+    const keep = (effect: BuffEffect) => !blockOff && !disabledEffects.has(effect.id)
+    const nonConvertEffects = pack.nonConvertEffects.filter(keep)
+    const convertEffects = pack.convertEffects.filter(keep)
+    const nonConvert = nonConvertEffects.length
+      ? resolvePackEffectMods(pack, nonConvertEffects, ctx, true)
+      : createEmptyBuffStatModifiers()
     const mods = ctx.skipConvert
       ? nonConvert
-      : pack.convertEffects.length
+      : convertEffects.length
         ? mergeBuffStatModifiers(
             nonConvert,
-            resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
+            resolvePackEffectMods(pack, convertEffects, ctx, false),
           )
         : nonConvert
     return {
@@ -1891,7 +1936,7 @@ function materializeBuffCatalogPacks(
       label: pack.label,
       note: pack.note,
       blockName: pack.blockName,
-      effects: pack.effects,
+      effects: pack.effects.filter(keep),
       mods,
     }
   })
