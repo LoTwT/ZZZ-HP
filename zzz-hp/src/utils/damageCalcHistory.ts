@@ -518,11 +518,13 @@ function readStore(): SchemeStore {
       const sanitized = sanitizeSchemePanelState(entry.panelState)
       if (sanitized) entry.panelState = sanitized
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
-    } catch {
-      /* ignore */
-    }
+    // 这里**不再无条件回写**（原实现是每次读盘都 setItem 一次）：
+    // - 上面的 key 归一化 / ensureOrders / v3 迁移 / 快照清洗都是**幂等**的，读时在内存里做即可，
+    //   消费方拿到的结果完全一样（真正的写入操作 writeStore 会把这套结果落盘）；
+    // - 每次读都全量序列化 + 写一遍：既费 CPU 与同步 I/O，又会让「A 标签页的陈旧视图」
+    //   覆盖 B 标签页刚保存的方案 —— 静默丢数据；
+    // - 顺带：那次写入失败原本也不进 schemeStoreWriteFailed() 标记（漏报）。
+    // 只有真正改变存储形状的一次性迁移（上面的旧数组 → 新结构）才写盘。
     return store
   } catch {
     return createEmptyStore()

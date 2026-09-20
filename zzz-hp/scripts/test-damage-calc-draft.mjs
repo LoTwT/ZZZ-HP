@@ -30,6 +30,7 @@ const {
   saveDamageCalcHistory,
   takeSchemeStoreWriteFailed,
   clearWorkingDraft,
+  listAllDamageCalcHistory,
 } = await import('../src/utils/damageCalcHistory.ts')
 
 let passed = 0
@@ -266,6 +267,68 @@ check(
   readFileSync(new URL('../src/utils/damageCalcHistory.ts', import.meta.url), 'utf8').includes(
     'usageCache',
   ),
+)
+
+console.log('[6] 读盘不再回写（省 IO，且不会用陈旧视图覆盖别的标签页）')
+
+const storeKey = 'zzz-hp-damage-calc-history'
+const entryBase = (name, extra = {}) => ({
+  id: `/${name}`,
+  name,
+  savedAt: 1,
+  teamSlots: [],
+  activeSlot: 0,
+  selectedBangbooId: 'none',
+  bangbooRefine: 1,
+  panelCalcMode: 'optimal',
+  panelState: { externalPanel: {}, extraMods: {}, extraGains: [], enemyInput: {} },
+  folder: '',
+  order: 0,
+  ...extra,
+})
+
+// 6.1 读盘不产生写入
+memory.clear()
+memory.set(
+  storeKey,
+  JSON.stringify({ version: 4, dirs: {}, schemes: { '/A': entryBase('A') } }),
+)
+let writeCount = 0
+const countingSetItem = globalThis.localStorage.setItem
+globalThis.localStorage.setItem = (k, v) => {
+  writeCount += 1
+  return countingSetItem.call(globalThis.localStorage, k, v)
+}
+const listed = listAllDamageCalcHistory()
+globalThis.localStorage.setItem = countingSetItem
+check('listAllDamageCalcHistory() 读到方案', listed.length === 1 && listed[0]?.name === 'A')
+check('读盘不写盘（原实现每次读都全量回写）', writeCount === 0, `writes=${writeCount}`)
+
+// 6.2 旧数组结构（一次性迁移）仍然要写盘 —— 那是真正的形状变化
+memory.clear()
+memory.set(
+  storeKey,
+  JSON.stringify([
+    {
+      id: '/B',
+      name: 'B',
+      savedAt: 1,
+      teamSlots: [],
+      activeSlot: 0,
+      selectedBangbooId: 'none',
+      bangbooRefine: 1,
+      panelCalcMode: 'optimal',
+      panelState: {},
+      folder: '',
+      order: 0,
+    },
+  ]),
+)
+const migrated = listAllDamageCalcHistory()
+check('旧数组结构仍能迁移读出来', migrated.length === 1, `len=${migrated.length}`)
+check(
+  '旧数组迁移仍写盘（一次性形状变化）',
+  !!memory.get(storeKey) && !memory.get(storeKey).trimStart().startsWith('['),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
