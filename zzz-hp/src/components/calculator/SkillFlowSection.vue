@@ -68,6 +68,9 @@ import type { PanelStats } from '@/types/calculatorPanel'
 import type { AgentPanelSourceKind } from '@/types/damageCalcHistory'
 import { AGENT_PANEL_SOURCE_LABELS, AGENT_PANEL_SOURCE_ORDER } from '@/utils/agentPanelSources'
 import type { SkillFlowDisplayOption } from '@/utils/skillFlowPanelSource'
+import type { CollectedEffect } from '@/utils/panelBuffCalc'
+import type { FlowBuffOverride } from '@/types/damageCalcHistory'
+import SkillBuffOverrideModal from '@/components/calculator/SkillBuffOverrideModal.vue'
 
 const props = defineProps<{
   teamSlots: TeamSlot[]
@@ -94,11 +97,47 @@ const props = defineProps<{
     final: PanelStats | null
     sourceKind?: AgentPanelSourceKind | null
   } | null
+  /** 本行增益例外的候选列表（与全局增益选择器**同一份**，由页面传入） */
+  buffEffects?: CollectedEffect[]
 }>()
 
 const emit = defineEmits<{
   'update:panelSourceMode': [mode: 'config' | 'allocation' | 'sweep']
 }>()
+
+/** 本行增益例外：正在编辑的流程行 id（null = 关闭） */
+const buffOverrideEntryId = ref<string | null>(null)
+
+const buffOverrideOpen = computed({
+  get: () => buffOverrideEntryId.value != null,
+  set: (value: boolean) => {
+    if (!value) buffOverrideEntryId.value = null
+  },
+})
+
+const buffOverrideEntry = computed(() =>
+  currentSlot.value?.flow.find((item) => item.id === buffOverrideEntryId.value) ?? null,
+)
+
+/** 弹窗双向绑定：读该行覆盖，写回该行（缺省 = null = 全部继承全局） */
+const buffOverrideModel = computed<FlowBuffOverride | null>({
+  get: () => buffOverrideEntry.value?.buffOverrides ?? null,
+  set: (value) => {
+    const entry = buffOverrideEntry.value
+    if (!entry) return
+    updateFlow(entry.id, { buffOverrides: value })
+  },
+})
+
+function openBuffOverride(entryId: string) {
+  buffOverrideEntryId.value = entryId
+}
+
+/** 该行的例外条数（块级 + 单条），0 = 与全局一致 */
+function buffExceptionCount(entry: FlowEntry): number {
+  const override = entry.buffOverrides
+  return (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+}
 
 const slots = defineModel<SchemeSlot[]>('slots', { required: true })
 const activeSlotIndex = defineModel<number>('editedSlotIndex', { default: 0 })
@@ -2852,6 +2891,23 @@ const showcaseTitle = computed(() => {
                   >
                     <template #actions>
                       <button
+                        type="button"
+                        class="mini-btn"
+                        draggable="false"
+                        :title="
+                          buffExceptionCount(entry)
+                            ? `本行增益例外 ${buffExceptionCount(entry)} 条`
+                            : '本行增益例外（缺省继承全局）'
+                        "
+                        @click="openBuffOverride(entry.id)"
+                      >
+                        增益<span
+                          v-if="buffExceptionCount(entry)"
+                          style="margin-left: 0.25rem; color: #ffd479"
+                          >{{ buffExceptionCount(entry) }}</span
+                        >
+                      </button>
+                      <button
                         v-if="flowIsGroup(entry)"
                         type="button"
                         class="mini-btn"
@@ -2891,6 +2947,13 @@ const showcaseTitle = computed(() => {
                 </li>
               </ul>
             </div>
+
+            <SkillBuffOverrideModal
+              v-model:open="buffOverrideOpen"
+              v-model:override="buffOverrideModel"
+              :effects="props.buffEffects ?? []"
+              :row-label="buffOverrideEntry?.id ?? ''"
+            />
           </div>
           <SkillFlowStatsPanel
             :team-slots="teamSlots"

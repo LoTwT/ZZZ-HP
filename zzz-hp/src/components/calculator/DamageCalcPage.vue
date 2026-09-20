@@ -2323,6 +2323,7 @@ defineExpose({ scrollToSection })
         :hits="hits"
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
+        :buff-effects="collectedEffectsForPicker"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"
         :panel-source-mode="skillFlowPanelSource"
