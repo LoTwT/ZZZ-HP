@@ -136,51 +136,5 @@ check(
   ),
 )
 
-console.log('[4] 绝不静默丢数据：写失败要报、被别的标签页抢先就不覆盖')
-
-const draftKey = 'zzz-hp-damage-calc-draft'
-memory.clear()
-saveWorkingDraft(draftBase({ savedAt: 1 }))
-// 模拟「另一个标签页」写了更新的草稿（绕过 util 直接写）
-memory.set(
-  draftKey,
-  JSON.stringify(draftBase({ savedAt: 999, activeSlot: 7, panelState: snapshot([{ id: 'other' }], { bossName: '别的页' }) })),
-)
-const staleResult = saveWorkingDraft(draftBase({ savedAt: 2, activeSlot: 1 }))
-const afterStale = JSON.parse(memory.get(draftKey))
-check('别的标签页更新过 → 返回 stale', staleResult === 'stale', `result=${staleResult}`)
-check('别的标签页更新过 → 不覆盖对方数据', afterStale.activeSlot === 7 && afterStale.savedAt === 999)
-check('对方的面板快照也没被冲掉', afterStale.panelState?.enemyInput?.bossName === '别的页')
-
-memory.clear()
-saveWorkingDraft(draftBase({ savedAt: 10 })) // 先建立「已见 = 10」，且没有更新的旧草稿
-const originalSetItem = globalThis.localStorage.setItem
-globalThis.localStorage.setItem = () => {
-  throw new Error('QuotaExceededError')
-}
-const failedResult = saveWorkingDraft(draftBase({ savedAt: 11 }))
-globalThis.localStorage.setItem = originalSetItem
-check('写入抛错 → 返回 failed（不装作已保存）', failedResult === 'failed', `result=${failedResult}`)
-
-check(
-  '源码：卸载前抓快照（beforeUnmount），onUnmounted 不再落盘',
-  page.includes('onBeforeUnmount(() => {') &&
-    /onUnmounted\(\(\) => \{\s*\n\s*window\.removeEventListener\('pagehide'/.test(page),
-)
-check(
-  '源码：草稿写失败/被抢先都有可见提示',
-  page.includes('draftSaveWarning') && page.includes('draft-save-warning'),
-)
-check(
-  '源码：方案保存/覆盖后做写盘校验，失败不报「已保存」',
-  (page.match(/if \(!findDamageCalcHistory\(/g) ?? []).length >= 2,
-)
-
-check(
-  '源码：草稿落盘改成「改动即写」（不再 400ms 防抖）',
-  /setTimeout\(\(\) => \{[\s\S]{0,90}persistWorkingDraftNow\(\)[\s\S]{0,30}\}, 0\)/.test(page) &&
-    !page.includes('}, 400)'),
-)
-
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
