@@ -23,7 +23,8 @@ globalThis.localStorage = {
   },
 }
 
-const { loadWorkingDraft, saveWorkingDraft } = await import('../src/utils/damageCalcHistory.ts')
+const { loadWorkingDraft, saveWorkingDraft, localStorageUsageBytes, saveDamageCalcHistory, schemeStoreWriteFailed } =
+  await import('../src/utils/damageCalcHistory.ts')
 
 let passed = 0
 let failed = 0
@@ -134,6 +135,108 @@ check(
   /function loadHistoryEntry\(entry: DamageCalcHistoryEntry\) \{[\s\S]{0,300}activeHistoryId\.value = entry\.id[\s\S]{0,160}applyWorkingState\(/.test(
     page,
   ),
+)
+
+console.log('[4] 绝不静默丢数据：写失败要报、被别的标签页抢先就不覆盖、可疑缩水留上一版')
+
+const draftKey = 'zzz-hp-damage-calc-draft'
+const metaKey = 'zzz-hp-damage-calc-draft-meta'
+const prevKey = 'zzz-hp-damage-calc-draft-prev'
+
+// 4.1 别的标签页写过更新的草稿 → stale，且不覆盖
+memory.clear()
+check('首次写入返回 ok', saveWorkingDraft(draftBase({ savedAt: 1 })) === 'ok')
+memory.set(metaKey, JSON.stringify({ savedAt: 999, writerId: 'other-tab' }))
+const staleResult = saveWorkingDraft(draftBase({ savedAt: 2, activeSlot: 5 }))
+check('别的标签页更新过 → 返回 stale', staleResult === 'stale', `result=${staleResult}`)
+check(
+  '别的标签页更新过 → 不覆盖对方数据',
+  JSON.parse(memory.get(draftKey))?.savedAt === 1,
+  `stored savedAt=${JSON.parse(memory.get(draftKey))?.savedAt}`,
+)
+
+// 4.2 写入抛错 → failed（不装作已保存）
+memory.clear()
+check('清空后首次写入 ok', saveWorkingDraft(draftBase({ savedAt: 10 })) === 'ok')
+const originalSetItem = globalThis.localStorage.setItem
+globalThis.localStorage.setItem = () => {
+  throw new Error('QuotaExceededError')
+}
+const failedResult = saveWorkingDraft(draftBase({ savedAt: 11 }))
+globalThis.localStorage.setItem = originalSetItem
+check('写入抛错 → 返回 failed（不装作已保存）', failedResult === 'failed', `result=${failedResult}`)
+
+// 4.3 可疑缩水（队伍 / 流程被清空）→ 先把旧草稿留一份
+memory.clear()
+saveWorkingDraft(
+  draftBase({
+    savedAt: 20,
+    teamSlots: [{ agentId: 'a' }],
+    slots: [{ prepared: [{ id: 'p1' }], flow: [] }],
+  }),
+)
+const shrinkResult = saveWorkingDraft(
+  draftBase({ savedAt: 21, teamSlots: [{ agentId: '' }], slots: [] }),
+)
+check('可疑缩水仍写入（不阻断用户操作）', shrinkResult === 'ok', `result=${shrinkResult}`)
+const prev = memory.get(prevKey) ? JSON.parse(memory.get(prevKey)) : null
+check(
+  '可疑缩水 → 旧草稿留在 draft-prev',
+  prev?.savedAt === 20 && prev?.teamSlots?.[0]?.agentId === 'a',
+  `prev savedAt=${prev?.savedAt}`,
+)
+
+// 4.4 正常保存不留备份（不增大占用）
+memory.clear()
+saveWorkingDraft(draftBase({ savedAt: 30, activeSlot: 1 }))
+saveWorkingDraft(draftBase({ savedAt: 31, activeSlot: 2 }))
+check('正常保存不写 draft-prev（避免存储翻倍）', !memory.has(prevKey))
+
+// 4.5 存储用量可测
+check('localStorageUsageBytes() 能报出用量', localStorageUsageBytes() > 0)
+
+// 4.6 方案库写失败要能被调用方发现
+const originalSchemeSetItem = globalThis.localStorage.setItem
+globalThis.localStorage.setItem = () => {
+  throw new Error('QuotaExceededError')
+}
+saveDamageCalcHistory({
+  id: '/t',
+  name: 't',
+  savedAt: Date.now(),
+  teamSlots: [],
+  activeSlot: 0,
+  selectedBangbooId: 'none',
+  bangbooRefine: 1,
+  panelCalcMode: 'optimal',
+  panelState: {},
+  folder: '',
+  order: 0,
+})
+globalThis.localStorage.setItem = originalSchemeSetItem
+check('方案库写失败 → schemeStoreWriteFailed() 为真', schemeStoreWriteFailed() === true)
+
+console.log('[5] 源码守卫：卸载前抓快照 / 失败提示 / 用量统计口径')
+
+check(
+  '源码：卸载前抓快照（beforeUnmount），onUnmounted 只做清理',
+  page.includes('onBeforeUnmount(() => {') &&
+    /onUnmounted\(\(\) => \{\s*\n\s*window\.removeEventListener\('pagehide'/.test(page),
+)
+check(
+  '源码：草稿写失败/被抢先都有可见提示',
+  page.includes('draftSaveWarning') && page.includes('draft-save-warning'),
+)
+check(
+  '源码：方案保存/覆盖后检查写盘结果，失败不报「已保存」',
+  (page.match(/if \(schemeStoreWriteFailed\(\)\)/g) ?? []).length >= 2,
+)
+check(
+  '源码：用量统计算的是整个源的占用（不只方案库那个 key）',
+  readFileSync(
+    new URL('../src/components/calculator/DamageCalcHistorySection.vue', import.meta.url),
+    'utf8',
+  ).includes('localStorageUsageBytes()'),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

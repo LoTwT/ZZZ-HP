@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { storeToRefs } from 'pinia'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
@@ -71,6 +81,7 @@ import {
   getLoadedSchemeId,
   listAllDamageCalcHistory,
   loadWorkingDraft,
+  schemeStoreWriteFailed,
   nameConflictType,
   saveDamageCalcHistory,
   saveWorkingDraft,
@@ -378,6 +389,8 @@ let draftHydrated = false
 /** 恢复草稿/方案期间跳过 Buff 默认同步与场地 Buff 反写怪物 */
 let restoringWorkingState = false
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+/** 草稿保存异常提示（写失败 / 被别的标签页抢先）—— 绝不静默丢数据 */
+const draftSaveWarning = ref('')
 const prevEnabledBossFieldKeys = ref<string[]>([])
 const prevEnabledDefenseKeys = ref<string[]>([])
 /** 临界节点 Buff（deduction-buff-*）单选：记录上一轮已勾选 sourceKey */
@@ -857,8 +870,13 @@ onDeactivated(() => {
   persistWorkingDraftNow()
 })
 
-onUnmounted(() => {
+// 卸载**前**抓快照：Vue 在父组件 beforeUnmount 之后才拆子树（模板 ref 那时才被清空），
+// 所以这一次落盘拿得到完整、最新的面板状态；等到 onUnmounted 再抓，子组件已拆、只能沿用旧快照。
+onBeforeUnmount(() => {
   persistWorkingDraftNow()
+})
+
+onUnmounted(() => {
   window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('visibilitychange', onDraftVisibilityChange)
   if (draftSaveTimer) clearTimeout(draftSaveTimer)
@@ -1750,7 +1768,17 @@ function persistWorkingDraftNow(force = false) {
   if (!force && (!draftHydrated || restoringWorkingState)) return
   const draft = captureWorkingDraft()
   if (!draft) return
-  saveWorkingDraft(draft)
+  const result = saveWorkingDraft(draft)
+  // 绝不静默丢数据：写失败 / 被别的标签页抢先，都要让用户看见
+  if (result === 'ok') {
+    draftSaveWarning.value = ''
+  } else if (result === 'failed') {
+    draftSaveWarning.value =
+      '草稿保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先用方案库导出备份，再清理浏览器存储。'
+  } else {
+    draftSaveWarning.value =
+      '另一个标签页更新了草稿，本页的改动没有自动保存（避免冲掉对方的数据）。建议先导出方案，或只保留一个标签页。'
+  }
 }
 
 function schedulePersistWorkingDraft() {
@@ -1828,6 +1856,12 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
   }
 
   historyEntries.value = saveDamageCalcHistory(entry)
+  // 写盘失败（配额满 / 隐私模式）必须说出来，不能报「已保存」
+  if (schemeStoreWriteFailed()) {
+    historyMessage.value =
+      '保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+    return
+  }
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
   historyMessage.value = `已保存「${payload.name}」${folder ? `（${folder}）` : ''}`
@@ -1866,6 +1900,12 @@ function overwriteHistoryEntry(id: string) {
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
   }
   historyEntries.value = saveDamageCalcHistory(updated)
+  // 同上：覆盖失败不能报「已覆盖」
+  if (schemeStoreWriteFailed()) {
+    historyMessage.value =
+      '覆盖失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+    return
+  }
   activeHistoryId.value = updated.id
   historyMessage.value = `已用当前配置覆盖「${updated.name}」`
   persistWorkingDraftNow()
@@ -2011,6 +2051,7 @@ defineExpose({ scrollToSection })
 
 <template>
   <div ref="pageRootRef" class="damage-page">
+    <p v-if="draftSaveWarning" class="draft-save-warning" role="alert">{{ draftSaveWarning }}</p>
     <div class="team-slot-sticky">
       <TeamSlotSwitcher
         :team-slots="teamSlots"
@@ -2312,6 +2353,17 @@ defineExpose({ scrollToSection })
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
+}
+
+.draft-save-warning {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #7a4a2a;
+  background: rgba(160, 90, 40, 0.18);
+  color: #f0c9a8;
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 /* 统一伤害结果区：与页面其他模块卡片一致的留白与卡片底（跟随主题） */

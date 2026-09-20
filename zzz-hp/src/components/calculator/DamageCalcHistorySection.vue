@@ -21,6 +21,7 @@ import {
   listAllDamageCalcHistory,
   listDamageCalcHistory,
   listFolders,
+  localStorageUsageBytes,
   moveFolderTree,
   moveScheme,
   nameConflictType,
@@ -150,19 +151,15 @@ const openedForEventSave = ref(false)
 // ============ localStorage 占用提示（常驻显示，接近上限时弹窗顶部额外红字，不干涉保存）============
 const STORAGE_LIMIT_MB = 5
 const STORAGE_WARN_MB = 4
-const SCHEME_STORAGE_KEY = 'zzz-hp-damage-calc-history'
 
 const storageUsage = computed(() => {
   // 依赖 revision：增删改/导入后实时刷新占用
   void revision.value
-  try {
-    const raw = localStorage.getItem(SCHEME_STORAGE_KEY)
-    const bytes = raw ? raw.length * 2 : 0 // localStorage 按 UTF-16 计字节
-    const mb = bytes / (1024 * 1024)
-    return { bytes, mb, text: `${mb.toFixed(2)} / ${STORAGE_LIMIT_MB} MB` }
-  } catch {
-    return { bytes: 0, mb: 0, text: `0 / ${STORAGE_LIMIT_MB} MB` }
-  }
+  // 注意：5MB 是**整个源**的配额，不只方案库这一个 key —— 草稿、词条库、自建招式等都算在内。
+  // 所以统计全部 key，否则占用被低估、预警永远不触发（改前只算了方案库那一个 key）。
+  const bytes = localStorageUsageBytes() * 2 // localStorage 按 UTF-16 计字节
+  const mb = bytes / (1024 * 1024)
+  return { bytes, mb, text: `${mb.toFixed(2)} / ${STORAGE_LIMIT_MB} MB` }
 })
 const storageWarn = computed(() => storageUsage.value.mb >= STORAGE_WARN_MB)
 

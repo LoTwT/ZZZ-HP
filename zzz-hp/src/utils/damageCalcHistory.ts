@@ -45,6 +45,10 @@ import { normalizeExtraGain } from '@/utils/extraBuffCalc'
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
 const DRAFT_KEY = 'zzz-hp-damage-calc-draft'
+/** 草稿元信息（几十字节）：多标签页检查只读它，不解析整份草稿 */
+const DRAFT_META_KEY = 'zzz-hp-damage-calc-draft-meta'
+/** 可疑缩水时的上一版草稿（正常保存不写，避免存储翻倍） */
+const DRAFT_PREV_KEY = 'zzz-hp-damage-calc-draft-prev'
 
 // ===================== 路径规范工具（对齐 zzz-dev） =====================
 // 路径以 "/" 开头，多级用 "/" 分隔，末尾无 "/"。根目录 folder = ""。
@@ -532,8 +536,32 @@ function readStore(): SchemeStore {
 function writeStore(store: SchemeStore): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+    lastSchemeWriteFailed = false
   } catch {
-    /* ignore quota errors */
+    // 配额满 / 隐私模式：**不静默** —— 页面读 schemeStoreWriteFailed() 并明确提示，不报「已保存」
+    lastSchemeWriteFailed = true
+  }
+}
+
+/** 最近一次方案库写入是否失败（配额满 / 隐私模式）。调用方必须提示用户 */
+let lastSchemeWriteFailed = false
+
+export function schemeStoreWriteFailed(): boolean {
+  return lastSchemeWriteFailed
+}
+
+/** 本地存储总用量（估算，字节）。给「接近上限」预警用 */
+export function localStorageUsageBytes(): number {
+  try {
+    let total = 0
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key == null) continue
+      total += key.length + (localStorage.getItem(key)?.length ?? 0)
+    }
+    return total
+  } catch {
+    return 0
   }
 }
 
@@ -932,7 +960,17 @@ export function findDamageCalcHistory(id: string): DamageCalcHistoryEntry | null
   return listAllDamageCalcHistory().find((entry) => entry.id === id) ?? null
 }
 
-export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
+/** 每个标签页一个 id：用来分辨「草稿是别的标签页写的」 */
+const DRAFT_WRITER_ID = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+
+/** 本页已见过 / 已写入的最新草稿时间戳（多标签页判断用） */
+let lastSeenDraftSavedAt = 0
+
+/** 草稿写入结果。调用方必须按结果提示用户 —— **不能静默丢数据** */
+export type SaveWorkingDraftResult = 'ok' | 'failed' | 'stale'
+
+/** 只读不标记：给写入前的比较用（标记了就看不出「别的标签页写过」） */
+function readStoredDraft(): DamageCalcWorkingDraft | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     if (!raw) return null
@@ -944,16 +982,80 @@ export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
   }
 }
 
-export function saveWorkingDraft(draft: DamageCalcWorkingDraft): void {
+function readDraftMeta(): { savedAt: number; writerId: string } | null {
   try {
-    // 取不到面板快照的那次落盘（卸载 / 页面隐藏时子组件模板 ref 已被清空）**不能**把已存的快照抹掉：
-    // 新草稿没带 panelState 就沿用旧草稿那份 —— 否则「敌方与环境 / 额外 Buff」会被默认值永久覆盖。
-    const payload = draft.panelState
-      ? draft
-      : { ...draft, panelState: loadWorkingDraft()?.panelState ?? null }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+    const raw = localStorage.getItem(DRAFT_META_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { savedAt?: number; writerId?: string }
+    return { savedAt: Number(parsed?.savedAt) || 0, writerId: String(parsed?.writerId ?? '') }
   } catch {
-    /* quota / private mode */
+    return null
+  }
+}
+
+function writeDraftMeta(savedAt: number): void {
+  try {
+    localStorage.setItem(DRAFT_META_KEY, JSON.stringify({ savedAt, writerId: DRAFT_WRITER_ID }))
+  } catch {
+    /* 元信息写不进去只影响多标签页判断，不影响草稿本身 */
+  }
+}
+
+/** 旧草稿有内容、新草稿却空了 → 判定为可疑缩水（要留一份上一版） */
+function looksLikeDataLoss(
+  stored: DamageCalcWorkingDraft,
+  incoming: DamageCalcWorkingDraft,
+): boolean {
+  const slotCount = (d: DamageCalcWorkingDraft) =>
+    (d.slots ?? []).reduce((n, s) => n + (s?.prepared?.length ?? 0) + (s?.flow?.length ?? 0), 0)
+  const teamCount = (d: DamageCalcWorkingDraft) =>
+    (d.teamSlots ?? []).filter((s) => !!s?.agentId).length
+  return (
+    (slotCount(stored) > 0 && slotCount(incoming) === 0) ||
+    (teamCount(stored) > 0 && teamCount(incoming) === 0) ||
+    (!!stored.panelState && !incoming.panelState)
+  )
+}
+
+export function loadWorkingDraft(): DamageCalcWorkingDraft | null {
+  const parsed = readStoredDraft()
+  if (parsed) lastSeenDraftSavedAt = Math.max(lastSeenDraftSavedAt, parsed.savedAt || 0)
+  return parsed
+}
+
+/**
+ * 写工作草稿。**绝不静默丢数据**：
+ * - 取不到面板快照的那次落盘（子组件已拆）不能抹掉已存快照 → 没带 `panelState` 就沿用旧的那份；
+ * - 发现**别的标签页**写过更新的草稿 → 返回 `'stale'` 且不覆盖（调用方必须提示）；
+ * - 配额满 / 隐私模式写入失败 → 返回 `'failed'`（调用方必须提示，不能假装已保存）；
+ * - 新草稿相比旧草稿**可疑缩水**（队伍 / 流程 / 快照被清空）→ 先把旧的那份留到 `DRAFT_PREV_KEY`。
+ */
+export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraftResult {
+  try {
+    const stored = readStoredDraft()
+    const meta = readDraftMeta()
+    if (
+      meta &&
+      meta.writerId &&
+      meta.writerId !== DRAFT_WRITER_ID &&
+      meta.savedAt > lastSeenDraftSavedAt
+    ) {
+      return 'stale'
+    }
+    const payload = draft.panelState ? draft : { ...draft, panelState: stored?.panelState ?? null }
+    if (stored && looksLikeDataLoss(stored, payload)) {
+      try {
+        localStorage.setItem(DRAFT_PREV_KEY, JSON.stringify(stored))
+      } catch {
+        /* 留不下备份不影响主流程 */
+      }
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+    lastSeenDraftSavedAt = Math.max(lastSeenDraftSavedAt, payload.savedAt || 0)
+    writeDraftMeta(payload.savedAt || 0)
+    return 'ok'
+  } catch {
+    return 'failed'
   }
 }
 
