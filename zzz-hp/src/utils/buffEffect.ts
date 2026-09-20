@@ -771,6 +771,11 @@ export function resolveEffectsToMods(
     resolveTeamProfessionCount?: (profession: string) => number
     /** 当前结算主槽角色职业（防线 Buff 等 applyProfession 条件） */
     beneficiaryProfession?: string | null
+    /**
+     * 行级增益例外展开出的"禁用效果 id"集合（**只关消费，不关计算**）。
+     * 面板级（转模来源收集、面板管线）**不要**传这个集合。
+     */
+    disabledEffectIds?: ReadonlySet<string> | null
   } = {},
 ): BuffStatModifiers {
   let total = emptyMods()
@@ -781,6 +786,8 @@ export function resolveEffectsToMods(
       continue
     }
     if (!isEffectEnabled(effect, options.selection)) continue
+    // 行级例外：只关"这一刀吃不吃"，不动计算（面板级不传 disabledEffectIds）
+    if (options.disabledEffectIds?.has(effect.id)) continue
     if (!effectMatchesContext(effect, options.ctx)) continue
     const matchElement =
       effect.applyTarget === 'team'
@@ -822,6 +829,32 @@ export function resolveEffectsToMods(
     total = addStat(total, effect.stat, amount)
   }
   return total
+}
+
+/**
+ * 把一条行级例外展开成"禁用的效果 id"集合（**只展开，不判定**）。
+ *
+ * - 单条禁用：直接命中
+ * - 块禁用：按调用方给的 blockKey 命中（与收集侧一致：`${sourceKey}::${blockName ?? ''}`）
+ * - 传 null / 空结果 → 返回 null（调用方据此跳过判定，零开销）
+ */
+export function expandBuffOverrideToEffectIds(
+  override:
+    | { disabledBlockIds?: string[] | null; disabledEffectIds?: string[] | null }
+    | null
+    | undefined,
+  items: Array<{ effect: { id: string }; blockKey?: string | null }>,
+): Set<string> | null {
+  if (!override) return null
+  const blockIds = new Set(override.disabledBlockIds ?? [])
+  const effectIds = new Set(override.disabledEffectIds ?? [])
+  if (!blockIds.size && !effectIds.size) return null
+  const out = new Set<string>()
+  for (const item of items) {
+    if (effectIds.has(item.effect.id)) out.add(item.effect.id)
+    else if (item.blockKey && blockIds.has(item.blockKey)) out.add(item.effect.id)
+  }
+  return out.size ? out : null
 }
 
 function normalizeScope(value: unknown): BuffScope {

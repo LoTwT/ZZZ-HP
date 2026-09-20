@@ -11,6 +11,7 @@ import type {
   StaggerPhase,
 } from '@/types/calculator'
 import type {
+  FlowBuffOverride,
   FlowEntry,
   PreparedGroupMemberAgents,
   PreparedSkill,
@@ -117,6 +118,11 @@ export function buildDefaultMemberAgents(
 export interface ResolvedHit {
   /** 取流程条目 id，方便回指 UI */
   id: string
+  /**
+   * 该行的增益例外（原始覆盖；缺省/空 = 全部继承全局）。
+   * 组行成员 = 成员覆盖 ?? 整行覆盖。块 → 效果的展开在消费循环前做。
+   */
+  buffOverride?: FlowBuffOverride | null
   skill: Skill
   /** 流程归属角色；直伤取其面板。异常类只用于伤害归属，减防/无视取 triggerAgentId */
   ownerAgentId: string
@@ -218,6 +224,7 @@ function resolveOne(
     hitId?: string
     anomalyPowerAgentId?: string | null
     triggerAgentId?: string | null
+    buffOverride?: FlowBuffOverride | null
   },
 ): ResolvedHit {
   const { damageKind, anomalySubKind } = mapEventKindToCalc(skill.damageType)
@@ -257,6 +264,8 @@ function resolveOne(
   )
   return {
     id: overrides?.hitId ?? entry.id,
+    buffOverride:
+      overrides && 'buffOverride' in overrides ? overrides.buffOverride : entry.buffOverrides,
     skill,
     ownerAgentId,
     anomalyPowerAgentId: powerRaw?.trim() || defaults.anomalyPowerAgentId,
@@ -322,6 +331,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
               staggerPhase: ov?.staggerPhase ?? entry.staggerPhase,
               critMode: entry.critMode,
               hitId: `${entry.id}#${memberIndex}:${member.skillId}`,
+              buffOverride: ov?.buffOverrides ?? entry.buffOverrides,
               ...(power ? { anomalyPowerAgentId: power } : {}),
               ...(trigger ? { triggerAgentId: trigger } : {}),
             }),

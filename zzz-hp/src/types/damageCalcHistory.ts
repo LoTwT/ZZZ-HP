@@ -168,6 +168,14 @@ export interface PreparedSkill {
   extraMods?: PreparedSkillExtraMods | null
 }
 
+/** 一条流程行的 buff 例外（只存"与全局不同"的禁用项；缺省/空 = 全部继承全局） */
+export interface FlowBuffOverride {
+  /** 按效果块禁用 */
+  disabledBlockIds?: string[] | null
+  /** 按单条效果禁用（下钻） */
+  disabledEffectIds?: string[] | null
+}
+
 /**
  * 流程组行上的成员覆盖（仅该方案实例；缺省 = 继承整组 FlowEntry + 组定义）。
  */
@@ -179,6 +187,8 @@ export interface FlowGroupMemberOverride {
   count?: number | null
   staggerPhase?: StaggerPhase | null
   critMode?: DamageEventCritMode | null
+  /** 该成员的 buff 例外（缺省 = 继承整行 FlowEntry.buffOverrides） */
+  buffOverrides?: FlowBuffOverride | null
 }
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
@@ -196,6 +206,12 @@ export interface FlowEntry {
   critMode: DamageEventCritMode
   /** 仅准备为技能组时有意义 */
   memberOverrides?: FlowGroupMemberOverride[] | null
+  /**
+   * 本行的 buff 例外（仅该方案实例；缺省/空 = 全部继承全局勾选）。
+   * 只允许"禁用"（减法语义）：与全局一致的一律不写，老数据读到即继承。
+   * 技能组行：整组用本字段；逐成员用 memberOverrides[].buffOverrides。
+   */
+  buffOverrides?: FlowBuffOverride | null
 }
 
 /**
