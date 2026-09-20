@@ -81,7 +81,7 @@ import {
   getLoadedSchemeId,
   listAllDamageCalcHistory,
   loadWorkingDraft,
-  schemeStoreWriteFailed,
+  takeSchemeStoreWriteFailed,
   nameConflictType,
   saveDamageCalcHistory,
   saveWorkingDraft,
@@ -1777,7 +1777,7 @@ function persistWorkingDraftNow(force = false) {
       '草稿保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先用方案库导出备份，再清理浏览器存储。'
   } else {
     draftSaveWarning.value =
-      '另一个标签页更新了草稿，本页的改动没有自动保存（避免冲掉对方的数据）。建议先导出方案，或只保留一个标签页。'
+      '已用本页内容覆盖草稿：另一个标签页也改过它，对方的改动可能已被覆盖。建议只保留一个标签页。'
   }
 }
 
@@ -1857,7 +1857,7 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
 
   historyEntries.value = saveDamageCalcHistory(entry)
   // 写盘失败（配额满 / 隐私模式）必须说出来，不能报「已保存」
-  if (schemeStoreWriteFailed()) {
+  if (takeSchemeStoreWriteFailed()) {
     historyMessage.value =
       '保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
     return
@@ -1901,7 +1901,7 @@ function overwriteHistoryEntry(id: string) {
   }
   historyEntries.value = saveDamageCalcHistory(updated)
   // 同上：覆盖失败不能报「已覆盖」
-  if (schemeStoreWriteFailed()) {
+  if (takeSchemeStoreWriteFailed()) {
     historyMessage.value =
       '覆盖失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
     return
@@ -1914,6 +1914,11 @@ function overwriteHistoryEntry(id: string) {
 /** 方案库内部直接改了 localStorage（复制/重命名/删除/批量/目录/导入），在此刷新列表（全量） */
 function onSchemeLibraryChanged() {
   historyEntries.value = listAllDamageCalcHistory()
+  // 方案库弹窗里的复制/改名/删除/移动/建目录等操作也走同一条写盘路径，失败同样要说出来
+  if (takeSchemeStoreWriteFailed()) {
+    historyMessage.value =
+      '刚才的方案库改动没有写进浏览器存储（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+  }
 }
 
 function blankTeamSlots(): TeamSlot[] {

@@ -67,7 +67,7 @@ export function ensureSchemeSlots(
 
 export function schemeSlotsHaveContent(slots?: SchemeSlot[] | null): boolean {
   return (slots ?? []).some(
-    (slot) => (slot.prepared?.length ?? 0) > 0 || (slot.flow?.length ?? 0) > 0,
+    (slot) => (slot?.prepared?.length ?? 0) > 0 || (slot?.flow?.length ?? 0) > 0,
   )
 }
 

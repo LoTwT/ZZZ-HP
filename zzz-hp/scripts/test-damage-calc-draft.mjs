@@ -28,7 +28,7 @@ const {
   saveWorkingDraft,
   localStorageUsageBytes,
   saveDamageCalcHistory,
-  schemeStoreWriteFailed,
+  takeSchemeStoreWriteFailed,
   clearWorkingDraft,
 } = await import('../src/utils/damageCalcHistory.ts')
 
@@ -143,22 +143,26 @@ check(
   ),
 )
 
-console.log('[4] 绝不静默丢数据：写失败要报、被别的标签页抢先就不覆盖、可疑缩水留上一版')
+console.log('[4] 绝不静默丢数据：写失败要报、别的标签页写过也照样保存、不留多余 key')
 
 const draftKey = 'zzz-hp-damage-calc-draft'
-const metaKey = 'zzz-hp-damage-calc-draft-meta'
-const prevKey = 'zzz-hp-damage-calc-draft-prev'
 
-// 4.1 别的标签页写过更新的草稿 → stale，且不覆盖
+// 4.1 别的标签页写过更新的草稿 → 提示（stale），但**必须照样写**，且下一次不能再 stale
+//     （独立复核实测过：拒绝写会让本标签页从此永久停止保存 = 更大的坑）
 memory.clear()
 check('首次写入返回 ok', saveWorkingDraft(draftBase({ savedAt: 1 })) === 'ok')
-memory.set(metaKey, JSON.stringify({ savedAt: 999, writerId: 'other-tab' }))
-const staleResult = saveWorkingDraft(draftBase({ savedAt: 2, activeSlot: 5 }))
-check('别的标签页更新过 → 返回 stale', staleResult === 'stale', `result=${staleResult}`)
+memory.set(draftKey, JSON.stringify(draftBase({ savedAt: 999, activeSlot: 7 })))
+const staleResult = saveWorkingDraft(draftBase({ savedAt: 1000, activeSlot: 5 }))
+check('别的标签页更新过 → 返回 stale（提示用户）', staleResult === 'stale', `result=${staleResult}`)
 check(
-  '别的标签页更新过 → 不覆盖对方数据',
-  JSON.parse(memory.get(draftKey))?.savedAt === 1,
+  '别的标签页更新过 → 仍然写入（本页数据不丢）',
+  JSON.parse(memory.get(draftKey))?.savedAt === 1000 &&
+    JSON.parse(memory.get(draftKey))?.activeSlot === 5,
   `stored savedAt=${JSON.parse(memory.get(draftKey))?.savedAt}`,
+)
+check(
+  'stale 之后的下一次保存回到 ok（不会被永久挡住）',
+  saveWorkingDraft(draftBase({ savedAt: 1001 })) === 'ok',
 )
 
 // 4.2 写入抛错 → failed（不装作已保存）
@@ -172,49 +176,33 @@ const failedResult = saveWorkingDraft(draftBase({ savedAt: 11 }))
 globalThis.localStorage.setItem = originalSetItem
 check('写入抛错 → 返回 failed（不装作已保存）', failedResult === 'failed', `result=${failedResult}`)
 
-// 4.3 可疑缩水（队伍 / 流程被清空）→ 先把旧草稿留一份
-memory.clear()
-saveWorkingDraft(
-  draftBase({
-    savedAt: 20,
-    teamSlots: [{ agentId: 'a' }],
-    slots: [{ prepared: [{ id: 'p1' }], flow: [] }],
-  }),
-)
-const shrinkResult = saveWorkingDraft(
-  draftBase({ savedAt: 21, teamSlots: [{ agentId: '' }], slots: [] }),
-)
-check('可疑缩水仍写入（不阻断用户操作）', shrinkResult === 'ok', `result=${shrinkResult}`)
-const prev = memory.get(prevKey) ? JSON.parse(memory.get(prevKey)) : null
-check(
-  '可疑缩水 → 旧草稿留在 draft-prev',
-  prev?.savedAt === 20 && prev?.teamSlots?.[0]?.agentId === 'a',
-  `prev savedAt=${prev?.savedAt}`,
-)
-
-// 4.4 正常保存不留备份（不增大占用）
+// 4.3 只写一个 key：不再有 meta / draft-prev 这类多余副本（不增大占用）
 memory.clear()
 saveWorkingDraft(draftBase({ savedAt: 30, activeSlot: 1 }))
-saveWorkingDraft(draftBase({ savedAt: 31, activeSlot: 2 }))
-check('正常保存不写 draft-prev（避免存储翻倍）', !memory.has(prevKey))
-
-// 4.5 存储用量可测（先量，后面会清空）
-check('localStorageUsageBytes() 能报出用量', localStorageUsageBytes() > 0)
-
-// 4.6 残留 meta（没有草稿）不能把保存永久挡住 —— 这是我自己复核时发现的 bug
-memory.clear()
-memory.set(metaKey, JSON.stringify({ savedAt: 9999, writerId: 'ghost-tab' }))
-const ghostResult = saveWorkingDraft(draftBase({ savedAt: 40 }))
+saveWorkingDraft(draftBase({ savedAt: 31, activeSlot: 2, teamSlots: [{ agentId: '' }] }))
 check(
-  '只有 meta、没有草稿 → 仍能保存（不被幽灵 meta 挡住）',
-  ghostResult === 'ok',
-  `result=${ghostResult}`,
+  '落盘只写草稿一个 key（没有 meta / prev 副本）',
+  [...memory.keys()].join(',') === draftKey,
+  `keys=${[...memory.keys()].join(',')}`,
 )
-// clearWorkingDraft 要连 meta 一起清
-clearWorkingDraft()
-check('clearWorkingDraft() 同时清掉 meta', !memory.has(metaKey) && !memory.has(draftKey))
 
-// 4.6 方案库写失败要能被调用方发现
+// 4.4 存储用量：报字节（UTF-16 每码元 2 字节）
+memory.clear()
+memory.set('zzz-hp-x', 'abcd') // 8 + 4 个码元 = 12 码元 → 24 字节
+check(
+  'localStorageUsageBytes() 按字节报（码元 ×2）',
+  localStorageUsageBytes() === 24,
+  `bytes=${localStorageUsageBytes()}`,
+)
+
+// 4.5 clearWorkingDraft 之后能正常再写（没有残留状态挡路）
+memory.clear()
+saveWorkingDraft(draftBase({ savedAt: 40 }))
+clearWorkingDraft()
+check('clearWorkingDraft() 清掉草稿', !memory.has(draftKey))
+check('clear 之后仍能正常写入', saveWorkingDraft(draftBase({ savedAt: 41 })) === 'ok')
+
+// 4.6 方案库写失败：标记可被消费一次（不误报、不漏报）
 const originalSchemeSetItem = globalThis.localStorage.setItem
 globalThis.localStorage.setItem = () => {
   throw new Error('QuotaExceededError')
@@ -233,7 +221,23 @@ saveDamageCalcHistory({
   order: 0,
 })
 globalThis.localStorage.setItem = originalSchemeSetItem
-check('方案库写失败 → schemeStoreWriteFailed() 为真', schemeStoreWriteFailed() === true)
+check('方案库写失败 → takeSchemeStoreWriteFailed() 为真', takeSchemeStoreWriteFailed() === true)
+check('标记取一次即复位（不会误报下一次）', takeSchemeStoreWriteFailed() === false)
+// 早退（空名）不能被当成写盘失败
+saveDamageCalcHistory({
+  id: '/',
+  name: '',
+  savedAt: Date.now(),
+  teamSlots: [],
+  activeSlot: 0,
+  selectedBangbooId: 'none',
+  bangbooRefine: 1,
+  panelCalcMode: 'optimal',
+  panelState: {},
+  folder: '',
+  order: 0,
+})
+check('空名早退不报「写盘失败」', takeSchemeStoreWriteFailed() === false)
 
 console.log('[5] 源码守卫：卸载前抓快照 / 失败提示 / 用量统计口径')
 
@@ -247,8 +251,8 @@ check(
   page.includes('draftSaveWarning') && page.includes('draft-save-warning'),
 )
 check(
-  '源码：方案保存/覆盖后检查写盘结果，失败不报「已保存」',
-  (page.match(/if \(schemeStoreWriteFailed\(\)\)/g) ?? []).length >= 2,
+  '源码：方案保存/覆盖/方案库改动后都检查写盘结果',
+  (page.match(/takeSchemeStoreWriteFailed\(\)/g) ?? []).length >= 3,
 )
 check(
   '源码：用量统计算的是整个源的占用（不只方案库那个 key）',
@@ -256,6 +260,12 @@ check(
     new URL('../src/components/calculator/DamageCalcHistorySection.vue', import.meta.url),
     'utf8',
   ).includes('localStorageUsageBytes()'),
+)
+check(
+  '源码：用量全量扫描带缓存（搜索每敲一个字都重算会很浪费）',
+  readFileSync(new URL('../src/utils/damageCalcHistory.ts', import.meta.url), 'utf8').includes(
+    'usageCache',
+  ),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
