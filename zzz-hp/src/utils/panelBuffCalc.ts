@@ -32,6 +32,7 @@ import {
   effectMatchesContext,
   effectMatchesElement,
   effectMatchesTeamProfessionGate,
+  expandBuffOverrideToEffectIds,
   flatModsToEffects,
   isEffectEnabled,
   resolveEffectsToMods,
@@ -1584,7 +1585,22 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
     // 初始不勾选由 buildDefaultBuffSelection 对场地分组写 false。
   }
 
-  return collected
+  const rowOverride = ctx.rowBuffOverride ?? null
+  if (!rowOverride) return collected
+  // 行级例外：在**公共收集器**这一层滤掉 —— 普通路径（collectPanelBuffMods）与
+  // 明细路径（collectPanelBuffModSourcesUncached）都从这里出发，改一处即全覆盖
+  const disabled = expandBuffOverrideToEffectIds(
+    rowOverride,
+    collected.map((item) => ({ effect: item.effect, blockKey: blockKeyOfCollected(item) })),
+  )
+  if (!disabled) return collected
+  return collected.filter((item) => !disabled.has(item.effect.id))
+}
+
+/** 效果块的稳定键（与目录一致：`${sourceKey}-${blockId}`，邦布为 `bangboo`） */
+export function blockKeyOfCollected(item: CollectedEffect): string {
+  const blockId = (item as unknown as { blockId?: string | null }).blockId ?? ''
+  return item.sourceKey.startsWith('bangboo') ? 'bangboo' : `${item.sourceKey}-${blockId}`
 }
 
 /**
@@ -1967,6 +1983,8 @@ function makeCatalogEntryFromSources(
 }
 
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
+  // 行级例外：目录缓存键里没有「行」→ 带例外时一律绕开（不读也不写，避免跨行串味）
+  if (ctx.rowBuffOverride) return collectPanelBuffModSourcesUncached(ctx)
   const key = buildBuffCatalogKey(ctx)
   const cached = buffCatalogCache.get(key)
   if (cached) {
@@ -2297,6 +2315,9 @@ export function computePanelStages(
   // 先叠非转模，再用局外/局内面板实时折算转模，避免环依赖
   const baseCtx: PanelCalcContext = {
     ...ctxForSources,
+    // 行级例外必须显式带上：baseCtx/fullCtx 是本函数重建的 ctx，
+    // 任何一处漏掉都会让"取消勾选不影响伤害"（2026-09-20 实测踩过）
+    rowBuffOverride: ctx.rowBuffOverride ?? ctxForSources.rowBuffOverride ?? null,
     mainExternalPanel: ctxForSources.mainExternalPanel ?? externalPanel,
     panelSourceValuesBySlot,
     panelSourceValues: mainPanelSources,
