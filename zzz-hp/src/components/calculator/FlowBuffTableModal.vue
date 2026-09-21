@@ -61,8 +61,8 @@ const tipTop = computed(() =>
 )
 
 /** 表格总宽按列数算死：fixed 布局下若还有余量，浏览器会按内容重新分配列宽。
- *  含 border-spacing（列间距 8px，首尾各一份）。 */
-const tableWidth = computed(() => `${230 + 96 * props.blocks.length + 8 * (props.blocks.length + 1)}px`)
+ *  含 border-spacing（列间距 2px，首尾各一份）。 */
+const tableWidth = computed(() => `${230 + 96 * props.blocks.length + 2 * (props.blocks.length + 1)}px`)
 
 const onCount = computed(() =>
   Object.values(props.states).filter((value) => value === 'on').length,
@@ -274,7 +274,8 @@ function stateWord(state: FlowBuffCellState): string {
   border-collapse: separate;
   /* 列间距：表头名字挨在一起时分不清列边界（2026-09-21 用户反馈）。
      表宽公式里必须一并算上间距，否则 fixed 布局又会按内容重分配列宽。 */
-  border-spacing: 8px 0;
+  /* 列间距收到 2px，改**用线条**区分列（2026-09-21 用户反馈：纯间距仍不够明显） */
+  border-spacing: 2px 0;
   /* 列宽**限死**：招式列与增益列都固定（用 colgroup 钉，见下），名字过长一律省略号。
      注意别再写 `width: max-content` —— 那样会把声明列宽按内容重新分配（实测 96px 被撑成 123.5px）。 */
   table-layout: fixed;
@@ -348,8 +349,9 @@ thead th {
   color: #cbd5e1;
   white-space: nowrap;
   max-width: 8rem;
-  /* 每列自成一块，配合列间距读起来才分得清 */
+  /* 每列自成一块 + 右侧竖线：线条比纯间距更容易分辨列边界（2026-09-21 用户反馈） */
   background: #171c25;
+  border-right: 1px solid #313947;
   border-radius: 4px;
 }
 .fbt-th-text {
@@ -401,6 +403,8 @@ thead th {
   padding: 0.15rem 0.2rem;
   text-align: center;
   border-bottom: 1px solid #1e242e;
+  /* 与表头对齐的列竖线：整列一条线，扫读时列边界清楚 */
+  border-right: 1px solid #262e3a;
 }
 .fbt-cell {
   width: 1.55rem;
@@ -528,5 +532,11 @@ thead th {
 }
 :global([data-theme='light'] .fbt-tip-line) {
   color: #5b6573;
+}
+:global([data-theme='light'] .fbt-th-block) {
+  border-right-color: #dbe1ea;
+}
+:global([data-theme='light'] .fbt-td-cell) {
+  border-right-color: #e8ecf2;
 }
 </style>
