@@ -204,7 +204,6 @@ function toggleFlowBuffCell(rowKey: string, blockKey: string) {
   })
   // 换引用要**换到位**：只换外层数组不够 —— 下游 `resolvedFlow` / 指纹 / 缓存键靠引用或内容比较，
   // 行内 entry 对象不变时整条链可能都不触发（2026-09-21 实测：改完要刷新页面才更新伤害）。
-  // ⚠️ 同日试过在这里 clearHitEvalCache()，实测**没能修好**该现象，已撤掉（不留无证据的行为改动）。
   const slotIndex = activeSlotIndex.value
   slots.value = slots.value.map((slot, index) => {
     if (index !== slotIndex) return slot
@@ -215,6 +214,9 @@ function toggleFlowBuffCell(rowKey: string, blockKey: string) {
       ),
     }
   })
+  // 命中求值缓存里存的是「某个生效集」的结果，行级例外改了必须不复用旧条目。
+  // ⚠️ 2026-09-21 两次实测（含硬刷新 + 确认加载新模块）：加 clearHitEvalCache() **都没修好**
+  // "改完要刷新才更新"，故不留；真正卡点在"最优分配那条路的求值输入"，见 dev-docs/skill-buff-per-row.md。
 }
 
 const slots = defineModel<SchemeSlot[]>('slots', { required: true })
