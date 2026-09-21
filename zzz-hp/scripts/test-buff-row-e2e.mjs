@@ -188,6 +188,33 @@ if (hitB) {
   check('fixture 里存在第二条能出伤害的流程行', false)
 }
 
+console.log('=== 5. 单次评估耗时（有例外 vs 无例外） ===')
+const PERF_N = 100
+const PERF_ROUNDS = 5
+function timeEvals(override, times) {
+  hitA.buffOverride = override
+  const t0 = performance.now()
+  for (let i = 0; i < times; i += 1) evalPerHit(hitA)
+  return (performance.now() - t0) / times
+}
+const overrideSample = { disabledBlockIds: [foundKey ?? blockKeys[0]] }
+timeEvals(null, 10)
+timeEvals(overrideSample, 10)
+const noneSamples = []
+const someSamples = []
+for (let round = 0; round < PERF_ROUNDS; round += 1) {
+  noneSamples.push(timeEvals(null, PERF_N))
+  someSamples.push(timeEvals(overrideSample, PERF_N))
+}
+hitA.buffOverride = null
+const medianOf = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+const msNone = medianOf(noneSamples)
+const msSome = medianOf(someSamples)
+console.log(`  无例外：${msNone.toFixed(3)} ms/次（走目录缓存）`)
+console.log(`  有例外：${msSome.toFixed(3)} ms/次（绕开目录缓存，重算本行）`)
+console.log(`  倍率：${(msSome / msNone).toFixed(2)}×`)
+console.log('  说明：只有"设了例外的行"走重算；没设例外的行完全走原路径（含目录缓存）')
+
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)
 if (failed > 0) process.exit(1)
