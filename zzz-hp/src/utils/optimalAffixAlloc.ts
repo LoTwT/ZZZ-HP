@@ -1037,6 +1037,8 @@ export function evaluateOptimalEventDetail(
               ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
               : undefined) || trigAgent?.element,
           ),
+          // 行级增益例外：重建 ctx 的地方必须显式带一遍，否则这一侧会漏掉本行的例外
+          rowBuffOverride: hit.buffOverride ?? null,
         },
         panelOpts,
       )
@@ -1080,6 +1082,8 @@ export function evaluateOptimalEventDetail(
               ),
               // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
               skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
+              // 同上：异常触发者一侧也要吃本行的增益例外
+              rowBuffOverride: hit.buffOverride ?? null,
             }
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,

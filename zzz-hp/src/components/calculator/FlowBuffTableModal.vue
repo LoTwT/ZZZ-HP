@@ -31,7 +31,37 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ toggle: [rowKey: string, blockKey: string] }>()
 
-const hoverKey = ref<string | null>(null)
+/** 悬停卡片（比原生 title 快、能显示多行，且增益能看到具体效果） */
+const tip = ref<{ x: number; y: number; title: string; lines: string[] } | null>(null)
+
+function showTip(event: MouseEvent, title: string, lines: string[]) {
+  tip.value = {
+    x: event.clientX,
+    y: event.clientY,
+    title,
+    lines: lines.filter(Boolean).slice(0, 8),
+  }
+}
+
+function moveTip(event: MouseEvent) {
+  if (!tip.value) return
+  tip.value = { ...tip.value, x: event.clientX, y: event.clientY }
+}
+
+function hideTip() {
+  tip.value = null
+}
+
+/** 卡片贴光标，右/下边界收一下，别跑出屏幕 */
+const tipLeft = computed(() =>
+  tip.value ? `${Math.max(8, Math.min(tip.value.x + 14, window.innerWidth - 320))}px` : '0',
+)
+const tipTop = computed(() =>
+  tip.value ? `${Math.max(8, Math.min(tip.value.y + 16, window.innerHeight - 180))}px` : '0',
+)
+
+/** 表格总宽按列数算死：fixed 布局下若还有余量，浏览器会按内容重新分配列宽 */
+const tableWidth = computed(() => `${230 + 96 * props.blocks.length}px`)
 
 const onCount = computed(() =>
   Object.values(props.states).filter((value) => value === 'on').length,
@@ -49,12 +79,10 @@ function onCellClick(rowKey: string, blockKey: string) {
   emit('toggle', rowKey, blockKey)
 }
 
-function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
-  const state = stateOf(row.key, block.key)
-  const head = `${row.label} × ${block.label}`
-  if (state === 'na') return `${head} —— 不可调整（全局未启用，或继承自技能组）`
-  if (state === 'off') return `${head} —— 本行已关闭，点击恢复`
-  return `${head} —— 生效中，点击可对本行关闭`
+function stateWord(state: FlowBuffCellState): string {
+  if (state === 'na') return '不可调整（全局未启用，或继承自技能组）'
+  if (state === 'off') return '本行已关闭，点击恢复'
+  return '生效中，点击可对本行关闭'
 }
 </script>
 
@@ -79,7 +107,16 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
       </p>
 
       <div class="fbt-body">
-        <table class="fbt-table">
+        <table class="fbt-table" :style="{ width: tableWidth }">
+          <colgroup>
+            <!-- 用行内 style：scoped 选择器依赖 data-v 属性，<col> 常常拿不到，规则不生效 -->
+            <col :style="{ width: '230px' }" />
+            <col
+              v-for="block in blocks"
+              :key="`col-${block.key}`"
+              :style="{ width: '96px' }"
+            />
+          </colgroup>
           <thead>
             <tr>
               <th class="fbt-th-name">招式</th>
@@ -87,7 +124,9 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
                 v-for="block in blocks"
                 :key="block.key"
                 class="fbt-th-block"
-                :title="block.title ?? block.label"
+                @mouseenter="showTip($event, block.label, block.details ?? [])"
+                @mousemove="moveTip"
+                @mouseleave="hideTip"
               >
                 <span class="fbt-th-text">{{ block.label }}</span>
               </th>
@@ -100,7 +139,12 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
               class="fbt-row"
               :class="{ 'is-group': row.kind === 'group', 'is-member': row.kind === 'member' }"
             >
-              <th class="fbt-td-name" :title="row.label">
+              <th
+                class="fbt-td-name"
+                @mouseenter="showTip($event, row.label, [row.badge ?? '', row.kind === 'group' ? '技能组（成员逐行）' : ''])"
+                @mousemove="moveTip"
+                @mouseleave="hideTip"
+              >
                 <span class="fbt-name-text" :class="{ 'is-indent': row.kind === 'member' }">
                   {{ row.label }}
                 </span>
@@ -118,9 +162,14 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
                   class="fbt-cell"
                   :class="`is-${stateOf(row.key, block.key)}`"
                   :disabled="stateOf(row.key, block.key) === 'na'"
-                  :title="cellTitle(row, block)"
-                  @mouseenter="hoverKey = `${row.key}|${block.key}`"
-                  @mouseleave="hoverKey = null"
+                  @mouseenter="
+                    showTip($event, `${row.label} × ${block.label}`, [
+                      stateWord(stateOf(row.key, block.key)),
+                      ...(block.details ?? []),
+                    ])
+                  "
+                  @mousemove="moveTip"
+                  @mouseleave="hideTip"
                   @click="onCellClick(row.key, block.key)"
                 >
                   <span v-if="stateOf(row.key, block.key) === 'on'">✓</span>
@@ -136,6 +185,12 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- 悬停卡片：名字太长时看全名；增益列还能看到具体效果 -->
+      <div v-if="tip" class="fbt-tip" :style="{ left: tipLeft, top: tipTop }">
+        <strong class="fbt-tip-title">{{ tip.title }}</strong>
+        <p v-for="(line, index) in tip.lines" :key="index" class="fbt-tip-line">{{ line }}</p>
       </div>
     </div>
   </div>
@@ -217,8 +272,44 @@ function cellTitle(row: FlowBuffTableRow, block: FlowBuffTableBlock): string {
 .fbt-table {
   border-collapse: separate;
   border-spacing: 0;
-  width: max-content;
-  min-width: 100%;
+  /* 列宽**限死**：招式列与增益列都固定（用 colgroup 钉，见下），名字过长一律省略号。
+     注意别再写 `width: max-content` —— 那样会把声明列宽按内容重新分配（实测 96px 被撑成 123.5px）。 */
+  table-layout: fixed;
+}
+/* colgroup + 行内表宽决定列宽；th/td 上不再写 width/min/max，避免和 col 冲突 */
+.fbt-th-text,
+.fbt-name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 悬停卡片：名字太长时看全名；增益列还能看到具体效果 */
+.fbt-tip {
+  position: fixed;
+  z-index: 40;
+  width: min(300px, 70vw);
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #3a424e;
+  background: #171c24;
+  color: #e6ebf2;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.fbt-tip-title {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #f0f2f6;
+  word-break: break-all;
+}
+.fbt-tip-line {
+  margin: 0;
+  color: #9fb0c4;
+  word-break: break-all;
 }
 .fbt-th-name,
 .fbt-td-name {
@@ -418,5 +509,17 @@ thead th {
 }
 :global([data-theme='light'] .fbt-empty) {
   color: #7b8798;
+}
+:global([data-theme='light'] .fbt-tip) {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #1c212a;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+:global([data-theme='light'] .fbt-tip-title) {
+  color: #1c212a;
+}
+:global([data-theme='light'] .fbt-tip-line) {
+  color: #5b6573;
 }
 </style>

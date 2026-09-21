@@ -13,6 +13,7 @@ import type { SkillGroup } from '@/types/calculator'
 import type { FlowBuffOverride, FlowEntry } from '@/types/damageCalcHistory'
 import { isEffectEnabled } from '@/utils/buffEffect'
 import { blockKeyOfCollected, type BuffSelectionState, type CollectedEffect } from '@/utils/panelBuffCalc'
+import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 
 export interface FlowBuffTableRow {
   /** 唯一键：普通行 = 流程行 id；组成员 = `${行id}#${序号}:${skillId}` */
@@ -30,13 +31,27 @@ export interface FlowBuffTableBlock {
   key: string
   label: string
   title?: string | null
+  /** 该块包含的效果摘要（悬停卡片里展示「增益的具体效果」） */
+  details?: string[]
 }
 
 export type FlowBuffCellState = 'on' | 'off' | 'na'
 
-function rawField(item: CollectedEffect, field: 'blockName' | 'sourceLabel'): string {
+function rawField(
+  item: CollectedEffect,
+  field: 'blockName' | 'sourceLabel' | 'blockNote',
+): string {
   const value = (item as unknown as Record<string, unknown>)[field]
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/** 效果摘要：`+20 电增伤` 这种（属性名走现有 label 表，取不到就退回 key） */
+function effectSummary(item: CollectedEffect): string {
+  const effect = item.effect
+  const field = BUFF_STAT_FIELDS.find((entry) => entry.key === effect.stat)
+  const label = field ? buffStatFieldLabel(field) : String(effect.stat ?? '')
+  const value = typeof effect.value === 'number' && effect.value !== 0 ? `+${effect.value}` : ''
+  return `${value} ${label}`.trim()
 }
 
 /** 列 = 效果块（一块一列，按收集顺序去重） */
@@ -46,12 +61,22 @@ export function buildFlowBuffTableBlocks(
   const map = new Map<string, FlowBuffTableBlock>()
   for (const item of items ?? []) {
     const key = blockKeyOfCollected(item)
-    if (map.has(key)) continue
+    const existing = map.get(key)
+    if (existing) {
+      const line = effectSummary(item)
+      if (line && existing.details && !existing.details.includes(line)) existing.details.push(line)
+      continue
+    }
     const blockName = rawField(item, 'blockName')
     const sourceLabel = rawField(item, 'sourceLabel')
     const label = blockName || sourceLabel || '未命名增益'
     const title = sourceLabel && sourceLabel !== label ? `${label}（来源：${sourceLabel}）` : label
-    map.set(key, { key, label, title })
+    const detailLines: string[] = []
+    const note = rawField(item, 'blockNote')
+    if (note) detailLines.push(note)
+    const line = effectSummary(item)
+    if (line) detailLines.push(line)
+    map.set(key, { key, label, title, details: detailLines })
   }
   return [...map.values()]
 }
