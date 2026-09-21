@@ -68,9 +68,20 @@ import type { PanelStats } from '@/types/calculatorPanel'
 import type { AgentPanelSourceKind } from '@/types/damageCalcHistory'
 import { AGENT_PANEL_SOURCE_LABELS, AGENT_PANEL_SOURCE_ORDER } from '@/utils/agentPanelSources'
 import type { SkillFlowDisplayOption } from '@/utils/skillFlowPanelSource'
-import type { CollectedEffect } from '@/utils/panelBuffCalc'
+import {
+  resolveBuffSelectionForSlot,
+  type CollectedEffect,
+  type MultiSlotBuffSelection,
+} from '@/utils/panelBuffCalc'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 import SkillBuffOverrideModal from '@/components/calculator/SkillBuffOverrideModal.vue'
+import FlowBuffTableModal from '@/components/calculator/FlowBuffTableModal.vue'
+import {
+  buildFlowBuffTableBlocks,
+  buildFlowBuffTableRows,
+  buildFlowBuffTableStates,
+  setFlowBuffBlockDisabled,
+} from '@/utils/flowBuffTable'
 
 const props = defineProps<{
   teamSlots: TeamSlot[]
@@ -99,6 +110,8 @@ const props = defineProps<{
   } | null
   /** 本行增益例外的候选列表（与全局增益选择器**同一份**，由页面传入） */
   buffEffects?: CollectedEffect[]
+  /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
+  multiBuffSelection?: MultiSlotBuffSelection | null
 }>()
 
 const emit = defineEmits<{
@@ -137,6 +150,60 @@ function openBuffOverride(entryId: string) {
 function buffExceptionCount(entry: FlowEntry): number {
   const override = entry.buffOverrides
   return (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+}
+
+/* ============ 流程增益表（表格形态，2026-09-21 用户方案） ============ */
+
+const flowBuffTableOpen = ref(false)
+
+/** 表格行 = 当前槽位的流程招式；技能组展开为「组行 + 成员行」 */
+const flowBuffTableRows = computed(() =>
+  buildFlowBuffTableRows({
+    flow: currentSlot.value?.flow ?? [],
+    preparedName: (entry) => flowSkillName(entry),
+    groupOf: (entry) => {
+      const prepared = flowPrepared(entry)
+      return prepared && isPreparedGroup(prepared) ? preparedGroup(prepared) : null
+    },
+    memberKeyOf: (member) => skillGroupMemberKey(member),
+    sortMembers: (members) => sortSkillGroupMembers(members),
+    skillName: (skillId) => buffStore.findSkill(skillId)?.name,
+  }),
+)
+
+/** 表格列 = 增益（按效果块聚合） */
+const flowBuffTableBlocks = computed(() => buildFlowBuffTableBlocks(props.buffEffects ?? []))
+
+const flowBuffTableStates = computed(() =>
+  buildFlowBuffTableStates({
+    rows: flowBuffTableRows.value,
+    blocks: flowBuffTableBlocks.value,
+    items: props.buffEffects ?? [],
+    flow: currentSlot.value?.flow ?? [],
+    selection: resolveBuffSelectionForSlot(props.multiBuffSelection ?? null, activeSlotIndex.value),
+  }),
+)
+
+const flowBuffTableSubtitle = computed(() => {
+  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
+  const agentName = props.agents.find((item) => item.id === agentId)?.name
+  return [props.schemeName, agentName].filter(Boolean).join(' · ')
+})
+
+function toggleFlowBuffCell(rowKey: string, blockKey: string) {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  const entry = currentSlot.value?.flow.find((item) => item.id === row?.entryId) ?? null
+  if (!row || !entry) return
+  const disabled = flowBuffTableStates.value[`${rowKey}|${blockKey}`] !== 'off'
+  setFlowBuffBlockDisabled({
+    entry,
+    blockKey,
+    disabled,
+    memberKey: row.memberKey ?? null,
+    skillId: row.skillId ?? null,
+  })
+  // 换新数组引用：就地改字段时上层 computed 不一定重算（2026-09-21 实测：改完要刷新才更新）
+  slots.value = [...slots.value]
 }
 
 const slots = defineModel<SchemeSlot[]>('slots', { required: true })
@@ -2800,6 +2867,9 @@ const showcaseTitle = computed(() => {
               <div class="col-head">
                 <div class="col-title-row">
                   <h3>流程</h3>
+                  <button type="button" class="mini-btn" @click="flowBuffTableOpen = true">
+                    流程增益表
+                  </button>
                   <label class="drag-toggle">
                     <input v-model="flowDragEnabled" type="checkbox" />
                     拖动排序
@@ -2953,6 +3023,15 @@ const showcaseTitle = computed(() => {
               v-model:override="buffOverrideModel"
               :effects="props.buffEffects ?? []"
               :row-label="buffOverrideEntry?.id ?? ''"
+            />
+
+            <FlowBuffTableModal
+              v-model:open="flowBuffTableOpen"
+              :rows="flowBuffTableRows"
+              :blocks="flowBuffTableBlocks"
+              :states="flowBuffTableStates"
+              :subtitle="flowBuffTableSubtitle"
+              @toggle="toggleFlowBuffCell"
             />
           </div>
           <SkillFlowStatsPanel

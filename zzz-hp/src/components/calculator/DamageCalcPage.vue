@@ -2324,6 +2324,7 @@ defineExpose({ scrollToSection })
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
         :buff-effects="collectedEffectsForPicker"
+        :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"
         :panel-source-mode="skillFlowPanelSource"
