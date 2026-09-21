@@ -340,78 +340,83 @@ thead th {
 }
 
 /*
- * 白天主题：Teleport/浮层同样靠 html[data-theme=light] 覆盖（与词条库弹窗、游戏分配规则弹窗同一套）。
+ * 白天主题：Teleport/浮层同样靠 html[data-theme='light'] 覆盖。
+ * ⚠️ 必须把后代**一起写进** `:global(...)` 里 —— 写成 `:global([data-theme='light']) .xxx` 会被编译成
+ * 只剩 `[data-theme='light']`（后代被吃掉），规则等于没写。同 SkillFlowSection.vue 里那条注释。
+ * 2026-09-21 实测：改前编译产物是 `[data-theme='light'] { background: … }`，弹窗在白天主题下仍是深色。
  */
-:global([data-theme='light']) .fbt-mask {
+:global([data-theme='light'] .fbt-mask) {
   background: rgba(15, 23, 42, 0.35);
 }
-:global([data-theme='light']) .fbt-card {
+:global([data-theme='light'] .fbt-card) {
   border-color: #d5dae3;
   background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
   color: #1c212a;
 }
-:global([data-theme='light']) .fbt-head,
-:global([data-theme='light']) .fbt-hint {
+:global([data-theme='light'] .fbt-head) {
   border-color: #e4e7ec;
 }
-:global([data-theme='light']) .fbt-sub,
-:global([data-theme='light']) .fbt-hint {
+:global([data-theme='light'] .fbt-hint) {
+  border-color: #e4e7ec;
   color: #5b6573;
 }
-:global([data-theme='light']) .fbt-stat {
+:global([data-theme='light'] .fbt-sub) {
+  color: #5b6573;
+}
+:global([data-theme='light'] .fbt-stat) {
   border-color: #cfd6e0;
   color: #1f7a45;
 }
-:global([data-theme='light']) .fbt-stat.is-off {
+:global([data-theme='light'] .fbt-stat.is-off) {
   color: #9a6a00;
 }
-:global([data-theme='light']) .fbt-th-name,
-:global([data-theme='light']) .fbt-td-name,
-:global([data-theme='light']) thead th {
+:global([data-theme='light'] .fbt-th-name),
+:global([data-theme='light'] .fbt-td-name),
+:global([data-theme='light'] .fbt-table thead th) {
   background: #f1f4f8;
   border-color: #e4e7ec;
 }
-:global([data-theme='light']) .fbt-row.is-group .fbt-td-name {
+:global([data-theme='light'] .fbt-row.is-group .fbt-td-name) {
   background: #e8eef7;
 }
-:global([data-theme='light']) .fbt-row.is-member .fbt-td-name {
+:global([data-theme='light'] .fbt-row.is-member .fbt-td-name) {
   background: #f7f9fc;
 }
-:global([data-theme='light']) .fbt-th-block {
+:global([data-theme='light'] .fbt-th-block) {
   color: #364152;
 }
-:global([data-theme='light']) .fbt-td-cell {
+:global([data-theme='light'] .fbt-td-cell) {
   border-color: #eef1f5;
 }
-:global([data-theme='light']) .fbt-badge {
+:global([data-theme='light'] .fbt-badge) {
   border-color: #cfd6e0;
   color: #5b6573;
 }
-:global([data-theme='light']) .fbt-group-tag {
+:global([data-theme='light'] .fbt-group-tag) {
   border-color: #b9cde6;
   color: #2f5c94;
 }
-:global([data-theme='light']) .fbt-cell {
+:global([data-theme='light'] .fbt-cell) {
   border-color: #cfd6e0;
   background: #ffffff;
   color: #7b8798;
 }
-:global([data-theme='light']) .fbt-cell.is-on {
+:global([data-theme='light'] .fbt-cell.is-on) {
   border-color: #8fbf9f;
   background: #eef8f1;
   color: #1f7a45;
 }
-:global([data-theme='light']) .fbt-cell.is-off {
+:global([data-theme='light'] .fbt-cell.is-off) {
   border-color: #d8bd8a;
   background: #fdf6e7;
   color: #9a6a00;
 }
-:global([data-theme='light']) .fbt-cell.is-na {
+:global([data-theme='light'] .fbt-cell.is-na) {
   border-color: #e6e9ee;
   background: #f4f6f9;
   color: #b6bdc7;
 }
-:global([data-theme='light']) .fbt-empty {
+:global([data-theme='light'] .fbt-empty) {
   color: #7b8798;
 }
 </style>
