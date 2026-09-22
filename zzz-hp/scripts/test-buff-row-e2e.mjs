@@ -188,7 +188,24 @@ if (hitB) {
   check('fixture 里存在第二条能出伤害的流程行', false)
 }
 
-console.log('=== 5. 单次评估耗时（有例外 vs 无例外） ===')
+console.log('=== 5. numbers-only 路径（页面显示走的就是它）也要吃例外 ===')
+function evalPerHitNumbers(hit) {
+  const detail = evaluateOptimalEventDetail(ctx, null, hit, { includeDetails: false })
+  return detail ? detail.perHit : null
+}
+// 先跑一次"无例外"把目录缓存喂上 —— 旧实现正是在这一步之后失效（缓存命中 → 用没过滤的清单）
+hitA.buffOverride = null
+const numbersNone = evalPerHitNumbers(hitA)
+hitA.buffOverride = { disabledBlockIds: [foundKey ?? blockKeys[0]] }
+const numbersSome = evalPerHitNumbers(hitA)
+hitA.buffOverride = null
+console.log(`  numbers-only：无例外 ${numbersNone} / 有例外 ${numbersSome}`)
+check('numbers-only 路径：设例外后伤害变化', numbersSome !== numbersNone)
+check('numbers-only 路径：与明细路径的数值一致', numbersSome === foundValue)
+const numbersRestore = evalPerHitNumbers(hitA)
+check('numbers-only 路径：恢复后逐位回到基准（缓存未被污染）', numbersRestore === numbersNone)
+
+console.log('=== 6. 单次评估耗时（有例外 vs 无例外） ===')
 const PERF_N = 100
 const PERF_ROUNDS = 5
 function timeEvals(override, times) {

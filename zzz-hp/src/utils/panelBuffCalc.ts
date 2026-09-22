@@ -2068,6 +2068,17 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 }
 
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
+  // 行级增益例外：目录缓存键里没有「行」→ 带例外时一律绕开（不读也不写，避免跨行串味）。
+  // 2026-09-21 修：此前只给 collectPanelBuffModSources 加了绕行，这条 numbers-only 路径漏了 ——
+  // 后果两条：① 缓存命中时例外不生效（用没过滤的清单）② 缓存未命中时把「过滤过的清单」
+  // 写进不带例外的键（同 key 的其它行会读到被削过的清单）。
+  if (ctx.rowBuffOverride) {
+    const sources = collectPanelBuffModSourcesUncached(ctx)
+    if (!ctx.skipConvert) return mergeModsFromSources(sources)
+    const localEntry = makeCatalogEntryFromSources(sources, ctx)
+    ensureNonConvertMods(localEntry, ctx)
+    return localEntry.nonConvertMods ?? mergeModsFromSources(sources)
+  }
   const key = buildBuffCatalogKey(ctx)
   let entry = buffCatalogCache.get(key)
   if (!entry) {
