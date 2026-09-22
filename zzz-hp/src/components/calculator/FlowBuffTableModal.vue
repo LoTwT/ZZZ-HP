@@ -171,6 +171,7 @@ function stateWord(state: FlowBuffCellState): string {
               >
                 <span class="fbt-th-text">{{ column.label }}</span>
                 <span v-if="column.badge" class="fbt-badge is-circle">{{ column.badge }}</span>
+                <span class="fbt-th-beneficiary">生效者：{{ column.beneficiaryLabel }}</span>
               </th>
             </tr>
           </thead>
@@ -255,6 +256,13 @@ function stateWord(state: FlowBuffCellState): string {
   background: #141820;
   color: #dfe6ef;
   overflow: hidden;
+}
+/* 列头第三行：生效者（全队 / 角色名） */
+.fbt-th-beneficiary {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  opacity: 0.7;
 }
 /* 第一行表头：提供者分组 */
 .fbt-th-group {

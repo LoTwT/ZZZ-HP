@@ -53,6 +53,8 @@ export interface FlowBuffTableColumn {
   providerSlotIndex: number | null
   /** 受益者槽位；null = 全队（所有行都吃） */
   beneficiarySlots: number[] | null
+  /** 受益者文字（`全队` 或角色名）—— 界面显示用 */
+  beneficiaryLabel: string
   /** 悬停卡片：这条效果是什么、谁提供 */
   details?: string[]
 }
@@ -105,9 +107,21 @@ export function buildFlowBuffTableColumns(input: {
     const blockName = rawField(item, 'blockName')
     const sourceLabel = rawField(item, 'sourceLabel')
     const label = blockName || sourceLabel || '未命名增益'
+    // `team` = 全队都吃（null）；否则受益者 = 这条增益所属槽位的角色
+    const beneficiarySlots =
+      item.effect.applyTarget === 'team'
+        ? null
+        : slotIndex != null && slotIndex < slotCount
+          ? [slotIndex]
+          : null
+    const beneficiaryLabel =
+      beneficiarySlots == null
+        ? '全队'
+        : (input.slotLabels[beneficiarySlots[0] ?? 0] ?? `角色${(beneficiarySlots[0] ?? 0) + 1}`)
     const details = [
       rawField(item, 'blockNote'),
       effectSummary(item),
+      `生效者：${beneficiaryLabel}`,
       `提供者：${rawField(item, 'providerName') || sourceLabel || '未知'}`,
     ].filter(Boolean)
 
@@ -120,13 +134,8 @@ export function buildFlowBuffTableColumns(input: {
       groupLabel,
       blockKey: blockKeyOfCollected(item),
       providerSlotIndex: isExtra ? null : slotIndex,
-      // `team` = 全队都吃（null）；否则受益者 = 这条增益所属槽位的角色
-      beneficiarySlots:
-        item.effect.applyTarget === 'team'
-          ? null
-          : slotIndex != null && slotIndex < slotCount
-            ? [slotIndex]
-            : null,
+      beneficiarySlots,
+      beneficiaryLabel,
       details,
     })
     groups.set(groupKey, list)
