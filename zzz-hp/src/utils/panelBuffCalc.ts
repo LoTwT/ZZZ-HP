@@ -1901,50 +1901,16 @@ function materializeBuffCatalogPacks(
   entry: BuffCatalogEntry,
   ctx: PanelCalcContext,
 ): BuffModSource[] {
-  const rowOverride = ctx.rowBuffOverride ?? null
-  if (!rowOverride) {
-    // 老路径：目录级缓存（绝大多数行走这里，行为与改前完全一致）
-    ensureNonConvertMods(entry, ctx)
-    return entry.packs.map((pack) => {
-      const nonConvert =
-        entry.nonConvertModsByPackKey[pack.key] ?? createEmptyBuffStatModifiers()
-      const mods = ctx.skipConvert
-        ? nonConvert
-        : pack.convertEffects.length
-          ? mergeBuffStatModifiers(
-              nonConvert,
-              resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
-            )
-          : nonConvert
-      return {
-        key: pack.key,
-        label: pack.label,
-        note: pack.note,
-        blockName: pack.blockName,
-        effects: pack.effects,
-        mods,
-      }
-    })
-  }
-
-  // 行级例外：**不读也不写目录缓存**（避免跨行串味），只影响本行结算。
-  // 实现方式是"先把效果列表滤掉，再重算"——不改面板、不动层数累计。
-  const disabledBlocks = new Set(rowOverride.disabledBlockIds ?? [])
-  const disabledEffects = new Set(rowOverride.disabledEffectIds ?? [])
+  ensureNonConvertMods(entry, ctx)
   return entry.packs.map((pack) => {
-    const blockOff = disabledBlocks.has(pack.key)
-    const keep = (effect: BuffEffect) => !blockOff && !disabledEffects.has(effect.id)
-    const nonConvertEffects = pack.nonConvertEffects.filter(keep)
-    const convertEffects = pack.convertEffects.filter(keep)
-    const nonConvert = nonConvertEffects.length
-      ? resolvePackEffectMods(pack, nonConvertEffects, ctx, true)
-      : createEmptyBuffStatModifiers()
+    const nonConvert =
+      entry.nonConvertModsByPackKey[pack.key] ?? createEmptyBuffStatModifiers()
     const mods = ctx.skipConvert
       ? nonConvert
-      : convertEffects.length
+      : pack.convertEffects.length
         ? mergeBuffStatModifiers(
             nonConvert,
-            resolvePackEffectMods(pack, convertEffects, ctx, false),
+            resolvePackEffectMods(pack, pack.convertEffects, ctx, false),
           )
         : nonConvert
     return {
@@ -1952,7 +1918,7 @@ function materializeBuffCatalogPacks(
       label: pack.label,
       note: pack.note,
       blockName: pack.blockName,
-      effects: pack.effects.filter(keep),
+      effects: pack.effects,
       mods,
     }
   })

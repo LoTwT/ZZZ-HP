@@ -771,11 +771,6 @@ export function resolveEffectsToMods(
     resolveTeamProfessionCount?: (profession: string) => number
     /** 当前结算主槽角色职业（防线 Buff 等 applyProfession 条件） */
     beneficiaryProfession?: string | null
-    /**
-     * 行级增益例外展开出的"禁用效果 id"集合（**只关消费，不关计算**）。
-     * 面板级（转模来源收集、面板管线）**不要**传这个集合。
-     */
-    disabledEffectIds?: ReadonlySet<string> | null
   } = {},
 ): BuffStatModifiers {
   let total = emptyMods()
@@ -786,8 +781,6 @@ export function resolveEffectsToMods(
       continue
     }
     if (!isEffectEnabled(effect, options.selection)) continue
-    // 行级例外：只关"这一刀吃不吃"，不动计算（面板级不传 disabledEffectIds）
-    if (options.disabledEffectIds?.has(effect.id)) continue
     if (!effectMatchesContext(effect, options.ctx)) continue
     const matchElement =
       effect.applyTarget === 'team'
