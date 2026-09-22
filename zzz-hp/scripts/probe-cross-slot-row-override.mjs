@@ -18,7 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { resolveFlow } from '../src/utils/resolvedHit.ts'
-import { buildOptimalEvalContext } from '../src/utils/optimalAffixAlloc.ts'
+import { buildOptimalEvalContext, evaluateOptimalEventDetail } from '../src/utils/optimalAffixAlloc.ts'
 import {
   collectAllBuffEffects,
   collectPanelBuffMods,
@@ -165,8 +165,30 @@ if (!bSelfInB.length) {
   }
 }
 
-console.log('\n=== 3. id 稳定性（同一次运行内重复收集）===')
-const again = collectAllBuffEffects({ ...base, mainSlotIndex: otherSlot })
-const ids1 = bItems.map((it) => it.effect.id).sort().join(',')
-const ids2 = again.map((it) => it.effect.id).sort().join(',')
-console.log(`  两次收集的 id 集合是否一致：${ids1 === ids2 ? '一致' : '不一致（有问题）'}`)
+console.log('\n=== 4. 跨槽位隔离（给 A 的行设例外 → B 的行伤害必须不变）===')
+{
+  const ownerIdOf = (slotIndex) => base.teamSlots[slotIndex]?.agentId
+  const hitA = flowResult.hits.find((h) => h.ownerAgentId === ownerIdOf(mainA))
+  const hitB = flowResult.hits.find((h) => h.ownerAgentId === ownerIdOf(otherSlot))
+  if (!hitA || !hitB) {
+    console.log('  fixture 里缺少 A 或 B 的命中，跳过')
+  } else {
+    hitA.buffOverride = null
+    hitB.buffOverride = null
+    const b0 = evaluateOptimalEventDetail(evalCtx, null, hitB, {})?.perHit ?? null
+    const a0 = evaluateOptimalEventDetail(evalCtx, null, hitA, {})?.perHit ?? null
+    // 给 A 的行设一条例外：关掉 A 自己的一批增益
+    const aOwnIds = aItems
+      .filter((it) => it.effect.applyTarget === 'self' && parseSourceKeySlotIndex(it.sourceKey) === mainA)
+      .map((it) => it.effect.id)
+      .slice(0, 5)
+    hitA.buffOverride = { disabledEffectIds: aOwnIds }
+    const a1 = evaluateOptimalEventDetail(evalCtx, null, hitA, {})?.perHit ?? null
+    const b1 = evaluateOptimalEventDetail(evalCtx, null, hitB, {})?.perHit ?? null
+    hitA.buffOverride = null
+    console.log(`  A 的行：${a0 == null ? 'null' : a0.toFixed(0)} → ${a1 == null ? 'null' : a1.toFixed(0)}（设了例外，应当变化）`)
+    console.log(`  B 的行：${b0 == null ? 'null' : b0.toFixed(0)} → ${b1 == null ? 'null' : b1.toFixed(0)}（必须相同）`)
+    console.log(`  结论：${a0 !== a1 ? 'A 的行受影响 ✓' : 'A 的行没变（该批增益不贡献）'}；${b0 === b1 ? 'B 的行不受影响 ✓（隔离成立）' : 'B 的行被影响了 ✗'}`)
+  }
+}
+
