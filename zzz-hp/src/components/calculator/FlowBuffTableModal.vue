@@ -15,21 +15,33 @@
 import { computed, ref } from 'vue'
 import type {
   FlowBuffCellState,
-  FlowBuffTableBlock,
+  FlowBuffTableColumn,
   FlowBuffTableRow,
 } from '@/utils/flowBuffTable'
 
 const props = defineProps<{
   rows: FlowBuffTableRow[]
-  blocks: FlowBuffTableBlock[]
-  /** `${rowKey}|${blockKey}` → on 生效 / off 本行关掉 / na 不可点（全局未启用或继承自组） */
+  /** 列 = 一条增益一列（已按提供者分组、排好序） */
+  columns: FlowBuffTableColumn[]
+  /** `${rowKey}|${columnKey}` → on 生效 / off 本行关掉 / na 不可点（全局未启用或受益者对不上） */
   states: Record<string, FlowBuffCellState>
   /** 表格副标题（槽位 / 方案名），仅展示 */
   subtitle?: string
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const emit = defineEmits<{ toggle: [rowKey: string, blockKey: string] }>()
+const emit = defineEmits<{ toggle: [rowKey: string, columnKey: string] }>()
+
+/** 表头第一行：提供者分组（列已按分组排好，连续同名合并） */
+const columnGroups = computed(() => {
+  const out: { key: string; label: string; span: number }[] = []
+  for (const column of props.columns) {
+    const last = out[out.length - 1]
+    if (last && last.key === column.groupKey) last.span += 1
+    else out.push({ key: column.groupKey, label: column.groupLabel, span: 1 })
+  }
+  return out
+})
 
 /** 悬停卡片（比原生 title 快、能显示多行，且增益能看到具体效果） */
 const tip = ref<{ x: number; y: number; title: string; lines: string[] } | null>(null)
@@ -52,6 +64,23 @@ function hideTip() {
   tip.value = null
 }
 
+/** 行标题的悬停内容（同名第几次 / 技能组） */
+function showTitleTip(event: MouseEvent, row: FlowBuffTableRow) {
+  showTip(event, row.label, [
+    row.badge ? `同名招式第 ${row.badge} 次出现` : '',
+    row.kind === 'group' ? '技能组（成员逐行）' : '',
+  ])
+}
+
+/** 单元格的悬停内容（状态 + 这条增益具体是什么、谁提供） */
+function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffTableColumn) {
+  showTip(
+    event,
+    `${row.label} × ${column.label}${column.badge ? `（第 ${column.badge} 条）` : ''}`,
+    [stateWord(stateOf(row.key, column.key)), ...(column.details ?? [])],
+  )
+}
+
 /** 卡片贴光标，右/下边界收一下，别跑出屏幕 */
 const tipLeft = computed(() =>
   tip.value ? `${Math.max(8, Math.min(tip.value.x + 14, window.innerWidth - 320))}px` : '0',
@@ -62,7 +91,7 @@ const tipTop = computed(() =>
 
 /** 表格总宽按列数算死：fixed 布局下若还有余量，浏览器会按内容重新分配列宽。
  *  含 border-spacing（列间距 2px，首尾各一份）。 */
-const tableWidth = computed(() => `${230 + 96 * props.blocks.length + 2 * (props.blocks.length + 1)}px`)
+const tableWidth = computed(() => `${230 + 96 * props.columns.length + 2 * (props.columns.length + 1)}px`)
 
 const onCount = computed(() =>
   Object.values(props.states).filter((value) => value === 'on').length,
@@ -71,17 +100,17 @@ const offCount = computed(() =>
   Object.values(props.states).filter((value) => value === 'off').length,
 )
 
-function stateOf(rowKey: string, blockKey: string): FlowBuffCellState {
-  return props.states[`${rowKey}|${blockKey}`] ?? 'na'
+function stateOf(rowKey: string, columnKey: string): FlowBuffCellState {
+  return props.states[`${rowKey}|${columnKey}`] ?? 'na'
 }
 
-function onCellClick(rowKey: string, blockKey: string) {
-  if (stateOf(rowKey, blockKey) === 'na') return
-  emit('toggle', rowKey, blockKey)
+function onCellClick(rowKey: string, columnKey: string) {
+  if (stateOf(rowKey, columnKey) === 'na') return
+  emit('toggle', rowKey, columnKey)
 }
 
 function stateWord(state: FlowBuffCellState): string {
-  if (state === 'na') return '不可调整（全局未启用，或继承自技能组）'
+  if (state === 'na') return '不可调整（全局未启用，或这一行不吃这条增益）'
   if (state === 'off') return '本行已关闭，点击恢复'
   return '生效中，点击可对本行关闭'
 }
@@ -113,23 +142,35 @@ function stateWord(state: FlowBuffCellState): string {
             <!-- 用行内 style：scoped 选择器依赖 data-v 属性，<col> 常常拿不到，规则不生效 -->
             <col :style="{ width: '230px' }" />
             <col
-              v-for="block in blocks"
-              :key="`col-${block.key}`"
+              v-for="column in columns"
+              :key="`col-${column.key}`"
               :style="{ width: '96px' }"
             />
           </colgroup>
           <thead>
+            <!-- 第一行 = 提供者分组（角色1/2/3 → 其它 → 额外 Buff），第二行 = 一条增益一列 -->
             <tr>
-              <th class="fbt-th-name">招式</th>
+              <th class="fbt-th-name" rowspan="2">招式</th>
               <th
-                v-for="block in blocks"
-                :key="block.key"
+                v-for="group in columnGroups"
+                :key="group.key"
+                class="fbt-th-group"
+                :colspan="group.span"
+              >
+                {{ group.label }}
+              </th>
+            </tr>
+            <tr>
+              <th
+                v-for="column in columns"
+                :key="column.key"
                 class="fbt-th-block"
-                @mouseenter="showTip($event, block.label, block.details ?? [])"
+                @mouseenter="showTip($event, column.label, column.details ?? [])"
                 @mousemove="moveTip"
                 @mouseleave="hideTip"
               >
-                <span class="fbt-th-text">{{ block.label }}</span>
+                <span class="fbt-th-text">{{ column.label }}</span>
+                <span v-if="column.badge" class="fbt-badge is-circle">{{ column.badge }}</span>
               </th>
             </tr>
           </thead>
@@ -142,45 +183,40 @@ function stateWord(state: FlowBuffCellState): string {
             >
               <th
                 class="fbt-td-name"
-                @mouseenter="showTip($event, row.label, [row.badge ?? '', row.kind === 'group' ? '技能组（成员逐行）' : ''])"
+                @mouseenter="showTitleTip($event, row)"
                 @mousemove="moveTip"
                 @mouseleave="hideTip"
               >
                 <span class="fbt-name-text" :class="{ 'is-indent': row.kind === 'member' }">
                   {{ row.label }}
                 </span>
-                <span v-if="row.badge" class="fbt-badge">{{ row.badge }}</span>
+                <span v-if="row.badge" class="fbt-badge is-circle">{{ row.badge }}</span>
                 <span v-if="row.kind === 'group'" class="fbt-group-tag">技能组</span>
               </th>
               <td
-                v-for="block in blocks"
-                :key="block.key"
+                v-for="column in columns"
+                :key="column.key"
                 class="fbt-td-cell"
-                :class="`is-${stateOf(row.key, block.key)}`"
+                :class="`is-${stateOf(row.key, column.key)}`"
               >
                 <button
                   type="button"
                   class="fbt-cell"
-                  :class="`is-${stateOf(row.key, block.key)}`"
-                  :disabled="stateOf(row.key, block.key) === 'na'"
-                  @mouseenter="
-                    showTip($event, `${row.label} × ${block.label}`, [
-                      stateWord(stateOf(row.key, block.key)),
-                      ...(block.details ?? []),
-                    ])
-                  "
+                  :class="`is-${stateOf(row.key, column.key)}`"
+                  :disabled="stateOf(row.key, column.key) === 'na'"
+                  @mouseenter="showCellTip($event, row, column)"
                   @mousemove="moveTip"
                   @mouseleave="hideTip"
-                  @click="onCellClick(row.key, block.key)"
+                  @click="onCellClick(row.key, column.key)"
                 >
-                  <span v-if="stateOf(row.key, block.key) === 'on'">✓</span>
-                  <span v-else-if="stateOf(row.key, block.key) === 'off'">×</span>
+                  <span v-if="stateOf(row.key, column.key) === 'on'">✓</span>
+                  <span v-else-if="stateOf(row.key, column.key) === 'off'">×</span>
                   <span v-else>·</span>
                 </button>
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td class="fbt-empty" :colspan="Math.max(1, blocks.length + 1)">
+              <td class="fbt-empty" :colspan="Math.max(1, columns.length + 1)">
                 当前槽位还没有流程条目。
               </td>
             </tr>
@@ -219,6 +255,27 @@ function stateWord(state: FlowBuffCellState): string {
   background: #141820;
   color: #dfe6ef;
   overflow: hidden;
+}
+/* 第一行表头：提供者分组 */
+.fbt-th-group {
+  border-left: 1px solid #2a3038;
+  color: #9fb0c4;
+  font-weight: 600;
+  text-align: center;
+}
+/* 同名标记：小圆圈 + 数字（只在重名时出现） */
+.fbt-badge.is-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.85;
 }
 .fbt-head {
   display: flex;

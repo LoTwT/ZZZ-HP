@@ -1127,7 +1127,12 @@ function resolveContextExtraMods(ctx: PanelCalcContext): BuffStatModifiers {
     const slotIndex = ctx.mainSlotIndex
     const slotAgentId = ctx.teamSlots[slotIndex]?.agentId ?? ''
     const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
-    return mergeExtraModsForEvent(ctx.extraGains, skillCtx, {
+    // 行级例外关掉的额外 Buff 不参与结算（它的过滤点与 collectAllBuffEffects 是分开的）
+    const gains = ctx.extraGains.filter(
+      (gain) => !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
+    )
+    if (!gains.length) return createEmptyBuffStatModifiers()
+    return mergeExtraModsForEvent(gains, skillCtx, {
       slotIndex,
       slotAgentId,
       staggerPhase: skillCtx.staggerPhase ?? 'stagger',
@@ -1598,15 +1603,39 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
   return collected.filter((item) => !disabled.has(item.effect.id))
 }
 
-/** 效果块的稳定键（与目录一致：`${sourceKey}-${blockId}`，邦布为 `bangboo`） */
+/** 额外 Buff 的稳定块键（显示与行级过滤必须用同一个，否则表里关得掉、结算里关不掉） */
+export function extraGainBlockKey(gainId: string): string {
+  return `extra-${gainId}`
+}
+
+/** 效果块的稳定键（与目录一致：`${sourceKey}-${blockId}`；邦布为 `bangboo`；额外 Buff 为 `extra-<id>`） */
 export function blockKeyOfCollected(item: CollectedEffect): string {
   const blockId = (item as unknown as { blockId?: string | null }).blockId ?? ''
+  // 额外 Buff：sourceKey 本身就是 `extra-<id>`，不再拼 blockId（否则拼成 `extra-x-x`）
+  if (item.sourceKey.startsWith('extra-')) return item.sourceKey
   return item.sourceKey.startsWith('bangboo') ? 'bangboo' : `${item.sourceKey}-${blockId}`
+}
+
+/**
+ * 行级例外是否关掉了这个额外 Buff。
+ *
+ * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
+ * （见下），所以必须单独判一次 —— 否则会出现"表里关得掉、结算里关不掉"。
+ */
+export function isExtraGainDisabledByRowOverride(
+  gain: Pick<ExtraBuffGain, 'id'>,
+  override: FlowBuffOverride | null | undefined,
+): boolean {
+  if (!override) return false
+  if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
+  // 额外 Buff 的效果 id 就是 gain.id（见 extraGainToEffect），单条禁用也按它判
+  return (override.disabledEffectIds ?? []).includes(gain.id)
 }
 
 /**
  * 额外增益单独收集，不并入 `collectAllBuffEffects`。
  * 勾选器 / 异放倍率收集走后者；若 extra 混进去，异放会与 extraMods 路径双算。
+ * 行级例外在这里也要判一次（额外 Buff 走不到 collectAllBuffEffects 的过滤点）。
  */
 export function collectExtraGainEffects(ctx: PanelCalcContext): CollectedEffect[] {
   const collected: CollectedEffect[] = []
@@ -1614,6 +1643,7 @@ export function collectExtraGainEffects(ctx: PanelCalcContext): CollectedEffect[
   if (!ctx.extraGains?.length) return collected
   for (const gain of ctx.extraGains) {
     if (!extraGainAppliesToSlot(gain, mainIndex)) continue
+    if (isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride)) continue
     const effect = extraGainToEffect(gain)
     collected.push({
       effect,
@@ -2039,7 +2069,11 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 
   if (ctx.extraGains?.length || ctx.extraMods) {
     const extraEffects = (ctx.extraGains ?? [])
-      .filter((gain) => extraGainAppliesToSlot(gain, ctx.mainSlotIndex))
+      .filter(
+        (gain) =>
+          extraGainAppliesToSlot(gain, ctx.mainSlotIndex) &&
+          !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
+      )
       .map((gain) => extraGainToEffect(gain))
     sources.push({
       key: 'extra',

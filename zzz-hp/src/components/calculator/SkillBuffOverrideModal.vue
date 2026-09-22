@@ -11,6 +11,7 @@
 import { computed } from 'vue'
 import type { BuffEffect } from '@/types/calculator'
 import type { CollectedEffect } from '@/utils/panelBuffCalc'
+import { blockKeyOfCollected } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 
@@ -26,17 +27,11 @@ const override = defineModel<FlowBuffOverride | null>('override', { default: nul
 
 type BlockGroup = { key: string; label: string; effects: BuffEffect[] }
 
-function blockKeyOf(item: CollectedEffect): string {
-  const raw = item as unknown as { blockId?: string | null }
-  const blockId = raw.blockId ?? ''
-  return item.sourceKey.startsWith('bangboo') ? 'bangboo' : `${item.sourceKey}-${blockId}`
-}
-
-/** 按效果块分组（块键与目录一致：`${sourceKey}-${blockId}`，邦布为 `bangboo`） */
+/** 按效果块分组（块键与目录一致，直接用共享实现 —— 额外 Buff 的 `extra-<id>` 也在其中） */
 const groups = computed<BlockGroup[]>(() => {
   const map = new Map<string, BlockGroup>()
   for (const item of props.effects) {
-    const key = blockKeyOf(item)
+    const key = blockKeyOfCollected(item)
     const raw = item as unknown as { blockName?: string | null; sourceLabel?: string | null }
     const label = (raw.blockName ?? '').trim() || (raw.sourceLabel ?? '').trim() || '未命名效果块'
     const group = map.get(key) ?? { key, label, effects: [] }
@@ -46,17 +41,12 @@ const groups = computed<BlockGroup[]>(() => {
   return [...map.values()]
 })
 
-const disabledBlocks = computed(() => new Set(override.value?.disabledBlockIds ?? []))
 const disabledEffects = computed(() => new Set(override.value?.disabledEffectIds ?? []))
 const exceptionCount = computed(
   () =>
     (override.value?.disabledBlockIds?.length ?? 0) +
     (override.value?.disabledEffectIds?.length ?? 0),
 )
-
-function isBlockOff(key: string): boolean {
-  return disabledBlocks.value.has(key)
-}
 
 function isEffectOff(id: string): boolean {
   return disabledEffects.value.has(id)
@@ -70,13 +60,6 @@ function write(next: Partial<FlowBuffOverride>) {
   const empty = !merged.disabledBlockIds?.length && !merged.disabledEffectIds?.length
   // 空 = 回归"全部继承全局"，写 null（老数据同一口径）
   override.value = empty ? null : merged
-}
-
-function toggleBlock(key: string) {
-  const set = new Set(override.value?.disabledBlockIds ?? [])
-  if (set.has(key)) set.delete(key)
-  else set.add(key)
-  write({ disabledBlockIds: [...set] })
 }
 
 function toggleEffect(id: string) {
@@ -117,22 +100,17 @@ function effectLabel(effect: BuffEffect): string {
       </p>
       <div class="bo-body">
         <div v-for="group in groups" :key="group.key" class="bo-group">
-          <label class="bo-block">
-            <input
-              type="checkbox"
-              :checked="!isBlockOff(group.key)"
-              @change="toggleBlock(group.key)"
-            />
+          <!-- 分组标题只当标签（2026-09-22 定稿：没有"整组关"这个概念），每条增益一个勾 -->
+          <div class="bo-block">
             <span class="bo-block-name">{{ group.label }}</span>
             <span class="bo-block-count">{{ group.effects.length }} 条</span>
-          </label>
+          </div>
           <ul class="bo-list">
             <li v-for="effect in group.effects" :key="effect.id" class="bo-item">
               <label class="bo-item-label">
                 <input
                   type="checkbox"
-                  :checked="!isEffectOff(effect.id) && !isBlockOff(group.key)"
-                  :disabled="isBlockOff(group.key)"
+                  :checked="!isEffectOff(effect.id)"
                   @change="toggleEffect(effect.id)"
                 />
                 <span class="bo-item-text">{{ effectLabel(effect) }}</span>

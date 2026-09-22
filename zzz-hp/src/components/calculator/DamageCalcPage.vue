@@ -90,6 +90,7 @@ import {
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
+  collectExtraGainEffects,
   createEmptyMultiSlotBuffSelection,
   getBuffEffectEnabled,
   isEnvironmentBuffSourceKey,
@@ -1057,6 +1058,8 @@ function buildBuffCollectContext(mainSlotIdx: number) {
     bangbooRefine: bangbooRefine.value,
     mainSlotIndex: mainSlotIdx,
     driveDiscs: driveDiscs.value,
+    // 额外 Buff：勾选器用不到（它单独收集），但流程增益表 / 行级例外弹窗要用
+    extraGains: extraGains.value,
     environmentBuffs: activeEnvironmentBuffs.value,
     skillContext: buildGenericPanelSkillContext({
       element: agent?.element ?? damageElement.value,
@@ -1065,9 +1068,55 @@ function buildBuffCollectContext(mainSlotIdx: number) {
   }
 }
 
-const collectedEffectsForPicker = computed(() =>
-  collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value)),
+const buffPickerCollectContext = computed(() =>
+  buildBuffCollectContext(buffPickerViewSlotIndex.value),
 )
+
+const collectedEffectsForPicker = computed(() =>
+  collectAllBuffEffects(buffPickerCollectContext.value),
+)
+
+/** 每个槽位当主槽时收到的效果（流程增益表并集用；3 个槽位，代价可控） */
+const buffEffectsByMainSlot = computed(() =>
+  teamSlots.map((_, index) => collectAllBuffEffects(buildBuffCollectContext(index))),
+)
+
+/** 编辑中槽位的流程涉及哪些角色：持有者 + 强度提供者 + 触发者 */
+const flowInvolvedSlotIndexes = computed(() => {
+  const indexOfAgent = (agentId?: string | null) =>
+    agentId ? teamSlots.findIndex((slot) => slot.agentId === agentId) : -1
+  const slots = new Set<number>([activeSlot.value])
+  for (const hit of hits.value) {
+    if (indexOfAgent(hit.ownerAgentId) !== activeSlot.value) continue
+    for (const agentId of [hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      const index = indexOfAgent(agentId)
+      if (index >= 0) slots.add(index)
+    }
+  }
+  return slots
+})
+
+/**
+ * 流程增益表 / 行级例外弹窗的输入 = 「所有人的 team 增益 + 参与角色的 self 增益」并集 + 额外 Buff。
+ *
+ * 定稿口径（dev-docs/skill-buff-per-row.md 第十一轮）：**受益者维度** —— 不参与的角色，
+ * 其个人增益列**不出现**。所以对每个参与角色各收集一次、按 `effect.id` 去重合并。
+ * 额外 Buff 单独收集、不进勾选器，但它也要能在表里按行关。
+ */
+const collectedEffectsForFlowTable = computed(() => {
+  const involved = flowInvolvedSlotIndexes.value
+  const merged = new Map<string, ReturnType<typeof collectAllBuffEffects>[number]>()
+  buffEffectsByMainSlot.value.forEach((items, slotIndex) => {
+    for (const item of items) {
+      if (item.effect.applyTarget === 'self' && !involved.has(slotIndex)) continue
+      if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
+    }
+  })
+  for (const item of collectExtraGainEffects(buffPickerCollectContext.value)) {
+    if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
+  }
+  return [...merged.values()]
+})
 
 const mainSlotBuffSelection = computed(() =>
   resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
@@ -2323,7 +2372,7 @@ defineExpose({ scrollToSection })
         :hits="hits"
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
-        :buff-effects="collectedEffectsForPicker"
+        :buff-effects="collectedEffectsForFlowTable"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"

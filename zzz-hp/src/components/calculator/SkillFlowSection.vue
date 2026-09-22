@@ -77,10 +77,10 @@ import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 import SkillBuffOverrideModal from '@/components/calculator/SkillBuffOverrideModal.vue'
 import FlowBuffTableModal from '@/components/calculator/FlowBuffTableModal.vue'
 import {
-  buildFlowBuffTableBlocks,
+  buildFlowBuffTableColumns,
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
-  setFlowBuffBlockDisabled,
+  setFlowBuffEffectDisabled,
 } from '@/utils/flowBuffTable'
 
 const props = defineProps<{
@@ -171,16 +171,44 @@ const flowBuffTableRows = computed(() =>
   }),
 )
 
-/** 表格列 = 增益（按效果块聚合） */
-const flowBuffTableBlocks = computed(() => buildFlowBuffTableBlocks(props.buffEffects ?? []))
+/** 表格列 = 一条增益一列，按提供者（角色1/2/3 → 其它 → 额外 Buff）分组 */
+const flowBuffTableColumns = computed(() =>
+  buildFlowBuffTableColumns({
+    items: props.buffEffects ?? [],
+    slotLabels: props.teamSlots.map(
+      (slot, index) =>
+        props.agents.find((item) => item.id === slot.agentId)?.name ?? `角色${index + 1}`,
+    ),
+  }),
+)
+
+/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键 */
+const flowBuffRowBeneficiarySlots = computed(() => {
+  const indexOfAgent = (agentId?: string | null) =>
+    agentId ? props.teamSlots.findIndex((slot) => slot.agentId === agentId) : -1
+  const map = new Map<string, number[]>()
+  for (const hit of props.hits ?? []) {
+    const owner = indexOfAgent(hit.ownerAgentId)
+    if (owner < 0) continue
+    const slots = new Set<number>([owner])
+    for (const agentId of [hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      const index = indexOfAgent(agentId)
+      if (index >= 0) slots.add(index)
+    }
+    map.set(hit.id, [...slots])
+  }
+  return map
+})
 
 const flowBuffTableStates = computed(() =>
   buildFlowBuffTableStates({
     rows: flowBuffTableRows.value,
-    blocks: flowBuffTableBlocks.value,
+    columns: flowBuffTableColumns.value,
     items: props.buffEffects ?? [],
     flow: currentSlot.value?.flow ?? [],
     selection: resolveBuffSelectionForSlot(props.multiBuffSelection ?? null, activeSlotIndex.value),
+    beneficiarySlotsOf: (rowKey) =>
+      flowBuffRowBeneficiarySlots.value.get(rowKey) ?? [activeSlotIndex.value],
   }),
 )
 
@@ -190,14 +218,20 @@ const flowBuffTableSubtitle = computed(() => {
   return [props.schemeName, agentName].filter(Boolean).join(' · ')
 })
 
-function toggleFlowBuffCell(rowKey: string, blockKey: string) {
+function toggleFlowBuffCell(rowKey: string, columnKey: string) {
   const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
   const entry = currentSlot.value?.flow.find((item) => item.id === row?.entryId) ?? null
-  if (!row || !entry) return
-  const disabled = flowBuffTableStates.value[`${rowKey}|${blockKey}`] !== 'off'
-  setFlowBuffBlockDisabled({
+  const column = flowBuffTableColumns.value.find((item) => item.key === columnKey)
+  if (!row || !entry || !column) return
+  const disabled = flowBuffTableStates.value[`${rowKey}|${columnKey}`] !== 'off'
+  setFlowBuffEffectDisabled({
     entry,
-    blockKey,
+    effectId: column.key,
+    blockKey: column.blockKey,
+    // 同块其它效果：老数据"整组关"时，单开一条 = 只留这一条
+    siblingEffectIds: flowBuffTableColumns.value
+      .filter((item) => item.blockKey === column.blockKey && item.key !== column.key)
+      .map((item) => item.key),
     disabled,
     memberKey: row.memberKey ?? null,
     skillId: row.skillId ?? null,
@@ -210,7 +244,13 @@ function toggleFlowBuffCell(rowKey: string, blockKey: string) {
     return {
       ...slot,
       flow: slot.flow.map((item) =>
-        item.id === entry.id ? { ...item, buffOverrides: entry.buffOverrides ?? null } : item,
+        item.id === entry.id
+          ? {
+              ...item,
+              buffOverrides: entry.buffOverrides ?? null,
+              memberOverrides: entry.memberOverrides,
+            }
+          : item,
       ),
     }
   })
@@ -3041,7 +3081,7 @@ const showcaseTitle = computed(() => {
             <FlowBuffTableModal
               v-model:open="flowBuffTableOpen"
               :rows="flowBuffTableRows"
-              :blocks="flowBuffTableBlocks"
+              :columns="flowBuffTableColumns"
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
               @toggle="toggleFlowBuffCell"
