@@ -228,9 +228,9 @@ const medianOf = (values) => [...values].sort((a, b) => a - b)[Math.floor(values
 const msNone = medianOf(noneSamples)
 const msSome = medianOf(someSamples)
 console.log(`  无例外：${msNone.toFixed(3)} ms/次（走目录缓存）`)
-console.log(`  有例外：${msSome.toFixed(3)} ms/次（绕开目录缓存，重算本行）`)
+console.log(`  有例外：${msSome.toFixed(3)} ms/次（例外已并入缓存键，同一例外命中缓存）`)
 console.log(`  倍率：${(msSome / msNone).toFixed(2)}×`)
-console.log('  说明：只有"设了例外的行"走重算；没设例外的行完全走原路径（含目录缓存）')
+console.log('  说明：例外进了缓存键 —— 同一例外重复求值命中缓存，不同例外各自成键；不再有"绕开缓存重算本行"的开销')
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)

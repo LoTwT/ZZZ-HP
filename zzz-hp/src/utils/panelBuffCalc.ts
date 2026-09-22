@@ -528,7 +528,8 @@ export interface PanelCalcContext {
    * - 为什么放 ctx：`buildInput(hit)` 手里有 hit，而 mods 组装要经过
    *   `resolvePackModsViaEffectSpec` → `resolveEffectsToMods` 多层；
    *   从 ctx 透传比逐层加参数小得多
-   * - ⚠️ 目录级缓存（`buffCatalogCache`）**不得**读到它，否则会跨行串味
+   * - ✅ 已并入目录缓存键（`rowBuffOverrideKey`，排序后稳定序列化）：同一例外的重复求值命中缓存，
+   *   不同例外各自成键 —— 因此**不再**需要绕开缓存（2026-09-22 改）
    */
   rowBuffOverride?: FlowBuffOverride | null
   /**
@@ -1775,6 +1776,21 @@ export function clearBuffCatalogKeyPartCaches() {
   partKeyCache = new WeakMap()
 }
 
+/**
+ * 行级例外的稳定令牌（进目录缓存键）。
+ *
+ * - 同一例外必须得到**同一个键**：集合内容相同但写入顺序不同（UI 勾选顺序）也要同键，
+ *   否则缓存永不命中 —— 所以先排序再拼。
+ * - 不同例外必须得到**不同键**：这正是它必须进缓存键的原因，否则跨行串味。
+ */
+function rowBuffOverrideKey(override: FlowBuffOverride | null | undefined): string {
+  if (!override) return ''
+  const blocks = [...(override.disabledBlockIds ?? [])].sort()
+  const effects = [...(override.disabledEffectIds ?? [])].sort()
+  if (!blocks.length && !effects.length) return ''
+  return `${blocks.join(',')}|${effects.join(',')}`
+}
+
 function buildBuffCatalogKey(ctx: PanelCalcContext): string {
   // 注意：这里**不能**用外层 JSON.stringify 包住这些部件 —— 那会把已经序列化好的
   // 字符串再转义一遍，部件级记忆化就白做了（2026-09-10 实测：那样反而略慢）。
@@ -1790,6 +1806,9 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
     stringifyKeyPart(ctx.buffSelection ?? null),
     stringifyKeyPart(ctx.skillContext ?? null),
     envKey,
+    // 行级例外也是"这一行算出来的清单"的输入之一，必须进键：
+    // 同一例外重复求值 → 命中；不同例外 → 各自成键，天然隔离（不跨行串味）
+    rowBuffOverrideKey(ctx.rowBuffOverride),
   ].join(KEY_SEP)
 }
 
@@ -1949,8 +1968,8 @@ function makeCatalogEntryFromSources(
 }
 
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
-  // 行级例外：目录缓存键里没有「行」→ 带例外时一律绕开（不读也不写，避免跨行串味）
-  if (ctx.rowBuffOverride) return collectPanelBuffModSourcesUncached(ctx)
+  // 行级例外已并入缓存键（`rowBuffOverrideKey`）：同一例外命中缓存，不同例外各自成键，
+  // 因此这里**不再**需要绕开目录缓存。
   const key = buildBuffCatalogKey(ctx)
   const cached = buffCatalogCache.get(key)
   if (cached) {
@@ -2034,17 +2053,9 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 }
 
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
-  // 行级增益例外：目录缓存键里没有「行」→ 带例外时一律绕开（不读也不写，避免跨行串味）。
-  // 2026-09-21 修：此前只给 collectPanelBuffModSources 加了绕行，这条 numbers-only 路径漏了 ——
-  // 后果两条：① 缓存命中时例外不生效（用没过滤的清单）② 缓存未命中时把「过滤过的清单」
-  // 写进不带例外的键（同 key 的其它行会读到被削过的清单）。
-  if (ctx.rowBuffOverride) {
-    const sources = collectPanelBuffModSourcesUncached(ctx)
-    if (!ctx.skipConvert) return mergeModsFromSources(sources)
-    const localEntry = makeCatalogEntryFromSources(sources, ctx)
-    ensureNonConvertMods(localEntry, ctx)
-    return localEntry.nonConvertMods ?? mergeModsFromSources(sources)
-  }
+  // 行级例外已并入缓存键（`rowBuffOverrideKey`），与 collectPanelBuffModSources 统一走缓存：
+  // 同一例外命中缓存、不同例外各自成键。此前"带例外绕开缓存"的写法已删（每次求值重建整份清单，
+  // 2026-09-22 实测：42 行全带例外时单次评估 3.76 → 24.42 ms）。
   const key = buildBuffCatalogKey(ctx)
   let entry = buffCatalogCache.get(key)
   if (!entry) {
