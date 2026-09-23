@@ -12,11 +12,13 @@
  * - 名字显示不全时用 `title` 悬停看完整信息（增益效果 / 来源）
  * - 白天主题：`html[data-theme='light']` 覆盖（写法对齐 GameAffixRulesModal）
  */
-import { computed, ref } from 'vue'
-import type {
-  FlowBuffCellState,
-  FlowBuffTableColumn,
-  FlowBuffTableRow,
+import { computed, ref, watch } from 'vue'
+import {
+  flowBuffColumnBulkState,
+  flowBuffColumnMatchesName,
+  type FlowBuffCellState,
+  type FlowBuffTableColumn,
+  type FlowBuffTableRow,
 } from '@/utils/flowBuffTable'
 
 const props = defineProps<{
@@ -30,7 +32,11 @@ const props = defineProps<{
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const emit = defineEmits<{ toggle: [rowKey: string, columnKey: string] }>()
+const emit = defineEmits<{
+  toggle: [rowKey: string, columnKey: string]
+  /** 整列全开 / 全关（`enabled` = true 是"全开"） */
+  setColumn: [columnKey: string, enabled: boolean]
+}>()
 
 /** 表头第一行：提供者分组（列已按分组排好，连续同名合并） */
 const columnGroups = computed(() => {
@@ -194,6 +200,96 @@ function onCellClick(rowKey: string, columnKey: string) {
   if (stateOf(rowKey, columnKey) === 'na') return
   emit('toggle', rowKey, columnKey)
 }
+
+/* ---------- 搜索：只按增益名，「下一个 / 上一个」依次推进（2026-09-23 用户要求） ---------- */
+
+const searchQuery = ref('')
+/** 当前命中在 `matchedColumnKeys` 里的位置；-1 = 还没开始跳 */
+const searchCursor = ref(-1)
+const bodyRef = ref<HTMLElement | null>(null)
+
+/** 命中列（按列序）。只比名字：列头名 + 全名（能力块的原始全名在 tipTitle 里） */
+const matchedColumnKeys = computed(() => {
+  if (!searchQuery.value.trim()) return [] as string[]
+  return props.columns
+    .filter((column) => flowBuffColumnMatchesName(column, searchQuery.value))
+    .map((column) => column.key)
+})
+
+const activeMatchKey = computed(() =>
+  searchCursor.value >= 0 ? (matchedColumnKeys.value[searchCursor.value] ?? null) : null,
+)
+
+const searchCountLabel = computed(() => {
+  if (!searchQuery.value.trim()) return ''
+  const total = matchedColumnKeys.value.length
+  if (!total) return '无命中'
+  return searchCursor.value >= 0 ? `${searchCursor.value + 1} / ${total}` : `共 ${total}`
+})
+
+// 换了搜索词就从头开始，避免"接着上次的序号继续跳"
+watch(searchQuery, () => {
+  searchCursor.value = -1
+})
+
+/** 把某一列滚进可视区：优先居中，但绝不被左边那条粘性「招式」列盖住 */
+function scrollToColumn(columnKey: string) {
+  const body = bodyRef.value
+  const index = props.columns.findIndex((column) => column.key === columnKey)
+  if (!body || index < 0) return
+  // 固定布局：名称列 + 每列 96px + 列间距 2px（与 tableWidth 同一套算法）
+  const left = nameColWidth.value + 2 * (index + 1) + 96 * index
+  const keepClear = nameColWidth.value + 16
+  body.scrollLeft = Math.max(0, left - Math.max(keepClear, (body.clientWidth - 96) / 2))
+}
+
+function stepMatch(delta: number) {
+  const total = matchedColumnKeys.value.length
+  if (!total) return
+  const next = (searchCursor.value + delta + total) % total
+  searchCursor.value = next
+  scrollToColumn(matchedColumnKeys.value[next] ?? '')
+}
+
+/** 输入框里的快捷键：回车 = 下一个、Shift+回车 = 上一个 */
+function onSearchKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+  event.preventDefault()
+  stepMatch(event.shiftKey ? -1 : 1)
+}
+
+/* ---------- 整列「全开 / 全关」（2026-09-23 用户要求，只作用于本列灰格以外的行） ---------- */
+
+const columnBulkStates = computed<Record<string, 'on' | 'off' | 'mixed' | 'na'>>(() => {
+  const out: Record<string, 'on' | 'off' | 'mixed' | 'na'> = {}
+  for (const column of props.columns) {
+    out[column.key] = flowBuffColumnBulkState({
+      rows: props.rows,
+      states: props.states,
+      columnKey: column.key,
+    })
+  }
+  return out
+})
+
+function bulkStateOf(columnKey: string) {
+  return columnBulkStates.value[columnKey] ?? 'na'
+}
+
+function bulkGlyph(columnKey: string) {
+  const state = bulkStateOf(columnKey)
+  if (state === 'on') return '✓'
+  if (state === 'off') return '×'
+  if (state === 'mixed') return '–'
+  return '·'
+}
+
+/** 两态：不是"全开"就全开；已经全开就全关（用户口径「全开／全关」） */
+function onColumnBulkClick(columnKey: string) {
+  const state = bulkStateOf(columnKey)
+  if (state === 'na') return
+  emit('setColumn', columnKey, state !== 'on')
+}
 </script>
 
 <template>
@@ -216,7 +312,38 @@ function onCellClick(rowKey: string, columnKey: string) {
         全局未启用的增益（灰色）在这里无法单独打开 —— 请到全局增益选择器里开。
       </p>
 
-      <div class="fbt-body" @wheel="onBodyWheel">
+      <!-- 搜索：只搜增益名；点「下一个」逐列推进（2026-09-23 用户要求） -->
+      <div class="fbt-search">
+        <input
+          v-model="searchQuery"
+          class="fbt-search-input"
+          type="search"
+          placeholder="搜索增益名（全名里有也算）"
+          @keydown="onSearchKeydown"
+        />
+        <span class="fbt-search-count">{{ searchCountLabel }}</span>
+        <button
+          type="button"
+          class="mini-btn"
+          :disabled="!matchedColumnKeys.length"
+          @click="stepMatch(-1)"
+        >
+          上一个
+        </button>
+        <button
+          type="button"
+          class="mini-btn"
+          :disabled="!matchedColumnKeys.length"
+          @click="stepMatch(1)"
+        >
+          下一个
+        </button>
+        <button v-if="searchQuery" type="button" class="mini-btn" @click="searchQuery = ''">
+          清空
+        </button>
+      </div>
+
+      <div ref="bodyRef" class="fbt-body" @wheel="onBodyWheel">
         <table class="fbt-table" :style="{ width: tableWidth }">
           <colgroup>
             <!-- 用行内 style：scoped 选择器依赖 data-v 属性，<col> 常常拿不到，规则不生效 -->
@@ -252,6 +379,10 @@ function onCellClick(rowKey: string, columnKey: string) {
                 v-for="column in columns"
                 :key="column.key"
                 class="fbt-th-block"
+                :class="{
+                  'is-match': matchedColumnKeys.includes(column.key),
+                  'is-match-active': activeMatchKey === column.key,
+                }"
                 @mouseenter="showTipParts($event, [{ text: column.tipTitle ?? column.label, badge: column.badge ?? null }], column.details ?? [], column.note ?? '')"
                 @mousemove="moveTip"
                 @mouseleave="hideTip"
@@ -259,6 +390,34 @@ function onCellClick(rowKey: string, columnKey: string) {
                 <span class="fbt-th-text">{{ column.label }}</span>
                 <span v-if="column.badge" class="fbt-badge is-circle">{{ column.badge }}</span>
                 <span class="fbt-th-beneficiary">生效者：{{ column.beneficiaryLabel }}</span>
+              </th>
+            </tr>
+            <!-- 第三行 = 整列「全开 / 全关」（2026-09-23 用户要求）。只作用于本列非灰格；
+                 这一行**不跟表头一起粘住**，滚动时让位给列名，维持原来的观感。 -->
+            <tr class="fbt-row-bulk">
+              <th class="fbt-th-name fbt-th-bulk">整列</th>
+              <th
+                v-for="column in columns"
+                :key="`bulk-${column.key}`"
+                class="fbt-th-bulk"
+                :class="`is-${bulkStateOf(column.key)}`"
+              >
+                <button
+                  type="button"
+                  class="fbt-bulk-btn"
+                  :class="`is-${bulkStateOf(column.key)}`"
+                  :disabled="bulkStateOf(column.key) === 'na'"
+                  :title="
+                    bulkStateOf(column.key) === 'na'
+                      ? '这一列没有可调整的格子（全局未启用 / 这些行都不吃）'
+                      : bulkStateOf(column.key) === 'on'
+                        ? '整列全关'
+                        : '整列全开（灰格不会被打开）'
+                  "
+                  @click="onColumnBulkClick(column.key)"
+                >
+                  {{ bulkGlyph(column.key) }}
+                </button>
               </th>
             </tr>
           </thead>
@@ -285,7 +444,13 @@ function onCellClick(rowKey: string, columnKey: string) {
                 v-for="column in columns"
                 :key="column.key"
                 class="fbt-td-cell"
-                :class="`is-${stateOf(row.key, column.key)}`"
+                :class="[
+                  `is-${stateOf(row.key, column.key)}`,
+                  {
+                    'is-match': matchedColumnKeys.includes(column.key),
+                    'is-match-active': activeMatchKey === column.key,
+                  },
+                ]"
               >
                 <button
                   type="button"
@@ -427,6 +592,32 @@ function onCellClick(rowKey: string, columnKey: string) {
   color: #9fb0c6;
   font-size: 0.82rem;
   border-bottom: 1px solid #222833;
+}
+/* 搜索条（2026-09-23 用户要求）：单独一条，不动表格网格 */
+.fbt-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #222833;
+}
+.fbt-search-input {
+  width: 15rem;
+  max-width: 40vw;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #3d4653;
+  background: #10141b;
+  color: #e6ebf2;
+  font-size: 0.8rem;
+}
+.fbt-search-input::placeholder {
+  color: #6f7c8d;
+}
+.fbt-search-count {
+  min-width: 3.5rem;
+  font-size: 0.78rem;
+  color: #8695a8;
 }
 .fbt-body {
   overflow: auto;
@@ -579,6 +770,62 @@ thead th {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+/* 整列「全开 / 全关」第三行（2026-09-23 用户要求）：不跟表头一起粘住，滚动时让位给列名 */
+.fbt-row-bulk th {
+  position: static;
+  padding: 0.1rem 0.25rem;
+  text-align: center;
+  border-bottom: 1px solid #2a3038;
+}
+.fbt-th-bulk {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #8695a8;
+}
+.fbt-th-name.fbt-th-bulk {
+  text-align: left;
+}
+.fbt-bulk-btn {
+  display: block;
+  width: 100%;
+  height: 1.05rem;
+  border-radius: 3px;
+  border: 1px solid #3d4653;
+  background: #10141b;
+  color: #7f8fa3;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.fbt-bulk-btn.is-on {
+  border-color: #3f7a55;
+  background: #16241b;
+  color: #8fd3a5;
+}
+.fbt-bulk-btn.is-off {
+  border-color: #7a3f46;
+  background: #241618;
+  color: #d38f95;
+}
+.fbt-bulk-btn.is-mixed {
+  border-color: #6a6f4a;
+  background: #22261a;
+  color: #cfd28f;
+}
+.fbt-bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 搜索命中：整列淡淡一层；"当前"那一列再加一圈（2026-09-23 用户要求） */
+.fbt-th-block.is-match,
+.fbt-td-cell.is-match {
+  background: rgba(76, 141, 255, 0.08);
+}
+.fbt-th-block.is-match-active,
+.fbt-td-cell.is-match-active {
+  background: rgba(76, 141, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(76, 141, 255, 0.6);
 }
 .fbt-row.is-group .fbt-td-name {
   background: #1b2230;
@@ -755,5 +1002,21 @@ thead th {
 }
 :global([data-theme='light'] .fbt-td-cell) {
   border-right-color: #e8ecf2;
+}
+:global([data-theme='light'] .fbt-search) {
+  border-bottom-color: #e6e9ee;
+}
+:global([data-theme='light'] .fbt-search-input) {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #1c212a;
+}
+:global([data-theme='light'] .fbt-row-bulk th) {
+  border-bottom-color: #e6e9ee;
+}
+:global([data-theme='light'] .fbt-bulk-btn) {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #7b8798;
 }
 </style>

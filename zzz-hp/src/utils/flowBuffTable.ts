@@ -463,3 +463,48 @@ export function setFlowBuffEffectDisabled(input: {
   }
   entry.buffOverrides = value
 }
+
+/**
+ * 从列名匹配搜索词（2026-09-23 用户要求）：**只比增益的名字** —— 列头显示的名字 + 全名
+ * （能力块的原始全名放在 `tipTitle`；其余类型两者相同）。大小写与首尾空格不敏感。
+ */
+export function flowBuffColumnMatchesName(
+  column: Pick<FlowBuffTableColumn, 'label' | 'tipTitle'>,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return false
+  return `${column.label}\n${column.tipTitle ?? ''}`.toLowerCase().includes(q)
+}
+
+/** 一列里「可调整」的格子：`on` / `off` 才算；灰格（`na` = 全局未启用或该行不吃）不算 */
+export function flowBuffColumnCounts(input: {
+  rows: FlowBuffTableRow[]
+  states: Record<string, FlowBuffCellState>
+  columnKey: string
+}): { on: number; off: number; total: number } {
+  let on = 0
+  let off = 0
+  for (const row of input.rows) {
+    const state = input.states[`${row.key}|${input.columnKey}`]
+    if (state === 'on') on += 1
+    else if (state === 'off') off += 1
+  }
+  return { on, off, total: on + off }
+}
+
+/**
+ * 整列的开关状态（表头第三行那个三态框；2026-09-23 用户口径「全开／全关」）：
+ * `on` = 这一列能调的格子都开着；`off` = 都关着；`mixed` = 各半；`na` = 一个能调的都没有。
+ */
+export function flowBuffColumnBulkState(input: {
+  rows: FlowBuffTableRow[]
+  states: Record<string, FlowBuffCellState>
+  columnKey: string
+}): 'on' | 'off' | 'mixed' | 'na' {
+  const { on, off, total } = flowBuffColumnCounts(input)
+  if (!total) return 'na'
+  if (!off) return 'on'
+  if (!on) return 'off'
+  return 'mixed'
+}

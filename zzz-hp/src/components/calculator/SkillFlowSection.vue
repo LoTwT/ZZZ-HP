@@ -262,6 +262,55 @@ function toggleFlowBuffCell(rowKey: string, columnKey: string) {
   // "改完要刷新才更新"，故不留；真正卡点在"最优分配那条路的求值输入"，见 dev-docs/skill-buff-per-row.md。
 }
 
+/**
+ * 整列「全开 / 全关」（2026-09-23 用户要求）。
+ *
+ * 逐行写完之后**只换一次** slots 引用 —— 一次重算，代价与点一格同量级。
+ * 灰格（全局未启用、或这些行不吃这条增益）**跳过**，所以"全开"之后仍可能留着灰格，
+ * 这是对的：列级控制只在"能调整的格子"这种维度上有意义。
+ */
+function setFlowBuffColumn(columnKey: string, enabled: boolean) {
+  const column = flowBuffTableColumns.value.find((item) => item.key === columnKey)
+  if (!column) return
+  const siblingEffectIds = flowBuffTableColumns.value
+    .filter((item) => item.blockKey === column.blockKey && item.key !== column.key)
+    .map((item) => item.key)
+  const touchedEntryIds = new Set<string>()
+  for (const row of flowBuffTableRows.value) {
+    const state = flowBuffTableStates.value[`${row.key}|${columnKey}`]
+    if (state !== 'on' && state !== 'off') continue
+    const entry = currentSlot.value?.flow.find((item) => item.id === row.entryId) ?? null
+    if (!entry) continue
+    setFlowBuffEffectDisabled({
+      entry,
+      effectId: column.key,
+      blockKey: column.blockKey,
+      siblingEffectIds,
+      disabled: !enabled,
+      memberKey: row.memberKey ?? null,
+      skillId: row.skillId ?? null,
+    })
+    touchedEntryIds.add(entry.id)
+  }
+  if (!touchedEntryIds.size) return
+  const slotIndex = activeSlotIndex.value
+  slots.value = slots.value.map((slot, index) => {
+    if (index !== slotIndex) return slot
+    return {
+      ...slot,
+      flow: slot.flow.map((item) =>
+        touchedEntryIds.has(item.id)
+          ? {
+              ...item,
+              buffOverrides: item.buffOverrides ?? null,
+              memberOverrides: item.memberOverrides,
+            }
+          : item,
+      ),
+    }
+  })
+}
+
 const slots = defineModel<SchemeSlot[]>('slots', { required: true })
 const activeSlotIndex = defineModel<number>('editedSlotIndex', { default: 0 })
 
@@ -3088,6 +3137,7 @@ const showcaseTitle = computed(() => {
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
               @toggle="toggleFlowBuffCell"
+              @set-column="setFlowBuffColumn"
             />
           </div>
           <SkillFlowStatsPanel
