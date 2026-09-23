@@ -109,18 +109,43 @@ const tip = ref<{
   y: number
   parts: { text: string; badge?: string | null }[]
   lines: string[]
+  note: string
 } | null>(null)
+
+/**
+ * 说明默认收起（2026-09-23 用户口径）。
+ * ⚠️ 卡片跟着光标跑、又指着 `pointer-events: none`，**里面的按钮点不到**，
+ * 所以用「悬停停留 600ms 自动展开」代替点击。
+ */
+const noteOpen = ref(false)
+let noteTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearNoteTimer() {
+  if (noteTimer) {
+    clearTimeout(noteTimer)
+    noteTimer = null
+  }
+}
 
 function showTipParts(
   event: MouseEvent,
   parts: { text: string; badge?: string | null }[],
   lines: string[],
+  note = '',
 ) {
+  clearNoteTimer()
+  noteOpen.value = false
   tip.value = {
     x: event.clientX,
     y: event.clientY,
     parts,
     lines: lines.filter(Boolean).slice(0, 8),
+    note,
+  }
+  if (note) {
+    noteTimer = setTimeout(() => {
+      noteOpen.value = true
+    }, 600)
   }
 }
 
@@ -130,6 +155,7 @@ function moveTip(event: MouseEvent) {
 }
 
 function hideTip() {
+  clearNoteTimer()
   tip.value = null
 }
 
@@ -147,7 +173,8 @@ function showTitleTip(event: MouseEvent, row: FlowBuffTableRow) {
 
 /**
  * 单元格的悬停内容（2026-09-23 用户口径）：
- * 重点突出**招式名 + 增益名**（编号用同款圆圈），**不带**那条长长的触发说明。
+ * 标题 = 招式名 × 增益名（各带同款圆圈编号）；正文 = 数值 / 生效者 / 提供者。
+ * **不带**状态词，也**不带**那条长长的触发说明（其他维持现状）。
  */
 function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffTableColumn) {
   showTipParts(
@@ -156,7 +183,7 @@ function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffT
       { text: row.label, badge: row.badge ?? null },
       { text: ` × ${column.label}`, badge: column.badge ?? null },
     ],
-    [stateWord(stateOf(row.key, column.key)), ...(column.cellDetails ?? [])],
+    column.details ?? [],
   )
 }
 
@@ -189,12 +216,6 @@ function stateOf(rowKey: string, columnKey: string): FlowBuffCellState {
 function onCellClick(rowKey: string, columnKey: string) {
   if (stateOf(rowKey, columnKey) === 'na') return
   emit('toggle', rowKey, columnKey)
-}
-
-function stateWord(state: FlowBuffCellState): string {
-  if (state === 'na') return '不可调整（全局未启用，或这一行不吃）'
-  if (state === 'off') return '本行已关闭，点击恢复'
-  return '生效中，点击关闭'
 }
 </script>
 
@@ -254,7 +275,7 @@ function stateWord(state: FlowBuffCellState): string {
                 v-for="column in columns"
                 :key="column.key"
                 class="fbt-th-block"
-                @mouseenter="showTipParts($event, [{ text: column.label, badge: column.badge ?? null }], column.details ?? [])"
+                @mouseenter="showTipParts($event, [{ text: column.tipTitle ?? column.label, badge: column.badge ?? null }], column.details ?? [], column.note ?? '')"
                 @mousemove="moveTip"
                 @mouseleave="hideTip"
               >
@@ -323,6 +344,12 @@ function stateWord(state: FlowBuffCellState): string {
           </template>
         </strong>
         <p v-for="(line, index) in tip.lines" :key="index" class="fbt-tip-line">{{ line }}</p>
+        <!-- 长说明沉到最后、默认收起（2026-09-23 用户口径）；停一会儿自动展开 -->
+        <template v-if="tip.note">
+          <div class="fbt-tip-divider" />
+          <p v-if="noteOpen" class="fbt-tip-note">{{ tip.note }}</p>
+          <p v-else class="fbt-tip-note-hint">说明（稍候自动展开）</p>
+        </template>
       </div>
     </div>
   </div>
@@ -472,7 +499,26 @@ function stateWord(state: FlowBuffCellState): string {
 .fbt-tip-line {
   margin: 0;
   color: #9fb0c4;
+  /* 正文三行（数值 / 生效者 / 提供者）都加粗，颜色不变（2026-09-23 用户口径） */
+  font-weight: 600;
   word-break: break-all;
+}
+/* 长说明：沉到最后，上面一条细分隔线（2026-09-23 用户口径） */
+.fbt-tip-divider {
+  margin: 0.4rem 0 0.3rem;
+  border-top: 1px solid #3a424e;
+  opacity: 0.7;
+}
+.fbt-tip-note {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #8695a8;
+  word-break: break-all;
+}
+.fbt-tip-note-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #6f7c8d;
 }
 /* 各段之间留间距（2026-09-23 用户要求：说明与下面的数值要分行、有间距） */
 .fbt-tip-line + .fbt-tip-line {

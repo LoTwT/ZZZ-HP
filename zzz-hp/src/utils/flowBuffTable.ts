@@ -56,13 +56,51 @@ export interface FlowBuffTableColumn {
   beneficiarySlots: number[] | null
   /** 受益者文字（`全队` 或角色名）—— 界面显示用 */
   beneficiaryLabel: string
-  /** 悬停卡片（列头）：这条效果是什么、谁提供 —— **含**长的触发条件说明 */
+  /** 悬停卡片正文（列头与单元格**共用**）：数值 / 生效者 / 提供者 —— 都加粗显示 */
   details?: string[]
-  /** 悬停卡片（单元格）：只说重点 —— 数值 / 生效者 / 提供者，**不含**长说明 */
-  cellDetails?: string[]
+  /** 触发条件说明（长文本）—— 列头卡片里**默认收起**（点「说明」展开）；单元格卡片不带 */
+  note?: string
+  /** 卡片标题：能力块用**原始全名**（如「核心被动：风华盈袖」），其余用列头那个名字 */
+  tipTitle?: string
 }
 
 export type FlowBuffCellState = 'on' | 'off' | 'na'
+
+/**
+ * 列名 → **短名**：去掉「核心被动：/额外能力：」这类**内容分类前缀**，留下有区分度的部分。
+ *
+ * 背景（2026-09-23 用户）：命名不规范，类别前缀占了大半列宽，而列头只有 96px。
+ * 规则保守：只认中英文冒号，**只取最后一个分隔符之后**，且后面必须有内容才替换；
+ * 全名不丢 —— 进悬停卡片。
+ */
+function shortBlockLabel(raw: string): string {
+  const trimmed = raw.trim()
+  const index = Math.max(trimmed.lastIndexOf('：'), trimmed.lastIndexOf(':'))
+  if (index >= 0 && index < trimmed.length - 1) return trimmed.slice(index + 1).trim()
+  return trimmed
+}
+
+/**
+ * 列头名字：**按 `sourceKey` 分类型**给（2026-09-23 用户口径）。
+ *
+ * | 类型 | 识别 | 规则 |
+ * |---|---|---|
+ * | 角色能力块 | `agent-` | 去掉「核心被动：/额外能力：」这类类别前缀，留后半段 |
+ * | 音擎 | `wengine-` | **音擎名 + 精炼** —— 只显示「精5」无法理解（用户原话） |
+ * | 驱动盘 / 影画 / 邦布 / 场地 / 额外 Buff | 其余 | 原样不动（用户明确：2件套 与 影画 维持现状） |
+ */
+function columnLabelOf(
+  sourceKey: string,
+  fullLabel: string,
+  blockName: string,
+  providerName: string,
+): string {
+  if (sourceKey.startsWith('wengine-') && providerName && blockName) {
+    return `${providerName} ${blockName}`
+  }
+  if (sourceKey.startsWith('agent-')) return shortBlockLabel(fullLabel)
+  return fullLabel
+}
 
 function rawField(
   item: CollectedEffect,
@@ -72,13 +110,14 @@ function rawField(
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** 效果摘要：`+20 电增伤` 这种（属性名走现有 label 表，取不到就退回 key） */
+/** 效果摘要：`增伤% +20` 这种（属性名走现有 label 表，取不到就退回 key）
+ *  —— 顺序与 `formatBuffEffectResultText` 一致：属性名在前、数值在后 */
 function effectSummary(item: CollectedEffect): string {
   const effect = item.effect
   const field = BUFF_STAT_FIELDS.find((entry) => entry.key === effect.stat)
   const label = field ? buffStatFieldLabel(field) : String(effect.stat ?? '')
   const value = typeof effect.value === 'number' && effect.value !== 0 ? `+${effect.value}` : ''
-  return `${value} ${label}`.trim()
+  return `${label}${value ? ` ${value}` : ''}`.trim()
 }
 
 /**
@@ -193,7 +232,10 @@ export function buildFlowBuffTableColumns(input: {
 
     const blockName = rawField(item, 'blockName')
     const sourceLabel = rawField(item, 'sourceLabel')
-    const label = blockName || sourceLabel || '未命名增益'
+    const providerName = rawField(item, 'providerName')
+    const fullLabel = blockName || sourceLabel || '未命名增益'
+    // 列头名字按类型给（音擎要带名字、能力块去前缀、其余原样），全名进悬停卡片
+    const label = columnLabelOf(item.sourceKey, fullLabel, blockName, providerName)
     // `team` = 全队都吃（null）；否则受益者 = 这条增益所属槽位的角色
     const beneficiarySlots =
       item.effect.applyTarget === 'team'
@@ -207,14 +249,11 @@ export function buildFlowBuffTableColumns(input: {
         : (input.slotLabels[beneficiarySlots[0] ?? 0] ?? `角色${(beneficiarySlots[0] ?? 0) + 1}`)
     const effectLine = input.textById?.[item.effect.id] || effectSummary(item)
     const providerLine = `提供者：${rawField(item, 'providerName') || sourceLabel || '未知'}`
-    const details = [
-      rawField(item, 'blockNote'),
-      effectLine,
-      `生效者：${beneficiaryLabel}`,
-      providerLine,
-    ].filter(Boolean)
-    // 单元格卡片只留重点（2026-09-23 用户口径）：数值 / 生效者 / 提供者，不带长说明
-    const cellDetails = [effectLine, `生效者：${beneficiaryLabel}`, providerLine].filter(Boolean)
+    // 卡片正文（2026-09-23 用户口径）：数值 / 生效者 / 提供者，都加粗；归属分两行
+    const details = [effectLine, `生效者：${beneficiaryLabel}`, providerLine].filter(Boolean)
+    const note = rawField(item, 'blockNote')
+    // 标题：能力块给**原始全名**（用户要求「全名显示在第一行，不要简写」）；其余给列头那个名字
+    const tipTitle = item.sourceKey.startsWith('agent-') ? fullLabel : label
 
     const list = groups.get(groupKey) ?? []
     list.push({
@@ -228,7 +267,8 @@ export function buildFlowBuffTableColumns(input: {
       beneficiarySlots,
       beneficiaryLabel,
       details,
-      cellDetails,
+      note,
+      tipTitle,
     })
     groups.set(groupKey, list)
   }
