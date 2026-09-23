@@ -15,9 +15,10 @@
  */
 import type { SkillGroup } from '@/types/calculator'
 import type { FlowBuffOverride, FlowEntry } from '@/types/damageCalcHistory'
-import { isEffectEnabled } from '@/utils/buffEffect'
+import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
 import {
   blockKeyOfCollected,
+  getBuffEffectStacks,
   parseSourceKeySlotIndex,
   type BuffSelectionState,
   type CollectedEffect,
@@ -79,6 +80,76 @@ function effectSummary(item: CollectedEffect): string {
 }
 
 /**
+ * 每条增益在界面上的显示文本（`+123 攻击力（数值）` 这种）。
+ *
+ * 与局内 Buff 勾选器**同一套取值口径**（否则转模效果会显示成 0）：
+ * - `convert`（转模）→ `resolveConvertValue(...)` 算出来的值
+ * - `stacked`（叠层）→ 层数 × 每层
+ * - 其它 → `effect.value`
+ *
+ * 跨槽位的效果（比如队友提供、作用到别人身上的）取值要走
+ * `panelSourceValuesBySlot[该效果所属槽位]`，不能用当前槽位那一份。
+ */
+export function buildFlowBuffEffectTexts(
+  items: CollectedEffect[] | null | undefined,
+  options: {
+    selection: BuffSelectionState | null | undefined
+    /** 当前槽位（叠层取值用） */
+    slotIndex: number
+    /** 槽位 → 角色 id（技能等级转模按效果所属角色取） */
+    agentIdBySlot?: (string | null | undefined)[]
+    attrDefaults?: Parameters<typeof resolveConvertValue>[1]
+    panelSourceValues?: Parameters<typeof resolveConvertValue>[3]
+    panelSourceValuesBySlot?: Record<number, Parameters<typeof resolveConvertValue>[3]>
+    skillTalentLevelsByAgent?: Record<string, Parameters<typeof resolveConvertValue>[4]>
+    skillSubcategories?: NonNullable<
+      Parameters<typeof formatBuffEffectResultText>[2]
+    >['skillSubcategories']
+  },
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const item of items ?? []) {
+    const effect = item.effect
+    const sourceSlot = parseSourceKeySlotIndex(item.sourceKey)
+    let amount = 0
+    if (effect.kind === 'stacked' || effect.stackable) {
+      const stacks = getBuffEffectStacks(
+        (options.selection ?? {}) as Parameters<typeof getBuffEffectStacks>[0],
+        options.slotIndex,
+        effect.id,
+        effect.applyTarget,
+        effect.defaultStacks ?? 1,
+      )
+      amount = (effect.valuePerStack ?? 0) * stacks
+    } else if (effect.kind === 'convert') {
+      const panelSourceValues =
+        sourceSlot != null && options.panelSourceValuesBySlot?.[sourceSlot]
+          ? options.panelSourceValuesBySlot[sourceSlot]
+          : options.panelSourceValues
+      const agentId = sourceSlot != null ? options.agentIdBySlot?.[sourceSlot] : null
+      amount = resolveConvertValue(
+        effect,
+        options.attrDefaults ?? {},
+        null,
+        panelSourceValues,
+        agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
+      )
+    } else {
+      amount = Number(effect.value) || 0
+    }
+    const amountText = amount > 0 ? `+${amount}` : String(amount)
+    out[effect.id] = formatBuffEffectResultText(effect, amountText, {
+      statLabelFn: (stat) => {
+        const field = BUFF_STAT_FIELDS.find((entry) => entry.key === stat)
+        return field ? buffStatFieldLabel(field) : String(stat)
+      },
+      skillSubcategories: options.skillSubcategories,
+    })
+  }
+  return out
+}
+
+/**
  * 列 = **一条增益一列**，按提供者分组。
  *
  * `items` 由页面给出，已经是「所有人的 team 增益 + 参与角色的 self 增益」并集
@@ -87,6 +158,12 @@ function effectSummary(item: CollectedEffect): string {
 export function buildFlowBuffTableColumns(input: {
   items: CollectedEffect[] | null | undefined
   slotLabels: string[]
+  /**
+   * 每条效果在悬停卡片里显示成什么（`+123 攻击力（数值）` 这种）。
+   * 由页面给出（与局内 Buff 勾选器**同一套取值与格式化**，保证两边一致）；
+   * 缺省退回 `effectSummary`（只有 `effect.value`，转模效果会显示成 0）。
+   */
+  textById?: Record<string, string> | null
 }): FlowBuffTableColumn[] {
   const slotCount = input.slotLabels.length
   const groups = new Map<string, FlowBuffTableColumn[]>()
@@ -120,7 +197,7 @@ export function buildFlowBuffTableColumns(input: {
         : (input.slotLabels[beneficiarySlots[0] ?? 0] ?? `角色${(beneficiarySlots[0] ?? 0) + 1}`)
     const details = [
       rawField(item, 'blockNote'),
-      effectSummary(item),
+      input.textById?.[item.effect.id] || effectSummary(item),
       `生效者：${beneficiaryLabel}`,
       `提供者：${rawField(item, 'providerName') || sourceLabel || '未知'}`,
     ].filter(Boolean)
