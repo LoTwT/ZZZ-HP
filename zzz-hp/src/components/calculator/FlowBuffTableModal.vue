@@ -112,40 +112,18 @@ const tip = ref<{
   note: string
 } | null>(null)
 
-/**
- * 说明默认收起（2026-09-23 用户口径）。
- * ⚠️ 卡片跟着光标跑、又指着 `pointer-events: none`，**里面的按钮点不到**，
- * 所以用「悬停停留 600ms 自动展开」代替点击。
- */
-const noteOpen = ref(false)
-let noteTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearNoteTimer() {
-  if (noteTimer) {
-    clearTimeout(noteTimer)
-    noteTimer = null
-  }
-}
-
 function showTipParts(
   event: MouseEvent,
   parts: { text: string; badge?: string | null }[],
   lines: string[],
   note = '',
 ) {
-  clearNoteTimer()
-  noteOpen.value = false
   tip.value = {
     x: event.clientX,
     y: event.clientY,
     parts,
     lines: lines.filter(Boolean).slice(0, 8),
     note,
-  }
-  if (note) {
-    noteTimer = setTimeout(() => {
-      noteOpen.value = true
-    }, 600)
   }
 }
 
@@ -155,7 +133,6 @@ function moveTip(event: MouseEvent) {
 }
 
 function hideTip() {
-  clearNoteTimer()
   tip.value = null
 }
 
@@ -344,11 +321,10 @@ function onCellClick(rowKey: string, columnKey: string) {
           </template>
         </strong>
         <p v-for="(line, index) in tip.lines" :key="index" class="fbt-tip-line">{{ line }}</p>
-        <!-- 长说明沉到最后、默认收起（2026-09-23 用户口径）；停一会儿自动展开 -->
+        <!-- 长说明沉到最后、字号最小（2026-09-23 用户口径：直接显示，不做展开/收起） -->
         <template v-if="tip.note">
           <div class="fbt-tip-divider" />
-          <p v-if="noteOpen" class="fbt-tip-note">{{ tip.note }}</p>
-          <p v-else class="fbt-tip-note-hint">说明（稍候自动展开）</p>
+          <p class="fbt-tip-note">{{ tip.note }}</p>
         </template>
       </div>
     </div>
@@ -487,42 +463,41 @@ function onCellClick(rowKey: string, columnKey: string) {
   color: #e6ebf2;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+  /* 三层字号（2026-09-23 用户口径）：名字 > 数值/生效者/提供者 > 说明 */
   font-size: 0.78rem;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 .fbt-tip-title {
   display: block;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.3rem;
+  /* 名字一行：比正文略大 */
+  font-size: 0.86rem;
+  line-height: 1.3;
   color: #f0f2f6;
   word-break: break-all;
 }
 .fbt-tip-line {
   margin: 0;
   color: #9fb0c4;
-  /* 正文三行（数值 / 生效者 / 提供者）都加粗，颜色不变（2026-09-23 用户口径） */
-  font-weight: 600;
   word-break: break-all;
 }
 /* 长说明：沉到最后，上面一条细分隔线（2026-09-23 用户口径） */
 .fbt-tip-divider {
-  margin: 0.4rem 0 0.3rem;
+  margin: 0.45rem 0 0.35rem;
   border-top: 1px solid #3a424e;
   opacity: 0.7;
 }
 .fbt-tip-note {
   margin: 0;
+  /* 说明：最小一号 */
   font-size: 0.72rem;
+  line-height: 1.6;
   color: #8695a8;
   word-break: break-all;
 }
-.fbt-tip-note-hint {
-  margin: 0;
-  font-size: 0.72rem;
-  color: #6f7c8d;
-}
-/* 各段之间留间距（2026-09-23 用户要求：说明与下面的数值要分行、有间距） */
+/* 正文三行贴成一小组；与名字、与说明之间各留一口气（2026-09-23 用户口径） */
 .fbt-tip-line + .fbt-tip-line {
-  margin-top: 0.35rem;
+  margin-top: 0.22rem;
 }
 /* 招式名列宽拖动（2026-09-23 用户要求，参照词条分析收益表） */
 .fbt-name-resizer {
