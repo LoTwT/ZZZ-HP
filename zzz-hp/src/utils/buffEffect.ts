@@ -1323,7 +1323,8 @@ export function formatBuffEffectResultText(
   const head = [applyProf, skillPrefix].filter(Boolean).join('')
   const mid = gate ? `${gate} ` : ''
   const el = elementLabel ? `${elementLabel} ` : ''
-  return `${head}${head ? ' ' : ''}${mid}${el}${amountText} ${label}`
+  // 数值顺序（2026-09-23 用户口径）：`增伤% +20.16` —— 属性名在前、数值在后
+  return `${head}${head ? ' ' : ''}${mid}${el}${label} ${amountText}`
 }
 
 export { BUFF_STAT_KEYS }

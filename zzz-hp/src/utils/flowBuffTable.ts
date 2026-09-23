@@ -56,8 +56,10 @@ export interface FlowBuffTableColumn {
   beneficiarySlots: number[] | null
   /** 受益者文字（`全队` 或角色名）—— 界面显示用 */
   beneficiaryLabel: string
-  /** 悬停卡片：这条效果是什么、谁提供 */
+  /** 悬停卡片（列头）：这条效果是什么、谁提供 —— **含**长的触发条件说明 */
   details?: string[]
+  /** 悬停卡片（单元格）：只说重点 —— 数值 / 生效者 / 提供者，**不含**长说明 */
+  cellDetails?: string[]
 }
 
 export type FlowBuffCellState = 'on' | 'off' | 'na'
@@ -203,12 +205,16 @@ export function buildFlowBuffTableColumns(input: {
       beneficiarySlots == null
         ? '全队'
         : (input.slotLabels[beneficiarySlots[0] ?? 0] ?? `角色${(beneficiarySlots[0] ?? 0) + 1}`)
+    const effectLine = input.textById?.[item.effect.id] || effectSummary(item)
+    const providerLine = `提供者：${rawField(item, 'providerName') || sourceLabel || '未知'}`
     const details = [
       rawField(item, 'blockNote'),
-      input.textById?.[item.effect.id] || effectSummary(item),
+      effectLine,
       `生效者：${beneficiaryLabel}`,
-      `提供者：${rawField(item, 'providerName') || sourceLabel || '未知'}`,
+      providerLine,
     ].filter(Boolean)
+    // 单元格卡片只留重点（2026-09-23 用户口径）：数值 / 生效者 / 提供者，不带长说明
+    const cellDetails = [effectLine, `生效者：${beneficiaryLabel}`, providerLine].filter(Boolean)
 
     const list = groups.get(groupKey) ?? []
     list.push({
@@ -222,6 +228,7 @@ export function buildFlowBuffTableColumns(input: {
       beneficiarySlots,
       beneficiaryLabel,
       details,
+      cellDetails,
     })
     groups.set(groupKey, list)
   }

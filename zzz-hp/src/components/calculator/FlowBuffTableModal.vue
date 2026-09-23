@@ -43,14 +43,83 @@ const columnGroups = computed(() => {
   return out
 })
 
-/** 悬停卡片（比原生 title 快、能显示多行，且增益能看到具体效果） */
-const tip = ref<{ x: number; y: number; title: string; lines: string[] } | null>(null)
+/* ---------- 招式名列宽可拖（2026-09-23 用户要求，参照词条分析收益表） ---------- */
+/**
+ * 与收益表同款语义：**拖多少就是多少**（独立像素宽），可以拖到比名字本身还窄
+ * —— 窄了靠 `ellipsis` 截断，悬停仍能看全名。宽度记在 localStorage，刷新后保持。
+ */
+const NAME_COL_MIN = 60
+const NAME_COL_MAX = 600
+const NAME_COL_DEFAULT = 230
+const NAME_COL_STORAGE_KEY = 'zzz-hp-flow-buff-name-col-width'
 
-function showTip(event: MouseEvent, title: string, lines: string[]) {
+function readStoredNameColWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(NAME_COL_STORAGE_KEY))
+    return Number.isFinite(raw) && raw >= NAME_COL_MIN ? raw : NAME_COL_DEFAULT
+  } catch {
+    return NAME_COL_DEFAULT
+  }
+}
+
+const nameColWidth = ref(readStoredNameColWidth())
+const resizingNameCol = ref(false)
+
+function startNameColResize(event: MouseEvent) {
+  event.preventDefault()
+  const startX = event.clientX
+  const startWidth = nameColWidth.value
+  resizingNameCol.value = true
+  const onMove = (moveEvent: MouseEvent) => {
+    nameColWidth.value = Math.min(
+      NAME_COL_MAX,
+      Math.max(NAME_COL_MIN, startWidth + (moveEvent.clientX - startX)),
+    )
+  }
+  const onUp = () => {
+    resizingNameCol.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    try {
+      localStorage.setItem(NAME_COL_STORAGE_KEY, String(Math.round(nameColWidth.value)))
+    } catch {
+      /* 存不下就只在本次会话生效 */
+    }
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+/**
+ * 滚轮分流（2026-09-23 用户要求）：
+ * 指针在**招式名那一列** → 上下滚（走默认）；在**右侧** → 左右滚。
+ */
+function onBodyWheel(event: WheelEvent) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.fbt-th-name, .fbt-td-name')) return
+  const body = event.currentTarget as HTMLElement | null
+  if (!body) return
+  event.preventDefault()
+  body.scrollLeft += event.deltaY
+}
+
+/** 悬停卡片（比原生 title 快、能显示多行；标题支持圆圈编号，和表格里同款） */
+const tip = ref<{
+  x: number
+  y: number
+  parts: { text: string; badge?: string | null }[]
+  lines: string[]
+} | null>(null)
+
+function showTipParts(
+  event: MouseEvent,
+  parts: { text: string; badge?: string | null }[],
+  lines: string[],
+) {
   tip.value = {
     x: event.clientX,
     y: event.clientY,
-    title,
+    parts,
     lines: lines.filter(Boolean).slice(0, 8),
   }
 }
@@ -66,18 +135,28 @@ function hideTip() {
 
 /** 行标题的悬停内容（同名第几次 / 技能组） */
 function showTitleTip(event: MouseEvent, row: FlowBuffTableRow) {
-  showTip(event, row.label, [
-    row.badge ? `同名招式第 ${row.badge} 次出现` : '',
-    row.kind === 'group' ? '技能组（成员逐行）' : '',
-  ])
+  showTipParts(
+    event,
+    [{ text: row.label, badge: row.badge ?? null }],
+    [
+      row.badge ? `同名招式第 ${row.badge} 次出现` : '',
+      row.kind === 'group' ? '技能组（成员逐行）' : '',
+    ],
+  )
 }
 
-/** 单元格的悬停内容（状态 + 这条增益具体是什么、谁提供） */
+/**
+ * 单元格的悬停内容（2026-09-23 用户口径）：
+ * 重点突出**招式名 + 增益名**（编号用同款圆圈），**不带**那条长长的触发说明。
+ */
 function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffTableColumn) {
-  showTip(
+  showTipParts(
     event,
-    `${row.label} × ${column.label}${column.badge ? `（第 ${column.badge} 条）` : ''}`,
-    [stateWord(stateOf(row.key, column.key)), ...(column.details ?? [])],
+    [
+      { text: row.label, badge: row.badge ?? null },
+      { text: ` × ${column.label}`, badge: column.badge ?? null },
+    ],
+    [stateWord(stateOf(row.key, column.key)), ...(column.cellDetails ?? [])],
   )
 }
 
@@ -91,7 +170,10 @@ const tipTop = computed(() =>
 
 /** 表格总宽按列数算死：fixed 布局下若还有余量，浏览器会按内容重新分配列宽。
  *  含 border-spacing（列间距 2px，首尾各一份）。 */
-const tableWidth = computed(() => `${230 + 96 * props.columns.length + 2 * (props.columns.length + 1)}px`)
+const tableWidth = computed(
+  () =>
+    `${nameColWidth.value + 96 * props.columns.length + 2 * (props.columns.length + 1)}px`,
+)
 
 const onCount = computed(() =>
   Object.values(props.states).filter((value) => value === 'on').length,
@@ -110,9 +192,9 @@ function onCellClick(rowKey: string, columnKey: string) {
 }
 
 function stateWord(state: FlowBuffCellState): string {
-  if (state === 'na') return '不可调整（全局未启用，或这一行不吃这条增益）'
+  if (state === 'na') return '不可调整（全局未启用，或这一行不吃）'
   if (state === 'off') return '本行已关闭，点击恢复'
-  return '生效中，点击可对本行关闭'
+  return '生效中，点击关闭'
 }
 </script>
 
@@ -136,11 +218,11 @@ function stateWord(state: FlowBuffCellState): string {
         全局未启用的增益（灰色）在这里无法单独打开 —— 请到全局增益选择器里开。
       </p>
 
-      <div class="fbt-body">
+      <div class="fbt-body" @wheel="onBodyWheel">
         <table class="fbt-table" :style="{ width: tableWidth }">
           <colgroup>
             <!-- 用行内 style：scoped 选择器依赖 data-v 属性，<col> 常常拿不到，规则不生效 -->
-            <col :style="{ width: '230px' }" />
+            <col :style="{ width: `${nameColWidth}px` }" />
             <col
               v-for="column in columns"
               :key="`col-${column.key}`"
@@ -150,7 +232,14 @@ function stateWord(state: FlowBuffCellState): string {
           <thead>
             <!-- 第一行 = 提供者分组（角色1/2/3 → 其它 → 额外 Buff），第二行 = 一条增益一列 -->
             <tr>
-              <th class="fbt-th-name" rowspan="2">招式</th>
+              <th class="fbt-th-name" rowspan="2">
+                招式
+                <span
+                  class="fbt-name-resizer"
+                  :class="{ 'is-active': resizingNameCol }"
+                  @mousedown="startNameColResize"
+                />
+              </th>
               <th
                 v-for="group in columnGroups"
                 :key="group.key"
@@ -165,7 +254,7 @@ function stateWord(state: FlowBuffCellState): string {
                 v-for="column in columns"
                 :key="column.key"
                 class="fbt-th-block"
-                @mouseenter="showTip($event, column.label, column.details ?? [])"
+                @mouseenter="showTipParts($event, [{ text: column.label, badge: column.badge ?? null }], column.details ?? [])"
                 @mousemove="moveTip"
                 @mouseleave="hideTip"
               >
@@ -225,9 +314,14 @@ function stateWord(state: FlowBuffCellState): string {
         </table>
       </div>
 
-      <!-- 悬停卡片：名字太长时看全名；增益列还能看到具体效果 -->
+      <!-- 悬停卡片：标题带圆圈编号（与表格同款）；正文按段分行、段间留距 -->
       <div v-if="tip" class="fbt-tip" :style="{ left: tipLeft, top: tipTop }">
-        <strong class="fbt-tip-title">{{ tip.title }}</strong>
+        <strong class="fbt-tip-title">
+          <template v-for="(part, index) in tip.parts" :key="index">
+            <span>{{ part.text }}</span>
+            <span v-if="part.badge" class="fbt-badge is-circle">{{ part.badge }}</span>
+          </template>
+        </strong>
         <p v-for="(line, index) in tip.lines" :key="index" class="fbt-tip-line">{{ line }}</p>
       </div>
     </div>
@@ -379,6 +473,43 @@ function stateWord(state: FlowBuffCellState): string {
   margin: 0;
   color: #9fb0c4;
   word-break: break-all;
+}
+/* 各段之间留间距（2026-09-23 用户要求：说明与下面的数值要分行、有间距） */
+.fbt-tip-line + .fbt-tip-line {
+  margin-top: 0.35rem;
+}
+/* 招式名列宽拖动（2026-09-23 用户要求，参照词条分析收益表） */
+.fbt-name-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+.fbt-name-resizer.is-active {
+  background: #4c8dff;
+  opacity: 0.55;
+}
+/* 列宽可以拖到比名字本身还窄：窄了就截断，悬停仍能看全名 */
+.fbt-th-name,
+.fbt-td-name {
+  overflow: hidden;
+}
+.fbt-td-name .fbt-name-text,
+.fbt-th-name .fbt-name-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* 卡片标题里的圆圈编号（与表格里的同款） */
+.fbt-tip-title .fbt-badge {
+  margin-left: 0.25rem;
+  vertical-align: middle;
 }
 .fbt-th-name,
 .fbt-td-name {
