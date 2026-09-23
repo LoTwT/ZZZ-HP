@@ -93,7 +93,8 @@ function effectSummary(item: CollectedEffect): string {
 export function buildFlowBuffEffectTexts(
   items: CollectedEffect[] | null | undefined,
   options: {
-    selection: BuffSelectionState | null | undefined
+    /** **全队勾选对象**（不是单槽位解析结果）—— 与局内 Buff 勾选器传的是同一个东西 */
+    selection: Parameters<typeof getBuffEffectStacks>[0] | null | undefined
     /** 当前槽位（叠层取值用） */
     slotIndex: number
     /** 槽位 → 角色 id（技能等级转模按效果所属角色取） */
@@ -113,13 +114,20 @@ export function buildFlowBuffEffectTexts(
     const sourceSlot = parseSourceKeySlotIndex(item.sourceKey)
     let amount = 0
     if (effect.kind === 'stacked' || effect.stackable) {
-      const stacks = getBuffEffectStacks(
-        (options.selection ?? {}) as Parameters<typeof getBuffEffectStacks>[0],
-        options.slotIndex,
-        effect.id,
-        effect.applyTarget,
-        effect.defaultStacks ?? 1,
-      )
+      // ⚠️ 与局内 Buff 勾选器同一套调用：getBuffEffectStacks(全队勾选对象, 槽位, 效果 id, 作用目标, 兜底值)。
+      // 这个 computed 在**渲染期**跑，形状不对就退回默认层数、绝不抛
+      // —— 2026-09-22 踩过：这里一抛，整个伤害页的交互（含方案库按钮）全挂。
+      const multi = options.selection as Parameters<typeof getBuffEffectStacks>[0] | null | undefined
+      const stacks =
+        multi && (multi as { bySlot?: unknown }).bySlot
+          ? getBuffEffectStacks(
+              multi,
+              options.slotIndex,
+              effect.id,
+              effect.applyTarget,
+              effect.defaultStacks ?? 1,
+            )
+          : (effect.defaultStacks ?? 1)
       amount = (effect.valuePerStack ?? 0) * stacks
     } else if (effect.kind === 'convert') {
       const panelSourceValues =

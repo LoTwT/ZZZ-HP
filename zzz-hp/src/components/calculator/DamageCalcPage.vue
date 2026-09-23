@@ -1125,7 +1125,7 @@ const collectedEffectsForFlowTable = computed(() => {
  */
 const flowBuffEffectTexts = computed(() =>
   buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, {
-    selection: resolveBuffSelectionForSlot(multiSlotBuffSelection, activeSlot.value),
+    selection: multiSlotBuffSelection,
     slotIndex: activeSlot.value,
     agentIdBySlot: teamSlots.map((slot) => slot.agentId),
     attrDefaults:
