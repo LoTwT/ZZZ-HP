@@ -87,7 +87,6 @@ import {
   saveWorkingDraft,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
-import { buildFlowBuffEffectTexts } from '@/utils/flowBuffTable'
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
@@ -1118,28 +1117,6 @@ const collectedEffectsForFlowTable = computed(() => {
   }
   return [...merged.values()]
 })
-
-/**
- * 表里每条增益的显示文本（与局内 Buff 勾选器**同一套取值**：转模要算出值，否则显示成 0）。
- * 输入取自勾选器正在用的那几个（属性默认值 / 槽位面板取值 / 技能等级表）。
- */
-const flowBuffEffectTexts = computed(() =>
-  buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, {
-    selection: resolveBuffSelectionForSlot(multiSlotBuffSelection, activeSlot.value),
-    slotIndex: activeSlot.value,
-    agentIdBySlot: teamSlots.map((slot) => slot.agentId),
-    attrDefaults:
-      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(buffPickerViewSlotIndex.value) ??
-      panelCalcSectionRef.value?.convertAttrDefaults ??
-      {},
-    panelSourceValues:
-      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(buffPickerViewSlotIndex.value) ??
-      undefined,
-    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
-    skillTalentLevelsByAgent,
-    skillSubcategories: skillSubcategories.value,
-  }),
-)
 
 const mainSlotBuffSelection = computed(() =>
   resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
@@ -2396,7 +2373,6 @@ defineExpose({ scrollToSection })
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
         :buff-effects="collectedEffectsForFlowTable"
-    :buff-effect-texts="flowBuffEffectTexts"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"

@@ -110,8 +110,6 @@ const props = defineProps<{
   } | null
   /** 本行增益例外的候选列表（与全局增益选择器**同一份**，由页面传入） */
   buffEffects?: CollectedEffect[]
-  /** 每条增益的显示文本（`effect.id` → `+123 攻击力（数值）`）；与勾选器同一套取值，转模才看得到数 */
-  buffEffectTexts?: Record<string, string>
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
 }>()
@@ -177,7 +175,6 @@ const flowBuffTableRows = computed(() =>
 const flowBuffTableColumns = computed(() =>
   buildFlowBuffTableColumns({
     items: props.buffEffects ?? [],
-    textById: props.buffEffectTexts ?? null,
     slotLabels: props.teamSlots.map(
       (slot, index) =>
         props.agents.find((item) => item.id === slot.agentId)?.name ?? `角色${index + 1}`,
