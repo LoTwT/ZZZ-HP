@@ -175,6 +175,17 @@ function snapshotRestrictCase(panelContext) {
   }
 }
 
+/**
+ * 展示快照（防标签漂移）：某槽位作为"主角"时，收集产物的**分组 / 来源标签 / 实效 id**。
+ * 数字不变但标签变了同样是回归 —— 阶段 2 把收集拆成"构建 + 筛选"，这份快照钉住展示等价。
+ */
+function snapshotDisplay(panelContext, slotIndex) {
+  const items = collectAllBuffEffects({ ...panelContext, mainSlotIndex: slotIndex })
+  return items
+    .map((item) => `${item.providerSlot ?? '-'}|${item.group}|${item.sourceLabel}|${item.effect.id}`)
+    .sort()
+}
+
 const snapshots = []
 for (const fixture of FIXTURES) {
   if (!fs.existsSync(fixture.file)) {
@@ -194,6 +205,13 @@ const snapshot = {
   counts: FIXED_COUNTS,
   fixtures: snapshots.map(({ panelContext, ...rest }) => rest),
   restrictCase: snapshots[0] ? snapshotRestrictCase(snapshots[0].panelContext) : null,
+  // 展示等价：主槽 0 / 1 两侧（覆盖"自身视角"与"队友视角"两种标签）
+  displayCases: snapshots[0]
+    ? {
+        main0: snapshotDisplay(snapshots[0].panelContext, 0),
+        main1: snapshotDisplay(snapshots[0].panelContext, 1),
+      }
+    : null,
 }
 
 /** 找出第一处不同（用于报错定位） */
@@ -203,6 +221,18 @@ function firstDiff(a, b, trail = '$') {
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
       return `${trail}: 长度不同（${a?.length} ≠ ${b?.length}）`
+    }
+    if (a.every((x) => typeof x === 'string') && b.every((x) => typeof x === 'string')) {
+      const onlyBaseline = a.filter((x) => !b.includes(x)).slice(0, 5)
+      const onlyNow = b.filter((x) => !a.includes(x)).slice(0, 5)
+      if (onlyBaseline.length || onlyNow.length) {
+        return (
+          `${trail}: 集合不同\n` +
+          onlyBaseline.map((x) => `      仅基线有：${x}`).join('\n') +
+          (onlyBaseline.length ? '\n' : '') +
+          onlyNow.map((x) => `      仅现在有：${x}`).join('\n')
+        )
+      }
     }
     for (let i = 0; i < a.length; i += 1) {
       const d = firstDiff(a[i], b[i], `${trail}[${i}]`)

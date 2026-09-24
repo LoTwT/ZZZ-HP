@@ -1098,6 +1098,11 @@ export interface CollectedEffect {
   applicableSlots: number[]
   /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
   providerSlot: number | null
+  /**
+   * 只在「它自己当主角」时参与收集的条目（驱动盘 **2 件套**：现状只在 isMain 分支里收）。
+   * 消费侧据此保持等价：`providerSlot !== 本次槽位` 时排除。
+   */
+  requiresMainSlot?: boolean
 }
 
 function clampRefine(value: number) {
@@ -1312,7 +1317,28 @@ export function collectTeamDriveDiscMods(
   return total
 }
 
-export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {
+/** 收集一趟所需的上下文（只含收集真正读到的字段；完整 `PanelCalcContext` 结构上兼容） */
+interface CollectPassContext {
+  teamSlots: PanelCalcContext['teamSlots']
+  agents: PanelCalcContext['agents']
+  wengines: PanelCalcContext['wengines']
+  driveDiscs: PanelCalcContext['driveDiscs']
+  bangboo: PanelCalcContext['bangboo'] | null
+  bangbooRefine: PanelCalcContext['bangbooRefine']
+  environmentBuffs: PanelCalcContext['environmentBuffs']
+  mainSlotIndex: PanelCalcContext['mainSlotIndex']
+  restrictToSlotIndex: PanelCalcContext['restrictToSlotIndex'] | null
+  excludeBangboo: PanelCalcContext['excludeBangboo']
+  rowBuffOverride: PanelCalcContext['rowBuffOverride'] | null
+}
+
+/**
+ * 收集一趟（"某个槽位当主角"的视角）。
+ *
+ * ⚠️ **不要直接调用**：对外入口是 `collectAllBuffEffects`（= 构建 + 筛选）；
+ * 构建层 `buildBuffCatalog` 会用它逐个槽位跑。保留"按主角收一次"的原始实现是为了保持逐位等价。
+ */
+function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
   const collected: CollectedEffect[] = []
   const mainIndex = ctx.mainSlotIndex
 
@@ -1465,6 +1491,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.twoPieceNote, entry.blockNote),
             ...describeSlots(effect, twoKey),
+            requiresMainSlot: true,
           })
         }
       }
@@ -1504,6 +1531,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(twoDisc.twoPieceNote, entry.blockNote),
             ...describeSlots(effect, twoKey),
+            requiresMainSlot: true,
           })
         }
       }
@@ -1629,6 +1657,175 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
   return collected.filter((item) => !disabled.has(item.effect.id))
 }
 
+/* ============================================================
+ * 构建 / 筛选分离（2026-09-24，施工规格 dev-docs/specs/buff-build-refactor-spec.md §3）
+ * ------------------------------------------------------------
+ * 构建：只依赖「配置」（队伍 / 装备 / 邦布 / 场地）→ 全量条目 + 纯配置键 + 缓存；
+ * 消费：按「这次给哪个槽位算」+ 行级例外 + 两个开关筛（`selectEntriesForSlot`）。
+ * `collectAllBuffEffects` 签名不变，内部改为「构建 + 筛选」—— 调用点零改动。
+ * ============================================================ */
+
+/** 构建层输入：纯配置（不含任何运行期输入） */
+export interface BuffBuildConfig {
+  teamSlots: TeamSlot[]
+  agents: AgentBuffDoc[]
+  wengines: WengineBuffDoc[]
+  driveDiscs: DriveDiscBuffDoc[]
+  bangboo: BangbooBuffDoc | null
+  bangbooRefine: number
+  environmentBuffs: EnvironmentBuffEntry[]
+}
+
+export interface BuffBuild {
+  /** 全量条目（与"主角"无关；**不含**额外增益 —— 额外增益仍走自己的收集器） */
+  entries: CollectedEffect[]
+  /** 只含配置的键 */
+  key: string
+}
+
+const buffBuildCache = new Map<string, BuffBuild>()
+
+/** 构建层键：**只含配置**（不得含主角 / 勾选 / 招式上下文 / 行级例外 / 两个开关） */
+function buildBuffConfigKey(config: BuffBuildConfig): string {
+  return [
+    teamSlotsKey(config.teamSlots),
+    `${config.bangboo?.id ?? ''},${config.bangbooRefine}`,
+    environmentBuffsKey(config.environmentBuffs ?? []),
+  ].join(KEY_SEP)
+}
+
+/**
+ * 构建全量条目：对每个槽位各跑一次「它当主角」的收集，再合并。
+ *
+ * 合并规则：同一个实效 id 只留一条 —— **优先留"提供者 = 本次主角"的那份**（canonical 视角：
+ * 标签按"自身"写），否则留先出现的；消费侧按 `applicableSlots` 筛，与"主角是谁"无关。
+ */
+export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
+  const key = buildBuffConfigKey(config)
+  const cached = buffBuildCache.get(key)
+  if (cached) return cached
+  const entries: CollectedEffect[] = []
+  const indexById = new Map<string, number>()
+  /** 每个条目是"哪一趟"产出的（用于 canonical 替换判据：要看趟次，不能只看条目的 providerSlot） */
+  const passById: number[] = []
+  for (let index = 0; index < config.teamSlots.length; index += 1) {
+    const pass = collectForMainSlot({
+      teamSlots: config.teamSlots,
+      agents: config.agents,
+      wengines: config.wengines,
+      driveDiscs: config.driveDiscs,
+      bangboo: config.bangboo,
+      bangbooRefine: config.bangbooRefine,
+      environmentBuffs: config.environmentBuffs,
+      mainSlotIndex: index,
+      restrictToSlotIndex: null,
+      excludeBangboo: false,
+      rowBuffOverride: null,
+    })
+    for (const item of pass) {
+      const existing = indexById.get(item.effect.id)
+      if (existing == null) {
+        indexById.set(item.effect.id, entries.length)
+        passById.push(index)
+        entries.push(item)
+        continue
+      }
+      // canonical 优先：**产出它的那一趟 == 它所属槽位**（即标签按"自身"写的那一份）
+      if (index === item.providerSlot && passById[existing] !== item.providerSlot) {
+        entries[existing] = item
+        passById[existing] = index
+      }
+    }
+  }
+  const build: BuffBuild = { entries, key }
+  // 淘汰策略沿用现有行为：超限删最旧
+  if (buffBuildCache.size > BUFF_CATALOG_CACHE_LIMIT) {
+    const oldest = buffBuildCache.keys().next().value
+    if (oldest != null) buffBuildCache.delete(oldest)
+  }
+  buffBuildCache.set(key, build)
+  return build
+}
+
+/**
+ * 队友视角的展示改写：构建产物按「自己是主角」写标签，被别的槽位消费时改成「队友」。
+ * 键是现状里出现过的分组值（来自收集器的 `groupFor` / 驱动盘分支）；表里没有的一律原样保留。
+ */
+const TEAMMATE_GROUP: Record<string, string> = {
+  自身: '队友',
+  '全队（含自身）': '队友',
+  自身音擎: '队友音擎',
+  全队音擎: '队友音擎',
+  自身驱动盘: '队友驱动盘',
+}
+
+function applyTeammateView(entry: CollectedEffect): CollectedEffect {
+  const group = TEAMMATE_GROUP[entry.group] ?? entry.group
+  const sourceLabel = entry.sourceLabel.startsWith('自身 · ')
+    ? `队友 · ${entry.sourceLabel.slice('自身 · '.length)}`
+    : entry.sourceLabel
+  if (group === entry.group && sourceLabel === entry.sourceLabel) return entry
+  return { ...entry, group, sourceLabel }
+}
+
+/** 行级减法（唯一实现；目录条目与将来的额外增益共用） */
+export function isEntryDisabledByRowOverride(
+  entry: CollectedEffect,
+  override: FlowBuffOverride | null | undefined,
+): boolean {
+  if (!override) return false
+  if ((override.disabledEffectIds ?? []).includes(entry.effect.id)) return true
+  return (override.disabledBlockIds ?? []).includes(blockKeyOfCollected(entry))
+}
+
+/**
+ * 消费层：从构建产物里取"这次给哪个槽位算"要用的条目（唯一筛选入口）。
+ *
+ * 四条筛规则都照抄现状语义（施工规格 §4）：适用槽位集合 / 2 件套的「只在当主角时」/
+ * `restrictToSlotIndex`（无主条目里**场地保留、邦布排除**）/ `excludeBangboo`（按 `bangboo` 前缀）。
+ */
+export function selectEntriesForSlot(input: {
+  build: BuffBuild
+  slotIndex: number
+  rowBuffOverride?: FlowBuffOverride | null
+  restrictToSlotIndex?: number | null
+  excludeBangboo?: boolean
+}): CollectedEffect[] {
+  const restrict = input.restrictToSlotIndex ?? null
+  const out: CollectedEffect[] = []
+  for (const entry of input.build.entries) {
+    if (!entry.applicableSlots.includes(input.slotIndex)) continue
+    if (entry.requiresMainSlot && entry.providerSlot !== input.slotIndex) continue
+    if (restrict != null) {
+      if (entry.providerSlot != null && entry.providerSlot !== restrict) continue
+      if (entry.sourceKey.startsWith('bangboo')) continue
+    }
+    if (input.excludeBangboo && entry.sourceKey.startsWith('bangboo')) continue
+    if (isEntryDisabledByRowOverride(entry, input.rowBuffOverride ?? null)) continue
+    out.push(entry.providerSlot === input.slotIndex ? entry : applyTeammateView(entry))
+  }
+  return out
+}
+
+/** 收集（对外唯一入口）：**签名与语义保持不变** —— 内部 = 构建 + 筛选 */
+export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {
+  return selectEntriesForSlot({
+    build: buildBuffCatalog({
+      teamSlots: ctx.teamSlots,
+      agents: ctx.agents,
+      wengines: ctx.wengines,
+      driveDiscs: ctx.driveDiscs,
+      bangboo: ctx.bangboo ?? null,
+      bangbooRefine: ctx.bangbooRefine,
+      environmentBuffs: ctx.environmentBuffs ?? [],
+    }),
+    slotIndex: ctx.mainSlotIndex,
+    rowBuffOverride: ctx.rowBuffOverride ?? null,
+    restrictToSlotIndex: ctx.restrictToSlotIndex ?? null,
+    excludeBangboo: ctx.excludeBangboo ?? false,
+  })
+}
+
 /** 额外 Buff 的稳定块键（显示与行级过滤必须用同一个，否则表里关得掉、结算里关不掉） */
 export function extraGainBlockKey(gainId: string): string {
   return `extra-${gainId}`
@@ -1732,6 +1929,8 @@ const BUFF_CATALOG_CACHE_LIMIT = 1024
 /** 目录文档（角色/音擎/邦布/驱动盘）内容变更后须调用，避免同 ID 命中旧效果 */
 export function invalidateBuffCatalogCache() {
   buffCatalogCache.clear()
+  // 构建层缓存（2026-09-24 起）也要清：定义库变了，构建产物就失效
+  buffBuildCache.clear()
   // 部件记忆化一并清：属防御性处理（已核对 src/ 内无调用方就地修改这些对象，
   // 因此当前不会因不清而出现可复现的错误）。留着是为了让「就地改 + 失效」这条
   // 契约即使将来被误用也仍然成立。
