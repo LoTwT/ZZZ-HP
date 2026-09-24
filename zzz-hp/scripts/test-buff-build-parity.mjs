@@ -27,6 +27,7 @@ import {
 } from '../src/utils/optimalAffixAlloc.ts'
 import {
   collectAllBuffEffects,
+  collectExtraGainEffects,
   isEnvironmentBuffSourceKey,
 } from '../src/utils/panelBuffCalc.ts'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
@@ -130,6 +131,7 @@ function snapshotScheme(pack, scheme, packLabel, index) {
     lineCount: eventLines.length,
     lineTotals: eventLines.map((line) => line.total),
     panelContext: ctx.panelContext,
+    evalCtx: ctx,
   }
 }
 
@@ -186,6 +188,36 @@ function snapshotDisplay(panelContext, slotIndex) {
     .sort()
 }
 
+/**
+ * 额外增益用例（阶段 3 的验收夹具）：加 3 条额外增益后的**数字**与**当前那条通道的产物**。
+ * 阶段 3 要把额外增益并入构建、删掉"提前折成数字"的通道 —— 改完必须与本用例逐位相同。
+ * 三条覆盖：全队 / 指定槽位 / 带队内职业人数档（后者是"启用口径"最容易踩的那个坑）。
+ */
+function snapshotExtraGainsCase(evalCtx) {
+  const gains = [
+    { id: 'probe-extra-team', name: '探针额外·全队', stat: 'dmgBonus', value: 12, applySlot: 'team' },
+    { id: 'probe-extra-slot1', name: '探针额外·槽位2', stat: 'inCombatAtkPercent', value: 7, applySlot: 1 },
+    {
+      id: 'probe-extra-gate',
+      name: '探针额外·人数档',
+      stat: 'dmgBonus',
+      value: 5,
+      applySlot: 'team',
+      teamProfession: '支援',
+      teamProfessionValues: [null, 2, null],
+    },
+  ]
+  const ctx = { ...evalCtx, extraGains: gains, panelContext: { ...evalCtx.panelContext, extraGains: gains } }
+  clearAffixEvalCache()
+  const { grandTotal, eventLines } = evaluateAffixCounts(ctx, FIXED_COUNTS)
+  const collected = collectExtraGainEffects(ctx.panelContext)
+  return {
+    grandTotal,
+    lineTotals: eventLines.map((line) => line.total),
+    channel: collected.map((item) => `${item.sourceKey}|${item.group}|${item.effect.id}`).sort(),
+  }
+}
+
 const snapshots = []
 for (const fixture of FIXTURES) {
   if (!fs.existsSync(fixture.file)) {
@@ -203,8 +235,9 @@ for (const fixture of FIXTURES) {
 const snapshot = {
   note: '增益体系改造 · 逐位不变基线（施工规格 §7.2）',
   counts: FIXED_COUNTS,
-  fixtures: snapshots.map(({ panelContext, ...rest }) => rest),
+  fixtures: snapshots.map(({ panelContext, evalCtx, ...rest }) => rest),
   restrictCase: snapshots[0] ? snapshotRestrictCase(snapshots[0].panelContext) : null,
+  extraGainsCase: snapshots[0] ? snapshotExtraGainsCase(snapshots[0].evalCtx) : null,
   // 展示等价：主槽 0 / 1 两侧（覆盖"自身视角"与"队友视角"两种标签）
   displayCases: snapshots[0]
     ? {
