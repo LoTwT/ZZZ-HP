@@ -1859,36 +1859,6 @@ export function isExtraGainDisabledByRowOverride(
   return (override.disabledEffectIds ?? []).includes(gain.id)
 }
 
-/**
- * 额外增益单独收集，不并入 `collectAllBuffEffects`。
- * 勾选器 / 异放倍率收集走后者；若 extra 混进去，异放会与 extraMods 路径双算。
- * 行级例外在这里也要判一次（额外 Buff 走不到 collectAllBuffEffects 的过滤点）。
- */
-export function collectExtraGainEffects(ctx: PanelCalcContext): CollectedEffect[] {
-  const collected: CollectedEffect[] = []
-  const mainIndex = ctx.mainSlotIndex
-  if (!ctx.extraGains?.length) return collected
-  for (const gain of ctx.extraGains) {
-    if (!extraGainAppliesToSlot(gain, mainIndex)) continue
-    if (isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride)) continue
-    const effect = extraGainToEffect(gain)
-    collected.push({
-      effect,
-      sourceKey: `extra-${gain.id}`,
-      sourceLabel: '额外 Buff',
-      providerName: gain.name || '额外 Buff',
-      providerAvatar: null,
-      group: '额外 Buff',
-      blockId: gain.id,
-      blockName: gain.name || '额外 Buff',
-      // 阶段 1 保持"表里一律算全队"的现状（等价改写）；它的作用槽位要到阶段 3 并入构建时才改用它。
-      applicableSlots: ctx.teamSlots.map((_, index) => index),
-      providerSlot: null,
-    })
-  }
-  return collected
-}
-
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {
   let total = createEmptyBuffStatModifiers()
   for (const source of sources) {

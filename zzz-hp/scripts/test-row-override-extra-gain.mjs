@@ -1,9 +1,9 @@
 /**
  * 行级例外对「额外 Buff」的过滤 —— 语义验证（真实 fixture，不需要 dev server）。
  *
- * 背景（2026-09-22 用户反馈）：额外 Buff 在流程增益表里看不到，行级例外也管不到它。
- * 根因是额外 Buff **单独收集**（`collectExtraGainEffects`），不经过
- * `collectAllBuffEffects` 里那个唯一的行级过滤点 —— 所以过滤要在这里单独补一次。
+ * 背景（2026-09-22 用户反馈）：额外 Buff 在流程增益表里看不到，行级例外也管不到它；
+ * 当时根因是额外 Buff **单独收集**，不经过 `collectAllBuffEffects` 里那个唯一的行级过滤点。
+ * 2026-09-24 阶段 3 起额外增益已并入统一收集，本脚本的测量点随之改到统一产物（键仍是 `extra-<id>`）。
  *
  * 断言：
  * 1. 额外 Buff 的块键 = `extra-<id>`（显示与过滤必须是同一个，否则表里关不掉）
@@ -21,7 +21,6 @@ import { buildOptimalEvalContext } from '../src/utils/optimalAffixAlloc.ts'
 import {
   blockKeyOfCollected,
   collectAllBuffEffects,
-  collectExtraGainEffects,
   collectPanelBuffMods,
   extraGainBlockKey,
   invalidateBuffCatalogCache,
@@ -127,8 +126,11 @@ console.log(`  方案：${scheme.name ?? '(无名)'}`)
 console.log(`  额外 Buff：${EXTRA_GAIN.name}（${EXTRA_GAIN.stat} +${EXTRA_GAIN.value}）`)
 
 console.log('\n=== 1. 块键（显示与过滤必须同一个）===')
-const collected = collectExtraGainEffects(base)
-check('额外 Buff 被收集到', collected.length === 1, `实际 ${collected.length} 条`)
+// 阶段 3.2：额外增益已并入统一收集 —— 这里从统一产物里取额外增益那几条（键仍是 extra-<id>）
+const extraOnly = (ctx) =>
+  collectAllBuffEffects(ctx).filter((item) => item.sourceKey?.startsWith('extra-'))
+const collected = extraOnly(base)
+check('额外 Buff 被收集到（统一产物）', collected.length === 1, `实际 ${collected.length} 条`)
 const key = collected[0] ? blockKeyOfCollected(collected[0]) : null
 console.log(`  块键：${key}`)
 check('块键 = extra-<id>', key === EXTRA_KEY, `期望 ${EXTRA_KEY}，实际 ${key}`)
@@ -139,7 +141,7 @@ const blockOffCtx = { ...base, rowBuffOverride: { disabledBlockIds: [EXTRA_KEY] 
 const modsBlockOff = collectPanelBuffMods(blockOffCtx).inCombatAtkPercent
 console.log(`  未禁用 ${modsBase} / 块禁用后 ${modsBlockOff}（差 ${modsBase - modsBlockOff}）`)
 check('块禁用后局内攻击力% 少了 30', Math.abs(modsBase - modsBlockOff - 30) < 1e-6, `差 ${modsBase - modsBlockOff}`)
-check('块禁用后收集列表里没有它', collectExtraGainEffects(blockOffCtx).length === 0)
+check('块禁用后收集列表里没有它', extraOnly(blockOffCtx).length === 0)
 
 console.log('\n=== 3. 行级「单条禁用」同样生效 ===')
 const effectOffCtx = { ...base, rowBuffOverride: { disabledEffectIds: [EXTRA_ID] } }

@@ -8,7 +8,7 @@ import {
   mergeExtraModsViaEffects,
   extraGainToEffect,
 } from '../src/utils/extraBuffCalc.ts'
-import { collectAllBuffEffects, collectExtraGainEffects } from '../src/utils/panelBuffCalc.ts'
+import { collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
 import { adaptAffixLibraryEntry, adaptBuffEffect } from '../src/utils/effectAdapters.ts'
 import { applyAllocatedAffixEffects } from '../src/utils/panelPipeline.ts'
 import {
@@ -186,12 +186,7 @@ console.log('\n[3] 适配器与 collectAllBuffEffects')
     collected.filter((item) => item.effect.id === 'eg1').length === 1,
     collected.map((item) => item.effect.id).join(','),
   )
-  const extraCollected = collectExtraGainEffects(ctx)
-  check(
-    'collectExtraGainEffects 含额外增益（仍为独立收集口）',
-    extraCollected.some((item) => item.effect.id === 'eg1'),
-    extraCollected.map((item) => item.effect.id).join(','),
-  )
+  // （旧收集口 `collectExtraGainEffects` 已于阶段 3.2 删除：额外增益只此一份产物）
 
   const allocated = [adaptAffixLibraryEntry(
     {

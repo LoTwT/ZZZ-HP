@@ -26,8 +26,8 @@ import {
   evaluateAffixCounts,
 } from '../src/utils/optimalAffixAlloc.ts'
 import {
+  buildBuffCatalog,
   collectAllBuffEffects,
-  collectExtraGainEffects,
   isEnvironmentBuffSourceKey,
 } from '../src/utils/panelBuffCalc.ts'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
@@ -210,7 +210,20 @@ function snapshotExtraGainsCase(evalCtx) {
   const ctx = { ...evalCtx, extraGains: gains, panelContext: { ...evalCtx.panelContext, extraGains: gains } }
   clearAffixEvalCache()
   const { grandTotal, eventLines } = evaluateAffixCounts(ctx, FIXED_COUNTS)
-  const collected = collectExtraGainEffects(ctx.panelContext)
+  // 阶段 3：额外增益已并入统一收集 —— 通道取**构建产物**里的额外增益条目。
+  // 不取 `collectAllBuffEffects`：那是"构建 + 按当前槽位筛选"的消费视图，`applicableSlots` 判在筛选里，
+  // 作用于槽位2 的那条在 mainSlotIndex=0 下就该被筛掉（判据要看的是"产物里在不在"）。
+  const pc = ctx.panelContext
+  const collected = buildBuffCatalog({
+    teamSlots: pc.teamSlots,
+    agents: pc.agents,
+    wengines: pc.wengines,
+    driveDiscs: pc.driveDiscs,
+    bangboo: pc.bangboo ?? null,
+    bangbooRefine: pc.bangbooRefine,
+    environmentBuffs: pc.environmentBuffs ?? [],
+    extraGains: pc.extraGains ?? [],
+  }).entries.filter((item) => item.sourceKey.startsWith('extra-'))
   return {
     grandTotal,
     lineTotals: eventLines.map((line) => line.total),
