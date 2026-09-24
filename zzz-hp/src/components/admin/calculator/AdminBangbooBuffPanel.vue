@@ -276,7 +276,7 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
   <div ref="panelRootRef" class="editor-panel">
     <header class="panel-header">
       <h1 class="panel-title">编辑邦布增益</h1>
-      <p class="panel-desc">邦布增益默认作用于全队（含主C）。精炼效果块与音擎一致：默认显示「精N」，名称与注释均可修改并保存。</p>
+      <p class="panel-desc">邦布增益默认作用于全队（含当前计算槽位）。精炼效果块与音擎一致：默认显示「精N」，名称与注释均可修改并保存。</p>
     </header>
 
     <div class="editor-layout">

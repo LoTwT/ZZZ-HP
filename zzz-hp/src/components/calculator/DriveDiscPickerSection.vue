@@ -74,7 +74,7 @@ const selectedFourPiece = computed(() =>
         <div class="disc-group">
           <header class="disc-group-header">
             <h3>4 件套</h3>
-            <p>含该套装 2 件套；主C 取自身增益，队友取队友增益</p>
+            <p>含该套装 2 件套；当前计算槽位取自身增益，队友取队友增益</p>
           </header>
           <div v-if="selectedFourPiece" class="disc-selected-bar">
             <CalculatorAvatar class="disc-bar-avatar" :avatar-image="selectedFourPiece.avatar_image" :name="selectedFourPiece.name" />

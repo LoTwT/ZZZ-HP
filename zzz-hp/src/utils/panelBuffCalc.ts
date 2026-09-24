@@ -1098,11 +1098,6 @@ export interface CollectedEffect {
   applicableSlots: number[]
   /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
   providerSlot: number | null
-  /**
-   * 只在「它自己当主角」时参与收集的条目（驱动盘 **2 件套**：现状只在 isMain 分支里收）。
-   * 消费侧据此保持等价：`providerSlot !== 本次槽位` 时排除。
-   */
-  requiresMainSlot?: boolean
 }
 
 function clampRefine(value: number) {
@@ -1333,10 +1328,11 @@ interface CollectPassContext {
 }
 
 /**
- * 收集一趟（"某个槽位当主角"的视角）。
+ * 收集一趟（把某个槽位当作「这份面板的归属槽位」）。
  *
  * ⚠️ **不要直接调用**：对外入口是 `collectAllBuffEffects`（= 构建 + 筛选）；
- * 构建层 `buildBuffCatalog` 会用它逐个槽位跑。保留"按主角收一次"的原始实现是为了保持逐位等价。
+ * 构建层 `buildBuffCatalog` 会用它逐个槽位跑（每个槽位各当一次 `mainSlotIndex`）。
+ * 保留"按单一归属槽位收一次"的原始实现，是为了保持与拆分前逐位等价。
  */
 function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
   const collected: CollectedEffect[] = []
@@ -1473,7 +1469,9 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
     const group = isMain ? '自身驱动盘' : '队友驱动盘'
     const sourceKey = `drive-disc-${index}`
 
-    if (isMain && fourDisc) {
+    // 2 件套按口径只应有「自身」类效果（2026-09-24 实测数据：30 个盘 / 54 条 self / team 0 条）——
+    // 因此**不再按"这一趟的归属槽位"筛**：统一走 `applicableSlots`（自身 → [该槽位]），结果不变且少一个特例。
+    if (fourDisc) {
       const twoKey = `${sourceKey}-4set-2pc`
       for (const entry of collectTwoPieceBlockEntries(fourDisc)) {
         for (const effect of entry.effects.filter(matchesTarget)) {
@@ -1491,7 +1489,6 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.twoPieceNote, entry.blockNote),
             ...describeSlots(effect, twoKey),
-            requiresMainSlot: true,
           })
         }
       }
@@ -1513,7 +1510,7 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
         }
       }
     }
-    if (isMain && twoDisc && twoDisc.id !== fourDisc?.id) {
+    if (twoDisc && twoDisc.id !== fourDisc?.id) {
       const twoKey = `${sourceKey}-2set`
       for (const entry of collectTwoPieceBlockEntries(twoDisc)) {
         for (const effect of entry.effects.filter(matchesTarget)) {
@@ -1531,7 +1528,6 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(twoDisc.twoPieceNote, entry.blockNote),
             ...describeSlots(effect, twoKey),
-            requiresMainSlot: true,
           })
         }
       }
@@ -1677,7 +1673,7 @@ export interface BuffBuildConfig {
 }
 
 export interface BuffBuild {
-  /** 全量条目（与"主角"无关；**不含**额外增益 —— 额外增益仍走自己的收集器） */
+  /** 全量条目（**与"这次给哪个槽位算"无关**；不含额外增益 —— 额外增益仍走自己的收集器） */
   entries: CollectedEffect[]
   /** 只含配置的键 */
   key: string
@@ -1695,10 +1691,11 @@ function buildBuffConfigKey(config: BuffBuildConfig): string {
 }
 
 /**
- * 构建全量条目：对每个槽位各跑一次「它当主角」的收集，再合并。
+ * 构建全量条目：对每个槽位各跑一次「把它当作这份面板的归属槽位」的收集，再合并。
  *
- * 合并规则：同一个实效 id 只留一条 —— **优先留"提供者 = 本次主角"的那份**（canonical 视角：
- * 标签按"自身"写），否则留先出现的；消费侧按 `applicableSlots` 筛，与"主角是谁"无关。
+ * 合并规则：同一个实效 id 只留一条 —— **优先留"产出它的那一趟 == 它所属槽位"** 的那份
+ * （即标签按「自身」写的那一份，下称 canonical），否则留先出现的；
+ * 消费侧按 `applicableSlots` 筛，**与"这次给哪个槽位算"无关**。
  */
 export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
   const key = buildBuffConfigKey(config)
@@ -1795,7 +1792,6 @@ export function selectEntriesForSlot(input: {
   const out: CollectedEffect[] = []
   for (const entry of input.build.entries) {
     if (!entry.applicableSlots.includes(input.slotIndex)) continue
-    if (entry.requiresMainSlot && entry.providerSlot !== input.slotIndex) continue
     if (restrict != null) {
       if (entry.providerSlot != null && entry.providerSlot !== restrict) continue
       if (entry.sourceKey.startsWith('bangboo')) continue

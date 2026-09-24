@@ -74,13 +74,13 @@ export interface DamageCalcInput {
   ownerAgentResistanceElement?: string | null
   /** 异常类触发者属性（展示等）；火/以太持续时间倍算优先用 triggerAgentElement */
   anomalyTriggerElement?: string
-  /** @deprecated 结算不再取主C；未传 owner/触发者时的页级预览回落 */
+  /** @deprecated 结算不再取该字段；未传 owner/触发者时的页级预览回落 */
   mainAgentElement?: string
-  /** @deprecated 结算不再取主C；未传 owner 抗性时的页级预览回落 */
+  /** @deprecated 结算不再取该字段；未传 owner 抗性时的页级预览回落 */
   mainAgentResistanceElement?: string | null
-  /** 主C id（展示用，不参与结算） */
+  /** 页级预览用的角色 id（展示用，不参与结算） */
   mainAgentId?: string
-  /** 主C 名称（展示用，不参与结算） */
+  /** 页级预览用的角色名（展示用，不参与结算） */
   mainAgentName?: string
   /** 异常子类 */
   anomalySubKind?: AnomalyDamageSubKind

@@ -291,7 +291,7 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
         <section id="admin-drive-disc-four-piece" class="mindscape-section editor-anchor">
           <header class="mindscape-header">
             <h3>4 件套增益</h3>
-            <p>主C 槽位取自身增益，队友槽位取队友增益。佩戴 4 件套时同时显示本套 2 件与 4 件注释。</p>
+            <p>当前计算槽位取自身增益，队友槽位取队友增益。佩戴 4 件套时同时显示本套 2 件与 4 件注释。</p>
           </header>
           <label class="field note-field">
             <span class="field-label">4 件套注释</span>
