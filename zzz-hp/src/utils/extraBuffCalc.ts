@@ -89,6 +89,8 @@ export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
     stat: gain.stat,
     value: gain.value,
     enabledDefault: true,
+    // 额外增益并入统一收集后，靠这个标志做到「加入即已勾选」（2026-09-24 阶段 3）
+    extraGain: true,
   })
 }
 

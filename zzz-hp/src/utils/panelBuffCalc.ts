@@ -50,7 +50,7 @@ import { resolveAssetUrl } from '@/utils/gameData'
 import {
   extraGainAppliesToSlot,
   extraGainToEffect,
-  mergeExtraModsForEvent,
+  resolveExtraGainApplySlot,
   type ExtraBuffGain,
 } from '@/utils/extraBuffCalc'
 import {
@@ -1129,27 +1129,14 @@ function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
   return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
 }
 
-/** 额外 Buff 按当前 mainSlotIndex 取值；有 extraGains 时不复用别人的 extraMods */
+/**
+ * 额外 Buff 的两条来源：
+ * - `extraGains`（结构化条目）：2026-09-24 阶段 3 起并入统一收集（`buildBuffCatalog`），
+ *   这里**不再折算** —— 否则与收集路径双算（本文件下方老注释说的就是这件事：
+ *   「若 extra 混进去，异放会与 extraMods 路径双算」）。
+ * - `extraMods`（快照导入的扁平属性）：没有结构化来源，仍按原样使用。
+ */
 function resolveContextExtraMods(ctx: PanelCalcContext): BuffStatModifiers {
-  if (ctx.extraGains?.length) {
-    const slotIndex = ctx.mainSlotIndex
-    const slotAgentId = ctx.teamSlots[slotIndex]?.agentId ?? ''
-    const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
-    // 行级例外关掉的额外 Buff 不参与结算（它的过滤点与 collectAllBuffEffects 是分开的）
-    const gains = ctx.extraGains.filter(
-      (gain) => !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
-    )
-    if (!gains.length) return createEmptyBuffStatModifiers()
-    return mergeExtraModsForEvent(gains, skillCtx, {
-      slotIndex,
-      slotAgentId,
-      staggerPhase: skillCtx.staggerPhase ?? 'stagger',
-      resolveAgentProfession: (agentId) =>
-        ctx.agents.find((item) => item.id === agentId)?.profession,
-      teamSlots: ctx.teamSlots,
-      agents: ctx.agents,
-    })
-  }
   return ctx.extraMods ?? createEmptyBuffStatModifiers()
 }
 
@@ -1670,6 +1657,8 @@ export interface BuffBuildConfig {
   bangboo: BangbooBuffDoc | null
   bangbooRefine: number
   environmentBuffs: EnvironmentBuffEntry[]
+  /** 用户侧额外增益（2026-09-24 阶段 3 起并入这份构建） */
+  extraGains: ExtraBuffGain[]
 }
 
 export interface BuffBuild {
@@ -1687,6 +1676,7 @@ function buildBuffConfigKey(config: BuffBuildConfig): string {
     teamSlotsKey(config.teamSlots),
     `${config.bangboo?.id ?? ''},${config.bangbooRefine}`,
     environmentBuffsKey(config.environmentBuffs ?? []),
+    stringifyKeyPart(config.extraGains ?? []),
   ].join(KEY_SEP)
 }
 
@@ -1733,6 +1723,23 @@ export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
         passById[existing] = index
       }
     }
+  }
+  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。适用槽位用它自己的作用槽位折算；
+  // 提供者槽位 = null（无主）；行级例外由消费侧按 `extra-<id>` 判（键不变）。
+  for (const gain of config.extraGains ?? []) {
+    const applySlot = resolveExtraGainApplySlot(gain)
+    entries.push({
+      effect: extraGainToEffect(gain),
+      sourceKey: `extra-${gain.id}`,
+      sourceLabel: '额外 Buff',
+      providerName: gain.name || '额外 Buff',
+      providerAvatar: null,
+      group: '额外 Buff',
+      blockId: gain.id,
+      blockName: gain.name || '额外 Buff',
+      applicableSlots: applySlot === 'team' ? config.teamSlots.map((_, i) => i) : [applySlot],
+      providerSlot: null,
+    })
   }
   const build: BuffBuild = { entries, key }
   // 淘汰策略沿用现有行为：超限删最旧
@@ -1814,6 +1821,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
       bangboo: ctx.bangboo ?? null,
       bangbooRefine: ctx.bangbooRefine,
       environmentBuffs: ctx.environmentBuffs ?? [],
+      extraGains: ctx.extraGains ?? [],
     }),
     slotIndex: ctx.mainSlotIndex,
     rowBuffOverride: ctx.rowBuffOverride ?? null,

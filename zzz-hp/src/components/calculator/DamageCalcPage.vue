@@ -91,7 +91,6 @@ import { buildFlowBuffEffectTexts } from '@/utils/flowBuffTable'
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
-  collectExtraGainEffects,
   createEmptyMultiSlotBuffSelection,
   getBuffEffectEnabled,
   isEnvironmentBuffSourceKey,
@@ -1113,9 +1112,6 @@ const collectedEffectsForFlowTable = computed(() => {
       if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
     }
   })
-  for (const item of collectExtraGainEffects(buffPickerCollectContext.value)) {
-    if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
-  }
   return [...merged.values()]
 })
 

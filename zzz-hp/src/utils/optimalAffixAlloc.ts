@@ -609,32 +609,13 @@ function computePiercePower(hp: number, atk: number, pierceMod = 0) {
 export type OptimalPanelBreakdown = ReturnType<typeof computeFinalPanel>
 
 function buildOptimalExtraModsForEvent(
-  ctx: OptimalEvalContext,
-  hit: ResolvedHit,
-  slotAgentId: string,
+  _ctx: OptimalEvalContext,
+  _hit: ResolvedHit,
+  _slotAgentId: string,
 ): BuffStatModifiers {
-  const gains = ctx.extraGains ?? []
-  if (!gains.length) return createEmptyBuffStatModifiers()
-  const ownerAgentId = hit.ownerAgentId
-  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
-  const isAnomalyHit = hit.skill.damageType !== 'direct'
-  const powerElement =
-    isAnomalyHit && hit.anomalyPowerAgentId
-      ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
-      : undefined
-  const ownerElement =
-    powerElement ||
-    ctx.panelContext.agents.find((item) => item.id === ownerAgentId)?.element
-  const slotIndex = ctx.panelContext.teamSlots.findIndex((slot) => slot.agentId === slotAgentId)
-  return mergeExtraModsForEvent(gains, buildSkillContextFromHit(hit, ownerElement), {
-    slotIndex,
-    slotAgentId,
-    staggerPhase: hit.staggerPhase,
-    resolveAgentProfession: (agentId) =>
-      ctx.panelContext.agents.find((item) => item.id === agentId)?.profession,
-    teamSlots: ctx.panelContext.teamSlots,
-    agents: ctx.panelContext.agents,
-  })
+  // 2026-09-24 阶段 3：额外增益已并入统一收集（`buildBuffCatalog`），这里不再单独折算
+  // （否则同一条会被算两遍）。保留函数形状、调用点先不动；整条管道删除另开一笔改动。
+  return createEmptyBuffStatModifiers()
 }
 
 function buildPanelContextForSlot(

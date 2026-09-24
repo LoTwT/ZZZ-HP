@@ -178,14 +178,17 @@ console.log('\n[3] 适配器与 collectAllBuffEffects')
     extraGains: [gain({ id: 'eg1', value: 15 })],
   })
   const collected = collectAllBuffEffects(ctx)
+  // 阶段 3 起：额外增益并入统一收集（不再靠"排除在收集之外"来防双算）。
+  // 防双算的位置换到了折包路（`panelBuffCalc.resolveContextExtraMods` 不再折算 extraGains），
+  // 兜底由 `test-buff-build-parity.mjs`（总伤逐位不变）守住。
   check(
-    'collectAllBuffEffects 不含额外增益（避免异放双算）',
-    !collected.some((item) => item.effect.id === 'eg1'),
+    'collectAllBuffEffects 含额外增益（阶段 3 起统一收集，且只出现一次）',
+    collected.filter((item) => item.effect.id === 'eg1').length === 1,
     collected.map((item) => item.effect.id).join(','),
   )
   const extraCollected = collectExtraGainEffects(ctx)
   check(
-    'collectExtraGainEffects 含额外增益',
+    'collectExtraGainEffects 含额外增益（仍为独立收集口）',
     extraCollected.some((item) => item.effect.id === 'eg1'),
     extraCollected.map((item) => item.effect.id).join(','),
   )

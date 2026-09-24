@@ -85,7 +85,6 @@ import {
   type HitEvalCacheEntry,
 } from '@/utils/hitEvalCache'
 import {
-  mergeExtraModsForEvent,
   normalizeExtraGain,
 } from '@/utils/extraBuffCalc'
 import {
@@ -252,27 +251,13 @@ function loadAffixFromCurrentSlot() {
 
 
 
-/** 局内通用面板上的额外 Buff：只吃通用，不跟流程第一条招式走 */
+/**
+ * 局内通用面板上的额外 Buff —— 2026-09-24 阶段 3 起**不再单独折算**：
+ * 额外增益已并入统一收集（`buildBuffCatalog`），这里再折一次就是同一条被算两遍。
+ * 管道先置空（返回空对象），整条删除另开一笔改动，避免这次动面过大。
+ */
 function buildExtraModsForMainPanel(): BuffStatModifiers {
-  if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const mainId = mainAgent.value?.id ?? ''
-  const phase = props.staggerPhase ?? 'stagger'
-  return mergeExtraModsForEvent(
-    extraGains.value,
-    buildGenericPanelSkillContext({
-      element: mainAgent.value?.element,
-      staggerPhase: phase,
-    }),
-    {
-      slotIndex: mainSlotIndex.value,
-      slotAgentId: mainId,
-      staggerPhase: phase,
-      resolveAgentProfession: (agentId) =>
-        props.agents.find((item) => item.id === agentId)?.profession,
-      teamSlots: props.teamSlots,
-      agents: props.agents,
-    },
-  )
+  return createEmptyBuffStatModifiers()
 }
 
 const extraMods = computed(() => buildExtraModsForMainPanel())

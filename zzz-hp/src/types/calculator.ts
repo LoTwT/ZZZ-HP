@@ -355,6 +355,11 @@ export interface BuffEffect {
    * 勾选后：即使是招式类增益，异常结算也会计入。
    */
   appliesToAnomaly?: boolean
+  /**
+   * 用户侧「额外增益」的效果（2026-09-24 阶段 3 起并入统一收集）。
+   * 它没有勾选状态 —— **加入即已勾选**：`isEffectEnabled` 见到这个标志直接返回 true。
+   */
+  extraGain?: boolean
   enabledDefault?: boolean
   /** @deprecated 已改用效果块备注，仅兼容旧数据 */
   note?: string

@@ -14,7 +14,6 @@ import {
 } from '@/utils/affixLibrary'
 import {
   collectAllBuffEffects,
-  collectExtraGainEffects,
   computePanelStages,
   type PanelBuffBreakdown,
   type PanelCalcContext,
@@ -46,10 +45,7 @@ export function runPanelPipeline(
   options?: { includeDetails?: boolean },
 ): PanelPipelineResult {
   const stages = computePanelStages(rawExternalPanel, ctx, options)
-  const plan = compileCollectedBuffs([
-    ...collectAllBuffEffects(ctx),
-    ...collectExtraGainEffects(ctx),
-  ])
+  const plan = compileCollectedBuffs([...collectAllBuffEffects(ctx)])
   return {
     externalPanel: stages.externalPanel,
     preConvertPanel: stages.preConvertPanel,

@@ -727,6 +727,8 @@ export function isEffectEnabled(
   effect: BuffEffect,
   selection: { enabledIds?: Record<string, boolean> } | null | undefined,
 ): boolean {
+  // 额外增益没有勾选状态：**加入即已勾选**（2026-09-24 阶段 3 起并入统一收集）
+  if (effect.extraGain) return true
   if (!selection?.enabledIds || !(effect.id in selection.enabledIds)) {
     // 有队内职业人数条件：未同步前默认不启用，避免条件未满足却全开
     if (effect.teamProfession?.trim()) return false
