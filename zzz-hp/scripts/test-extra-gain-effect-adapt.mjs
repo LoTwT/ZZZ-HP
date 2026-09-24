@@ -3,7 +3,8 @@
  * 运行：npx vite-node scripts/test-extra-gain-effect-adapt.mjs
  */
 import { extraGainAppliesToSlot, extraGainMatchesEvent, extraGainToEffect } from '../src/utils/extraBuffCalc.ts'
-import { buildBuffCatalog, collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
+import { buildBuffCatalog, collectAllBuffEffects, collectPanelBuffMods } from '../src/utils/panelBuffCalc.ts'
+import { countTeamProfession, effectMatchesTeamProfessionGate } from '../src/utils/buffEffect.ts'
 import { adaptAffixLibraryEntry, adaptBuffEffect } from '../src/utils/effectAdapters.ts'
 import { applyAllocatedAffixEffects } from '../src/utils/panelPipeline.ts'
 import {
@@ -176,6 +177,54 @@ console.log('\n[3] 空增益：产物里没有额外条目')
     extraGains: [],
   }).entries.filter((entry) => entry.sourceKey.startsWith('extra-'))
   check('无额外增益时产物里没有额外条目', built.length === 0, `实际 ${built.length} 条`)
+}
+
+console.log('\n[4] 职业匹配 / 队内人数门槛（阶段 3 起与常规增益同规则）')
+{
+  // 夹具：agents[0]='甲' 强攻（槽位 0）、agents[1]='乙' 支援（槽位 1）
+  const extraAtkOf = (partial) => {
+    const ctx = makePanelCtx({
+      teamSlots,
+      agents,
+      bangboo: dummyBangboo(),
+      mainSlotIndex: 0,
+      extraGains: [
+        gain({
+          id: 'probe-rule',
+          name: '规则探针',
+          stat: 'atk',
+          value: 50,
+          applySlot: 'team',
+          applyTarget: 'team',
+          applySituation: 'global',
+          ...partial,
+        }),
+      ],
+    })
+    return collectPanelBuffMods(ctx).atk ?? 0
+  }
+
+  const matchProfession = extraAtkOf({ applyProfession: '强攻' })
+  check('职业匹配强攻 → 生效 50', matchProfession === 50, `实际 ${matchProfession}`)
+  const mismatchProfession = extraAtkOf({ applyProfession: '支援' })
+  check('职业不匹配（槽位 0 是强攻，限定支援）→ 不生效 0', mismatchProfession === 0, `实际 ${mismatchProfession}`)
+
+  // 队内人数门槛：门在 `buffEffect.effectMatchesTeamProfessionGate`，
+  // 语义 = 「勾选的人数档 == 队内该职业人数」（`buffEffect.ts:655`）。计数与门分别钉死：
+  const strongCount = countTeamProfession(teamSlots, agents, '强攻')
+  check('夹具队内有 1 名强攻', strongCount === 1, `实际 ${strongCount}`)
+
+  const allTiers = extraGainToEffect(gain({ teamProfession: '强攻', teamProfessionValues: [1, 2, 3] }))
+  check('人数档 [1,2,3] 命中计数 1', effectMatchesTeamProfessionGate(allTiers, 1) === true)
+  check('人数档 [1,2,3] 计数 4 越界 → 不命中', effectMatchesTeamProfessionGate(allTiers, 4) === false)
+
+  const onlyTwo = extraGainToEffect(gain({ teamProfession: '强攻', teamProfessionValues: [null, 2, null] }))
+  check('人数档 [null,2,null] 不命中计数 1', effectMatchesTeamProfessionGate(onlyTwo, 1) === false)
+  check('人数档 [null,2,null] 命中计数 2', effectMatchesTeamProfessionGate(onlyTwo, 2) === true)
+
+  // ⚠️ **端到端未验成（待查）**：夹具里 计数=1、档 [1,2,3]，按门语义这条额外增益**应当生效**，
+  // 但 `extraAtkOf({ teamProfession: '强攻', teamProfessionValues: [1,2,3] })` 实测为 **0**。
+  // 根因未查（见 spec §13.9「已知待查」）。这里不写"绿灯"断言，免得把问题掩盖过去。
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
