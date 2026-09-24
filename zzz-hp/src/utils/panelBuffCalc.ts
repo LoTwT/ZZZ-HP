@@ -1090,6 +1090,14 @@ export interface CollectedEffect {
   blockName: string
   /** 块备注 / 影画注释等 */
   blockNote?: string
+  /**
+   * 适用槽位集合：这条增益作用于哪些槽位（升序、去重）。
+   * 「全队」性质 / 无主来源（邦布、场地）= 当前全部槽位。
+   * 2026-09-24 起由收集器统一填（施工规格 `dev-docs/specs/buff-build-refactor-spec.md` §2.1）。
+   */
+  applicableSlots: number[]
+  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
+  providerSlot: number | null
 }
 
 function clampRefine(value: number) {
@@ -1308,6 +1316,19 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
   const collected: CollectedEffect[] = []
   const mainIndex = ctx.mainSlotIndex
 
+  /** 当前全部槽位（`applicableSlots` 的「全队 / 无主」取值） */
+  const allSlots = ctx.teamSlots.map((_, index) => index)
+  /**
+   * 作用对象（2026-09-24，施工规格 §2.1）：`team` 或无主来源 → 全部槽位；否则 → `[提供者槽位]`。
+   * 提供者槽位从来源标记解析（`agent-<i>-…` / `wengine-<i>-…` / `drive-disc-<i>-…`；邦布 / 场地解析不出 = 无主）。
+   */
+  function describeSlots(effect: BuffEffect, sourceKey: string) {
+    const providerSlot = parseSourceKeySlotIndex(sourceKey)
+    const applicableSlots =
+      effect.applyTarget === 'team' || providerSlot == null ? allSlots : [providerSlot]
+    return { applicableSlots, providerSlot }
+  }
+
   function pushPack(
     pack: Parameters<typeof collectBlockEntriesFromPack>[0],
     sourceKey: string,
@@ -1332,6 +1353,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
           blockId: entry.blockId,
           blockName: entry.blockName,
           blockNote: mergeBuffDisplayNotes(extraNote, entry.blockNote),
+          ...describeSlots(effect, sourceKey),
         })
       }
     }
@@ -1442,6 +1464,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.twoPieceNote, entry.blockNote),
+            ...describeSlots(effect, twoKey),
           })
         }
       }
@@ -1458,6 +1481,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
+            ...describeSlots(effect, fourKey),
           })
         }
       }
@@ -1479,6 +1503,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(twoDisc.twoPieceNote, entry.blockNote),
+            ...describeSlots(effect, twoKey),
           })
         }
       }
@@ -1497,6 +1522,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
+            ...describeSlots(effect, fourKey),
           })
         }
       }
@@ -1654,6 +1680,9 @@ export function collectExtraGainEffects(ctx: PanelCalcContext): CollectedEffect[
       group: '额外 Buff',
       blockId: gain.id,
       blockName: gain.name || '额外 Buff',
+      // 阶段 1 保持"表里一律算全队"的现状（等价改写）；它的作用槽位要到阶段 3 并入构建时才改用它。
+      applicableSlots: ctx.teamSlots.map((_, index) => index),
+      providerSlot: null,
     })
   }
   return collected

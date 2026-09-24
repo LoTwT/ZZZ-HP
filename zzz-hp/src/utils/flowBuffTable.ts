@@ -199,6 +199,23 @@ export function buildFlowBuffEffectTexts(
 }
 
 /**
+ * 从「适用槽位集合」里取唯一的受益槽位。
+ * 恰好一个槽位 → 就是它；多个槽位（全队性质）→ null；缺字段（老调用）→ 退回按来源标记解析的那个。
+ */
+function pickSingleSlot(
+  applicableSlots: number[] | undefined,
+  parsedSlot: number | null,
+  slotCount: number,
+): number | null {
+  if (Array.isArray(applicableSlots)) {
+    if (applicableSlots.length !== 1) return null
+    const only = applicableSlots[0]
+    return only != null && only >= 0 && only < slotCount ? only : null
+  }
+  return parsedSlot != null && parsedSlot < slotCount ? parsedSlot : null
+}
+
+/**
  * 列 = **一条增益一列**，按提供者分组。
  *
  * `items` 由页面给出，已经是「所有人的 team 增益 + 参与角色的 self 增益」并集
@@ -236,13 +253,12 @@ export function buildFlowBuffTableColumns(input: {
     const fullLabel = blockName || sourceLabel || '未命名增益'
     // 列头名字按类型给（音擎要带名字、能力块去前缀、其余原样），全名进悬停卡片
     const label = columnLabelOf(item.sourceKey, fullLabel, blockName, providerName)
+    // 受益槽位（2026-09-24，施工规格 §2.1）：优先用收集器填好的「适用槽位集合」——
+    // 恰好一个槽位 = 有明确受益者；多个槽位 = 全队性质；缺字段（老调用）退回按来源标记解析。
+    const beneficiarySlot = pickSingleSlot(item.applicableSlots, slotIndex, slotCount)
     // `team` = 全队都吃（null）；否则受益者 = 这条增益所属槽位的角色
     const beneficiarySlots =
-      item.effect.applyTarget === 'team'
-        ? null
-        : slotIndex != null && slotIndex < slotCount
-          ? [slotIndex]
-          : null
+      item.effect.applyTarget === 'team' ? null : beneficiarySlot != null ? [beneficiarySlot] : null
     const beneficiaryLabel =
       beneficiarySlots == null
         ? '全队'

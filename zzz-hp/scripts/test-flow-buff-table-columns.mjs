@@ -29,7 +29,7 @@ function check(label, condition, detail) {
   }
 }
 
-function item({ id, stat = 'dmgBonus', value = 0, applyTarget = 'team', sourceKey, blockName, sourceLabel = '', providerName = '' }) {
+function item({ id, stat = 'dmgBonus', value = 0, applyTarget = 'team', sourceKey, blockName, sourceLabel = '', providerName = '', applicableSlots, providerSlot = null }) {
   return {
     effect: { id, stat, value, applyTarget },
     sourceKey,
@@ -37,6 +37,9 @@ function item({ id, stat = 'dmgBonus', value = 0, applyTarget = 'team', sourceKe
     blockName,
     sourceLabel,
     providerName,
+    // 阶段 1 起收集器必填这两项；不传 applicableSlots 用来覆盖"老调用回退"那条路径
+    ...(applicableSlots === undefined ? {} : { applicableSlots }),
+    providerSlot,
   }
 }
 
@@ -106,6 +109,66 @@ check('一个能调的都没有 → na', bulk({}) === 'na')
 check('灰格不算（on + na → on）', bulk({ 'r1|c1': 'on', 'r2|c1': 'na' }) === 'on')
 check('灰格不算（off + na → off）', bulk({ 'r1|c1': 'na', 'r2|c1': 'off' }) === 'off')
 check('别的列的状态不串进来', bulk({ 'r1|c2': 'on' }) === 'na')
+
+console.log('\n=== 7. 适用槽位集合（阶段 1：收集器统一填，表按它算受益者）===')
+// 反例判别：来源标记解析不出槽位（`extra-…`），但适用集合只有一个槽位 → 必须按集合算
+const bySlotsOnly = buildFlowBuffTableColumns({
+  items: [
+    item({
+      id: 'e10',
+      applyTarget: 'self',
+      sourceKey: 'extra-only-slots',
+      blockName: '只按适用集合生效',
+      providerName: '只按适用集合生效',
+      applicableSlots: [1],
+    }),
+  ],
+  slotLabels: ['维琳娜', '蕾米埃尔', '派派'],
+})[0]
+check(
+  '来源解析不出、靠 applicableSlots 也能算出受益者 = 角色2',
+  bySlotsOnly?.beneficiaryLabel === '蕾米埃尔' &&
+    JSON.stringify(bySlotsOnly?.beneficiarySlots) === JSON.stringify([1]),
+  JSON.stringify([bySlotsOnly?.beneficiaryLabel, bySlotsOnly?.beneficiarySlots]),
+)
+// 多槽位 = 全队性质
+const teamBySlots = buildFlowBuffTableColumns({
+  items: [
+    item({
+      id: 'e11',
+      applyTarget: 'self',
+      sourceKey: 'extra-team-slots',
+      blockName: '多槽位',
+      providerName: '多槽位',
+      applicableSlots: [0, 1, 2],
+    }),
+  ],
+  slotLabels: ['维琳娜', '蕾米埃尔', '派派'],
+})[0]
+check(
+  '适用集合有多个槽位 → 按全队处理（不判灰）',
+  teamBySlots?.beneficiaryLabel === '全队' && teamBySlots?.beneficiarySlots == null,
+  JSON.stringify([teamBySlots?.beneficiaryLabel, teamBySlots?.beneficiarySlots]),
+)
+// 老调用没填该字段 → 回退解析来源标记（保持旧结果）
+const legacy = buildFlowBuffTableColumns({
+  items: [
+    item({
+      id: 'e12',
+      applyTarget: 'self',
+      sourceKey: 'agent-2-0',
+      blockName: '老调用',
+      providerName: '老调用',
+    }),
+  ],
+  slotLabels: ['维琳娜', '蕾米埃尔', '派派'],
+})[0]
+check(
+  '缺 applicableSlots → 退回按来源标记解析（老调用不变）',
+  legacy?.beneficiaryLabel === '派派' &&
+    JSON.stringify(legacy?.beneficiarySlots) === JSON.stringify([2]),
+  JSON.stringify([legacy?.beneficiaryLabel, legacy?.beneficiarySlots]),
+)
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)

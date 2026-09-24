@@ -20,6 +20,7 @@ import { resolveFlow } from '../src/utils/resolvedHit.ts'
 import { buildOptimalEvalContext } from '../src/utils/optimalAffixAlloc.ts'
 import {
   blockKeyOfCollected,
+  collectAllBuffEffects,
   collectExtraGainEffects,
   collectPanelBuffMods,
   extraGainBlockKey,
@@ -149,6 +150,32 @@ check('单条禁用后同样少 30', Math.abs(modsBase - modsEffectOff - 30) < 1
 console.log('\n=== 4. 无例外上下文不受影响 ===')
 const modsAgain = collectPanelBuffMods(base).inCombatAtkPercent
 check('回到未禁用口径逐位相同', modsAgain === modsBase, `${modsBase} vs ${modsAgain}`)
+
+console.log('\n=== 5. 作用对象字段（阶段 1：收集器统一填 applicableSlots / providerSlot）===')
+const slotCount = scheme.teamSlots.length
+const catalog = collectAllBuffEffects(base)
+const teamItems = catalog.filter((i) => i.effect.applyTarget === 'team')
+const selfItems = catalog.filter((i) => i.effect.applyTarget === 'self')
+check(
+  '全队类 → applicableSlots 覆盖全部槽位',
+  teamItems.length > 0 && teamItems.every((i) => i.applicableSlots.length === slotCount),
+  JSON.stringify(teamItems.map((i) => i.applicableSlots)),
+)
+check(
+  '自身类 → applicableSlots = [该槽位]（且与 providerSlot 一致）',
+  selfItems.every((i) => i.applicableSlots.length === 1 && i.applicableSlots[0] === i.providerSlot),
+  JSON.stringify(selfItems.map((i) => [i.providerSlot, i.applicableSlots])),
+)
+check(
+  '槽位来源条目带 providerSlot',
+  catalog.some((i) => i.providerSlot != null) && catalog.every((i) => i.providerSlot == null || i.providerSlot < slotCount),
+  JSON.stringify([...new Set(catalog.map((i) => i.providerSlot))]),
+)
+check(
+  '额外 Buff（阶段 1）仍按全队填 —— 表里显示不变',
+  collected[0]?.applicableSlots.length === slotCount && collected[0]?.providerSlot === null,
+  JSON.stringify([collected[0]?.applicableSlots, collected[0]?.providerSlot]),
+)
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)
