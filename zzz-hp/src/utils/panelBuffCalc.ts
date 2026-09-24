@@ -520,7 +520,6 @@ export interface PanelCalcContext {
   /** 当前正在汇总面板的槽位（自身 / 队友 的「自身」） */
   mainSlotIndex: number
   driveDiscs: DriveDiscBuffDoc[]
-  extraMods?: BuffStatModifiers
   /**
    * 行级增益例外（**只有命中链的 `buildInput(hit)` 才设**；面板级/目录缓存路径一律不设）。
    *
@@ -1127,17 +1126,6 @@ function resolveBeneficiaryElement(ctx: PanelCalcContext): string | undefined {
 
 function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
   return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
-}
-
-/**
- * 额外 Buff 的两条来源：
- * - `extraGains`（结构化条目）：2026-09-24 阶段 3 起并入统一收集（`buildBuffCatalog`），
- *   这里**不再折算** —— 否则与收集路径双算（本文件下方老注释说的就是这件事：
- *   「若 extra 混进去，异放会与 extraMods 路径双算」）。
- * - `extraMods`（快照导入的扁平属性）：没有结构化来源，仍按原样使用。
- */
-function resolveContextExtraMods(ctx: PanelCalcContext): BuffStatModifiers {
-  return ctx.extraMods ?? createEmptyBuffStatModifiers()
 }
 
 function resolvePackMods(
@@ -2034,7 +2022,7 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
     bangbooKey,
     String(ctx.mainSlotIndex),
     String(ctx.restrictToSlotIndex ?? ''),
-    stringifyKeyPart(ctx.extraGains ?? ctx.extraMods ?? null),
+    stringifyKeyPart(ctx.extraGains ?? null),
     stringifyKeyPart(ctx.buffSelection ?? null),
     stringifyKeyPart(ctx.skillContext ?? null),
     envKey,
@@ -2099,7 +2087,8 @@ function resolvePackEffectMods(
   ctx: PanelCalcContext,
   skipConvert: boolean,
 ): BuffStatModifiers {
-  if (pack.kind === 'extra') return resolveContextExtraMods(ctx)
+  // 额外增益不再单独折包（阶段 3.3）：它的效果由统一收集产出，这里只保留“包”的形状
+  if (pack.kind === 'extra') return createEmptyBuffStatModifiers()
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
   if (pack.kind === 'bangboo') {
     if (!effects.length) return createEmptyBuffStatModifiers()
@@ -2125,10 +2114,7 @@ function ensureNonConvertMods(entry: BuffCatalogEntry, ctx: PanelCalcContext) {
   for (const pack of entry.packs) {
     let mods = entry.nonConvertModsByPackKey[pack.key]
     if (!mods) {
-      mods =
-        pack.kind === 'extra'
-          ? resolveContextExtraMods(ctx)
-          : resolvePackEffectMods(pack, pack.nonConvertEffects, ctx, true)
+      mods = resolvePackEffectMods(pack, pack.nonConvertEffects, ctx, true)
       entry.nonConvertModsByPackKey[pack.key] = mods
     }
     merged = mergeBuffStatModifiers(merged, mods)
@@ -2269,7 +2255,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
     }
   })
 
-  if (ctx.extraGains?.length || ctx.extraMods) {
+  if (ctx.extraGains?.length) {
     const extraEffects = (ctx.extraGains ?? [])
       .filter(
         (gain) =>
@@ -2280,7 +2266,8 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
     sources.push({
       key: 'extra',
       label: '额外 Buff',
-      mods: resolveContextExtraMods(ctx),
+      // 额外增益的数值走统一收集；这条 source 只保留它的效果清单（供来源展示）
+      mods: createEmptyBuffStatModifiers(),
       effects: extraEffects,
     })
   }

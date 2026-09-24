@@ -85,7 +85,11 @@ export interface DamageCalcPanelSnapshot {
     string,
     import('@/utils/skillTalentLevels').SkillTalentLevels
   >
-  extraMods: BuffStatModifiers
+  /**
+   * @deprecated 旧格式的扁平额外 Buff 属性。**只读**：仅供导入老配置文件时转成下面的条目
+   * （`PanelCalcSection` 的兼容分支）。新文件不再写它；彻底删除见代办 T23。
+   */
+  extraMods?: BuffStatModifiers
   /** 额外 Buff 增益条目（优先于扁平 extraMods） */
   extraGains?: Array<{
     id: string

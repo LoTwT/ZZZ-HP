@@ -2027,7 +2027,6 @@ function emptySchemePanelState(): DamageCalcSchemePanelSnapshot {
   return {
     externalPanel: resetSchemeExcludedPanelFields(createDefaultExternalPanel()),
     skillTalentLevelsByAgent: {},
-    extraMods: createEmptyBuffStatModifiers(),
     extraGains: [],
     enemyInput: defaultEnemyInput(),
   }

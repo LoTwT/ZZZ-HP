@@ -71,7 +71,7 @@ assert.equal(again.atk, 50, '再次失效后应读到攻击 +50')
 
 // ---- 缓存键的部件记忆化：契约与已知边界 ----
 //
-// `buildBuffCatalogKey()` 会把 extraMods / buffSelection / skillContext 按**对象身份**
+// `buildBuffCatalogKey()` 会把 extraGains / buffSelection / skillContext 按**对象身份**
 // 记住序列化结果（单次评估要构建约 800 次键，重复 stringify 是纯浪费）。
 //
 // 由此带来一个已知边界：**就地**修改这些对象时，键不再随内容变化。
@@ -79,28 +79,38 @@ assert.equal(again.atk, 50, '再次失效后应读到攻击 +50')
 // - 契约外的做法（就地改而不失效）在 skipConvert=true 下会返回旧值。修复前的实现
 //   会因键变化而「意外重算」，所以这是记忆化带来的行为差异，已核对应用内不存在
 //   就地修改这些对象的调用方（2026-09-10 全量检索 src/，无命中）。
+//
+// 2026-09-24 阶段 3.3：样本对象从已退役的扁平 `extraMods` 换成结构化 `extraGains`
+// （同样是"按内容进键、按身份记忆化"的那一类）。
 {
   invalidateBuffCatalogCache()
 
   const typedCtx = makeCtx(makeBangboo(0))
-  const extraMods = createEmptyBuffStatModifiers()
-  extraMods.atk = 30
-  typedCtx.extraMods = extraMods
+  const gain = {
+    id: 'cache-probe-gain',
+    name: '缓存探针',
+    stat: 'atk',
+    value: 30,
+    applySituation: 'global',
+    applySlot: 'team',
+    applyTarget: 'team',
+  }
+  typedCtx.extraGains = [gain]
   typedCtx.skipConvert = true
 
-  assert.equal(collectPanelBuffMods(typedCtx).atk, 30, '首次应读到 extraMods 的攻击 +30')
+  assert.equal(collectPanelBuffMods(typedCtx).atk, 30, '首次应读到额外增益的攻击 +30')
 
   // 契约内：就地改 + 失效 → 必须读到新值
-  extraMods.atk = 70
+  gain.value = 70
   invalidateBuffCatalogCache()
   assert.equal(
     collectPanelBuffMods(typedCtx).atk,
     70,
-    '就地修改 extraMods 后调 invalidate，应读到新值 +70',
+    '就地修改额外增益后调 invalidate，应读到新值 +70',
   )
 
   // 契约外：就地改而不失效 → skipConvert 下返回旧值（已记录的行为边界）
-  extraMods.atk = 120
+  gain.value = 120
   assert.equal(
     collectPanelBuffMods(typedCtx).atk,
     70,

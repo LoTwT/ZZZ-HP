@@ -211,14 +211,6 @@ export function mergeExtraModsViaEffects(
   })
 }
 
-export function mergeExtraModsForEvent(
-  gains: ExtraBuffGain[],
-  skillCtx: SkillCalcContext,
-  options: ExtraGainMergeOptions,
-): BuffStatModifiers {
-  return mergeExtraModsViaEffects(gains, skillCtx, options)
-}
-
 export function scopeLabel(scope: BuffScope | undefined): string {
   const map: Record<BuffScope, string> = {
     general: '通用',

@@ -59,7 +59,6 @@ import {
   applyHitPanelMods,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
-import { mergeExtraModsForEvent } from '@/utils/extraBuffCalc'
 import { deepUnwrapReactive } from '@/utils/reactiveUnwrap'
 import {
   computeMutationZone,
@@ -608,24 +607,12 @@ function computePiercePower(hp: number, atk: number, pierceMod = 0) {
 
 export type OptimalPanelBreakdown = ReturnType<typeof computeFinalPanel>
 
-function buildOptimalExtraModsForEvent(
-  _ctx: OptimalEvalContext,
-  _hit: ResolvedHit,
-  _slotAgentId: string,
-): BuffStatModifiers {
-  // 2026-09-24 阶段 3：额外增益已并入统一收集（`buildBuffCatalog`），这里不再单独折算
-  // （否则同一条会被算两遍）。保留函数形状、调用点先不动；整条管道删除另开一笔改动。
-  return createEmptyBuffStatModifiers()
-}
-
 function buildPanelContextForSlot(
   ctx: OptimalEvalContext,
   slotIndex: number,
   externalForSlot: PanelStats,
   mainExternalPanel: PanelStats,
-  extraModsOverride?: BuffStatModifiers,
 ): PanelCalcContext {
-  const extraMods = extraModsOverride ?? ctx.panelContext.extraMods ?? createEmptyBuffStatModifiers()
   const level =
     slotIndex === ctx.panelContext.mainSlotIndex
       ? ctx.enemyInput.level
@@ -634,7 +621,6 @@ function buildPanelContextForSlot(
     ...ctx.panelContext,
     mainSlotIndex: slotIndex,
     mainExternalPanel: mainExternalPanel,
-    extraMods,
     extraGains: ctx.extraGains,
     buffSelection: ctx.slotBuffSelections
       ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex)
@@ -868,15 +854,8 @@ export function evaluateOptimalEventDetail(
     ownerSlotIndex,
     mainPanel,
   )
-  const ownerExtraMods = buildOptimalExtraModsForEvent(ctx, hit, ownerAgentId)
   const evtPanelCtx = {
-    ...buildPanelContextForSlot(
-      ctx,
-      ownerSlotIndex,
-      ownerExternal,
-      mainPanel,
-      ownerExtraMods,
-    ),
+    ...buildPanelContextForSlot(ctx, ownerSlotIndex, ownerExternal, mainPanel),
     skillContext: skillCtx,
     // 行级增益例外：只影响本行结算（不动面板、不动层数累计）
     rowBuffOverride: hit.buffOverride ?? null,
@@ -923,11 +902,10 @@ export function evaluateOptimalEventDetail(
     } else {
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainPanel)
       producerExternalPanel = tExternal
-      const tExtraMods = buildOptimalExtraModsForEvent(ctx, hit, evtPowerAgentId)
       producerBreakdown = computeFinalPanel(
         tExternal,
         {
-          ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainPanel, tExtraMods),
+          ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainPanel),
           skillContext: buildSkillContextFromHit(hit, tAgent?.element),
           // 同上：异常强度提供者那一侧也要吃本行的增益例外
           rowBuffOverride: hit.buffOverride ?? null,
@@ -1004,13 +982,7 @@ export function evaluateOptimalEventDetail(
       bonusBreakdown = computeFinalPanel(
         trigExternal,
         {
-          ...buildPanelContextForSlot(
-            ctx,
-            trigSlotIndex,
-            trigExternal,
-            mainPanel,
-            buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
-          ),
+          ...buildPanelContextForSlot(ctx, trigSlotIndex, trigExternal, mainPanel),
           // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
           skillContext: buildSkillContextFromHit(
             hit,
@@ -1054,13 +1026,7 @@ export function evaluateOptimalEventDetail(
         triggerId === ownerAgentId
           ? evtPanelCtx
           : {
-              ...buildPanelContextForSlot(
-                ctx,
-                trigSlotIndex,
-                trigExternal,
-                mainPanel,
-                buildOptimalExtraModsForEvent(ctx, hit, triggerId),
-              ),
+              ...buildPanelContextForSlot(ctx, trigSlotIndex, trigExternal, mainPanel),
               // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
               skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
               // 同上：异常触发者一侧也要吃本行的增益例外
@@ -1725,7 +1691,6 @@ function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
      */
     ctx.panelContext.bangbooRefine ?? 1,
     JSON.stringify(ctx.panelContext.buffSelection ?? null),
-    JSON.stringify(ctx.panelContext.extraMods ?? null),
     /**
      * 场地 / 环境 Buff（危局、Boss 场地、防卫房间）必须入签名，且要含**内容**。
      *

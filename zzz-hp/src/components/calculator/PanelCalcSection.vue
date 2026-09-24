@@ -10,7 +10,6 @@ import type {
   BangbooBuffDoc,
   BaseDamageSource,
   BuffStatKey,
-  BuffStatModifiers,
   CharacterAttrKey,
   DriveDiscBuffDoc,
   WengineBuffDoc,
@@ -251,17 +250,6 @@ function loadAffixFromCurrentSlot() {
 
 
 
-/**
- * 局内通用面板上的额外 Buff —— 2026-09-24 阶段 3 起**不再单独折算**：
- * 额外增益已并入统一收集（`buildBuffCatalog`），这里再折一次就是同一条被算两遍。
- * 管道先置空（返回空对象），整条删除另开一笔改动，避免这次动面过大。
- */
-function buildExtraModsForMainPanel(): BuffStatModifiers {
-  return createEmptyBuffStatModifiers()
-}
-
-const extraMods = computed(() => buildExtraModsForMainPanel())
-
 const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
 
 
@@ -391,10 +379,7 @@ function buildSkillContextForSlot(slotIndex: number) {
   })
 }
 
-function buildPanelCalcContextForSlot(
-  slotIndex: number,
-  extraModsOverride?: BuffStatModifiers,
-) {
+function buildPanelCalcContextForSlot(slotIndex: number) {
   return {
     teamSlots: props.teamSlots,
     agents: props.agents,
@@ -404,7 +389,6 @@ function buildPanelCalcContextForSlot(
     mainSlotIndex: slotIndex,
     liveExternalSlotIndex: mainSlotIndex.value,
     driveDiscs: props.driveDiscs,
-    extraMods: extraModsOverride ?? extraMods.value,
     extraGains: extraGains.value,
     skillContext: buildSkillContextForSlot(slotIndex),
     buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
@@ -970,7 +954,6 @@ function getSnapshot(): DamageCalcPanelSnapshot {
   return {
     baseDamageSource: baseDamageSource.value,
     externalPanel: { ...externalPanel },
-    extraMods: { ...extraMods.value },
     extraGains: extraGains.value.map((item) => ({ ...item })),
     enemyInput: { ...enemyInput.value },
   }
