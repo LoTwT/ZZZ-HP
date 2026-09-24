@@ -358,6 +358,40 @@ export function effectiveRowOverride(
   return entry.buffOverrides ?? null
 }
 
+/** 行受益者计算的输入（结构性类型：传真实 hit 即可，utils 不依赖组件类型） */
+export interface RowBeneficiaryHitInput {
+  id: string
+  ownerAgentId?: string | null
+  anomalyPowerAgentId?: string | null
+  triggerAgentId?: string | null
+}
+
+/**
+ * 每一行的受益者槽位（持有者 + 异常强度提供者 + 触发者 → 槽位下标）；键 = 行键（`hit.id`）。
+ *
+ * ⚠️ 与「适用槽位集合」（`CollectedEffect.applicableSlots`）**不是一个东西**：这个是**行**长出来的，
+ * 那个是**条目**的属性；判灰取两者交集。此前只在页面里算，2026-09-24 下沉到 utils（页面与 utils 共用、可单测）。
+ */
+export function resolveRowBeneficiarySlots(input: {
+  hits: readonly RowBeneficiaryHitInput[]
+  teamSlots: readonly { agentId?: string | null }[]
+}): Map<string, number[]> {
+  const indexOfAgent = (agentId?: string | null) =>
+    agentId ? input.teamSlots.findIndex((slot) => slot.agentId === agentId) : -1
+  const map = new Map<string, number[]>()
+  for (const hit of input.hits) {
+    const owner = indexOfAgent(hit.ownerAgentId)
+    if (owner < 0) continue
+    const slots = new Set<number>([owner])
+    for (const agentId of [hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      const index = indexOfAgent(agentId)
+      if (index >= 0) slots.add(index)
+    }
+    map.set(hit.id, [...slots])
+  }
+  return map
+}
+
 /**
  * 单元格状态表：`${rowKey}|${columnKey}` → on / off / na
  *

@@ -80,6 +80,7 @@ import {
   buildFlowBuffTableColumns,
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
+  resolveRowBeneficiarySlots,
   setFlowBuffEffectDisabled,
 } from '@/utils/flowBuffTable'
 
@@ -186,22 +187,9 @@ const flowBuffTableColumns = computed(() =>
 )
 
 /** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键 */
-const flowBuffRowBeneficiarySlots = computed(() => {
-  const indexOfAgent = (agentId?: string | null) =>
-    agentId ? props.teamSlots.findIndex((slot) => slot.agentId === agentId) : -1
-  const map = new Map<string, number[]>()
-  for (const hit of props.hits ?? []) {
-    const owner = indexOfAgent(hit.ownerAgentId)
-    if (owner < 0) continue
-    const slots = new Set<number>([owner])
-    for (const agentId of [hit.anomalyPowerAgentId, hit.triggerAgentId]) {
-      const index = indexOfAgent(agentId)
-      if (index >= 0) slots.add(index)
-    }
-    map.set(hit.id, [...slots])
-  }
-  return map
-})
+const flowBuffRowBeneficiarySlots = computed(() =>
+  resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots }),
+)
 
 const flowBuffTableStates = computed(() =>
   buildFlowBuffTableStates({
