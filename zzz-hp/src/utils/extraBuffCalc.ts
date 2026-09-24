@@ -148,69 +148,11 @@ export type ExtraGainMergeOptions = {
 }
 
 /**
- * 旧摊平：直接写 BuffStatModifiers。阶段 6 双跑对照用，生产走 `mergeExtraModsForEvent`。
- */
-export function mergeExtraModsForEventDirect(
-  gains: ExtraBuffGain[],
-  skillCtx: SkillCalcContext,
-  options: ExtraGainMergeOptions,
-): BuffStatModifiers {
-  let total = createEmptyBuffStatModifiers()
-  for (const gain of gains) {
-    const situation: BuffApplySituation = gain.applySituation ?? 'global'
-    if (situation === 'stagger' && options.staggerPhase !== 'stagger') continue
-    if (situation === 'non_stagger' && options.staggerPhase !== 'normal') continue
-    if (!extraGainMatchesEvent(gain, skillCtx)) continue
-    if (!extraGainAppliesToSlot(gain, options.slotIndex)) continue
-
-    const beneficiaryProfession = options.resolveAgentProfession?.(options.slotAgentId)
-    if (!extraGainMatchesProfession(gain, beneficiaryProfession)) continue
-
-    const amount = resolveExtraGainValue(gain, options.teamSlots, options.agents)
-    if (amount == null) continue
-
-    const next = createEmptyBuffStatModifiers()
-    next[gain.stat] = amount
-    total = mergeBuffStatModifiers(total, next)
-  }
-  return total
-}
-
-/**
  * 额外增益走 BuffEffect 适配器再 `resolveEffectsToMods`。
  *
  * 勾选表强制全开：角色 Buff 的 `isEffectEnabled` 会把「有队内职业人数条件、未进勾选」
  * 默认关掉；额外增益没有勾选 UI，不能吃那条规则。
  */
-export function mergeExtraModsViaEffects(
-  gains: ExtraBuffGain[],
-  skillCtx: SkillCalcContext,
-  options: ExtraGainMergeOptions,
-): BuffStatModifiers {
-  const effects: BuffEffect[] = []
-  for (const gain of gains) {
-    const situation: BuffApplySituation = gain.applySituation ?? 'global'
-    if (situation === 'stagger' && options.staggerPhase !== 'stagger') continue
-    if (situation === 'non_stagger' && options.staggerPhase !== 'normal') continue
-    if (!extraGainAppliesToSlot(gain, options.slotIndex)) continue
-    effects.push(extraGainToEffect(gain))
-  }
-  if (!effects.length) return createEmptyBuffStatModifiers()
-  const enabledIds = Object.fromEntries(effects.map((effect) => [effect.id, true]))
-  const teamSlots = options.teamSlots
-  const agents = options.agents
-  return resolveEffectsToMods(effects, {
-    applyTargets: ['self', 'team'],
-    ctx: skillCtx,
-    selection: { enabledIds },
-    beneficiaryProfession: options.resolveAgentProfession?.(options.slotAgentId) ?? null,
-    resolveTeamProfessionCount:
-      teamSlots && agents
-        ? (profession) => countTeamProfession(teamSlots, agents, profession)
-        : undefined,
-  })
-}
-
 export function scopeLabel(scope: BuffScope | undefined): string {
   const map: Record<BuffScope, string> = {
     general: '通用',

@@ -1,14 +1,9 @@
 /**
- * 阶段 6：额外增益走 BuffEffect 适配器，与旧摊平逐字段双跑。
+ * 阶段 3：额外增益走 BuffEffect 适配器 + 统一收集；阶段 3.3 起旧的双跑对照已删。
  * 运行：npx vite-node scripts/test-extra-gain-effect-adapt.mjs
  */
-import { createEmptyBuffStatModifiers } from '../src/utils/calculatorUi.ts'
-import {
-  mergeExtraModsForEventDirect,
-  mergeExtraModsViaEffects,
-  extraGainToEffect,
-} from '../src/utils/extraBuffCalc.ts'
-import { collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
+import { extraGainAppliesToSlot, extraGainMatchesEvent, extraGainToEffect } from '../src/utils/extraBuffCalc.ts'
+import { buildBuffCatalog, collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
 import { adaptAffixLibraryEntry, adaptBuffEffect } from '../src/utils/effectAdapters.ts'
 import { applyAllocatedAffixEffects } from '../src/utils/panelPipeline.ts'
 import {
@@ -64,106 +59,65 @@ const agents = [
 ]
 const teamSlots = [testSlot('a'), testSlot('b')]
 
-function opts(slotIndex, extra = {}) {
-  return {
-    slotIndex,
-    slotAgentId: teamSlots[slotIndex].agentId,
-    staggerPhase: extra.staggerPhase ?? 'stagger',
-    resolveAgentProfession: (id) => agents.find((item) => item.id === id)?.profession,
-    teamSlots,
-    agents,
-    ...extra,
-  }
-}
-
-function sameMods(a, b) {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-  for (const key of keys) {
-    if (Math.abs((a[key] ?? 0) - (b[key] ?? 0)) > 1e-9) return `${key}: ${a[key]} vs ${b[key]}`
-  }
-  return null
-}
-
-function dual(name, gains, ctx, options) {
-  const direct = mergeExtraModsForEventDirect(gains, ctx, options)
-  const via = mergeExtraModsViaEffects(gains, ctx, options)
-  const diff = sameMods(direct, via)
-  check(name, diff == null, diff || JSON.stringify({ dmgBonus: via.dmgBonus, atk: via.atk, inCombatAtkPercent: via.inCombatAtkPercent }))
-  return { direct, via }
-}
-
-console.log('\n[1] 通用 / 招式限定 / 槽位 / 全队')
+// 阶段 3.3：旧的双跑对照（direct ↔ via effects）随旧通道一起删除 —— 额外增益现在只走统一路径，
+// 这里改为在**统一路径的原语**上钉同样的语义：产物里的适用槽位 / 来源键，以及筛选用的两个判定函数。
+// 未覆盖（旧段曾覆盖，现由其它套件与 parity 快照兜底）：职业匹配、队内人数门槛。
+console.log('\n[1] 额外增益进产物与统一筛选')
 {
-  const c1 = dual(
-    'C1 风格穿透率 +24',
-    [gain({ id: 'c1', stat: 'penRate', value: 24 })],
-    skillCtx('basic'),
-    opts(0),
-  )
-  check('穿透率为 24', (c1.via.penRate ?? 0) === 24, `${c1.via.penRate}`)
-  const global = dual('全局 +15 增伤', [gain({ value: 15 })], skillCtx('basic'), opts(0))
-  check('全局增伤为 15', (global.via.dmgBonus ?? 0) === 15, `${global.via.dmgBonus}`)
-  dual(
-    '普攻限定只吃普攻',
-    [gain({ scope: 'skill', skillCategory: 'basic', value: 15 })],
-    skillCtx('basic'),
-    opts(0),
-  )
-  const ult = dual(
-    '普攻限定不吃终结技',
-    [gain({ scope: 'skill', skillCategory: 'basic', value: 15 })],
-    skillCtx('ultimate'),
-    opts(0),
-  )
-  check('终结技增伤为 0', (ult.via.dmgBonus ?? 0) === 0, `${ult.via.dmgBonus}`)
+  const build = (gains) =>
+    buildBuffCatalog({
+      teamSlots,
+      agents,
+      wengines: [],
+      driveDiscs: [],
+      bangboo: dummyBangboo(),
+      bangbooRefine: 1,
+      environmentBuffs: [],
+      extraGains: gains,
+    }).entries.filter((entry) => entry.sourceKey.startsWith('extra-'))
 
-  dual('槽位 0 吃自己的', [gain({ applySlot: 0, value: 10 })], skillCtx('basic'), opts(0))
-  const other = dual('槽位 1 不吃槽位 0 的', [gain({ applySlot: 0, value: 10 })], skillCtx('basic'), opts(1))
-  check('槽位 1 增伤为 0', (other.via.dmgBonus ?? 0) === 0)
+  const slot0 = build([gain({ id: 'c-slot0', applySlot: 0, value: 10 })])
+  check(
+    '作用于槽位 0 → 适用槽位 [0]',
+    JSON.stringify(slot0[0]?.applicableSlots) === '[0]',
+    JSON.stringify(slot0[0]?.applicableSlots),
+  )
 
-  dual('全队两条槽都吃', [gain({ applySlot: 'team', applyTarget: 'team', value: 8 })], skillCtx('basic'), opts(1))
-}
+  const team = build([gain({ id: 'c-team', applySlot: 'team', applyTarget: 'team', value: 8 })])
+  check(
+    '全队 → 适用槽位为全部',
+    JSON.stringify(team[0]?.applicableSlots) === JSON.stringify(teamSlots.map((_, i) => i)),
+    JSON.stringify(team[0]?.applicableSlots),
+  )
+  check(
+    '来源键 = extra-<id>（行级例外键不变）',
+    team[0]?.sourceKey === 'extra-c-team' && team[0]?.blockId === 'c-team',
+  )
+  check('效果 id = 增益 id', team[0]?.effect.id === 'c-team')
 
-console.log('\n[2] 失衡 / 职业 / 队内人数')
-{
-  const staggerOn = dual(
+  const skillOnly = gain({ id: 'c-basic', scope: 'skill', skillCategory: 'basic', value: 15 })
+  check('普攻限定只吃普攻', extraGainMatchesEvent(skillOnly, skillCtx('basic')) === true)
+  check('普攻限定不吃终结技', extraGainMatchesEvent(skillOnly, skillCtx('ultimate')) === false)
+
+  const staggerOnly = gain({ id: 'c-stagger', applySituation: 'stagger', stat: 'critRate', value: 20 })
+  check(
     '失衡限定·失衡期',
-    [gain({ applySituation: 'stagger', stat: 'critRate', value: 20 })],
-    skillCtx('basic', { staggerPhase: 'stagger' }),
-    opts(0, { staggerPhase: 'stagger' }),
+    extraGainMatchesEvent(staggerOnly, skillCtx('basic', { staggerPhase: 'stagger' })) === true,
   )
-  check('失衡期暴击为 20', (staggerOn.via.critRate ?? 0) === 20, `${staggerOn.via.critRate}`)
-  const normal = dual(
+  check(
     '失衡限定·非失衡',
-    [gain({ applySituation: 'stagger', stat: 'critRate', value: 20 })],
-    skillCtx('basic', { staggerPhase: 'normal' }),
-    opts(0, { staggerPhase: 'normal' }),
+    extraGainMatchesEvent(staggerOnly, skillCtx('basic', { staggerPhase: 'normal' })) === false,
   )
-  check('非失衡暴击为 0', (normal.via.critRate ?? 0) === 0)
 
-  dual(
-    '职业匹配强攻',
-    [gain({ applyProfession: '强攻', stat: 'atk', value: 50 })],
-    skillCtx('basic'),
-    opts(0),
-  )
-  const mismatch = dual(
-    '职业不匹配支援槽',
-    [gain({ applyProfession: '强攻', stat: 'atk', value: 50 })],
-    skillCtx('basic'),
-    opts(1),
-  )
-  check('支援槽固定攻击为 0', (mismatch.via.atk ?? 0) === 0)
-
-  dual(
-    '队内至少 1 名强攻',
-    [gain({ teamProfession: '强攻', teamProfessionValues: [1, 2, 3], stat: 'dmgBonus', value: 12 })],
-    skillCtx('basic'),
-    opts(0),
+  const slot0Gain = gain({ applySlot: 0, value: 10 })
+  check('槽位判定：槽位 1 不吃槽位 0 的', extraGainAppliesToSlot(slot0Gain, 1) === false)
+  check(
+    '槽位判定：全队两条槽都吃',
+    extraGainAppliesToSlot(gain({ applySlot: 'team', applyTarget: 'team', value: 8 }), 1) === true,
   )
 }
 
-console.log('\n[3] 适配器与 collectAllBuffEffects')
+console.log('\n[2] 适配器与 collectAllBuffEffects')
 {
   const fx = extraGainToEffect(gain({ id: 'eg1', scope: 'skill', skillCategory: 'basic', value: 15 }))
   const spec = adaptBuffEffect(fx)
@@ -209,11 +163,19 @@ console.log('\n[3] 适配器与 collectAllBuffEffects')
   check('词条 gain 作用域为招式', applied.extraGains[0]?.scope === 'skill')
 }
 
-console.log('\n[4] 空 mods 形状')
+console.log('\n[3] 空增益：产物里没有额外条目')
 {
-  const empty = createEmptyBuffStatModifiers()
-  const via = mergeExtraModsViaEffects([], skillCtx('basic'), opts(0))
-  check('无增益时与空表同构', sameMods(empty, via) == null)
+  const built = buildBuffCatalog({
+    teamSlots,
+    agents,
+    wengines: [],
+    driveDiscs: [],
+    bangboo: dummyBangboo(),
+    bangbooRefine: 1,
+    environmentBuffs: [],
+    extraGains: [],
+  }).entries.filter((entry) => entry.sourceKey.startsWith('extra-'))
+  check('无额外增益时产物里没有额外条目', built.length === 0, `实际 ${built.length} 条`)
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
