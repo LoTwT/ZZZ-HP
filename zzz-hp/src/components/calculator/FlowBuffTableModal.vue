@@ -798,10 +798,20 @@ thead th {
 }
 /* 整列「全开 / 全关」第三行（2026-09-23 用户要求）：不跟表头一起粘住，滚动时让位给列名 */
 .fbt-row-bulk th {
+  /* 这一行的普通格保持 static：纵向**不**跟表头粘住（原意"滚动时让位给列名"）；
+     横向冻结由下面只给「招式」格的那条规则负责 —— 这里若写成 sticky 会让整行纵向也粘住。 */
   position: static;
   padding: 0.1rem 0.25rem;
   text-align: center;
   border-bottom: 1px solid #2a3038;
+}
+.fbt-row-bulk .fbt-th-name {
+  /* 只做横向粘性：left: 0 + **显式 top: auto** —— 不写 auto 会继承表头那条 `top: 0`，
+     于是这一格纵向也粘住、盖住列名（正是原注释担心的）。比 .fbt-row-bulk th 更具体，能压过上面的 static。 */
+  position: sticky;
+  top: auto;
+  left: 0;
+  z-index: 3;
 }
 .fbt-th-bulk {
   font-size: 0.72rem;
@@ -1048,6 +1058,21 @@ thead th {
   border-color: #d5dae3;
   background: #ffffff;
   color: #7b8798;
+}
+:global([data-theme='light'] .fbt-bulk-btn.is-on) {
+  border-color: #8ecfa4;
+  background: #eef8f1;
+  color: #2f7d4a;
+}
+:global([data-theme='light'] .fbt-bulk-btn.is-off) {
+  border-color: #e0a9ad;
+  background: #fdf1f1;
+  color: #b4434b;
+}
+:global([data-theme='light'] .fbt-bulk-btn.is-mixed) {
+  border-color: #d6cf9a;
+  background: #fbf9ee;
+  color: #8a7c1f;
 }
 :global([data-theme='light'] .fbt-search .mini-btn) {
   border-color: #d5dae3;
