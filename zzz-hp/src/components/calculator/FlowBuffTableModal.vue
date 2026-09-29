@@ -822,20 +822,22 @@ thead th {
   text-align: left;
 }
 .fbt-bulk-btn {
-  /* 居中：原来是 display:block + height 1.05rem，字形贴内容框顶部、墨迹超出被裁
-     （用户截图里那个"坏掉的箭头"） */
+  /* 居中 + 不撑满：原来是 display:block + width:100%（通栏色块，用户嫌"这么宽"）；
+     改小圆点：与表体里"每格一个小方框"形成形状区分（列级 vs 格级一眼可辨），
+     状态仍靠图形（✓／×／–／·）+ 颜色（绿=全开、红=全关、黄=各半、灰=不可用）区分。 */
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 1.15rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0 auto;
   padding: 0;
-  border-radius: 3px;
+  border-radius: 50%;
   border: 1px solid #3d4653;
   background: #10141b;
   color: #7f8fa3;
   font-size: 0.72rem;
-  line-height: 1.15rem;
+  line-height: 1;
   cursor: pointer;
 }
 .fbt-bulk-btn.is-on {
