@@ -302,7 +302,7 @@ function onColumnBulkClick(columnKey: string) {
         </div>
         <div class="fbt-head-stats">
           <span class="fbt-stat">生效 {{ onCount }}</span>
-          <span class="fbt-stat is-off">本行关闭 {{ offCount }}</span>
+          <span class="fbt-stat is-off">关闭 {{ offCount }}</span>
         </div>
         <button type="button" class="mini-btn" @click="open = false">关闭</button>
       </header>
