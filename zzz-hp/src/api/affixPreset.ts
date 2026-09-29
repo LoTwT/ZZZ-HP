@@ -25,6 +25,13 @@ export interface AffixPresetEntryDoc {
   rollCost: number
   enabledByDefault: boolean
   sortOrder?: number
+  applySituation?: string
+  scope?: string
+  skillCategory?: string
+  skillSubcategoryId?: string | null
+  appliesToAnomaly?: boolean
+  /** 版本化效果模板；缺省时服务端按 target 回填 */
+  effectJson?: Record<string, unknown> | null
   raw?: Record<string, unknown> | null
 }
 
@@ -32,6 +39,13 @@ export interface AffixPresetGroupDoc {
   name: string
   cap: number
   sortOrder?: number
+  /**
+   * 组规则「不消耗总词条数」：本组条目的基础占用不计入总词条数（与副词条冲突的额外 x 仍照扣）。
+   *
+   * 存在后端的 `raw_json` 里（不占表结构），读写时由 service 在顶层透出 / 收进 raw。
+   * 用户侧 `parseAffixPresetGroups` 认这个字段 → 官方预设也能带这条规则。
+   */
+  excludedFromTotalRolls?: boolean
   raw?: Record<string, unknown> | null
 }
 

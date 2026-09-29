@@ -728,6 +728,8 @@ export function isEffectEnabled(
   effect: BuffEffect,
   selection: { enabledIds?: Record<string, boolean> } | null | undefined,
 ): boolean {
+  // 额外增益没有勾选状态：**加入即已勾选**（2026-09-24 阶段 3 起并入统一收集）
+  if (effect.extraGain) return true
   if (!selection?.enabledIds || !(effect.id in selection.enabledIds)) {
     // 有队内职业人数条件：未同步前默认不启用，避免条件未满足却全开
     if (effect.teamProfession?.trim()) return false
@@ -823,6 +825,32 @@ export function resolveEffectsToMods(
     total = addStat(total, effect.stat, amount)
   }
   return total
+}
+
+/**
+ * 把一条行级例外展开成"禁用的效果 id"集合（**只展开，不判定**）。
+ *
+ * - 单条禁用：直接命中
+ * - 块禁用：按调用方给的 blockKey 命中（与收集侧一致：`${sourceKey}::${blockName ?? ''}`）
+ * - 传 null / 空结果 → 返回 null（调用方据此跳过判定，零开销）
+ */
+export function expandBuffOverrideToEffectIds(
+  override:
+    | { disabledBlockIds?: string[] | null; disabledEffectIds?: string[] | null }
+    | null
+    | undefined,
+  items: Array<{ effect: { id: string }; blockKey?: string | null }>,
+): Set<string> | null {
+  if (!override) return null
+  const blockIds = new Set(override.disabledBlockIds ?? [])
+  const effectIds = new Set(override.disabledEffectIds ?? [])
+  if (!blockIds.size && !effectIds.size) return null
+  const out = new Set<string>()
+  for (const item of items) {
+    if (effectIds.has(item.effect.id)) out.add(item.effect.id)
+    else if (item.blockKey && blockIds.has(item.blockKey)) out.add(item.effect.id)
+  }
+  return out.size ? out : null
 }
 
 function normalizeScope(value: unknown): BuffScope {
@@ -1298,7 +1326,8 @@ export function formatBuffEffectResultText(
   const head = [applyProf, skillPrefix].filter(Boolean).join('')
   const mid = gate ? `${gate} ` : ''
   const el = elementLabel ? `${elementLabel} ` : ''
-  return `${head}${head ? ' ' : ''}${mid}${el}${amountText} ${label}`
+  // 数值顺序（2026-09-23 用户口径）：`增伤% +20.16` —— 属性名在前、数值在后
+  return `${head}${head ? ' ' : ''}${mid}${el}${label} ${amountText}`
 }
 
 export { BUFF_STAT_KEYS }

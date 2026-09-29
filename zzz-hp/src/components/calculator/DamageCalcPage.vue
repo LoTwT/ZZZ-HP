@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { storeToRefs } from 'pinia'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
@@ -71,11 +81,13 @@ import {
   getLoadedSchemeId,
   listAllDamageCalcHistory,
   loadWorkingDraft,
+  takeSchemeStoreWriteFailed,
   nameConflictType,
   saveDamageCalcHistory,
   saveWorkingDraft,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
+import { buildFlowBuffEffectTexts } from '@/utils/flowBuffTable'
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
@@ -313,9 +325,6 @@ const damageResultEvalCtx = computed(() =>
   }),
 )
 
-/** 统一结果区当前用的主面板：3 选 1 解析结果（null = 角色配置面板） */
-const damageResultExternal = computed(() => skillFlowMainExternalOverride.value)
-
 /** 总伤期望：只汇总「流程事件」的页级 hitDamages（准备招式预览按单次伤害，不计入总伤） */
 const damageResultGrandTotal = computed(() => {
   const flowIds = new Set((hits.value ?? []).map((hit) => hit.id))
@@ -339,37 +348,6 @@ const damageResultEventLines = computed(() =>
     .filter((line) => line.total > 0),
 )
 
-/** 统一结果区：一套流程计算 + 一套详情展示（统计事件默认全部；后续支持事件集选择） */
-const damageResultProcess = useDamageProcessEvents({
-  ctx: damageResultEvalCtx,
-  external: damageResultExternal,
-  grandTotal: damageResultGrandTotal,
-  eventLines: damageResultEventLines,
-  selectedEventIds: computed(() => null),
-  totalLabel: computed(() => '伤害事件总伤期望'),
-  hasEvents: computed(() => (hits.value?.length ?? 0) > 0),
-  active: computed(() => true),
-  enabled: computed(() => true),
-  hits,
-  agents: computed(() => agents.value),
-  teamSlots: computed(() => teamSlots),
-})
-
-/** 顶层解构：模板可直接解包（嵌套对象里的 ref 不会自动解包） */
-const {
-  ownerShareSummary: damageResultOwnerShareSummary,
-  skippedEvents: damageResultSkippedEvents,
-  selectedDetail: damageResultSelectedDetail,
-  selectedEventId: damageResultSelectedEventId,
-  selectEvent: damageResultSelectEvent,
-} = damageResultProcess
-
-/** 选中事件的耀变倍率来源标注（招式等级公式，如「普通攻击 Lv.16：200% + 10% × 16 = 360%」） */
-const damageResultSkillMultLevelNote = computed(() => {
-  const detail = damageResultSelectedDetail.value
-  if (!detail) return null
-  return buildSkillBaseMultNote(detail.hit.skill, detail.hit.skillTalentLevel)
-})
 const previewHits = computed(() =>
   resolveSkillPreviews({
     slots: schemeSlots.value,
@@ -412,6 +390,8 @@ let draftHydrated = false
 /** 恢复草稿/方案期间跳过 Buff 默认同步与场地 Buff 反写怪物 */
 let restoringWorkingState = false
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+/** 草稿保存异常提示（写失败 / 被别的标签页抢先）—— 绝不静默丢数据 */
+const draftSaveWarning = ref('')
 const prevEnabledBossFieldKeys = ref<string[]>([])
 const prevEnabledDefenseKeys = ref<string[]>([])
 /** 临界节点 Buff（deduction-buff-*）单选：记录上一轮已勾选 sourceKey */
@@ -647,6 +627,46 @@ const skillFlowPanelResolved = computed(() =>
 )
 
 const skillFlowMainExternalOverride = computed(() => skillFlowPanelResolved.value.mainExternal)
+const skillFlowSourceExtraGains = computed(
+  () => skillFlowPanelResolved.value.extraGains ?? null,
+)
+
+/** 统一结果区当前用的主面板：3 选 1 解析结果（null = 角色配置面板） */
+const damageResultExternal = computed(() => skillFlowMainExternalOverride.value)
+
+/** 统一结果区：一套流程计算 + 一套详情展示（统计事件默认全部；后续支持事件集选择） */
+const damageResultProcess = useDamageProcessEvents({
+  ctx: damageResultEvalCtx,
+  external: damageResultExternal,
+  allocatedExtraGains: skillFlowSourceExtraGains,
+  grandTotal: damageResultGrandTotal,
+  eventLines: damageResultEventLines,
+  selectedEventIds: computed(() => null),
+  totalLabel: computed(() => '伤害事件总伤期望'),
+  hasEvents: computed(() => (hits.value?.length ?? 0) > 0),
+  active: computed(() => true),
+  enabled: computed(() => true),
+  hits,
+  agents: computed(() => agents.value),
+  teamSlots: computed(() => teamSlots),
+})
+
+/** 顶层解构：模板可直接解包（嵌套对象里的 ref 不会自动解包） */
+const {
+  ownerShareSummary: damageResultOwnerShareSummary,
+  skippedEvents: damageResultSkippedEvents,
+  selectedDetail: damageResultSelectedDetail,
+  selectedEventId: damageResultSelectedEventId,
+  selectEvent: damageResultSelectEvent,
+} = damageResultProcess
+
+/** 选中事件的耀变倍率来源标注（招式等级公式，如「普通攻击 Lv.16：200% + 10% × 16 = 360%」）
+ *  —— 上游 #61/#62（技能等级来源）带过来的新展示；模板 `:skill-mult-level-note` 用它 */
+const damageResultSkillMultLevelNote = computed(() => {
+  const detail = damageResultSelectedDetail.value
+  if (!detail) return null
+  return buildSkillBaseMultNote(detail.hit.skill, detail.hit.skillTalentLevel)
+})
 
 const skillFlowPanelAvailability = computed(() => {
   const signature = skillFlowPageSignature.value
@@ -811,6 +831,9 @@ watch(envBuffFrontierId, () => {
 })
 
 watch(defenseFrontierOptions, (options) => {
+  if (restoringWorkingState) return
+  // 目录还没加载完（options 为空）时**不能清**：否则已存的环境筛选会被加载时序清成空串。
+  if (!options.length) return
   if (!envBuffFrontierId.value) return
   if (!options.some((opt) => opt.id === envBuffFrontierId.value)) {
     envBuffFrontierId.value = options[0]?.id ?? ''
@@ -848,8 +871,13 @@ onDeactivated(() => {
   persistWorkingDraftNow()
 })
 
-onUnmounted(() => {
+// 卸载**前**抓快照：Vue 在父组件 beforeUnmount 之后才拆子树（模板 ref 那时才被清空），
+// 所以这一次落盘拿得到完整、最新的面板状态；等到 onUnmounted 再抓，子组件已拆、只能沿用旧快照。
+onBeforeUnmount(() => {
   persistWorkingDraftNow()
+})
+
+onUnmounted(() => {
   window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('visibilitychange', onDraftVisibilityChange)
   if (draftSaveTimer) clearTimeout(draftSaveTimer)
@@ -1030,6 +1058,8 @@ function buildBuffCollectContext(mainSlotIdx: number) {
     bangbooRefine: bangbooRefine.value,
     mainSlotIndex: mainSlotIdx,
     driveDiscs: driveDiscs.value,
+    // 额外 Buff：勾选器用不到（它单独收集），但流程增益表 / 行级例外弹窗要用
+    extraGains: extraGains.value,
     environmentBuffs: activeEnvironmentBuffs.value,
     skillContext: buildGenericPanelSkillContext({
       element: agent?.element ?? damageElement.value,
@@ -1038,8 +1068,73 @@ function buildBuffCollectContext(mainSlotIdx: number) {
   }
 }
 
+const buffPickerCollectContext = computed(() =>
+  buildBuffCollectContext(buffPickerViewSlotIndex.value),
+)
+
 const collectedEffectsForPicker = computed(() =>
-  collectAllBuffEffects(buildBuffCollectContext(buffPickerViewSlotIndex.value)),
+  collectAllBuffEffects(buffPickerCollectContext.value),
+)
+
+/** 每个槽位当主槽时收到的效果（流程增益表并集用；3 个槽位，代价可控） */
+const buffEffectsByMainSlot = computed(() =>
+  teamSlots.map((_, index) => collectAllBuffEffects(buildBuffCollectContext(index))),
+)
+
+/** 编辑中槽位的流程涉及哪些角色：持有者 + 强度提供者 + 触发者 */
+const flowInvolvedSlotIndexes = computed(() => {
+  const indexOfAgent = (agentId?: string | null) =>
+    agentId ? teamSlots.findIndex((slot) => slot.agentId === agentId) : -1
+  const slots = new Set<number>([activeSlot.value])
+  for (const hit of hits.value) {
+    if (indexOfAgent(hit.ownerAgentId) !== activeSlot.value) continue
+    for (const agentId of [hit.anomalyPowerAgentId, hit.triggerAgentId]) {
+      const index = indexOfAgent(agentId)
+      if (index >= 0) slots.add(index)
+    }
+  }
+  return slots
+})
+
+/**
+ * 流程增益表 / 行级例外弹窗的输入 = 「所有人的 team 增益 + 参与角色的 self 增益」并集 + 额外 Buff。
+ *
+ * 定稿口径（dev-docs/skill-buff-per-row.md 第十一轮）：**受益者维度** —— 不参与的角色，
+ * 其个人增益列**不出现**。所以对每个参与角色各收集一次、按 `effect.id` 去重合并。
+ * 额外 Buff 单独收集、不进勾选器，但它也要能在表里按行关。
+ */
+const collectedEffectsForFlowTable = computed(() => {
+  const involved = flowInvolvedSlotIndexes.value
+  const merged = new Map<string, ReturnType<typeof collectAllBuffEffects>[number]>()
+  buffEffectsByMainSlot.value.forEach((items, slotIndex) => {
+    for (const item of items) {
+      if (item.effect.applyTarget === 'self' && !involved.has(slotIndex)) continue
+      if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
+    }
+  })
+  return [...merged.values()]
+})
+
+/**
+ * 表里每条增益的显示文本（与局内 Buff 勾选器**同一套取值**：转模要算出值，否则显示成 0）。
+ * 输入取自勾选器正在用的那几个（属性默认值 / 槽位面板取值 / 技能等级表）。
+ */
+const flowBuffEffectTexts = computed(() =>
+  buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, {
+    selection: multiSlotBuffSelection,
+    slotIndex: activeSlot.value,
+    agentIdBySlot: teamSlots.map((slot) => slot.agentId),
+    attrDefaults:
+      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(buffPickerViewSlotIndex.value) ??
+      panelCalcSectionRef.value?.convertAttrDefaults ??
+      {},
+    panelSourceValues:
+      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(buffPickerViewSlotIndex.value) ??
+      undefined,
+    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+    skillTalentLevelsByAgent,
+    skillSubcategories: skillSubcategories.value,
+  }),
 )
 
 const mainSlotBuffSelection = computed(() =>
@@ -1582,6 +1677,10 @@ function applyConvertSlotPanels(panels?: ConvertSlotPanels) {
 
 function pickSlotsToRestore(entry: { slots?: SchemeSlot[]; loadedSchemeId?: string }) {
   if (schemeSlotsHaveContent(entry.slots)) return entry.slots
+  // 只有「压根没有 slots 字段」的老草稿才回退方案库（迁移用）。
+  // 显式写下的空流程必须原样保留：用户清空准备/流程后刷新，不能被方案库「复活」；
+  // 载入一个流程为空的方案时，也不能去取上一个高亮方案的流程。
+  if (entry.slots != null) return entry.slots
   const schemeId = entry.loadedSchemeId || getLoadedSchemeId()
   const scheme = findDamageCalcHistory(schemeId)
   if (schemeSlotsHaveContent(scheme?.slots)) return scheme!.slots
@@ -1717,7 +1816,9 @@ function captureWorkingDraft(): DamageCalcWorkingDraft | null {
     selectedBangbooId: selectedBangbooId.value,
     bangbooRefine: bangbooRefine.value,
     panelCalcMode: panelCalcMode.value,
-    panelState: withTalent,
+    // 取不到快照时**不带这个键**（不是写 null）：落盘端（saveWorkingDraft）会沿用已存的那份，
+    // 避免卸载 / 页面隐藏瞬间把「敌方与环境 / 额外 Buff」抹成默认。
+    ...(withTalent ? { panelState: withTalent } : {}),
     slotPanels: captureSchemeSlotPanels(),
     convertSlotPanels: cloneConvertSlotPanels(),
     slots: JSON.parse(JSON.stringify(schemeSlots.value)),
@@ -1735,7 +1836,17 @@ function persistWorkingDraftNow(force = false) {
   if (!force && (!draftHydrated || restoringWorkingState)) return
   const draft = captureWorkingDraft()
   if (!draft) return
-  saveWorkingDraft(draft)
+  const result = saveWorkingDraft(draft)
+  // 绝不静默丢数据：写失败 / 被别的标签页抢先，都要让用户看见
+  if (result === 'ok') {
+    draftSaveWarning.value = ''
+  } else if (result === 'failed') {
+    draftSaveWarning.value =
+      '草稿保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先用方案库导出备份，再清理浏览器存储。'
+  } else {
+    draftSaveWarning.value =
+      '已用本页内容覆盖草稿：另一个标签页也改过它，对方的改动可能已被覆盖。建议只保留一个标签页。'
+  }
 }
 
 function schedulePersistWorkingDraft() {
@@ -1756,8 +1867,14 @@ function restoreWorkingState() {
   activeHistoryId.value = loadedId
   const draft = loadWorkingDraft()
   if (draft) {
+    // 历史坏数据：草稿缺 panelState（曾被子组件 ref 失效的那次落盘写成 null）。
+    // 当前高亮方案里还留着的话就补回来 —— 用户不必手动去方案库重载。
+    const fallbackPanelState = draft.panelState
+      ? null
+      : (findDamageCalcHistory(draft.loadedSchemeId || loadedId)?.panelState ?? null)
     applyWorkingState({
       ...draft,
+      panelState: draft.panelState ?? fallbackPanelState,
       loadedSchemeId: draft.loadedSchemeId || loadedId,
       preserveBaseDamageSource: true,
     })
@@ -1807,6 +1924,12 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
   }
 
   historyEntries.value = saveDamageCalcHistory(entry)
+  // 写盘失败（配额满 / 隐私模式）必须说出来，不能报「已保存」
+  if (takeSchemeStoreWriteFailed()) {
+    historyMessage.value =
+      '保存失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+    return
+  }
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
   historyMessage.value = `已保存「${payload.name}」${folder ? `（${folder}）` : ''}`
@@ -1814,9 +1937,11 @@ function saveHistoryEntry(payload: { name: string; folder: string }) {
 }
 
 function loadHistoryEntry(entry: DamageCalcHistoryEntry) {
-  applyWorkingState({ ...entry, preserveBaseDamageSource: false })
+  // 先登记 id 再灌状态：pickSlotsToRestore 的老草稿回退会读 getLoadedSchemeId()，
+  // 顺序反了会读到「上一个高亮方案」，把别的方案的流程串进来。
   activeHistoryId.value = entry.id
   setLoadedSchemeId(entry.id)
+  applyWorkingState({ ...entry, preserveBaseDamageSource: false })
   historyMessage.value = `已加载「${entry.name}」`
 }
 
@@ -1843,6 +1968,12 @@ function overwriteHistoryEntry(id: string) {
     multiSlotBuffSelection: JSON.parse(JSON.stringify(multiSlotBuffSelection)),
   }
   historyEntries.value = saveDamageCalcHistory(updated)
+  // 同上：覆盖失败不能报「已覆盖」
+  if (takeSchemeStoreWriteFailed()) {
+    historyMessage.value =
+      '覆盖失败：浏览器存储写不进去（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+    return
+  }
   activeHistoryId.value = updated.id
   historyMessage.value = `已用当前配置覆盖「${updated.name}」`
   persistWorkingDraftNow()
@@ -1851,6 +1982,11 @@ function overwriteHistoryEntry(id: string) {
 /** 方案库内部直接改了 localStorage（复制/重命名/删除/批量/目录/导入），在此刷新列表（全量） */
 function onSchemeLibraryChanged() {
   historyEntries.value = listAllDamageCalcHistory()
+  // 方案库弹窗里的复制/改名/删除/移动/建目录等操作也走同一条写盘路径，失败同样要说出来
+  if (takeSchemeStoreWriteFailed()) {
+    historyMessage.value =
+      '刚才的方案库改动没有写进浏览器存储（可能已满或处于隐私模式）。请先导出备份，再清理浏览器存储。'
+  }
 }
 
 function blankTeamSlots(): TeamSlot[] {
@@ -1891,7 +2027,6 @@ function emptySchemePanelState(): DamageCalcSchemePanelSnapshot {
   return {
     externalPanel: resetSchemeExcludedPanelFields(createDefaultExternalPanel()),
     skillTalentLevelsByAgent: {},
-    extraMods: createEmptyBuffStatModifiers(),
     extraGains: [],
     enemyInput: defaultEnemyInput(),
   }
@@ -1944,6 +2079,12 @@ watch(
     slotPanels,
     convertSlotPanels,
     multiSlotBuffSelection,
+    // 环境筛选（危局 / 防卫 / 临界）也在草稿里，别只等 pagehide / 失活才落盘
+    envBuffMode,
+    envBuffVersion,
+    envBuffPhaseId,
+    envBuffFrontierId,
+    envBuffNodeId,
   ],
   schedulePersistWorkingDraft,
   { deep: true },
@@ -1982,6 +2123,7 @@ defineExpose({ scrollToSection })
 
 <template>
   <div ref="pageRootRef" class="damage-page">
+    <p v-if="draftSaveWarning" class="draft-save-warning" role="alert">{{ draftSaveWarning }}</p>
     <div class="team-slot-sticky">
       <TeamSlotSwitcher
         :team-slots="teamSlots"
@@ -2016,7 +2158,6 @@ defineExpose({ scrollToSection })
       :drive-discs="driveDiscs"
       :team-slots="teamSlots"
       :active-slot="activeSlot"
-      :preferred-entry-mode="panelCalcMode === 'affix' ? 'affix' : 'panel'"
       :slot-panels="slotPanels"
       :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
       :final-panel-preview="activeFinalPanelPreview"
@@ -2047,7 +2188,6 @@ defineExpose({ scrollToSection })
       :team-slots="teamSlots"
       :active-slot="activeSlot"
       :active-agent="activeAgent"
-      :preferred-entry-mode="panelCalcMode === 'affix' ? 'affix' : 'panel'"
       :slot-panels="slotPanels"
       :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
       :final-panel-preview="activeFinalPanelPreview"
@@ -2222,6 +2362,7 @@ defineExpose({ scrollToSection })
         :preview-hits="previewHits"
         :environment-buffs="activeEnvironmentBuffs"
         :skill-flow-main-external-override="skillFlowMainExternalOverride"
+        :skill-flow-source-extra-gains="skillFlowSourceExtraGains"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         v-model:base-damage-source="baseDamageSource"
         v-model:enemy-input="enemyInput"
@@ -2249,6 +2390,9 @@ defineExpose({ scrollToSection })
         :hits="hits"
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
+        :buff-effects="collectedEffectsForFlowTable"
+    :buff-effect-texts="flowBuffEffectTexts"
+        :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"
         :panel-source-mode="skillFlowPanelSource"
@@ -2284,6 +2428,17 @@ defineExpose({ scrollToSection })
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
+}
+
+.draft-save-warning {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #7a4a2a;
+  background: rgba(160, 90, 40, 0.18);
+  color: #f0c9a8;
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 /* 统一伤害结果区：与页面其他模块卡片一致的留白与卡片底（跟随主题） */

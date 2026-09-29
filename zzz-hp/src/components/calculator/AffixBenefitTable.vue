@@ -48,6 +48,10 @@ const emit = defineEmits<{
   restoreDefaults: []
   addGroup: [name: string, cap: number]
   setGroupCap: [name: string, cap: number]
+  /** 开关某组的「不消耗总词条数」（普通与游戏专用都吃这条规则） */
+  setGroupExcluded: [name: string, excluded: boolean]
+  /** 批量设定某组所有条目的单词条上限（`name = ''` = 未分组）—— 由弹窗转发 */
+  setGroupEntryCaps: [name: string, cap: number]
   renameGroup: [from: string, to: string]
   removeGroup: [name: string]
   /** 弹窗里做了库级变更（切库/导入等），页面应重新载入激活库并重算 */
@@ -205,7 +209,7 @@ function groupNameOf(row: AffixBenefitRow): string {
  * 只管显示：不改词条库、不改收益评估、不改求解 —— 折叠掉的行照常参与计算。
  * 键用 `target + perRoll` 而**不是标签字符串**：这样「效果不同的行永远不会被折叠掉」，
  * 标签相同的两条若效果不同（例如被手工改过每档），照旧各占一行。
- * 库里的实际例子：`局外防御力 48%` 是 slot4/5/6 三条主属性，target 都是 `stat:defPercent`、
+ * 库里的实际例子：`局外防御力 48%` 是 slot4/5/6 三条主属性，target 都是 `panel:defPercent`、
  * 每档都是 48 —— 同一条效果，折成一条。
  */
 const rowDisplay = computed(() => {
@@ -352,7 +356,7 @@ function onLibrarySwitched() {
     <div class="toolbar">
       <button
         type="button"
-        class="chip"
+        class="chip chip--lg"
         :class="{ active: showLibraryModal }"
         @click="showLibraryModal = true"
       >
@@ -415,6 +419,8 @@ function onLibrarySwitched() {
       @restore-defaults="emit('restoreDefaults')"
       @add-group="(name, cap) => emit('addGroup', name, cap)"
       @set-group-cap="(name, cap) => emit('setGroupCap', name, cap)"
+      @set-group-excluded="(name, excluded) => emit('setGroupExcluded', name, excluded)"
+      @set-group-entry-caps="(name, cap) => emit('setGroupEntryCaps', name, cap)"
       @rename-group="(from, to) => emit('renameGroup', from, to)"
       @remove-group="(name) => emit('removeGroup', name)"
       @switched="onLibrarySwitched"

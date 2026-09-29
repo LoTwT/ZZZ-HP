@@ -36,12 +36,14 @@ export type DamageEnemyInputWithBossMeta = DamageEnemyInput & EnemyBossSelection
 export function resolveBossStaggerMultiplier(
   recordValue: number | null | undefined,
   infoValue: number | null | undefined,
+  /** Boss 数据里都没有该字段时的回落值（默认 1.5）。同步敌方时应传「用户当前值」，别把用户设的 1.8 冲成 1.5 */
+  fallback: number = DEFAULT_ENEMY_STAGGER_MULTIPLIER,
 ): number {
   const record = Number(recordValue)
   if (Number.isFinite(record) && record > 0) return record
   const info = Number(infoValue)
   if (Number.isFinite(info) && info > 0) return info
-  return DEFAULT_ENEMY_STAGGER_MULTIPLIER
+  return fallback
 }
 
 export function mapBossInfoToDamageEnemyInput(
@@ -53,7 +55,11 @@ export function mapBossInfoToDamageEnemyInput(
     ...base,
     defense: Number(info.defense) || base.defense,
     elementResistance: parseBossTraitToElementResistance(info.weakness, info.resistance),
-    staggerMultiplier: resolveBossStaggerMultiplier(undefined, info.stagger_multiplier),
+    staggerMultiplier: resolveBossStaggerMultiplier(
+      undefined,
+      info.stagger_multiplier,
+      base.staggerMultiplier,
+    ),
     bossSource: 'boss_info',
     bossName: info.boss_name,
     bossRecordId: undefined,
@@ -86,6 +92,7 @@ export function mapBossRecordToDamageEnemyInput(
     staggerMultiplier: resolveBossStaggerMultiplier(
       record.stagger_multiplier,
       info?.stagger_multiplier,
+      base.staggerMultiplier,
     ),
     bossSource: 'boss_record',
     bossName: record.boss_name,

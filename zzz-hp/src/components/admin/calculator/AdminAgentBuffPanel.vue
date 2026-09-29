@@ -345,7 +345,7 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
 
         <div id="admin-agent-support" class="editor-anchor support-needs">
           <p class="field-label">辅助需求属性</p>
-          <p class="support-hint">记录该角色作为辅助入队时需要堆叠的属性，与是否在计算中标记为主C无关。</p>
+          <p class="support-hint">记录该角色作为辅助入队时需要堆叠的属性，与它是不是当前计算槽位无关。</p>
           <div class="checkbox-grid">
             <label
               v-for="option in SUPPORT_STAT_OPTIONS"

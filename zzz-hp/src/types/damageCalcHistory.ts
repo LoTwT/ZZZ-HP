@@ -85,7 +85,11 @@ export interface DamageCalcPanelSnapshot {
     string,
     import('@/utils/skillTalentLevels').SkillTalentLevels
   >
-  extraMods: BuffStatModifiers
+  /**
+   * @deprecated 旧格式的扁平额外 Buff 属性。**只读**：仅供导入老配置文件时转成下面的条目
+   * （`PanelCalcSection` 的兼容分支）。新文件不再写它；彻底删除见代办 T23。
+   */
+  extraMods?: BuffStatModifiers
   /** 额外 Buff 增益条目（优先于扁平 extraMods） */
   extraGains?: Array<{
     id: string
@@ -168,6 +172,14 @@ export interface PreparedSkill {
   extraMods?: PreparedSkillExtraMods | null
 }
 
+/** 一条流程行的 buff 例外（只存"与全局不同"的禁用项；缺省/空 = 全部继承全局） */
+export interface FlowBuffOverride {
+  /** 按效果块禁用 */
+  disabledBlockIds?: string[] | null
+  /** 按单条效果禁用（下钻） */
+  disabledEffectIds?: string[] | null
+}
+
 /**
  * 流程组行上的成员覆盖（仅该方案实例；缺省 = 继承整组 FlowEntry + 组定义）。
  */
@@ -179,6 +191,8 @@ export interface FlowGroupMemberOverride {
   count?: number | null
   staggerPhase?: StaggerPhase | null
   critMode?: DamageEventCritMode | null
+  /** 该成员的 buff 例外（缺省 = 继承整行 FlowEntry.buffOverrides） */
+  buffOverrides?: FlowBuffOverride | null
 }
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
@@ -196,6 +210,12 @@ export interface FlowEntry {
   critMode: DamageEventCritMode
   /** 仅准备为技能组时有意义 */
   memberOverrides?: FlowGroupMemberOverride[] | null
+  /**
+   * 本行的 buff 例外（仅该方案实例；缺省/空 = 全部继承全局勾选）。
+   * 只允许"禁用"（减法语义）：与全局一致的一律不写，老数据读到即继承。
+   * 技能组行：整组用本字段；逐成员用 memberOverrides[].buffOverrides。
+   */
+  buffOverrides?: FlowBuffOverride | null
 }
 
 /**
@@ -216,7 +236,12 @@ export interface DamageCalcWorkingDraft {
   selectedBangbooId: string
   bangbooRefine: number
   panelCalcMode: PanelCalcMode
-  panelState: DamageCalcPanelSnapshot | null
+  /**
+   * 面板快照 —— 「敌方与环境」与「额外 Buff」**只在这里**，没有顶层字段。
+   * **可缺省**：取不到子组件快照时落盘不写这个键；写 `null` 会在恢复端被静默跳过，
+   * 导致这两块被默认值覆盖（见 dev-docs/damage-calc-state-storage.md）。
+   */
+  panelState?: DamageCalcPanelSnapshot | null
   /** @deprecated v4 起改用 `slotPanels`（迁移时读取，写完即清） */
   anomalySlotPanels?: Record<string, PanelStats>
   /** 每个角色的两份局外面板（面板导入 / 词条导入）与当前激活那份 */
@@ -297,7 +322,13 @@ export interface DamageCalcHistoryExport {
   currentId?: string | null
   /** 浏览器自建招式库全文。与方案里的 skillId 成套，导入时整包覆盖。 */
   customSkills?: import('@/types/calculator').Skill[]
+  /** 自建组全文 ∪ 方案引用到的组文档（含预设组抄本） */
+  skillGroups?: import('@/types/calculator').SkillGroup[]
+  /** 导出时方案引用了但本机找不到的招式/组 */
+  warnings?: string[]
 }
+
+export type SchemePackImportMode = 'replace' | 'merge'
 
 /** 导入结果 */
 export interface DamageCalcHistoryImportResult {
@@ -305,6 +336,13 @@ export interface DamageCalcHistoryImportResult {
   skipped: number
   errors: string[]
   customSkillCount: number
+  customGroupCount: number
+  renamed: number
+  remappedSkills: number
+  remappedGroups: number
+  missingSkillCount: number
+  missingGroupCount: number
+  mode: SchemePackImportMode
   /** 旧导出包没有自建招式字段，覆盖后流程可能变成「招式已删除」 */
   legacyPack: boolean
   loadedId: string

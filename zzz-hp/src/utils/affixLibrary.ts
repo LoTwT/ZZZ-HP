@@ -1,6 +1,19 @@
 import { ref } from 'vue'
 import type { AffixCounts, PanelStats } from '@/types/calculatorPanel'
+import type {
+  BuffApplySituation,
+  BuffScope,
+  BuffSkillTargetId,
+  BuffStatKey,
+} from '@/types/calculator'
+import {
+  BUFF_SCOPE_OPTIONS,
+  BUFF_SKILL_TARGET_OPTIONS,
+} from '@/types/calculator'
 import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
+import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
+import type { AffixEffectTemplate } from '@/utils/affixEffectTemplate'
 
 /**
  * 词条库（Affix Library）
@@ -14,8 +27,9 @@ import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
  * （用户 2026-09-12 裁定：「不应该有属性词条直接绕过链路的……就算有判断，
  * 也不是这个功能里判断的，你凭什么在词条功能说这个词条一定不转模，绕过去」）。
  *
- * - `stat:<AffixCounts 字段>`：落到词条计数桶，按字段语义折算成面板增量；
- * - `panel:<局外面板字段>`：落到面板字段贡献，按同一套字段语义折算成面板增量。
+ * - `panel:<字段>`：分析侧落到局外增量表（T12），按字段语义叠在导入激活面板上；
+ *   **不再写入导入十格 `AffixCounts`**。原 `stat:` 已并入此前缀。
+ * - `gain:<增益字段>`：不进局外，合成 extraGains。
  *
  * 两条都落在**同一份局外面板**上，转模链路读的就是这份面板 —— 所以谁也不能
  * 「不参与转模」，是否参与由**效果数据**决定，不由条目声明。
@@ -55,13 +69,14 @@ import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
  *
  * 默认条目的 id 沿用历史前缀（`substat:atkPercent` / `panel:reduceDefense`），**故意不改**：
  * 用户已存的 `enabledOverride` 与 `overrides` 都是按 id 索引的，改 id 会让这些记录全部失配。
- * 因此 id 前缀与 `target` 前缀不要求一致（`substat:x` 对应 `target: 'stat:x'`）。
+ * 因此 id 前缀与 `target` 前缀不要求一致（`substat:x` 对应 `target: 'panel:x'`）。
  */
 
-/** 条目落点：`stat:` = 词条计数桶；`panel:` = 局外面板增量 */
-export type AffixStatTarget = `stat:${keyof AffixCounts}`
-export type AffixPanelTarget = `panel:${AffixPanelDeltaField}`
-export type AffixLibraryEntryTarget = AffixStatTarget | AffixPanelTarget
+/** 条目落点：`panel:` = 局外增量；`gain:` = 增益字段 */
+export type AffixExternalField = AffixPanelDeltaField | keyof AffixCounts
+export type AffixPanelTarget = `panel:${AffixExternalField}`
+export type AffixGainTarget = `gain:${AffixGainField}`
+export type AffixLibraryEntryTarget = AffixPanelTarget | AffixGainTarget
 
 /** 可叠加到局外面板的百分比/加值字段 */
 export type AffixPanelDeltaField =
@@ -89,6 +104,32 @@ export type AffixPanelDeltaField =
 /** 条目档数换算出来的局外面板增量（与 `AffixPanelDeltaMap` 同构） */
 export type AffixPanelDeltaDraft = Partial<Record<AffixPanelDeltaField, number>>
 
+/**
+ * 增益字段 = 增益体系（`BuffStatModifiers`）的键。
+ *
+ * 词条目标为 `gain:<字段>` 时，这条贡献**不在局外面板上**，而是合成一条给主 C 的增益，
+ * 在**转模之后**随面板计算施加（与「额外增益」同一条路）。
+ * 详见 `affix-optimizer-impl-log.md` 步骤 58 与 `affix-calc-manual.md` §5.1。
+ */
+export type AffixGainField = BuffStatKey
+
+/** 增益字段的显示名（与增益编辑器同一套文案，见 `BUFF_STAT_FIELDS`） */
+export const AFFIX_GAIN_FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  BUFF_STAT_FIELDS.map((field) => [field.key, buffStatFieldLabel(field)]),
+)
+
+/** 增益字段的候选清单（按增益编辑器的词表，顺序一致） */
+export const AFFIX_GAIN_FIELDS: readonly AffixGainField[] = BUFF_STAT_FIELDS.map(
+  (field) => field.key,
+)
+
+const AFFIX_GAIN_FIELD_SET: ReadonlySet<string> = new Set<string>(AFFIX_GAIN_FIELDS)
+
+/** `gain:` 目标里按「百分比」理解的字段（其余为固定值）——单位取自增益词表 */
+const PERCENT_GAIN_FIELDS: ReadonlySet<string> = new Set<string>(
+  BUFF_STAT_FIELDS.filter((field) => field.unit !== 'flat').map((field) => field.key),
+)
+
 export const AFFIX_PANEL_DELTA_FIELD_LABELS: Record<AffixPanelDeltaField, string> = {
   dmgBonus: '增伤%',
   penRate: '穿透率%',
@@ -112,6 +153,70 @@ export const AFFIX_PANEL_DELTA_FIELD_LABELS: Record<AffixPanelDeltaField, string
   specialMult: '特殊倍率%',
 }
 
+/**
+ * 词条目标选单不列出这些局外字段：游戏里几乎只作为局内出现。
+ * 计算仍认 `panel:`；已有条目和自定义手写不受影响。
+ */
+export const AFFIX_PANEL_FIELDS_HIDDEN_FROM_PICKER = [
+  'resPen',
+  'anomalyDmgBonus',
+  'anomalyCritRate',
+  'anomalyCritDmg',
+  'anomalyReleaseDmgBonus',
+  'anomalyReleaseCritRate',
+  'anomalyReleaseCritDmg',
+  'disorderDmgBonus',
+  'turbulenceDmgBonus',
+  'radianceDmgBonus',
+  'radianceResPen',
+  'specialMult',
+  'reduceDefense',
+  'ignoreDefense',
+] as const satisfies readonly AffixPanelDeltaField[]
+
+export function isAffixPanelTargetHiddenFromPicker(target: string): boolean {
+  if (!target.startsWith('panel:')) return false
+  return (AFFIX_PANEL_FIELDS_HIDDEN_FROM_PICKER as readonly string[]).includes(
+    target.slice('panel:'.length),
+  )
+}
+
+/**
+ * 防御区字段（**单一事实来源**）：穿透率 / 固定穿透 / 减防 / 无视防御。
+ *
+ * 用途：专路按它挑种子、把这一族从「剩余分配」里排除；将来扩减防链路也按它。
+ * **按 target 的字段判，不按条目 id** —— 加回减防 / 无视防御、或自建同字段条目都自动生效。
+ *
+ * 注意：**不含防御力数值类**（`defFlat` / `defPercent` 等），那是另一回事。
+ */
+export const AFFIX_DEFENSE_ZONE_FIELDS = [
+  'penRate',
+  'pen',
+  'reduceDefense',
+  'ignoreDefense',
+] as const
+
+/** 条目落点是否属于防御区一族（`panel:` 与 `gain:` 两侧同判） */
+export function isDefenseZoneAffixTarget(target: string): boolean {
+  const index = target.indexOf(':')
+  const field = index === -1 ? target : target.slice(index + 1)
+  return (AFFIX_DEFENSE_ZONE_FIELDS as readonly string[]).includes(field)
+}
+
+/** 只要穿透率（专路种子） */
+export function isPenRateAffixTarget(target: string): boolean {
+  const index = target.indexOf(':')
+  const field = index === -1 ? target : target.slice(index + 1)
+  return field === 'penRate'
+}
+
+/** 只要固定穿透（专路要猛堆的那个字段） */
+export function isFlatPenAffixTarget(target: string): boolean {
+  const index = target.indexOf(':')
+  const field = index === -1 ? target : target.slice(index + 1)
+  return field === 'pen'
+}
+
 export const AFFIX_SUBSTAT_KEY_LABELS: Record<keyof AffixCounts, string> = {
   hpFlat: '固定生命值',
   hpPercent: '局外生命值%',
@@ -130,7 +235,7 @@ const AFFIX_PANEL_DELTA_FIELDS = Object.keys(
   AFFIX_PANEL_DELTA_FIELD_LABELS,
 ) as AffixPanelDeltaField[]
 
-/** `stat:` 目标里按「百分比」理解的字段（其余为固定值） */
+/** `panel:` 里原十格字段按「百分比」理解的（其余为固定值） */
 const PERCENT_STAT_KEYS: ReadonlySet<keyof AffixCounts> = new Set<keyof AffixCounts>([
   'hpPercent',
   'atkPercent',
@@ -144,26 +249,27 @@ const PERCENT_PANEL_FIELDS: ReadonlySet<AffixPanelDeltaField> = new Set<AffixPan
   AFFIX_PANEL_DELTA_FIELDS.filter((field) => field !== 'mastery'),
 )
 
-export function statTarget(key: keyof AffixCounts): AffixStatTarget {
-  return `stat:${key}`
-}
-
-export function panelTarget(field: AffixPanelDeltaField): AffixPanelTarget {
+export function panelTarget(field: AffixExternalField): AffixPanelTarget {
   return `panel:${field}`
 }
 
-export function isStatTarget(target: string): target is AffixStatTarget {
-  return target.startsWith('stat:')
+export function gainTarget(field: AffixGainField): AffixGainTarget {
+  return `gain:${field}`
 }
 
 export function isPanelTarget(target: string): target is AffixPanelTarget {
   return target.startsWith('panel:')
 }
 
-/** `stat:` → 词条计数字段；不是该命名空间或字段非法时返回 null */
+export function isGainTarget(target: string): target is AffixGainTarget {
+  return target.startsWith('gain:')
+}
+
+/** `panel:` 里按十格字段叠的那一批（不含精通，精通走面板字段） */
 export function statKeyOfTarget(target: AffixLibraryEntryTarget): keyof AffixCounts | null {
-  if (!isStatTarget(target)) return null
-  const key = target.slice('stat:'.length) as keyof AffixCounts
+  if (!isPanelTarget(target)) return null
+  const key = target.slice('panel:'.length) as keyof AffixCounts
+  if (key === 'mastery') return null
   return AFFIX_STAT_KEYS.includes(key) ? key : null
 }
 
@@ -176,13 +282,116 @@ export function panelFieldOfTarget(
   return AFFIX_PANEL_DELTA_FIELDS.includes(field) ? field : null
 }
 
+/** `gain:` → 增益字段；不是该命名空间或字段非法时返回 null */
+export function gainFieldOfTarget(target: AffixLibraryEntryTarget): AffixGainField | null {
+  if (!isGainTarget(target)) return null
+  const field = target.slice('gain:'.length)
+  return AFFIX_GAIN_FIELD_SET.has(field) ? (field as AffixGainField) : null
+}
+
+/**
+ * 目标字段（展示 / 适配器用）：局外面板字段、十格形态、或增益字段。
+ * 评估增量表 `AffixDeltaMap` 只装局外，不含增益。
+ */
+export type AffixDeltaField = AffixExternalField | AffixGainField
+
+/** 分析侧局外增量：字段 → 累计值。`gain:` 走 extraGains，不进这张表。 */
+export type AffixDeltaMap = Partial<Record<AffixExternalField, number>>
+
+/** 这个键属于「局外面板增量」一族的判定（增益字段必须排除，它们不在 `PanelStats` 上） */
+export function isPanelDeltaField(key: string): key is AffixPanelDeltaField {
+  return (AFFIX_PANEL_DELTA_FIELDS as readonly string[]).includes(key)
+}
+
+/**
+ * 目标 → 该写的字段名（局外增量或增益字段）。
+ *
+ * 收益表逐档重算、求解器把档数折成评估输入都用它 —— 新增目标族时只改这一处，
+ * 免得「加了新族但只有一半路径认它」。
+ */
+export function deltaFieldOfTarget(target: AffixLibraryEntryTarget): AffixDeltaField | null {
+  return panelFieldOfTarget(target) ?? statKeyOfTarget(target) ?? gainFieldOfTarget(target)
+}
+
+/** 词条库 `gain:` 合成 extraGain 时的 id 前缀（求解复算 / 缓存指纹都认这个） */
+export const AFFIX_GAIN_SOURCE_ID_PREFIX = 'affix-gain:'
+
+const AFFIX_APPLY_SITUATIONS: ReadonlySet<string> = new Set(['global', 'stagger', 'non_stagger'])
+const AFFIX_BUFF_SCOPES: ReadonlySet<string> = new Set([
+  'general',
+  'skill',
+  'anomaly',
+  'disorder',
+  'turbulence',
+  'anomalyRelease',
+  'radiance',
+  'mutation',
+])
+
+/**
+ * 把一条 `gain:` 条目折成给主 C 的 extraGain。
+ *
+ * `applySlot` 在评估入口按 `mainSlotIndex` 覆盖；这里只填默认 0。
+ * `panel:` 返回 null。
+ */
+export function extraGainFromLibraryEntry(
+  entry: AffixLibraryEntry,
+  rolls: number,
+): ExtraBuffGain | null {
+  if (!isGainTarget(entry.target) || rolls <= 0) return null
+  const field = gainFieldOfTarget(entry.target)
+  if (!field) return null
+  const scoped = Boolean(entry.skillCategory) || entry.scope === 'skill'
+  return {
+    id: `${AFFIX_GAIN_SOURCE_ID_PREFIX}${entry.id}`,
+    name: entry.label,
+    stat: field,
+    value: rolls * entry.perRoll,
+    applySituation: entry.applySituation ?? 'global',
+    scope: entry.scope ?? (scoped ? 'skill' : 'general'),
+    applyTarget: 'self',
+    applySlot: 0,
+    skillCategory: entry.skillCategory,
+    skillSubcategoryId: entry.skillSubcategoryId ?? null,
+    appliesToAnomaly: entry.appliesToAnomaly,
+  }
+}
+
+const SITUATION_SUMMARY: Record<string, string> = {
+  stagger: '失衡期',
+  non_stagger: '非失衡期',
+}
+
+/** 词条库列表用：有条件才返回文案，通用 `gain:` 返回空串。 */
+export function affixEntryConditionSummary(entry: AffixLibraryEntry): string {
+  if (!isGainTarget(entry.target)) return ''
+  const parts: string[] = []
+  const situation = entry.applySituation
+  if (situation && situation !== 'global') {
+    parts.push(SITUATION_SUMMARY[situation] ?? situation)
+  }
+  if (entry.scope === 'skill' && entry.skillCategory) {
+    const skill = BUFF_SKILL_TARGET_OPTIONS.find((item) => item.id === entry.skillCategory)
+    parts.push(skill?.label ?? entry.skillCategory)
+  } else if (entry.scope && entry.scope !== 'general') {
+    const scope = BUFF_SCOPE_OPTIONS.find((item) => item.id === entry.scope)
+    parts.push(scope?.label ?? entry.scope)
+  }
+  if (entry.appliesToAnomaly) parts.push('异常也生效')
+  return parts.join(' · ')
+}
+
 /** 校验一个字符串是不是合法的条目目标 */
 export function isAffixLibraryEntryTarget(value: unknown): value is AffixLibraryEntryTarget {
   if (typeof value !== 'string') return false
-  if (isStatTarget(value)) return AFFIX_STAT_KEYS.includes(value.slice(5) as keyof AffixCounts)
   if (isPanelTarget(value)) {
-    return AFFIX_PANEL_DELTA_FIELDS.includes(value.slice(6) as AffixPanelDeltaField)
+    const field = value.slice('panel:'.length)
+    return (
+      AFFIX_PANEL_DELTA_FIELDS.includes(field as AffixPanelDeltaField) ||
+      AFFIX_STAT_KEYS.includes(field as keyof AffixCounts)
+    )
   }
+  if (isGainTarget(value)) return AFFIX_GAIN_FIELD_SET.has(value.slice(5))
   return false
 }
 
@@ -200,6 +409,8 @@ export function affixTargetLabel(target: AffixLibraryEntryTarget): string {
   if (statKey) return AFFIX_SUBSTAT_KEY_LABELS[statKey]
   const field = panelFieldOfTarget(target)
   if (field) return AFFIX_PANEL_DELTA_FIELD_LABELS[field]
+  const gainField = gainFieldOfTarget(target)
+  if (gainField) return AFFIX_GAIN_FIELD_LABELS[gainField] ?? gainField
   return String(target)
 }
 
@@ -208,7 +419,7 @@ export interface AffixLibraryEntry {
   id: string
   /** 显示名 */
   label: string
-  /** 落点：`stat:` 计数桶 / `panel:` 局外面板增量 */
+  /** 落点：`panel:` 局外增量 / `gain:` 增益 */
   target: AffixLibraryEntryTarget
   /** 每档增量（与目标字段同单位：百分比字段为百分点，固定值字段为绝对值） */
   perRoll: number
@@ -220,6 +431,20 @@ export interface AffixLibraryEntry {
   rollCost: number
   /** 是否默认参与分析 */
   enabledByDefault: boolean
+  /**
+   * 可选招式/失衡条件（只对 `gain:` 生效；缺省 = 全局通用）。
+   * 旧存档没有这些键，`migrateCustomEntry` 读成 undefined，不升存储版本。
+   */
+  applySituation?: BuffApplySituation
+  scope?: BuffScope
+  skillCategory?: BuffSkillTargetId
+  skillSubcategoryId?: string | null
+  appliesToAnomaly?: boolean
+  /**
+   * 版本化效果模板（官方预设 `effect_json`）。缺省时由 `target` + 条件字段现编。
+   * 旧存档没有这个键，不升 localStorage 版本。
+   */
+  effectTemplate?: AffixEffectTemplate
 }
 
 /** 每档值的单位：百分比字段显示 `3%`，固定值字段显示 `9` */
@@ -230,6 +455,8 @@ export function affixPerRollUnit(target: AffixLibraryEntryTarget): AffixPerRollU
   if (statKey) return PERCENT_STAT_KEYS.has(statKey) ? 'percent' : 'flat'
   const field = panelFieldOfTarget(target)
   if (field) return PERCENT_PANEL_FIELDS.has(field) ? 'percent' : 'flat'
+  const gainField = gainFieldOfTarget(target)
+  if (gainField) return PERCENT_GAIN_FIELDS.has(gainField) ? 'percent' : 'flat'
   return 'flat'
 }
 
@@ -247,7 +474,7 @@ export function formatAffixPerRoll(target: AffixLibraryEntryTarget, perRoll: num
 function substatEntry(affixKey: keyof AffixCounts): AffixLibraryEntry {
   return {
     id: `substat:${affixKey}`,
-    target: statTarget(affixKey),
+    target: panelTarget(affixKey),
     label: AFFIX_SUBSTAT_KEY_LABELS[affixKey],
     perRoll: AFFIX_VALUE_PER_COUNT[affixKey],
     cap: 0,
@@ -270,35 +497,12 @@ export function createDefaultAffixLibrary(): AffixLibraryEntry[] {
  * - `cap: 1` —— 来源最多取一次（副词条可叠，见 createDefaultAffixLibrary）；
  * - `group` 默认「副词条」—— 不分槽位的自由条目归在这里（额度不限）。
  *
- * 增伤 / 穿透率**不在这里**：它们是 5 号位主属性，已由
- * `createDriveDiscMainStatAffixEntries()` 提供（`main:slot5:dmgBonus` / `main:slot5:penRate`），
- * 2026-09-12 按用户当前词条库固化为预设。
+ * 增伤 / 穿透率**不在这里**：它们是 5 号位主属性。
+ * 异常/异放/紊乱/乱流/耀变/抗穿/特殊倍率/减防/无视防御等局外字段也不在这里：
+ * 选单已隐藏（几乎只当局内；减防走 `gain:reduceDefense`）。
  */
 export function createOptionalAffixLibraryEntries(): AffixLibraryEntry[] {
-  const specs: { field: AffixPanelDeltaField; perRoll: number }[] = [
-    { field: 'reduceDefense', perRoll: 30 },
-    { field: 'ignoreDefense', perRoll: 30 },
-    { field: 'resPen', perRoll: 24 },
-    { field: 'anomalyDmgBonus', perRoll: 30 },
-    { field: 'anomalyCritRate', perRoll: 24 },
-    { field: 'anomalyCritDmg', perRoll: 48 },
-    { field: 'anomalyReleaseDmgBonus', perRoll: 30 },
-    { field: 'disorderDmgBonus', perRoll: 30 },
-    { field: 'turbulenceDmgBonus', perRoll: 30 },
-    { field: 'radianceDmgBonus', perRoll: 30 },
-    { field: 'radianceResPen', perRoll: 24 },
-    { field: 'specialMult', perRoll: 30 },
-  ]
-  return specs.map((spec) => ({
-    id: `panel:${spec.field}`,
-    target: panelTarget(spec.field),
-    label: AFFIX_PANEL_DELTA_FIELD_LABELS[spec.field],
-    perRoll: spec.perRoll,
-    cap: 1,
-    group: AFFIX_PRESET_DEFAULT_GROUP,
-    rollCost: 1,
-    enabledByDefault: false,
-  }))
+  return []
 }
 
 /**
@@ -346,7 +550,7 @@ export function createDriveDiscMainStatAffixEntries(): AffixLibraryEntry[] {
   ]
   return specs.map((spec) => ({
     id: `main:slot${spec.slot}:${spec.key}`,
-    target: spec.statKey ? statTarget(spec.statKey) : panelTarget(spec.field!),
+    target: panelTarget(spec.statKey ?? spec.field!),
     label: spec.label,
     perRoll: spec.perRoll,
     cap: 1,
@@ -369,8 +573,7 @@ export function createDriveDiscMainStatAffixEntries(): AffixLibraryEntry[] {
  * ## 数值来源与口径
  *
  * 来源 = `zzz-hp-backend/scripts/data/zzz-hp-calculator-buffs.json`（30 个驱动盘的
- * 2 件套效果）。落点选择与 4/5/6 号位一致：百分比类走 `stat:`、其余走 `panel:`
- * （两种落点折算口径已在步骤 27 统一，这里只为与相邻条目一致）。
+ * 2 件套效果）。落点一律 `panel:`（百分比类与增伤同类局外；折算口径由字段决定）。
  *
  * ## 为什么只有 11 条（跳过了 5 套）
  *
@@ -408,7 +611,7 @@ export function createDriveDiscTwoPieceAffixEntries(): AffixLibraryEntry[] {
   return specs.map((spec) => ({
     // id 含数值：将来某套的 2 件套数值若不同，新增 id 即可（id 一旦发布不可改名）
     id: `set:${spec.key}:${spec.perRoll}`,
-    target: spec.statKey ? statTarget(spec.statKey) : panelTarget(spec.field!),
+    target: panelTarget(spec.statKey ?? spec.field!),
     label: spec.label,
     perRoll: spec.perRoll,
     cap: 1,
@@ -433,6 +636,18 @@ export interface AffixLibraryGroup {
   name: string
   /** 组额度；`AFFIX_GROUP_UNLIMITED`（0）表示不构成约束 */
   cap: number
+  /**
+   * 该组**基础占用**不计入总词条数（2026-09-18 用户口径的「组规则」）。
+   *
+   * 语义：组内条目的「每档 1 个词条」不算进总词条数 —— 买了不占数，没买也不亏。
+   * **冲突额外仍照扣**（付费条目的 x）：x 是"与副词条重复"的代价，不是基础占用。
+   * 游戏专用方案给 2 件套 / 4 / 5 / 6 号位都打开它（见 `createGameAffixGroups`）。
+   *
+   * 实现：调用方把这些组的组名传进 `AffixOptimizerInput.freeRollGroups`，求解器按**预算口径**处理
+   * （基础档成本 0、冲突额外记 `rollCost − 1`）—— 层推进不变，搜索结构不变。
+   * 要求这些组**有界**（组额度或组内条目 cap 有限）：无界会让层推进没有上界，求解器会忽略该组的豁免。
+   */
+  excludedFromTotalRolls?: boolean
 }
 
 /**
@@ -496,6 +711,63 @@ const serverAffixPreset = ref<{
 /** 服务端条目里被跳过的条数（target 不是本版本认识的字段）—— 供界面/测试读出 */
 export const skippedServerPresetEntries = ref(0)
 
+function readPresetConditionString(value: unknown, allowed: ReadonlySet<string>): string | undefined {
+  return typeof value === 'string' && allowed.has(value) ? value : undefined
+}
+
+/**
+ * 官方预设可能把条件写在条目顶栏，或只写在 `effectJson.spec.conditions`。
+ * 两边都认，顶栏优先（管理端刚改过的草稿）。
+ */
+function hoistPresetConditionFields(item: Record<string, unknown>): Partial<AffixLibraryEntry> {
+  const templateRaw = item.effectTemplate ?? item.effectJson
+  const spec =
+    templateRaw && typeof templateRaw === 'object' && !Array.isArray(templateRaw)
+      ? (templateRaw as { spec?: { conditions?: Record<string, unknown> } }).spec
+      : undefined
+  const specCond = spec?.conditions && typeof spec.conditions === 'object' ? spec.conditions : {}
+  const skillFromSpec = Array.isArray(specCond.skillTargets) ? specCond.skillTargets[0] : undefined
+  const applySituation =
+    readPresetConditionString(item.applySituation, AFFIX_APPLY_SITUATIONS) ??
+    readPresetConditionString(specCond.applySituation, AFFIX_APPLY_SITUATIONS)
+  const scope =
+    readPresetConditionString(item.scope, AFFIX_BUFF_SCOPES) ??
+    readPresetConditionString(specCond.scope, AFFIX_BUFF_SCOPES)
+  const skillCategory =
+    (typeof item.skillCategory === 'string' && item.skillCategory
+      ? (item.skillCategory as BuffSkillTargetId)
+      : undefined) ??
+    (skillFromSpec && typeof skillFromSpec === 'object' && typeof (skillFromSpec as { category?: unknown }).category === 'string'
+      ? ((skillFromSpec as { category: string }).category as BuffSkillTargetId)
+      : undefined)
+  const skillSubcategoryId =
+    item.skillSubcategoryId === null
+      ? null
+      : typeof item.skillSubcategoryId === 'string'
+        ? item.skillSubcategoryId
+        : skillFromSpec && typeof skillFromSpec === 'object'
+          ? ((skillFromSpec as { subcategoryId?: string | null }).subcategoryId ?? undefined)
+          : undefined
+  const appliesToAnomaly =
+    typeof item.appliesToAnomaly === 'boolean'
+      ? item.appliesToAnomaly
+      : typeof specCond.appliesToAnomaly === 'boolean'
+        ? specCond.appliesToAnomaly
+        : undefined
+  const effectTemplate =
+    templateRaw && typeof templateRaw === 'object' && !Array.isArray(templateRaw)
+      ? (templateRaw as AffixEffectTemplate)
+      : undefined
+  return {
+    ...(applySituation ? { applySituation: applySituation as BuffApplySituation } : {}),
+    ...(scope ? { scope: scope as BuffScope } : {}),
+    ...(skillCategory ? { skillCategory } : {}),
+    ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
+    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
+    ...(effectTemplate ? { effectTemplate } : {}),
+  }
+}
+
 /**
  * 校验并解析一份预设条目（纯函数：不碰全局快照）。
  *
@@ -530,6 +802,7 @@ export function parseAffixPresetEntries(rawEntries: unknown[]): {
       group: typeof item.group === 'string' ? item.group : '',
       rollCost: Number.isFinite(Number(item.rollCost)) ? Number(item.rollCost) : 1,
       enabledByDefault: Boolean(item.enabledByDefault),
+      ...hoistPresetConditionFields(item as Record<string, unknown>),
     })
   }
   return { entries, skipped }
@@ -541,7 +814,10 @@ export function parseAffixPresetGroups(rawGroups: unknown[]): AffixLibraryGroup[
   for (const raw of rawGroups) {
     const item = raw as Partial<AffixLibraryGroup>
     if (typeof item?.name !== 'string' || !item.name) continue
-    groups.push({ name: item.name, cap: Number(item.cap) || 0 })
+    const group: AffixLibraryGroup = { name: item.name, cap: Number(item.cap) || 0 }
+    // 组规则「不消耗总词条数」：预设快照里也可能带（服务端只认显式 true）
+    if (item.excludedFromTotalRolls === true) group.excludedFromTotalRolls = true
+    groups.push(group)
   }
   return groups
 }
@@ -679,8 +955,25 @@ export interface AffixLibraryState {
    * 其余扩展条目（Buff 来源 / 不分槽位的伤害字段）默认不参与。
    */
   enabledOverride: Record<string, boolean>
-  /** 默认条目的覆盖值（用户改了名称/每档/上限/分组时记录） */
-  overrides: Record<string, Partial<Pick<AffixLibraryEntry, 'label' | 'perRoll' | 'cap' | 'group'>>>
+  /** 默认条目的覆盖值（用户改了名称/每档/上限/分组/目标/局内条件时记录） */
+  overrides: Record<
+    string,
+    Partial<
+      Pick<
+        AffixLibraryEntry,
+        | 'label'
+        | 'perRoll'
+        | 'cap'
+        | 'group'
+        | 'target'
+        | 'applySituation'
+        | 'scope'
+        | 'skillCategory'
+        | 'skillSubcategoryId'
+        | 'appliesToAnomaly'
+      >
+    >
+  >
   /**
    * 被用户删掉的默认条目 id。
    *
@@ -803,10 +1096,13 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
   if (!id) return null
 
   let target: AffixLibraryEntryTarget | null = null
-  if (isAffixLibraryEntryTarget(item.target)) {
+  if (typeof item.target === 'string' && item.target.startsWith('stat:')) {
+    const candidate = `panel:${item.target.slice('stat:'.length)}`
+    target = isAffixLibraryEntryTarget(candidate) ? candidate : null
+  } else if (isAffixLibraryEntryTarget(item.target)) {
     target = item.target
   } else if (item.kind === 'substat' && typeof item.affixKey === 'string') {
-    const candidate = `stat:${item.affixKey}`
+    const candidate = `panel:${item.affixKey}`
     target = isAffixLibraryEntryTarget(candidate) ? candidate : null
   } else if (item.kind === 'panelField' && typeof item.panelField === 'string') {
     const candidate = `panel:${item.panelField}`
@@ -818,6 +1114,27 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
   const perRoll = Number(item.perRoll)
   if (!label.trim() || !Number.isFinite(perRoll)) return null
 
+  const applySituation =
+    typeof item.applySituation === 'string' && AFFIX_APPLY_SITUATIONS.has(item.applySituation)
+      ? (item.applySituation as BuffApplySituation)
+      : undefined
+  const scope =
+    typeof item.scope === 'string' && AFFIX_BUFF_SCOPES.has(item.scope)
+      ? (item.scope as BuffScope)
+      : undefined
+  const skillCategory =
+    typeof item.skillCategory === 'string' && item.skillCategory
+      ? (item.skillCategory as BuffSkillTargetId)
+      : undefined
+  const skillSubcategoryId =
+    item.skillSubcategoryId === null
+      ? null
+      : typeof item.skillSubcategoryId === 'string'
+        ? item.skillSubcategoryId
+        : undefined
+  const appliesToAnomaly =
+    typeof item.appliesToAnomaly === 'boolean' ? item.appliesToAnomaly : undefined
+
   return {
     id,
     label,
@@ -827,6 +1144,11 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
     group: typeof item.group === 'string' ? item.group : '',
     rollCost: Number.isFinite(Number(item.rollCost)) ? Number(item.rollCost) : 1,
     enabledByDefault: item.enabledByDefault !== false,
+    ...(applySituation ? { applySituation } : {}),
+    ...(scope ? { scope } : {}),
+    ...(skillCategory ? { skillCategory } : {}),
+    ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
+    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
   }
 }
 
@@ -891,11 +1213,13 @@ function coerceAffixLibraryGroups(raw: unknown): AffixLibraryGroup[] {
   const seen = new Set<string>()
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const name = typeof (item as AffixLibraryGroup).name === 'string'
-      ? (item as AffixLibraryGroup).name.trim()
-      : ''
+    const source = item as AffixLibraryGroup
+    const name = typeof source.name === 'string' ? source.name.trim() : ''
     if (!name || seen.has(name)) continue
-    out.push({ name, cap: coerceGroupCap((item as AffixLibraryGroup).cap) })
+    const group: AffixLibraryGroup = { name, cap: coerceGroupCap(source.cap) }
+    // 组规则「不消耗总词条数」：只认显式 true（老存档没有这个键 → 不豁免，行为不变）
+    if (source.excludedFromTotalRolls === true) group.excludedFromTotalRolls = true
+    out.push(group)
     seen.add(name)
   }
   return out
@@ -1098,11 +1422,72 @@ function writeAffixLibraryStore(store: AffixLibraryStore): void {
   }
 }
 
+/**
+ * 用户侧名为「默认」的独立副本：拿掉官方已从选单/预设删掉的局外 `panel:` 条目。
+ * 其它库名不改（冻结副本）。返回原对象表示没有要写盘的变化。
+ */
+export function stripRetiredHiddenPanelAffixFromDefaultCopy(
+  store: AffixLibraryStore,
+): AffixLibraryStore {
+  const hiddenIds = new Set(
+    (AFFIX_PANEL_FIELDS_HIDDEN_FROM_PICKER as readonly string[]).map((field) => `panel:${field}`),
+  )
+  let changed = false
+  const sets = store.sets.map((set) => {
+    if (set.name !== DEFAULT_AFFIX_LIBRARY_SET_NAME || set.state.origin !== 'copy') return set
+    const nextState = stripRetiredHiddenPanelAffixCopyState(set.state, hiddenIds)
+    if (nextState === set.state) return set
+    changed = true
+    return { ...set, state: nextState, updatedAt: Date.now() }
+  })
+  return changed ? { ...store, sets } : store
+}
+
+function stripRetiredHiddenPanelAffixCopyState(
+  state: AffixLibraryState,
+  hiddenIds: ReadonlySet<string>,
+): AffixLibraryState {
+  const nextEntries = state.customEntries.filter(
+    (entry) => !hiddenIds.has(entry.target) && !hiddenIds.has(entry.id),
+  )
+  const dropHiddenKeys = <T extends Record<string, unknown>>(record: T): T => {
+    let dirty = false
+    const next = { ...record }
+    for (const key of Object.keys(next)) {
+      if (!hiddenIds.has(key)) continue
+      delete next[key]
+      dirty = true
+    }
+    return dirty ? next : record
+  }
+  const nextEnabled = dropHiddenKeys(state.enabledOverride)
+  const nextOverrides = dropHiddenKeys(state.overrides)
+  const nextRemoved = state.removedEntryIds.filter((id) => !hiddenIds.has(id))
+  if (
+    nextEntries.length === state.customEntries.length &&
+    nextEnabled === state.enabledOverride &&
+    nextOverrides === state.overrides &&
+    nextRemoved.length === state.removedEntryIds.length
+  ) {
+    return state
+  }
+  return {
+    ...state,
+    customEntries: nextEntries,
+    enabledOverride: nextEnabled,
+    overrides: nextOverrides,
+    removedEntryIds: nextRemoved,
+  }
+}
+
 export function loadAffixLibraryStore(): AffixLibraryStore {
   try {
     const raw = localStorage.getItem(AFFIX_LIBRARY_STORAGE_KEY)
     if (!raw) return createDefaultAffixLibraryStore()
-    return coerceAffixLibraryStore(JSON.parse(raw)) ?? createDefaultAffixLibraryStore()
+    const parsed = coerceAffixLibraryStore(JSON.parse(raw)) ?? createDefaultAffixLibraryStore()
+    const synced = stripRetiredHiddenPanelAffixFromDefaultCopy(parsed)
+    if (synced !== parsed) writeAffixLibraryStore(synced)
+    return synced
   } catch {
     // 存档损坏或隐私模式：回落默认库，不影响计算
     return createDefaultAffixLibraryStore()
@@ -1286,7 +1671,21 @@ export function addCustomAffixLibraryEntry(
 export function updateAffixLibraryEntry(
   state: AffixLibraryState,
   entryId: string,
-  patch: Partial<Pick<AffixLibraryEntry, 'label' | 'perRoll' | 'cap' | 'group'>>,
+  patch: Partial<
+    Pick<
+      AffixLibraryEntry,
+      | 'label'
+      | 'perRoll'
+      | 'cap'
+      | 'group'
+      | 'target'
+      | 'applySituation'
+      | 'scope'
+      | 'skillCategory'
+      | 'skillSubcategoryId'
+      | 'appliesToAnomaly'
+    >
+  >,
 ): AffixLibraryState {
   const isCustom = state.customEntries.some((item) => item.id === entryId)
   if (isCustom) {
@@ -1364,6 +1763,27 @@ export function affixGroupCaps(state: AffixLibraryState): Record<string, number>
   return caps
 }
 
+/**
+ * 这些组**实际**用掉的基础档 = 组内各条档数之和（每档的基础占用恒为 1，与 `rollCost` 无关）。
+ *
+ * 用途：结果面板的「词条数拆账」——告诉用户「主属性 / 2 件套 选了 N 档，但不占词条数」。
+ * 求解侧的"不占数"由 `AffixOptimizerInput.freeRollGroups` 按预算口径直接处理（不需要"放宽再减回"）。
+ */
+export function affixExcludedGroupBaseRollsUsed(
+  groups: AffixLibraryGroup[],
+  entries: AffixLibraryEntry[],
+  rollsByEntryId: Record<string, number>,
+): number {
+  const excluded = new Set(groups.filter((group) => group.excludedFromTotalRolls).map((group) => group.name))
+  if (!excluded.size) return 0
+  let used = 0
+  for (const entry of entries) {
+    if (!excluded.has(entry.group)) continue
+    used += Math.max(0, Math.round(rollsByEntryId[entry.id] ?? 0))
+  }
+  return used
+}
+
 /** 该组名是否已被占用（新建 / 改名时查重） */
 export function hasAffixLibraryGroup(state: AffixLibraryState, name: string): boolean {
   return state.groups.some((item) => item.name === name)
@@ -1403,6 +1823,54 @@ export function setAffixLibraryGroupCap(
       group.name === name ? { ...group, cap: safeCap } : group,
     ),
   }
+}
+
+/**
+ * 开关某组的「不消耗总词条数」规则（组管理里的那个 chip）。
+ *
+ * 语义见 `AffixLibraryGroup.excludedFromTotalRolls`：组内条目的基础占用不算进总词条数，
+ * 冲突额外 x 照算。**普通「求最优分配」与游戏专用都吃这条规则**（求解器按 `freeRollGroups` 处理）。
+ * 关掉时把字段整个删掉（不留 `false`），存档干净、也不会被 `coerce` 当垃圾字段。
+ */
+export function setAffixLibraryGroupExcluded(
+  state: AffixLibraryState,
+  name: string,
+  excluded: boolean,
+): AffixLibraryState {
+  return {
+    ...state,
+    groups: state.groups.map((group) => {
+      if (group.name !== name) return group
+      if (!excluded) {
+        const { excludedFromTotalRolls: _drop, ...rest } = group
+        return rest
+      }
+      return { ...group, excludedFromTotalRolls: true }
+    }),
+  }
+}
+
+/**
+ * 把「某个组」里所有条目的**单词条上限**统一设成同一个值（0 = 不限）。
+ *
+ * 与 `setAffixLibraryGroupCap` 的区别（两层约束，别混）：
+ * - 本函数改**每条各自的 `cap`**：这一条最多能投几档；
+ * - `setAffixLibraryGroupCap` 改**组额度**：组内各条档数之和的上限。
+ *
+ * `groupName === ''` 表示「未分组」那批条目（与弹窗页签口径一致）。
+ * 自建条目改本体、预设条目记进 `overrides` —— 与 `updateAffixLibraryEntry` 同一套写法，
+ * 所以整批改完只产生**一个**新 state，页面一次落盘、一次重算。
+ */
+export function setAffixLibraryGroupEntryCaps(
+  state: AffixLibraryState,
+  groupName: string,
+  cap: number,
+): AffixLibraryState {
+  const nextCap = Number.isFinite(cap) ? Math.max(0, Math.round(cap)) : 0
+  const members = resolveAffixLibrary(state).filter((entry) => (entry.group ?? '') === groupName)
+  let next = state
+  for (const entry of members) next = updateAffixLibraryEntry(next, entry.id, { cap: nextCap })
+  return next
 }
 
 /**
@@ -1503,15 +1971,20 @@ export function removeAffixLibraryGroup(
 }
 
 export interface AffixEntryEvalInput {
-  /** 各 `stat:` 目标的档数合计 */
-  counts: Partial<AffixCounts>
-  /** 各 `panel:` 目标的增量合计 */
-  deltas: AffixPanelDeltaDraft
   /**
-   * 各词条计数字段的「每档值」。
-   *
-   * 这是本次合并的核心：**每档值以条目为准**，而不是全局常量表。
-   * 未被子条目覆盖的字段回落 `AFFIX_VALUE_PER_COUNT`（保证柱图等既有调用点行为不变）。
+   * 导入十格计数桶。分析侧不再往这里写：局外 `panel:` 都进 `deltas`。
+   * 柱图扫掠等仍可单独传入 `AffixCounts`。
+   */
+  counts: Partial<AffixCounts>
+  /** 分析侧局外增量（`panel:`；不含 `gain:`） */
+  deltas: AffixDeltaMap
+  /**
+   * 各 `gain:` 目标合成的 extraGains（不进局外增量表）。
+   */
+  extraGains: ExtraBuffGain[]
+  /**
+   * 十格「每档值」表。分析侧恒为常量表（每档已折进 `deltas`）；
+   * 柱图等仍按十格 × 本表折算。
    */
   valuePerCount: Record<keyof AffixCounts, number>
 }
@@ -1530,36 +2003,40 @@ export interface AffixEntryEvalInput {
  *   新：6×3% + 1×30% = 48 个百分点  ✓
  * ```
  *
- * 修法：条目自己的 `perRoll` 在这里就折算进「等效档数」（折算是相对常量表
- * `AFFIX_VALUE_PER_COUNT`），`valuePerCount` 因此恒为常量表。
- * 这样 4/5/6 号位主属性（30%/档）与副词条（3%/档）指向同一字段也不会互相污染。
+ * 修法：条目自己的 `perRoll` 在这里就折成局外增量（`档数 × 每档`），
+ * `valuePerCount` 因此恒为常量表。4/5/6 号位主属性（30%/档）与副词条（3%/档）
+ * 指向同一字段也不会互相污染。
  */
 export function entryRollsToEvalInput(
   entries: AffixLibraryEntry[],
   rollsByEntryId: Record<string, number>,
 ): AffixEntryEvalInput {
   const counts: Partial<AffixCounts> = {}
-  const deltas: AffixPanelDeltaDraft = {}
-  /** 折算基准，恒为常量表：条目自己的每档值已在下面折进 counts */
+  const deltas: AffixDeltaMap = {}
+  const extraGains: ExtraBuffGain[] = []
+  /** 折算基准，恒为常量表：条目自己的每档值已在下面折进 deltas */
   const valuePerCount: Record<keyof AffixCounts, number> = { ...AFFIX_VALUE_PER_COUNT }
 
   for (const entry of entries) {
+    const rolls = rollsByEntryId[entry.id] ?? 0
     const statKey = statKeyOfTarget(entry.target)
     if (statKey) {
-      const rolls = rollsByEntryId[entry.id] ?? 0
       if (rolls > 0) {
-        counts[statKey] = (counts[statKey] ?? 0) + affixRollsToEquivalentRolls(entry, statKey, rolls)
+        deltas[statKey] = (deltas[statKey] ?? 0) + rolls * entry.perRoll
       }
       continue
     }
-    const field = panelFieldOfTarget(entry.target)
-    if (!field) continue
-    const rolls = rollsByEntryId[entry.id] ?? 0
-    if (rolls <= 0) continue
-    deltas[field] = (deltas[field] ?? 0) + rolls * entry.perRoll
+    const panelField = panelFieldOfTarget(entry.target)
+    if (panelField) {
+      if (rolls <= 0) continue
+      deltas[panelField] = (deltas[panelField] ?? 0) + rolls * entry.perRoll
+      continue
+    }
+    const gain = extraGainFromLibraryEntry(entry, rolls)
+    if (gain) extraGains.push(gain)
   }
 
-  return { counts, deltas, valuePerCount }
+  return { counts, deltas, extraGains, valuePerCount }
 }
 
 /**
@@ -1583,9 +2060,9 @@ export function affixRollsToEquivalentRolls(
  * 每档值表。
  *
  * **恒为常量表**（2026-09-12 起）：条目各自的每档值已由 `entryRollsToEvalInput`
- * 折进等效档数，这里再按字段覆盖一次就会让同字段多条互相顶掉。
- * 保留该函数是为了不动调用方签名 —— 「用户改每档要生效」现在由等效档数承担
- * （改每档 → 等效档数变 → 缓存键里的 counts 变 → 结果随之变）。
+ * 折进局外增量，这里再按字段覆盖一次就会让同字段多条互相顶掉。
+ * 保留该函数是为了不动调用方签名 —— 「用户改每档要生效」现在由局外增量承担
+ * （改每档 → deltas 变 → 缓存键里的 panelDeltas 变 → 结果随之变）。
  */
 export function affixValuePerCountFromEntries(
   entries: AffixLibraryEntry[],
@@ -1608,7 +2085,14 @@ export const AFFIX_PANEL_PERCENT_OF_BASE_FIELDS = ['anomalyControl', 'energyRege
 export type AffixPanelPercentOfBaseField = (typeof AFFIX_PANEL_PERCENT_OF_BASE_FIELDS)[number]
 
 /** 按基础值乘算的字段各自需要的**基础值**（角色基础面板口径） */
-export type AffixPanelDeltaBases = Record<AffixPanelPercentOfBaseField, number>
+export type AffixPanelDeltaBases = Record<AffixPanelPercentOfBaseField, number> & {
+  /** 分析侧 `panel:hpPercent` 折算用；省略当 0 */
+  hp?: number
+  /** 分析侧 `panel:atkPercent` 折算用；省略当 0 */
+  atk?: number
+  /** 分析侧 `panel:defPercent` 折算用；省略当 0 */
+  def?: number
+}
 
 function isPercentOfBaseField(
   key: AffixPanelDeltaField,
@@ -1622,17 +2106,22 @@ function isPercentOfBaseField(
  * **折算口径由字段决定，不由条目决定**（用户 2026-09-12 裁定：词条只表达
  * 「给哪个属性加多少」，怎么折算、是否进入转模都是下游的事）：
  * - 乘算字段（`AFFIX_PANEL_PERCENT_OF_BASE_FIELDS`）：落 `基础 × 值 / 100`，与主属性同口径；
- * - 其余字段：平铺加到面板值上。
+ * - 分析侧原十格字段（`panel:atkPercent` 等）：叠在已有局外上，百分比按角色+音擎基础；
+ * - 其余面板字段：平铺加到面板值上。
  */
 export function applyPanelDeltas(
   panel: PanelStats,
-  deltas: AffixPanelDeltaDraft,
+  deltas: AffixDeltaMap,
   bases: AffixPanelDeltaBases,
 ): PanelStats {
-  const keys = Object.keys(deltas) as AffixPanelDeltaField[]
-  if (!keys.length) return panel
+  const panelKeys = (Object.keys(deltas) as string[]).filter(isPanelDeltaField)
+  const hasStatOverlay = AFFIX_STAT_KEYS.some((key) => {
+    if (key === 'mastery') return false
+    return Boolean(deltas[key])
+  })
+  if (!panelKeys.length && !hasStatOverlay) return panel
   const next = { ...panel }
-  for (const key of keys) {
+  for (const key of panelKeys) {
     const delta = deltas[key]
     if (!delta) continue
     if (isPercentOfBaseField(key)) {
@@ -1641,6 +2130,27 @@ export function applyPanelDeltas(
     }
     next[key] = (next[key] ?? 0) + delta
   }
+  const hpPercent = Number(deltas.hpPercent) || 0
+  const atkPercent = Number(deltas.atkPercent) || 0
+  const defPercent = Number(deltas.defPercent) || 0
+  const hpFlat = Number(deltas.hpFlat) || 0
+  const atkFlat = Number(deltas.atkFlat) || 0
+  const defFlat = Number(deltas.defFlat) || 0
+  const critRate = Number(deltas.critRate) || 0
+  const critDmg = Number(deltas.critDmg) || 0
+  const pen = Number(deltas.pen) || 0
+  if (hpPercent || hpFlat) {
+    next.hp = next.hp + ((bases.hp ?? 0) * hpPercent) / 100 + hpFlat
+  }
+  if (atkPercent || atkFlat) {
+    next.atk = next.atk + ((bases.atk ?? 0) * atkPercent) / 100 + atkFlat
+  }
+  if (defPercent || defFlat) {
+    next.def = next.def + ((bases.def ?? 0) * defPercent) / 100 + defFlat
+  }
+  if (critRate) next.critRate = next.critRate + critRate
+  if (critDmg) next.critDmg = next.critDmg + critDmg
+  if (pen) next.pen = next.pen + pen
   return next
 }
 

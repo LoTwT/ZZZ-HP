@@ -15,6 +15,8 @@ import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart
 import IkModalShell from '@/components/common/IkModalShell.vue'
 import AffixBenefitTable from '@/components/calculator/AffixBenefitTable.vue'
 import AffixAllocationResult from '@/components/calculator/AffixAllocationResult.vue'
+import AffixSearchAdvancedModal from '@/components/calculator/AffixSearchAdvancedModal.vue'
+import GameAffixRulesModal from '@/components/calculator/GameAffixRulesModal.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentPanelSources } from '@/types/damageCalcHistory'
 import type {
@@ -61,6 +63,7 @@ import {
   evaluateAffixCountsForSweep,
   clearAffixEvalCache,
   evaluateOptimalEventDetail,
+  withAffixLibraryExtraGains,
   buildDirectAffixCounts,
   buildAnomalyAffixCounts,
   flatStatLabel,
@@ -79,7 +82,7 @@ import {
   type OptimalEventDamageLine,
   yieldToMain,
 } from '@/utils/optimalAffixAlloc'
-import { remapImportedExternalPanelForMainCombo } from '@/utils/affixPanelCalc'
+import { remapImportedPanelViaEffects } from '@/utils/panelPipeline'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import {
@@ -112,12 +115,14 @@ import {
 import {
   computeAffixBenefitSeriesForTable,
   computeAffixBenefitTable,
+  type AffixBenefitRow,
   type AffixBenefitSeries,
   type AffixBenefitTable as AffixBenefitTableData,
 } from '@/utils/affixBenefitAnalysis'
 import {
   addAffixLibraryGroup,
   addCustomAffixLibraryEntry,
+  affixExcludedGroupBaseRollsUsed,
   affixGroupCaps,
   affixValuePerCountFromEntries,
   createDefaultAffixLibraryState,
@@ -133,16 +138,37 @@ import {
   saveAffixLibraryState,
   setAffixLibraryEntryEnabled,
   setAffixLibraryGroupCap,
+  setAffixLibraryGroupEntryCaps,
+  setAffixLibraryGroupExcluded,
   updateAffixLibraryEntry,
   type AffixLibraryEntry,
   type AffixLibraryState,
 } from '@/utils/affixLibrary'
 import {
+  formatAffixRollsSummary,
   solveOptimalAffixAllocationAsync,
-  type AffixCandidateWidthMode,
+  AFFIX_SEARCH_PRESET_LABELS,
   type AffixOptimizerProgress,
   type AffixOptimizerResult,
+  type AffixSearchParams,
+  type AffixSearchPresetId,
 } from '@/utils/affixOptimizer'
+import {
+  effectiveAffixSearchParams,
+  loadAffixSearchSettings,
+  saveAffixSearchSettings,
+  type AffixSearchSettings,
+} from '@/utils/affixSearchSettings'
+import {
+  clampGameExtraCost,
+  clampGameSubstatEntryCap,
+  createGameAffixGroups,
+  createGameAffixLibraryEntries,
+  isGamePaidMainId,
+  loadGameAffixRulesSettings,
+  saveGameAffixRulesSettings,
+  solveGameAffixAllocationAsync,
+} from '@/utils/gameAffixRules'
 
 const MB_PROFESSION = '命破'
 const FENGYU_PROFESSION = '锋御'
@@ -183,6 +209,11 @@ const props = defineProps<{
    * （见下方 `skillFlowExternal`）。
    */
   skillFlowMainExternalOverride?: PanelStats | null
+  /**
+   * 招式流程选 ②③ 时，该次分配的 `gain:` extraGains。
+   * ① 或回落配置面板时为空。页级额外 Buff 仍走 v-model extraGains。
+   */
+  skillFlowSourceExtraGains?: ExtraBuffGain[] | null
   /** 技能等级转模来源：按角色 id 的五大类技能等级 */
   skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
 }>()
@@ -428,7 +459,7 @@ const enabledAffixEntryIds = computed(() =>
     .map((entry) => entry.id),
 )
 /**
- * 词条库的「每档值」表：`stat:` 类目标用条目自己的 `perRoll`，其余字段回落常量表。
+ * 词条库的「每档值」表：局外 `panel:` 用条目自己的 `perRoll`，其余字段回落常量表。
  */
 const affixLibraryValuePerCount = computed(() =>
   affixValuePerCountFromEntries(affixLibraryEntries.value),
@@ -711,11 +742,27 @@ const allocSweepFingerprint = computed(() =>
 
 watch(allocSweepFingerprint, markSweepConfigDirty)
 
+/**
+ * 换人（编辑中角色变了）→ **直接清掉求解结果**（用户 2026-09-18 口径：「应该直接清」）。
+ *
+ * 结果依赖上下文（角色 / 面板 / 队伍），换人之后那份分配已经不成立 —— 原来既不标过期也不清，
+ * 界面上一份作废的最优分配大大方方摆着，照着用就会得出错结论。
+ * 只清求解结果；收益表与曲线会由 `scheduleAffixBenefitRecompute` 按新上下文自己重算。
+ */
+watch(
+  () => props.editedSlotIndex,
+  () => {
+    affixAllocResult.value = null
+    affixAllocResultStale.value = false
+  },
+)
+
 onBeforeUnmount(() => {
   if (diffTimer) clearTimeout(diffTimer)
   if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
   if (panelPreviewTimer) clearTimeout(panelPreviewTimer)
   if (eventAffixImpactTimer) clearTimeout(eventAffixImpactTimer)
+  stopAllocTimer(false) // 计时器也要清，别在组件卸载后还跳
   sweepAbort?.abort()
 })
 
@@ -1183,17 +1230,21 @@ const panelSourceSignature = computed(() =>
  */
 function emitPanelSourceOptions() {
   const result = affixAllocResult.value
-  const selectedCountsValue = selectedCounts.value
   emit('update:panelSourceOptions', {
     allocation: affixAllocEval.value?.external
       ? buildPanelSourceOption(
           'allocation',
           affixAllocEval.value.external,
-          result?.counts ?? null,
+          allocationRollsSummary(result),
+          result?.extraGains,
         )
       : null,
     sweep: selectedEval.value?.external
-      ? buildPanelSourceOption('sweep', selectedEval.value.external, selectedCountsValue)
+      ? buildPanelSourceOption(
+          'sweep',
+          selectedEval.value.external,
+          sweepCountsSummary(selectedCounts.value),
+        )
       : null,
   })
 }
@@ -1207,18 +1258,28 @@ function emitPanelSourceOptions() {
  */
 type DisplayPanelEvalLike = { external: PanelStats; finalPanel: PanelStats } | null | undefined
 
+function allocationRollsSummary(result: AffixOptimizerResult | null): string {
+  if (!result) return '零词条'
+  const library = affixAllocResultLibrary.value.length
+    ? affixAllocResultLibrary.value
+    : affixLibraryEntries.value
+  return formatAffixRollsSummary(library, result.rollsByEntryId)
+}
+
+function sweepCountsSummary(counts: AffixCounts | null | undefined): string {
+  if (!counts) return '零词条'
+  return formatAffixCountsSummary(
+    { ...(counts as unknown as Record<string, number>) },
+    AFFIX_SOURCE_LABELS,
+  )
+}
+
 function buildDisplayPanelSourceOption(
   mode: 'allocation' | 'sweep',
   evalResult: DisplayPanelEvalLike,
-  counts: AffixCounts | null | undefined,
+  summary: string,
 ): SkillFlowDisplayOption | null {
   if (!evalResult?.external || !evalResult.finalPanel) return null
-  const summary = counts
-    ? formatAffixCountsSummary(
-        { ...(counts as unknown as Record<string, number>) },
-        AFFIX_SOURCE_LABELS,
-      )
-    : ''
   return {
     mode,
     mainExternal: evalResult.external,
@@ -1230,31 +1291,33 @@ function buildDisplayPanelSourceOption(
 
 function emitDisplayPanelSources() {
   const result = affixAllocResult.value
-  const selectedCountsValue = selectedCounts.value
   emit('update:displayPanelSources', {
     allocation: buildDisplayPanelSourceOption(
       'allocation',
       affixAllocEval.value,
-      result?.counts ?? null,
+      allocationRollsSummary(result),
     ),
-    sweep: buildDisplayPanelSourceOption('sweep', selectedEval.value, selectedCountsValue),
+    sweep: buildDisplayPanelSourceOption(
+      'sweep',
+      selectedEval.value,
+      sweepCountsSummary(selectedCounts.value),
+    ),
   })
 }
 
 function buildPanelSourceOption(
   mode: 'allocation' | 'sweep',
   mainExternal: PanelStats,
-  counts: AffixCounts | null | undefined,
+  summary: string,
+  extraGainsForOption?: ExtraBuffGain[],
 ): SkillFlowPanelOption {
-  const summary = counts
-    ? formatAffixCountsSummary({ ...(counts as unknown as Record<string, number>) }, AFFIX_SOURCE_LABELS)
-    : ''
   return {
     mode,
     mainExternal,
     label: mode === 'allocation' ? `最优分配（${summary}）` : `当前柱（${summary}）`,
     signature: panelSourceSignature.value,
     baseDamageSource: baseDamageSource.value,
+    extraGains: extraGainsForOption,
   }
 }
 
@@ -1270,6 +1333,10 @@ const AFFIX_SOURCE_LABELS: Record<string, string> = {
   critRate: '暴击',
   critDmg: '爆伤',
   mastery: '精通',
+  dmgBonus: '增伤',
+  penRate: '穿透率',
+  reduceDefense: '减防',
+  resPen: '抗性穿透',
 }
 
 /** 用最优词条面板重算流程/准备招式预览伤害，供招式流程展示（防抖 + per-hit 缓存） */
@@ -1284,6 +1351,7 @@ const skillFlowContextFingerprint = computed(() =>
   JSON.stringify({
     enemy: enemyInput.value,
     extraGains: extraGains.value,
+    sourceExtraGains: props.skillFlowSourceExtraGains ?? [],
     buffSelection: props.buffSelection,
     slotBuffSelections: props.slotBuffSelections,
     convert: props.convertSlotPanels ?? {},
@@ -1323,6 +1391,10 @@ function recomputeSkillFlowHitMaps() {
   }
 
   const ctx = evalCtx.value
+  const allocatedGains = props.skillFlowMainExternalOverride
+    ? (props.skillFlowSourceExtraGains ?? [])
+    : []
+  const flowCtx = withAffixLibraryExtraGains(ctx, allocatedGains)
   // 与面板计算共用同一张记忆表：键里带「用的是哪份面板」，两组输入各占一行，互不覆盖。
   // 令牌取自响应式指纹（不能从 ctx 取：ctx 是深解包后的原始对象，读取不建立依赖）。
   const contextToken = internHitEvalContext(skillFlowContextFingerprint.value)
@@ -1331,7 +1403,7 @@ function recomputeSkillFlowHitMaps() {
     const key = hitEvalCacheKey(buildHitEvalFingerprint(hit), contextToken, external, false)
     let entry = readHitEvalCache(key)
     if (!entry) {
-      const detail = evaluateOptimalEventDetail(ctx, external, hit, {
+      const detail = evaluateOptimalEventDetail(flowCtx, external, hit, {
         includeDetails: false,
       })
       if (!detail) return
@@ -1708,25 +1780,187 @@ const benefitData = ref<ReturnType<typeof computeBenefitCurves> | null>(null)
 const affixAllocTotalRolls = ref(30)
 const affixAllocDetailTab = ref<'curve' | 'process'>('curve')
 const affixAllocResult = ref<AffixOptimizerResult | null>(null)
+const affixAllocResultStale = ref(false)
 const affixAllocLoading = ref(false)
 const affixAllocError = ref<string | null>(null)
 /**
- * 候选宽度模式：
- * - auto：每轮候选条数由剩余计算量预算推导（流程便宜就多搜，昂贵就少搜）
- * - manual：用户指定条数，不设预算兜底
+ * 最近一次点的是哪种分配方式 —— **只驱动界面上的「二选一」高亮**，不参与计算、不落盘。
+ * 求解结果本身不带模式信息，所以这里单独记一格；失败/中止时也保留高亮，
+ * 好让用户知道刚才点的是哪一个。
  */
-const affixAllocWidthMode = ref<AffixCandidateWidthMode>('auto')
-/** manual 模式下的候选条数 */
-const affixAllocManualWidth = ref(8)
+const affixAllocMode = ref<'default' | 'game' | null>(null)
+
+/**
+ * 求解计时（纯界面，不落盘、不参与计算）。
+ *
+ * 口径：从「点下按钮」到「求解返回」的墙钟时间，**包含**门槛测量 / 专路 / Beam / 换档，
+ * 不包含之后的渲染。中止时不留时间（没有结果就没有耗时可言）。
+ * 游戏专用模式跑 4 个口袋，这个时间就是**全部口袋加起来**的（各袋单独耗时没有需求，没记）。
+ */
+const affixAllocStartedAt = ref<number | null>(null)
+const affixAllocElapsedMs = ref<number | null>(null)
+const affixAllocTickMs = ref<number | null>(null)
+let affixAllocTickTimer: ReturnType<typeof setInterval> | null = null
+
+function startAllocTimer() {
+  stopAllocTimer(false) // 清掉上一条（含没清干净的 interval）
+  affixAllocStartedAt.value = performance.now()
+  affixAllocElapsedMs.value = null
+  affixAllocTickMs.value = 0
+  affixAllocTickTimer = setInterval(() => {
+    if (affixAllocStartedAt.value != null) {
+      affixAllocTickMs.value = performance.now() - affixAllocStartedAt.value
+    }
+  }, 200)
+}
+
+/** 停表；`keepElapsed = false` 用于中止（不留耗时）。重复调用无副作用。 */
+function stopAllocTimer(keepElapsed = true) {
+  if (affixAllocTickTimer != null) {
+    clearInterval(affixAllocTickTimer)
+    affixAllocTickTimer = null
+  }
+  const startedAt = affixAllocStartedAt.value
+  if (startedAt == null) return
+  if (keepElapsed) affixAllocElapsedMs.value = performance.now() - startedAt
+  affixAllocStartedAt.value = null
+  affixAllocTickMs.value = null
+}
+/**
+ * 词条搜索设置（本机独立存盘）：预设 + 五项搜索参数 + 高级区展开状态。
+ *
+ * 参数各有白话解释，见 `dev-docs/词条最优分配.md`「改造：自适应 Beam」：
+ * - 初始候选门槛：单档收益只跟**本组最高**比，差太远的直接出局、后面不再回头捡；
+ * - 候选兜底：每组按单档收益排前 N 名的一定保留；
+ * - 路线保留比例：同一档数下只留接近最好的那批分法；
+ * - 最小保留路线 / 最大保留路线：比例筛之后的**下限 / 上限**（上限是防爆宽度的唯一保险）。
+ *
+ * ⚠️ 空组（临时）条目不参与最优计算，也不显示收益表。
+ */
+const affixSearchSettings = ref<AffixSearchSettings>(loadAffixSearchSettings())
+/** 预设顺序（下拉展示用） */
+const SEARCH_PRESET_ORDER: AffixSearchPresetId[] = ['fast', 'balanced', 'fine', 'custom']
+/** 当前生效的三项参数：预设直取预设表，自定义取用户值 */
+const affixSearchParams = computed<AffixSearchParams>(() =>
+  effectiveAffixSearchParams(affixSearchSettings.value),
+)
+
+function persistAffixSearchSettings() {
+  saveAffixSearchSettings(affixSearchSettings.value)
+}
+
+function setAffixSearchPreset(preset: AffixSearchPresetId) {
+  // 切到自定义时，从「当前生效值」起步，避免丢掉另外两项
+  const custom = preset === 'custom'
+    ? { ...effectiveAffixSearchParams(affixSearchSettings.value) }
+    : affixSearchSettings.value.custom
+  affixSearchSettings.value = { ...affixSearchSettings.value, preset, custom }
+  persistAffixSearchSettings()
+}
+
+function onAffixSearchPresetChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value as AffixSearchPresetId
+  setAffixSearchPreset(value)
+}
+
+/** 改任一项都视为「自定义」，并从当前生效值起步 */
+function setAffixSearchCustom(patch: Partial<AffixSearchParams>) {
+  const base = affixSearchSettings.value.preset === 'custom'
+    ? affixSearchSettings.value.custom
+    : effectiveAffixSearchParams(affixSearchSettings.value)
+  affixSearchSettings.value = {
+    ...affixSearchSettings.value,
+    preset: 'custom',
+    custom: { ...base, ...patch },
+  }
+  persistAffixSearchSettings()
+}
+
+/** 高级设置弹窗开合（不落盘：弹窗状态没必要持久化） */
+const affixSearchAdvancedOpen = ref(false)
+
 /** 求解进度（仅求解中刷新） */
 const affixAllocProgress = ref<AffixOptimizerProgress | null>(null)
 /** 进度刷新间隔（毫秒）：求解每个时间片都回调，逐次刷新会拖慢求解本身 */
 const AFFIX_ALLOC_PROGRESS_THROTTLE_MS = 100
 let lastProgressAt = 0
 let affixAllocAbort: AbortController | null = null
+/** 最近一次求解用的条目（普通库或游戏专用方案），结果表按这个显示 */
+const affixAllocResultLibrary = ref<AffixLibraryEntry[]>([])
+
+/**
+ * 结果表里「与副词条冲突，额外扣除总词条数 x」用的 x（付费占用档数）。
+ *
+ * 只在**当前展示的结果确实是游戏专用**时给值（判据 = 结果自带 `gameWinner`）：
+ * 普通模式没有冲突概念，给 `null` 让结果表一个字都不显示。
+ * 用结果自身判断而不是用 `affixAllocMode`：结果可能是上一次另一种模式跑出来的，
+ * 按结果判定才不会张冠李戴（与 `AffixAllocationResult` 里 `gameInfo` 同一判据）。
+ */
+const affixAllocConflictExtraCost = computed<number | null>(() => {
+  const result = affixAllocResult.value as { gameWinner?: unknown } | null
+  if (!result?.gameWinner) return null
+  return gameAffixSettings.value.extraCost
+})
+
+/**
+ * 普通模式里「不占词条数」的组名（词条库 → 组管理里勾的）——只给结果面板写一行提示用。
+ *
+ * 为什么不复用游戏专用那套拆账：普通模式没有冲突额外 x、也不按"胜出口袋"选解，
+ * 只要告诉用户"这几个组不占数"，总词条数那行就不会看起来像少算了。
+ */
+const affixAllocFreeRollGroupNames = computed(() =>
+  affixLibraryState.value.groups
+    .filter((group) => group.excludedFromTotalRolls)
+    .map((group) => group.name),
+)
+
+/**
+ * 游戏专用结果的「词条数拆账」——用户主要看的就是副词条那个数，别让他自己加。
+ *
+ * - `conflictExtra`：冲突条目（`isGamePaidMainId`）多花的档数 = 档数 × x；
+ * - `excludedBase`：2 件套 / 4 / 5 / 6 号位**实际选中**的档数（这些组不占词条数，只在明细里给个交代）；
+ * - `substat`：副词条档数 = 结果的 `总词条数 − conflictExtra`
+ *   （游戏方案里"不占数"的组只有那四个，剩下的档全在副词条组，所以不用去查组名）。
+ *
+ * 判据同样是**结果自带 `gameWinner`**（普通模式返回 null，一个字都不显示）。
+ */
+const affixAllocRollSplit = computed<{
+  substat: number
+  conflictExtra: number
+  excludedBase: number
+} | null>(() => {
+  const result = affixAllocResult.value as { gameWinner?: unknown } | null
+  if (!result?.gameWinner) return null
+  const rolls = affixAllocResult.value?.rollsByEntryId ?? {}
+  const groups = createGameAffixGroups(affixAllocTotalRolls.value)
+  const excludedBase = affixExcludedGroupBaseRollsUsed(groups, affixAllocResultLibrary.value, rolls)
+  const extraCost = Math.max(0, Math.round(gameAffixSettings.value.extraCost))
+  let conflictExtra = 0
+  for (const entry of affixAllocResultLibrary.value) {
+    if (!isGamePaidMainId(entry.id)) continue
+    conflictExtra += Math.max(0, Math.round(rolls[entry.id] ?? 0)) * extraCost
+  }
+  return {
+    substat: Math.max(0, (affixAllocResult.value?.usedRolls ?? 0) - conflictExtra),
+    conflictExtra,
+    excludedBase,
+  }
+})
+/** 只为「已知条目 id 列表 + 默认值」而建；真正的求解条目见 `gameAffixLibraryEntries` */
+const gameAffixBaseEntries = createGameAffixLibraryEntries()
+const gameAffixSettings = ref(loadGameAffixRulesSettings(gameAffixBaseEntries))
+/** 游戏专用方案条目：副词条每条的上限跟着设置走（0 = 无上限） */
+const gameAffixLibraryEntries = computed(() =>
+  createGameAffixLibraryEntries(gameAffixSettings.value.substatEntryCap),
+)
+const gameAffixRulesOpen = ref(false)
 const affixBenefitTable = ref<AffixBenefitTableData | null>(null)
 /** 逐档收益曲线：按需补算（首屏不算），失效时置 null */
 const affixBenefitSeries = ref<AffixBenefitSeries[] | null>(null)
+/** 上面这份曲线属于哪一组（曲线只做组内对比，换组要重算） */
+const affixBenefitSeriesGroup = ref('')
+/** 上面这份曲线是按几档算的（档数变了要重算） */
+const affixBenefitSeriesRolls = ref(0)
 /** 曲线补算中（首屏不算曲线，切到「收益曲线」时才补） */
 const affixBenefitSeriesLoading = ref(false)
 const affixBenefitLoading = ref(false)
@@ -1739,7 +1973,7 @@ const affixAllocBaseCounts = computed(() => createEmptyAffixCounts())
 const affixAllocEval = computed(() => {
   const result = affixAllocResult.value
   if (!result) return null
-  return evaluateAffixCounts(evalCtx.value, result.counts, result.panelDeltas, result.valuePerCount)
+  return evaluateAffixCounts(evalCtx.value, result.counts, result.panelDeltas, result.valuePerCount, result.extraGains)
 })
 
 /**
@@ -1789,6 +2023,7 @@ function persistAffixLibrary(next: AffixLibraryState) {
   affixLibraryState.value = next
   saveAffixLibraryState(next)
   affixAllocResult.value = null
+  affixAllocResultStale.value = false
   runAffixBenefitOnly()
 }
 
@@ -1837,6 +2072,16 @@ function setAffixLibraryGroupCapHandler(name: string, cap: number) {
   persistAffixLibrary(setAffixLibraryGroupCap(affixLibraryState.value, name, cap))
 }
 
+/** 组管理里开关「不消耗总词条数」：写盘后重算（`persistAffixLibrary` 会清结果并重跑收益表） */
+function setAffixLibraryGroupExcludedHandler(name: string, excluded: boolean) {
+  persistAffixLibrary(setAffixLibraryGroupExcluded(affixLibraryState.value, name, excluded))
+}
+
+/** 批量把某组每条的单词条上限设成同一个值（`name = ''` = 未分组） */
+function setAffixLibraryGroupEntryCapsHandler(name: string, cap: number) {
+  persistAffixLibrary(setAffixLibraryGroupEntryCaps(affixLibraryState.value, name, cap))
+}
+
 function renameAffixLibraryGroupHandler(from: string, to: string) {
   persistAffixLibrary(renameAffixLibraryGroup(affixLibraryState.value, from, to))
 }
@@ -1861,6 +2106,7 @@ function runAffixBenefitOnly() {
   if (!affixLibraryEntries.value.length) {
     affixBenefitTable.value = null
     affixBenefitSeries.value = null
+    affixBenefitSeriesGroup.value = ''
     return
   }
   affixBenefitLoading.value = true
@@ -1873,9 +2119,11 @@ function runAffixBenefitOnly() {
         baseCounts: affixAllocBaseCounts.value,
         entries: affixLibraryEntries.value,
         rollsPerStep: affixBenefitStep.value,
+    maxCurveRolls: affixAllocCurveMaxRolls.value,
         includeSeries: false,
       })
       affixBenefitSeries.value = null
+      affixBenefitSeriesGroup.value = ''
     } finally {
       affixBenefitLoading.value = false
     }
@@ -1884,22 +2132,48 @@ function runAffixBenefitOnly() {
 
 /**
  * 补算逐档收益曲线（用户真的要看折线图时）。
- * 已算过或正在算则直接返回，避免重复点击反复重算；放到下一个宏任务里算，避免卡住点击。
+ *
+ * **只做组内对比**（2026-09-17 用户口径）：曲线只画当前分组内的条目 ——
+ * 4 号位 / 5 号位 / 6 号位 / 2 件套 / 副词条 抢的不是同一份资源，混在一张图上没有可比性。
+ * 换组才重算（缓存按组比对）；组内按 +1 档收益率取前 N 条由 `computeAffixBenefitSeriesForTable` 负责。
  */
 function ensureAffixBenefitSeries() {
-  if (affixBenefitSeries.value || affixBenefitSeriesLoading.value) return
+  if (affixBenefitSeriesLoading.value) return
   const table = affixBenefitTable.value
   if (!table || !table.rows.length) return
+  const groups = affixAllocCurveGroups.value
+  if (!groups.length) return
+  // 首次（或所选组已消失）落定到「当前最强条目所在组」；落定之后跟着用户选，不自动漂移
+  if (!groups.includes(affixAllocCurveGroup.value)) {
+    const topGroup = affixGroupByEntryId.value.get(table.rows[0]!.entryId) ?? ''
+    affixAllocCurveGroup.value = groups.includes(topGroup) ? topGroup : groups[0]!
+  }
+  const group = affixAllocCurveGroup.value
+  if (
+    affixBenefitSeries.value &&
+    affixBenefitSeriesGroup.value === group &&
+    affixBenefitSeriesRolls.value === affixAllocCurveMaxRolls.value
+  ) {
+    return
+  }
   const input = {
     ctx: evalCtx.value,
     baseCounts: affixAllocBaseCounts.value,
     entries: affixLibraryEntries.value,
     rollsPerStep: affixBenefitStep.value,
+    maxCurveRolls: affixAllocCurveMaxRolls.value,
   }
   affixBenefitSeriesLoading.value = true
+  // 换组先把上一组的线清掉：留着的话新组的标题下画的是旧组的曲线
+  affixBenefitSeries.value = null
   window.setTimeout(() => {
     try {
-      affixBenefitSeries.value = computeAffixBenefitSeriesForTable(input, table)
+      affixBenefitSeries.value = computeAffixBenefitSeriesForTable(input, {
+        baselineDamage: table.baselineDamage,
+        rows: affixCurveRowsOfGroup(group),
+      })
+      affixBenefitSeriesGroup.value = group
+      affixBenefitSeriesRolls.value = affixAllocCurveMaxRolls.value
     } finally {
       affixBenefitSeriesLoading.value = false
     }
@@ -1927,7 +2201,9 @@ async function runAffixAllocation() {
   }
   const total = Math.max(1, Math.min(60, Math.round(affixAllocTotalRolls.value)))
   affixAllocTotalRolls.value = total
+  affixAllocMode.value = 'default'
   affixAllocLoading.value = true
+  startAllocTimer()
   affixAllocError.value = null
   affixAllocProgress.value = null
   lastProgressAt = 0
@@ -1940,9 +2216,18 @@ async function runAffixAllocation() {
         ctx: evalCtx.value,
         entries: affixLibraryEntries.value,
         maxTotalRolls: total,
-        candidateWidthMode: affixAllocWidthMode.value,
-        manualCandidateWidth: affixAllocManualWidth.value,
+        searchPreset: affixSearchSettings.value.preset,
+        initialCandidateThreshold: affixSearchParams.value.initialCandidateThreshold,
+        initialCandidateFloor: affixSearchParams.value.initialCandidateFloor,
+        routeRetentionRatio: affixSearchParams.value.routeRetentionRatio,
+        minRetainedRoutes: affixSearchParams.value.minRetainedRoutes,
+        maxRetainedRoutes: affixSearchParams.value.maxRetainedRoutes,
         groupCaps: affixGroupCaps(affixLibraryState.value),
+        // 组规则「不消耗总词条数」：普通库今天还没有这个开关（字段未落盘、无 UI），所以这里通常是空数组；
+        // 先按同一套口径接上，等词条库弹窗加上开关就能直接用（见 dev-docs/词条分配规则.md §3.5）。
+        freeRollGroups: affixLibraryState.value.groups
+          .filter((group) => group.excludedFromTotalRolls)
+          .map((group) => group.name),
       },
       {
         signal: controller.signal,
@@ -1958,11 +2243,124 @@ async function runAffixAllocation() {
         },
       },
     )
+    affixAllocResultLibrary.value = affixLibraryEntries.value
+    affixAllocResultStale.value = false
   } catch (error) {
-    if ((error as DOMException)?.name === 'AbortError') return
+    if ((error as DOMException)?.name === 'AbortError') {
+      stopAllocTimer(false) // 中止：不留耗时
+      return
+    }
     affixAllocError.value = error instanceof Error ? error.message : '计算失败'
     affixAllocResult.value = null
+    affixAllocResultStale.value = false
   } finally {
+    stopAllocTimer()
+    if (affixAllocAbort === controller) {
+      affixAllocLoading.value = false
+      affixAllocProgress.value = null
+      affixAllocAbort = null
+    }
+  }
+}
+
+function persistGameAffixSettings() {
+  saveGameAffixRulesSettings(gameAffixSettings.value)
+}
+
+function setGameExtraCost(value: number) {
+  gameAffixSettings.value = {
+    ...gameAffixSettings.value,
+    extraCost: clampGameExtraCost(value),
+  }
+  persistGameAffixSettings()
+}
+
+/**
+ * 「所有副词条条目上限」：0 = 无上限，对副词条组内每条分别生效。
+ *
+ * 它会改变求解输入（每个副词条条目的 cap），所以除了写盘，还要把已显示的结果标成过期。
+ */
+function setGameSubstatEntryCap(value: number) {
+  const next = clampGameSubstatEntryCap(value)
+  if (next === gameAffixSettings.value.substatEntryCap) return
+  gameAffixSettings.value = { ...gameAffixSettings.value, substatEntryCap: next }
+  persistGameAffixSettings()
+  markAffixAllocationStaleIfIdle()
+}
+
+function toggleGameAffixEntry(entryId: string, enabled: boolean) {
+  const next = new Set(gameAffixSettings.value.enabledIds)
+  if (enabled) next.add(entryId)
+  else next.delete(entryId)
+  gameAffixSettings.value = { ...gameAffixSettings.value, enabledIds: [...next] }
+  persistGameAffixSettings()
+}
+
+function toggleGameAffixEntries(entryIds: string[], enabled: boolean) {
+  const next = new Set(gameAffixSettings.value.enabledIds)
+  for (const entryId of entryIds) {
+    if (enabled) next.add(entryId)
+    else next.delete(entryId)
+  }
+  gameAffixSettings.value = { ...gameAffixSettings.value, enabledIds: [...next] }
+  persistGameAffixSettings()
+}
+
+/** 游戏专用 4 袋求解，不读用户词条库 */
+async function runGameAffixAllocation() {
+  if (affixAllocLoading.value) return
+  if (!gameAffixSettings.value.enabledIds.length) {
+    affixAllocError.value = '请先在「编辑」里勾选至少一条词条'
+    return
+  }
+  const total = Math.max(1, Math.min(60, Math.round(affixAllocTotalRolls.value)))
+  affixAllocTotalRolls.value = total
+  affixAllocMode.value = 'game'
+  affixAllocLoading.value = true
+  startAllocTimer()
+  affixAllocError.value = null
+  affixAllocProgress.value = null
+  lastProgressAt = 0
+  affixAllocAbort?.abort()
+  const controller = new AbortController()
+  affixAllocAbort = controller
+  try {
+    affixAllocResult.value = await solveGameAffixAllocationAsync(
+      {
+        ctx: evalCtx.value,
+        entries: gameAffixLibraryEntries.value,
+        enabledIds: gameAffixSettings.value.enabledIds,
+        extraCost: gameAffixSettings.value.extraCost,
+        maxTotalRolls: total,
+        searchPreset: affixSearchSettings.value.preset,
+        initialCandidateThreshold: affixSearchParams.value.initialCandidateThreshold,
+        initialCandidateFloor: affixSearchParams.value.initialCandidateFloor,
+        routeRetentionRatio: affixSearchParams.value.routeRetentionRatio,
+        minRetainedRoutes: affixSearchParams.value.minRetainedRoutes,
+        maxRetainedRoutes: affixSearchParams.value.maxRetainedRoutes,
+      },
+      {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          const now = performance.now()
+          if (now - lastProgressAt < AFFIX_ALLOC_PROGRESS_THROTTLE_MS) return
+          lastProgressAt = now
+          affixAllocProgress.value = progress
+        },
+      },
+    )
+    affixAllocResultLibrary.value = gameAffixLibraryEntries.value
+    affixAllocResultStale.value = false
+  } catch (error) {
+    if ((error as DOMException)?.name === 'AbortError') {
+      stopAllocTimer(false) // 中止：不留耗时
+      return
+    }
+    affixAllocError.value = error instanceof Error ? error.message : '计算失败'
+    affixAllocResult.value = null
+    affixAllocResultStale.value = false
+  } finally {
+    stopAllocTimer()
     if (affixAllocAbort === controller) {
       affixAllocLoading.value = false
       affixAllocProgress.value = null
@@ -1973,10 +2371,16 @@ async function runAffixAllocation() {
 
 /** 中止正在进行的求解（改参数 / 手动停止时调用） */
 function abortAffixAllocation() {
+  if (affixAllocResult.value) affixAllocResultStale.value = true
   affixAllocAbort?.abort()
   affixAllocAbort = null
   affixAllocLoading.value = false
   affixAllocProgress.value = null
+}
+
+function markAffixAllocationStaleIfIdle() {
+  if (affixAllocLoading.value) return
+  if (affixAllocResult.value) affixAllocResultStale.value = true
 }
 
 function setAffixBenefitStep(step: number) {
@@ -1986,15 +2390,52 @@ function setAffixBenefitStep(step: number) {
   runAffixBenefitOnly()
 }
 
-/** 词条分配模式的收益曲线数据：复用收益表的逐档曲线 */
+/** 词条分配模式的收益曲线数据：复用收益表的逐档曲线（只画当前分组内的条目） */
 const affixAllocCurveMode = ref<'cumulative' | 'marginal'>('cumulative')
-const affixAllocCurveMaxRolls = 10
+/** 曲线档数（2026-09-18：可选 10 / 20 / 50，默认 20；只影响画多长，不影响求解） */
+const affixAllocCurveMaxRolls = ref(20)
+/** 曲线当前分组（用户选择；空串或所选组已消失时，由 `ensureAffixBenefitSeries` 落定） */
+const affixAllocCurveGroup = ref('')
 /** 曲线数据按需补算：未算过时为 null，模板据此显示「正在准备曲线」而不是空图 */
 const affixAllocCurveData = computed(() => affixBenefitSeries.value)
 
+/** 条目 id → 组名（收益表的行只有 id，组名得回词条库查） */
+const affixGroupByEntryId = computed(() => {
+  const map = new Map<string, string>()
+  for (const entry of affixLibraryEntries.value) map.set(entry.id, entry.group)
+  return map
+})
+
+/**
+ * 曲线可选的分组：当前收益表里**真有行**的组，按词条库组表顺序（与收益表筛选条同口径）；
+ * 组表里没有的组名（组被删掉、条目还在）也列出来，否则那些条目在曲线上没法单独看。
+ */
+const affixAllocCurveGroups = computed(() => {
+  const present = new Set<string>()
+  for (const row of affixBenefitTable.value?.rows ?? []) {
+    const name = affixGroupByEntryId.value.get(row.entryId) ?? ''
+    if (name) present.add(name)
+  }
+  const ordered = affixLibraryState.value.groups
+    .map((group) => group.name)
+    .filter((name) => present.has(name))
+  for (const name of present) {
+    if (!ordered.includes(name)) ordered.push(name)
+  }
+  return ordered
+})
+
+/** 某分组在当前收益表里的行（曲线只画这些行 —— 组内对比） */
+function affixCurveRowsOfGroup(group: string): AffixBenefitRow[] {
+  return (affixBenefitTable.value?.rows ?? []).filter(
+    (row) => (affixGroupByEntryId.value.get(row.entryId) ?? '') === group,
+  )
+}
+
 // 折线图只在「收益曲线」子页签且已有求解结果时渲染；在那之前不必付曲线的计算成本
+// 分组变化也要过这里：换组 = 换一份行子集，交给 `ensureAffixBenefitSeries` 判断要不要重算
 watch(
-  [affixAllocDetailTab, affixAllocResult, affixBenefitTable],
+  [affixAllocDetailTab, affixAllocResult, affixBenefitTable, affixAllocCurveGroup, affixAllocCurveMaxRolls],
   () => {
     if (affixAllocDetailTab.value !== 'curve') return
     if (!affixAllocResult.value) return
@@ -2232,15 +2673,17 @@ watch(affixAllocFingerprint, () => {
   if (sectionMode.value !== 'allocation') return
   // 上下文变了，正在跑的求解结果已经过期：中止它，避免用户对着旧结果判断
   if (affixAllocLoading.value) abortAffixAllocation()
+  else markAffixAllocationStaleIfIdle()
   scheduleAffixBenefitRecompute()
 })
 
 // 求解参数变化同样让正在跑的求解过期
 watch(
-  [affixAllocWidthMode, affixAllocManualWidth, affixAllocTotalRolls],
+  [affixSearchSettings, affixAllocTotalRolls],
   () => {
     if (sectionMode.value !== 'allocation') return
     if (affixAllocLoading.value) abortAffixAllocation()
+    else markAffixAllocationStaleIfIdle()
   },
 )
 
@@ -2341,11 +2784,11 @@ function evaluateMainStatComboDamage(
   const ctx = evalCtx.value
   const nextTwoPieceId = twoPieceId ?? ctx.driveDiscSelection.twoPieceDriveDiscId
   /**
-   * 词条分析页 + 已有导入局外：在面板数字上反推扣掉当前 4/5/6（及 2 件套）贡献，
-   * 再加回试算组合 —— 不改收益表 / 求解器，也不动扫掠柱图（仍走下方「清基准重推」）。
+   * 词条分析页 + 已有导入局外：撤掉当前 4/5/6（及 2 件套）效果，再加上试算组合。
+   * 不改收益表 / 求解器，也不动扫掠柱图（仍走下方「清基准重推」）。
    */
   if (sectionMode.value === 'allocation' && ctx.mainBaseExternalPanel) {
-    const remapped = remapImportedExternalPanelForMainCombo({
+    const remapped = remapImportedPanelViaEffects({
       panel: ctx.mainBaseExternalPanel,
       fromMains: driveDiscMainStats.value,
       toMains: {
@@ -2717,6 +3160,8 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           @restore-defaults="restoreAffixLibraryDefaultsHandler"
           @add-group="addAffixLibraryGroupHandler"
           @set-group-cap="setAffixLibraryGroupCapHandler"
+        @set-group-excluded="setAffixLibraryGroupExcludedHandler"
+          @set-group-entry-caps="setAffixLibraryGroupEntryCapsHandler"
           @rename-group="renameAffixLibraryGroupHandler"
           @remove-group="removeAffixLibraryGroupHandler"
           @library-switched="onAffixLibrarySwitched"
@@ -2962,57 +3407,114 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         <p v-else class="hint">配置招式流程后即可试算主属性组合。</p>
 
         <h3 class="block-title">最优分配</h3>
-        <div class="alloc-input-row">
+        <!--
+          求解参数。整块**不再是 grid**：改动前每个子项（含两行说明）各占一个格子，
+          第三列 `minmax(0, 1fr)` 在窄屏被挤成 0 宽，两行说明被压成 800~900px 高的竖条、
+          整块高度 1755px；切「高级设置」还会触发 grid 自动排布整体重排（看起来就是"乱飘"）。
+        -->
+        <div class="alloc-input-row alloc-fields">
           <label class="field">
             <span>总词条数</span>
             <input v-model.lazy.number="affixAllocTotalRolls" type="number" min="1" max="60" step="1" />
           </label>
           <label class="field">
-            <span>候选宽度</span>
-            <select v-model="affixAllocWidthMode">
-              <option value="auto">自动（按计算量预算推导）</option>
-              <option value="manual">手动指定条数</option>
+            <span>搜索预设</span>
+            <select :value="affixSearchSettings.preset" @change="onAffixSearchPresetChange">
+              <option v-for="presetId in SEARCH_PRESET_ORDER" :key="presetId" :value="presetId">
+                {{ AFFIX_SEARCH_PRESET_LABELS[presetId] }}
+              </option>
             </select>
           </label>
-          <label v-if="affixAllocWidthMode === 'manual'" class="field">
-            <span>每轮候选条数</span>
-            <input
-              v-model.lazy.number="affixAllocManualWidth"
-              type="number"
-              min="1"
-              :max="Math.max(1, affixLibraryEntries.length)"
-              step="1"
-            />
-          </label>
-          <button
-            v-if="affixAllocLoading"
-            type="button"
-            class="ghost-btn"
-            @click="abortAffixAllocation"
-          >
-            停止
+          <button type="button" class="ghost-btn" @click="affixSearchAdvancedOpen = true">
+            高级设置
           </button>
-          <button
-            v-else
-            type="button"
-            class="calc-run-btn"
-            :disabled="!affixLibraryEntries.length"
-            @click="runAffixAllocation"
-          >
-            求最优分配
-          </button>
-          <span class="hint">词条库 {{ affixLibraryEntries.length }} 条 · 每条词条 1 档 = 1 个词条</span>
         </div>
-        <p v-if="affixAllocWidthMode === 'manual'" class="hint">
-          手动模式不设预算上限：条数越大搜索越彻底，也越慢。填满词条库条数即等于不剪枝。
-        </p>
+
+        <AffixSearchAdvancedModal
+          :open="affixSearchAdvancedOpen"
+          :params="affixSearchParams"
+          @close="affixSearchAdvancedOpen = false"
+          @update="setAffixSearchCustom"
+        />
+
+        <!-- 分配方式：二选一 —— 两颗独立按钮；正在跑时两颗一起变灰，行尾出现「停止」（不顶掉主按钮，避免跳动） -->
+        <div class="alloc-mode-block">
+          <div class="alloc-mode-row">
+            <span class="alloc-mode-label">分配方式</span>
+            <button
+              type="button"
+              class="alloc-mode-btn"
+              :class="{ 'is-active': affixAllocMode === 'default' }"
+              :disabled="affixAllocLoading || !affixLibraryEntries.length"
+              :title="affixLibraryEntries.length ? '' : '词条库为空，请先启用至少一条词条'"
+              @click="runAffixAllocation"
+            >
+              求最优分配
+            </button>
+            <button
+              type="button"
+              class="alloc-mode-btn"
+              :class="{ 'is-active': affixAllocMode === 'game' }"
+              :disabled="affixAllocLoading || !gameAffixSettings.enabledIds.length"
+              :title="gameAffixSettings.enabledIds.length ? '' : '请先去「编辑」里勾选至少一条词条'"
+              @click="runGameAffixAllocation"
+            >
+              游戏专用规则分配
+            </button>
+            <button
+              type="button"
+              class="ghost-btn alloc-mode-edit"
+              :disabled="affixAllocLoading"
+              title="编辑游戏专用规则分配"
+              @click="gameAffixRulesOpen = true"
+            >
+              编辑游戏专用规则
+            </button>
+            <button
+              type="button"
+              class="ghost-btn alloc-stop-btn"
+              :class="{ 'is-reserved': !affixAllocLoading }"
+              :disabled="!affixAllocLoading"
+              @click="abortAffixAllocation"
+            >
+              停止
+            </button>
+          </div>
+          <ul class="alloc-mode-notes">
+            <li>
+              <b>求最优分配</b>：自适应 Beam —— 同一预算下并行保留多条分法，再各做一轮换档兜底；不清楚规则就用预设「均衡」。
+            </li>
+            <li>
+              <b>游戏专用规则分配</b>：模拟 4 号位主属性与副词条重复、以及 5/6 号位选到攻击/生命/防御时的总词条数损失，比左边慢。
+            </li>
+          </ul>
+        </div>
         <p v-if="affixAllocError" class="err">{{ affixAllocError }}</p>
         <AffixAllocationResult
           :result="affixAllocResult"
-          :library="affixLibraryEntries"
+          :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
           :loading="affixAllocLoading"
           :error="affixAllocError"
           :progress="affixAllocProgress"
+          :stale="affixAllocResultStale"
+          :elapsed-ms="affixAllocElapsedMs"
+          :live-ms="affixAllocLoading ? affixAllocTickMs : null"
+          :conflict-extra-cost="affixAllocConflictExtraCost"
+          :roll-split="affixAllocRollSplit"
+          :free-roll-groups="affixAllocFreeRollGroupNames"
+        />
+        <GameAffixRulesModal
+          :open="gameAffixRulesOpen"
+          :extra-cost="gameAffixSettings.extraCost"
+          :substat-entry-cap="gameAffixSettings.substatEntryCap"
+          :enabled-ids="gameAffixSettings.enabledIds"
+          :entries="gameAffixLibraryEntries"
+          :total-rolls="affixAllocTotalRolls"
+          @close="gameAffixRulesOpen = false"
+          @update:extra-cost="setGameExtraCost"
+          @update:substat-entry-cap="setGameSubstatEntryCap"
+          @toggle-entry="toggleGameAffixEntry"
+          @toggle-entries="toggleGameAffixEntries"
         />
 
         <template v-if="affixAllocResult">
@@ -3028,15 +3530,21 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           </div>
 
           <template v-if="affixAllocDetailTab === 'curve'">
+            <!-- 空数组也渲染：分组 chip 在面板里，选到「没有正收益条目」的组时得留个换回去的入口 -->
             <BenefitCurvePanel
               v-if="affixAllocCurveData"
               v-model:mode="affixAllocCurveMode"
+              v-model:group="affixAllocCurveGroup"
+            v-model:max-added="affixAllocCurveMaxRolls"
               :series="affixAllocCurveData"
-              :max-added="affixAllocCurveMaxRolls"
-              hint="逐档真实重算；只画收益率最高的前几条词条"
+              :groups="affixAllocCurveGroups"
+              hint="逐档真实重算；只比同组条目，画正收益前几条（前段 0、后段才涨的也会画）"
             />
+            <p v-if="affixAllocCurveData && !affixAllocCurveData.length" class="hint">
+              本组没有正收益条目（0 收益与负收益不画）；换一组看看。
+            </p>
             <p v-else-if="affixBenefitSeriesLoading" class="hint">收益曲线计算中…（首屏只算「+1 档」表，曲线按需补算）</p>
-            <p v-else class="hint">暂无收益曲线数据。</p>
+            <p v-else-if="!affixAllocCurveData" class="hint">暂无收益曲线数据。</p>
           </template>
         </template>
       </template>
@@ -4207,15 +4715,123 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   align-items: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
-  margin: 0.6rem 0;
+  /* 竖向间距交给 .opt-section 的 flex gap —— 别再叠加 margin（那是「行距离谱」的一半原因） */
+  margin: 0;
 }
 
-.alloc-input-row .field {
+/*
+ * 高级参数块：字段和它自己的说明贴在一起。
+ * 说明原来是整块的兄弟段落（折叠时也一直显示），指代的却是收起后看不见的参数，故收进这里。
+ */
+.alloc-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/*
+ * 分配方式：二选一 —— 两颗独立按钮 + 一个从属的「编辑」；跑起来时两颗一起变灰、行尾出现「停止」。
+ *
+ * 改造前：每个子项（含两行说明）都是 `.alloc-action-grid` 的格子，第三列 `minmax(0, 1fr)`
+ * 在窄屏被挤成 0 宽，说明被压成 800~900px 高的竖条、整块 1755px 高；切「高级设置」还会
+ * 触发 grid 自动排布整体重排（用户反馈的"乱飘"）。现在整块是普通行式布局，只往下推。
+ */
+.alloc-mode-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.alloc-mode-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.alloc-mode-label {
+  font-size: 0.8rem;
+  color: #9aa3b0;
+}
+
+.alloc-mode-btn {
+  border: 1px solid #333841;
+  border-radius: 10px;
+  background: #1a1e25;
+  color: #d5dae3;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.5rem 1.1rem;
+  min-width: 10.5rem; /* 两颗等宽 → 一眼看出是「二选一」 */
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.alloc-mode-btn:hover:not(:disabled) {
+  border-color: #4a5260;
+}
+
+.alloc-mode-btn.is-active {
+  border-color: var(--calc-run-border);
+  background: var(--calc-run-bg);
+  color: var(--calc-run-text);
+}
+
+.alloc-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.alloc-mode-edit {
+  padding: 0.4rem 0.7rem;
+  font-weight: 400;
+}
+
+/* 「停止」常驻占位：不跑时只隐藏不可见，跑起来就不会把这一行挤换行（零位移） */
+.alloc-stop-btn.is-reserved {
+  visibility: hidden;
+}
+
+.alloc-mode-notes {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.78rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  line-height: 1.5;
   color: #9aa3b0;
+}
+
+.alloc-mode-notes b {
+  color: #cfd5df;
+  font-weight: 700;
+}
+
+.alloc-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #9aa3b0;
+}
+
+.alloc-input-row .field-input-with-suffix {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.alloc-input-row .field-suffix {
+  font-size: 0.75rem;
+  color: var(--calc-muted, #6b7280);
+  line-height: 1;
 }
 
 .alloc-input-row input {

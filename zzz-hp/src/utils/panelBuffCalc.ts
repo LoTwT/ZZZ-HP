@@ -16,6 +16,7 @@ import type {
   SkillCategoryId,
   WengineBuffDoc,
 } from '@/types/calculator'
+import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 import {
   createEmptyExternalPanel,
   createDefaultExternalPanel,
@@ -31,6 +32,7 @@ import {
   effectMatchesContext,
   effectMatchesElement,
   effectMatchesTeamProfessionGate,
+  expandBuffOverrideToEffectIds,
   flatModsToEffects,
   isEffectEnabled,
   resolveEffectsToMods,
@@ -46,9 +48,15 @@ import {
 import type { EnvironmentBuffEntry } from '@/utils/environmentBuffCalc'
 import { resolveAssetUrl } from '@/utils/gameData'
 import {
-  mergeExtraModsForEvent,
+  extraGainAppliesToSlot,
+  extraGainToEffect,
+  resolveExtraGainApplySlot,
   type ExtraBuffGain,
 } from '@/utils/extraBuffCalc'
+import {
+  effectInstanceToBuffEffect,
+  instantiateBuffEffect,
+} from '@/utils/effectAdapters'
 
 function flattenBlocks(blocks: { effects?: BuffEffect[] }[]): BuffEffect[] {
   return blocks.flatMap((block) => block.effects ?? [])
@@ -512,7 +520,17 @@ export interface PanelCalcContext {
   /** 当前正在汇总面板的槽位（自身 / 队友 的「自身」） */
   mainSlotIndex: number
   driveDiscs: DriveDiscBuffDoc[]
-  extraMods?: BuffStatModifiers
+  /**
+   * 行级增益例外（**只有命中链的 `buildInput(hit)` 才设**；面板级/目录缓存路径一律不设）。
+   *
+   * - 语义：只关"这一刀吃不吃"，**不改计算**（不碰面板、不碰层数累计）
+   * - 为什么放 ctx：`buildInput(hit)` 手里有 hit，而 mods 组装要经过
+   *   `resolvePackModsViaEffectSpec` → `resolveEffectsToMods` 多层；
+   *   从 ctx 透传比逐层加参数小得多
+   * - ✅ 已并入目录缓存键（`rowBuffOverrideKey`，排序后稳定序列化）：同一例外的重复求值命中缓存，
+   *   不同例外各自成键 —— 因此**不再**需要绕开缓存（2026-09-22 改）
+   */
+  rowBuffOverride?: FlowBuffOverride | null
   /**
    * 额外 Buff 条目。转模按来源槽位取局内时，必须按该槽重算，
    * 不能把当前结算角色的 extraMods 整包套到蕾米等人身上。
@@ -1043,6 +1061,13 @@ export interface ComputeFinalPanelOptions {
   includeDetails?: boolean
 }
 
+/** 唯一编排：局外 → 转模前 → 最终。`computeFinalPanel` / `runPanelPipeline` 都走这里。 */
+export interface PanelStages {
+  externalPanel: PanelStats
+  preConvertPanel: PanelStats
+  finalBreakdown: PanelBuffBreakdown
+}
+
 export interface BuffModSource {
   key: string
   label: string
@@ -1064,6 +1089,14 @@ export interface CollectedEffect {
   blockName: string
   /** 块备注 / 影画注释等 */
   blockNote?: string
+  /**
+   * 适用槽位集合：这条增益作用于哪些槽位（升序、去重）。
+   * 「全队」性质 / 无主来源（邦布、场地）= 当前全部槽位。
+   * 2026-09-24 起由收集器统一填（施工规格 `dev-docs/specs/buff-build-refactor-spec.md` §2.1）。
+   */
+  applicableSlots: number[]
+  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
+  providerSlot: number | null
 }
 
 function clampRefine(value: number) {
@@ -1093,25 +1126,6 @@ function resolveBeneficiaryElement(ctx: PanelCalcContext): string | undefined {
 
 function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
   return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
-}
-
-/** 额外 Buff 按当前 mainSlotIndex 取值；有 extraGains 时不复用别人的 extraMods */
-function resolveContextExtraMods(ctx: PanelCalcContext): BuffStatModifiers {
-  if (ctx.extraGains?.length) {
-    const slotIndex = ctx.mainSlotIndex
-    const slotAgentId = ctx.teamSlots[slotIndex]?.agentId ?? ''
-    const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
-    return mergeExtraModsForEvent(ctx.extraGains, skillCtx, {
-      slotIndex,
-      slotAgentId,
-      staggerPhase: skillCtx.staggerPhase ?? 'stagger',
-      resolveAgentProfession: (agentId) =>
-        ctx.agents.find((item) => item.id === agentId)?.profession,
-      teamSlots: ctx.teamSlots,
-      agents: ctx.agents,
-    })
-  }
-  return ctx.extraMods ?? createEmptyBuffStatModifiers()
 }
 
 function resolvePackMods(
@@ -1150,6 +1164,33 @@ function resolvePackMods(
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
   })
+}
+
+/** 旧路径：直接 resolveEffectsToMods。阶段 6 双跑对照用。 */
+export function resolvePackModsDirect(
+  effects: BuffEffect[],
+  isMain: boolean,
+  ctx: PanelCalcContext,
+  slotIndex?: number,
+): BuffStatModifiers {
+  return resolvePackMods(effects, isMain, ctx, slotIndex)
+}
+
+/**
+ * Buff pack 执行：BuffEffect → EffectInstance → 往返 BuffEffect → 同一套 resolveEffectsToMods。
+ * 往返不读 legacyBuffEffect。影画 / 音擎 / 驱动盘 / 邦布 / 场地共用。
+ */
+export function resolvePackModsViaEffectSpec(
+  effects: BuffEffect[],
+  isMain: boolean,
+  ctx: PanelCalcContext,
+  slotIndex?: number,
+): BuffStatModifiers {
+  if (!effects.length) return createEmptyBuffStatModifiers()
+  const reconstructed = effects.map((effect) =>
+    effectInstanceToBuffEffect(instantiateBuffEffect(effect, { sourceKey: 'buff' })),
+  )
+  return resolvePackMods(reconstructed, isMain, ctx, slotIndex)
 }
 
 export function collectSlotDriveDiscEffects(
@@ -1215,7 +1256,7 @@ export function collectSlotDriveDiscMods(
       ctx: defaultSkillContext('direct'),
     })
   }
-  return resolvePackMods(effects, isMain, ctx)
+  return resolvePackModsViaEffectSpec(effects, isMain, ctx)
 }
 
 export function collectTeamDriveDiscMods(
@@ -1246,9 +1287,44 @@ export function collectTeamDriveDiscMods(
   return total
 }
 
-export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {
+/** 收集一趟所需的上下文（只含收集真正读到的字段；完整 `PanelCalcContext` 结构上兼容） */
+interface CollectPassContext {
+  teamSlots: PanelCalcContext['teamSlots']
+  agents: PanelCalcContext['agents']
+  wengines: PanelCalcContext['wengines']
+  driveDiscs: PanelCalcContext['driveDiscs']
+  bangboo: PanelCalcContext['bangboo'] | null
+  bangbooRefine: PanelCalcContext['bangbooRefine']
+  environmentBuffs: PanelCalcContext['environmentBuffs']
+  mainSlotIndex: PanelCalcContext['mainSlotIndex']
+  restrictToSlotIndex: PanelCalcContext['restrictToSlotIndex'] | null
+  excludeBangboo: PanelCalcContext['excludeBangboo']
+  rowBuffOverride: PanelCalcContext['rowBuffOverride'] | null
+}
+
+/**
+ * 收集一趟（把某个槽位当作「这份面板的归属槽位」）。
+ *
+ * ⚠️ **不要直接调用**：对外入口是 `collectAllBuffEffects`（= 构建 + 筛选）；
+ * 构建层 `buildBuffCatalog` 会用它逐个槽位跑（每个槽位各当一次 `mainSlotIndex`）。
+ * 保留"按单一归属槽位收一次"的原始实现，是为了保持与拆分前逐位等价。
+ */
+function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
   const collected: CollectedEffect[] = []
   const mainIndex = ctx.mainSlotIndex
+
+  /** 当前全部槽位（`applicableSlots` 的「全队 / 无主」取值） */
+  const allSlots = ctx.teamSlots.map((_, index) => index)
+  /**
+   * 作用对象（2026-09-24，施工规格 §2.1）：`team` 或无主来源 → 全部槽位；否则 → `[提供者槽位]`。
+   * 提供者槽位从来源标记解析（`agent-<i>-…` / `wengine-<i>-…` / `drive-disc-<i>-…`；邦布 / 场地解析不出 = 无主）。
+   */
+  function describeSlots(effect: BuffEffect, sourceKey: string) {
+    const providerSlot = parseSourceKeySlotIndex(sourceKey)
+    const applicableSlots =
+      effect.applyTarget === 'team' || providerSlot == null ? allSlots : [providerSlot]
+    return { applicableSlots, providerSlot }
+  }
 
   function pushPack(
     pack: Parameters<typeof collectBlockEntriesFromPack>[0],
@@ -1274,12 +1350,14 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
           blockId: entry.blockId,
           blockName: entry.blockName,
           blockNote: mergeBuffDisplayNotes(extraNote, entry.blockNote),
+          ...describeSlots(effect, sourceKey),
         })
       }
     }
   }
 
   ctx.teamSlots.forEach((slot, index) => {
+    if (ctx.restrictToSlotIndex != null && index !== ctx.restrictToSlotIndex) return
     if (!slot.agentId) return
     const agent = ctx.agents.find((item) => item.id === slot.agentId)
     if (!agent) return
@@ -1366,7 +1444,9 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
     const group = isMain ? '自身驱动盘' : '队友驱动盘'
     const sourceKey = `drive-disc-${index}`
 
-    if (isMain && fourDisc) {
+    // 2 件套按口径只应有「自身」类效果（2026-09-24 实测数据：30 个盘 / 54 条 self / team 0 条）——
+    // 因此**不再按"这一趟的归属槽位"筛**：统一走 `applicableSlots`（自身 → [该槽位]），结果不变且少一个特例。
+    if (fourDisc) {
       const twoKey = `${sourceKey}-4set-2pc`
       for (const entry of collectTwoPieceBlockEntries(fourDisc)) {
         for (const effect of entry.effects.filter(matchesTarget)) {
@@ -1383,6 +1463,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.twoPieceNote, entry.blockNote),
+            ...describeSlots(effect, twoKey),
           })
         }
       }
@@ -1399,11 +1480,12 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
+            ...describeSlots(effect, fourKey),
           })
         }
       }
     }
-    if (isMain && twoDisc && twoDisc.id !== fourDisc?.id) {
+    if (twoDisc && twoDisc.id !== fourDisc?.id) {
       const twoKey = `${sourceKey}-2set`
       for (const entry of collectTwoPieceBlockEntries(twoDisc)) {
         for (const effect of entry.effects.filter(matchesTarget)) {
@@ -1420,6 +1502,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(twoDisc.twoPieceNote, entry.blockNote),
+            ...describeSlots(effect, twoKey),
           })
         }
       }
@@ -1438,13 +1521,19 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
             blockId: entry.blockId,
             blockName: entry.blockName,
             blockNote: mergeBuffDisplayNotes(fourDisc.fourPieceNote, entry.blockNote),
+            ...describeSlots(effect, fourKey),
           })
         }
       }
     }
   })
 
-  if (ctx.bangboo?.id && ctx.bangboo.id !== 'none') {
+  if (
+    !ctx.excludeBangboo &&
+    ctx.restrictToSlotIndex == null &&
+    ctx.bangboo?.id &&
+    ctx.bangboo.id !== 'none'
+  ) {
     const refineIndex = clampRefine(ctx.bangbooRefine) - 1
     const fixedPack = {
       effectBlocks: ctx.bangboo.effectBlocks?.length
@@ -1527,7 +1616,235 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
     // 初始不勾选由 buildDefaultBuffSelection 对场地分组写 false。
   }
 
-  return collected
+  const rowOverride = ctx.rowBuffOverride ?? null
+  if (!rowOverride) return collected
+  // 行级例外：在**公共收集器**这一层滤掉 —— 普通路径（collectPanelBuffMods）与
+  // 明细路径（collectPanelBuffModSourcesUncached）都从这里出发，改一处即全覆盖
+  const disabled = expandBuffOverrideToEffectIds(
+    rowOverride,
+    collected.map((item) => ({ effect: item.effect, blockKey: blockKeyOfCollected(item) })),
+  )
+  if (!disabled) return collected
+  return collected.filter((item) => !disabled.has(item.effect.id))
+}
+
+/* ============================================================
+ * 构建 / 筛选分离（2026-09-24，施工规格 dev-docs/specs/buff-build-refactor-spec.md §3）
+ * ------------------------------------------------------------
+ * 构建：只依赖「配置」（队伍 / 装备 / 邦布 / 场地）→ 全量条目 + 纯配置键 + 缓存；
+ * 消费：按「这次给哪个槽位算」+ 行级例外 + 两个开关筛（`selectEntriesForSlot`）。
+ * `collectAllBuffEffects` 签名不变，内部改为「构建 + 筛选」—— 调用点零改动。
+ * ============================================================ */
+
+/** 构建层输入：纯配置（不含任何运行期输入） */
+export interface BuffBuildConfig {
+  teamSlots: TeamSlot[]
+  agents: AgentBuffDoc[]
+  wengines: WengineBuffDoc[]
+  driveDiscs: DriveDiscBuffDoc[]
+  bangboo: BangbooBuffDoc | null
+  bangbooRefine: number
+  environmentBuffs: EnvironmentBuffEntry[]
+  /** 用户侧额外增益（2026-09-24 阶段 3 起并入这份构建） */
+  extraGains: ExtraBuffGain[]
+}
+
+export interface BuffBuild {
+  /** 全量条目（**与"这次给哪个槽位算"无关**；不含额外增益 —— 额外增益仍走自己的收集器） */
+  entries: CollectedEffect[]
+  /** 只含配置的键 */
+  key: string
+}
+
+const buffBuildCache = new Map<string, BuffBuild>()
+
+/** 构建层键：**只含配置**（不得含主角 / 勾选 / 招式上下文 / 行级例外 / 两个开关） */
+function buildBuffConfigKey(config: BuffBuildConfig): string {
+  return [
+    teamSlotsKey(config.teamSlots),
+    `${config.bangboo?.id ?? ''},${config.bangbooRefine}`,
+    environmentBuffsKey(config.environmentBuffs ?? []),
+    stringifyKeyPart(config.extraGains ?? []),
+  ].join(KEY_SEP)
+}
+
+/**
+ * 构建全量条目：对每个槽位各跑一次「把它当作这份面板的归属槽位」的收集，再合并。
+ *
+ * 合并规则：同一个实效 id 只留一条 —— **优先留"产出它的那一趟 == 它所属槽位"** 的那份
+ * （即标签按「自身」写的那一份，下称 canonical），否则留先出现的；
+ * 消费侧按 `applicableSlots` 筛，**与"这次给哪个槽位算"无关**。
+ */
+export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
+  const key = buildBuffConfigKey(config)
+  const cached = buffBuildCache.get(key)
+  if (cached) return cached
+  const entries: CollectedEffect[] = []
+  const indexById = new Map<string, number>()
+  /** 每个条目是"哪一趟"产出的（用于 canonical 替换判据：要看趟次，不能只看条目的 providerSlot） */
+  const passById: number[] = []
+  for (let index = 0; index < config.teamSlots.length; index += 1) {
+    const pass = collectForMainSlot({
+      teamSlots: config.teamSlots,
+      agents: config.agents,
+      wengines: config.wengines,
+      driveDiscs: config.driveDiscs,
+      bangboo: config.bangboo,
+      bangbooRefine: config.bangbooRefine,
+      environmentBuffs: config.environmentBuffs,
+      mainSlotIndex: index,
+      restrictToSlotIndex: null,
+      excludeBangboo: false,
+      rowBuffOverride: null,
+    })
+    for (const item of pass) {
+      const existing = indexById.get(item.effect.id)
+      if (existing == null) {
+        indexById.set(item.effect.id, entries.length)
+        passById.push(index)
+        entries.push(item)
+        continue
+      }
+      // canonical 优先：**产出它的那一趟 == 它所属槽位**（即标签按"自身"写的那一份）
+      if (index === item.providerSlot && passById[existing] !== item.providerSlot) {
+        entries[existing] = item
+        passById[existing] = index
+      }
+    }
+  }
+  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。适用槽位用它自己的作用槽位折算；
+  // 提供者槽位 = null（无主）；行级例外由消费侧按 `extra-<id>` 判（键不变）。
+  for (const gain of config.extraGains ?? []) {
+    const applySlot = resolveExtraGainApplySlot(gain)
+    entries.push({
+      effect: extraGainToEffect(gain),
+      sourceKey: `extra-${gain.id}`,
+      sourceLabel: '额外 Buff',
+      providerName: gain.name || '额外 Buff',
+      providerAvatar: null,
+      group: '额外 Buff',
+      blockId: gain.id,
+      blockName: gain.name || '额外 Buff',
+      applicableSlots: applySlot === 'team' ? config.teamSlots.map((_, i) => i) : [applySlot],
+      providerSlot: null,
+    })
+  }
+  const build: BuffBuild = { entries, key }
+  // 淘汰策略沿用现有行为：超限删最旧
+  if (buffBuildCache.size > BUFF_CATALOG_CACHE_LIMIT) {
+    const oldest = buffBuildCache.keys().next().value
+    if (oldest != null) buffBuildCache.delete(oldest)
+  }
+  buffBuildCache.set(key, build)
+  return build
+}
+
+/**
+ * 队友视角的展示改写：构建产物按「自己是主角」写标签，被别的槽位消费时改成「队友」。
+ * 键是现状里出现过的分组值（来自收集器的 `groupFor` / 驱动盘分支）；表里没有的一律原样保留。
+ */
+const TEAMMATE_GROUP: Record<string, string> = {
+  自身: '队友',
+  '全队（含自身）': '队友',
+  自身音擎: '队友音擎',
+  全队音擎: '队友音擎',
+  自身驱动盘: '队友驱动盘',
+}
+
+function applyTeammateView(entry: CollectedEffect): CollectedEffect {
+  const group = TEAMMATE_GROUP[entry.group] ?? entry.group
+  const sourceLabel = entry.sourceLabel.startsWith('自身 · ')
+    ? `队友 · ${entry.sourceLabel.slice('自身 · '.length)}`
+    : entry.sourceLabel
+  if (group === entry.group && sourceLabel === entry.sourceLabel) return entry
+  return { ...entry, group, sourceLabel }
+}
+
+/** 行级减法（唯一实现；目录条目与将来的额外增益共用） */
+export function isEntryDisabledByRowOverride(
+  entry: CollectedEffect,
+  override: FlowBuffOverride | null | undefined,
+): boolean {
+  if (!override) return false
+  if ((override.disabledEffectIds ?? []).includes(entry.effect.id)) return true
+  return (override.disabledBlockIds ?? []).includes(blockKeyOfCollected(entry))
+}
+
+/**
+ * 消费层：从构建产物里取"这次给哪个槽位算"要用的条目（唯一筛选入口）。
+ *
+ * 四条筛规则都照抄现状语义（施工规格 §4）：适用槽位集合 / 2 件套的「只在当主角时」/
+ * `restrictToSlotIndex`（无主条目里**场地保留、邦布排除**）/ `excludeBangboo`（按 `bangboo` 前缀）。
+ */
+export function selectEntriesForSlot(input: {
+  build: BuffBuild
+  slotIndex: number
+  rowBuffOverride?: FlowBuffOverride | null
+  restrictToSlotIndex?: number | null
+  excludeBangboo?: boolean
+}): CollectedEffect[] {
+  const restrict = input.restrictToSlotIndex ?? null
+  const out: CollectedEffect[] = []
+  for (const entry of input.build.entries) {
+    if (!entry.applicableSlots.includes(input.slotIndex)) continue
+    if (restrict != null) {
+      if (entry.providerSlot != null && entry.providerSlot !== restrict) continue
+      if (entry.sourceKey.startsWith('bangboo')) continue
+    }
+    if (input.excludeBangboo && entry.sourceKey.startsWith('bangboo')) continue
+    if (isEntryDisabledByRowOverride(entry, input.rowBuffOverride ?? null)) continue
+    out.push(entry.providerSlot === input.slotIndex ? entry : applyTeammateView(entry))
+  }
+  return out
+}
+
+/** 收集（对外唯一入口）：**签名与语义保持不变** —— 内部 = 构建 + 筛选 */
+export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {
+  return selectEntriesForSlot({
+    build: buildBuffCatalog({
+      teamSlots: ctx.teamSlots,
+      agents: ctx.agents,
+      wengines: ctx.wengines,
+      driveDiscs: ctx.driveDiscs,
+      bangboo: ctx.bangboo ?? null,
+      bangbooRefine: ctx.bangbooRefine,
+      environmentBuffs: ctx.environmentBuffs ?? [],
+      extraGains: ctx.extraGains ?? [],
+    }),
+    slotIndex: ctx.mainSlotIndex,
+    rowBuffOverride: ctx.rowBuffOverride ?? null,
+    restrictToSlotIndex: ctx.restrictToSlotIndex ?? null,
+    excludeBangboo: ctx.excludeBangboo ?? false,
+  })
+}
+
+/** 额外 Buff 的稳定块键（显示与行级过滤必须用同一个，否则表里关得掉、结算里关不掉） */
+export function extraGainBlockKey(gainId: string): string {
+  return `extra-${gainId}`
+}
+
+/** 效果块的稳定键（与目录一致：`${sourceKey}-${blockId}`；邦布为 `bangboo`；额外 Buff 为 `extra-<id>`） */
+export function blockKeyOfCollected(item: CollectedEffect): string {
+  const blockId = (item as unknown as { blockId?: string | null }).blockId ?? ''
+  // 额外 Buff：sourceKey 本身就是 `extra-<id>`，不再拼 blockId（否则拼成 `extra-x-x`）
+  if (item.sourceKey.startsWith('extra-')) return item.sourceKey
+  return item.sourceKey.startsWith('bangboo') ? 'bangboo' : `${item.sourceKey}-${blockId}`
+}
+
+/**
+ * 行级例外是否关掉了这个额外 Buff。
+ *
+ * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
+ * （见下），所以必须单独判一次 —— 否则会出现"表里关得掉、结算里关不掉"。
+ */
+export function isExtraGainDisabledByRowOverride(
+  gain: Pick<ExtraBuffGain, 'id'>,
+  override: FlowBuffOverride | null | undefined,
+): boolean {
+  if (!override) return false
+  if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
+  // 额外 Buff 的效果 id 就是 gain.id（见 extraGainToEffect），单条禁用也按它判
+  return (override.disabledEffectIds ?? []).includes(gain.id)
 }
 
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {
@@ -1574,6 +1891,8 @@ const BUFF_CATALOG_CACHE_LIMIT = 1024
 /** 目录文档（角色/音擎/邦布/驱动盘）内容变更后须调用，避免同 ID 命中旧效果 */
 export function invalidateBuffCatalogCache() {
   buffCatalogCache.clear()
+  // 构建层缓存（2026-09-24 起）也要清：定义库变了，构建产物就失效
+  buffBuildCache.clear()
   // 部件记忆化一并清：属防御性处理（已核对 src/ 内无调用方就地修改这些对象，
   // 因此当前不会因不清而出现可复现的错误）。留着是为了让「就地改 + 失效」这条
   // 契约即使将来被误用也仍然成立。
@@ -1677,6 +1996,21 @@ export function clearBuffCatalogKeyPartCaches() {
   partKeyCache = new WeakMap()
 }
 
+/**
+ * 行级例外的稳定令牌（进目录缓存键）。
+ *
+ * - 同一例外必须得到**同一个键**：集合内容相同但写入顺序不同（UI 勾选顺序）也要同键，
+ *   否则缓存永不命中 —— 所以先排序再拼。
+ * - 不同例外必须得到**不同键**：这正是它必须进缓存键的原因，否则跨行串味。
+ */
+function rowBuffOverrideKey(override: FlowBuffOverride | null | undefined): string {
+  if (!override) return ''
+  const blocks = [...(override.disabledBlockIds ?? [])].sort()
+  const effects = [...(override.disabledEffectIds ?? [])].sort()
+  if (!blocks.length && !effects.length) return ''
+  return `${blocks.join(',')}|${effects.join(',')}`
+}
+
 function buildBuffCatalogKey(ctx: PanelCalcContext): string {
   // 注意：这里**不能**用外层 JSON.stringify 包住这些部件 —— 那会把已经序列化好的
   // 字符串再转义一遍，部件级记忆化就白做了（2026-09-10 实测：那样反而略慢）。
@@ -1688,10 +2022,13 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
     bangbooKey,
     String(ctx.mainSlotIndex),
     String(ctx.restrictToSlotIndex ?? ''),
-    stringifyKeyPart(ctx.extraGains ?? ctx.extraMods ?? null),
+    stringifyKeyPart(ctx.extraGains ?? null),
     stringifyKeyPart(ctx.buffSelection ?? null),
     stringifyKeyPart(ctx.skillContext ?? null),
     envKey,
+    // 行级例外也是"这一行算出来的清单"的输入之一，必须进键：
+    // 同一例外重复求值 → 命中；不同例外 → 各自成键，天然隔离（不跨行串味）
+    rowBuffOverrideKey(ctx.rowBuffOverride),
   ].join(KEY_SEP)
 }
 
@@ -1750,25 +2087,20 @@ function resolvePackEffectMods(
   ctx: PanelCalcContext,
   skipConvert: boolean,
 ): BuffStatModifiers {
-  if (pack.kind === 'extra') return resolveContextExtraMods(ctx)
+  // 额外增益不再单独折包（阶段 3.3）：它的效果由统一收集产出，这里只保留“包”的形状
+  if (pack.kind === 'extra') return createEmptyBuffStatModifiers()
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
   if (pack.kind === 'bangboo') {
     if (!effects.length) return createEmptyBuffStatModifiers()
-    return resolveEffectsToMods(effects, {
-      ctx: skillCtx,
-      stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
-      convertInputs: ctx.buffSelection?.convertInputs,
-      attrValues: ctx.attrValues,
-      panelSourceValues:
-        ctx.panelSourceValuesBySlot?.get(ctx.mainSlotIndex) ?? ctx.panelSourceValues,
+    return resolvePackModsViaEffectSpec(effects, true, {
+      ...ctx,
+      skillContext: skillCtx,
       skipConvert,
-      selection: ctx.buffSelection,
-      resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
-    })
+    }, ctx.mainSlotIndex)
   }
   if (!effects.length) return createEmptyBuffStatModifiers()
   const isMain = pack.kind !== 'slot' || pack.slotIndex === ctx.mainSlotIndex
-  return resolvePackMods(
+  return resolvePackModsViaEffectSpec(
     effects,
     isMain,
     { ...ctx, skillContext: skillCtx, skipConvert },
@@ -1782,10 +2114,7 @@ function ensureNonConvertMods(entry: BuffCatalogEntry, ctx: PanelCalcContext) {
   for (const pack of entry.packs) {
     let mods = entry.nonConvertModsByPackKey[pack.key]
     if (!mods) {
-      mods =
-        pack.kind === 'extra'
-          ? resolveContextExtraMods(ctx)
-          : resolvePackEffectMods(pack, pack.nonConvertEffects, ctx, true)
+      mods = resolvePackEffectMods(pack, pack.nonConvertEffects, ctx, true)
       entry.nonConvertModsByPackKey[pack.key] = mods
     }
     merged = mergeBuffStatModifiers(merged, mods)
@@ -1857,6 +2186,8 @@ function makeCatalogEntryFromSources(
 }
 
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
+  // 行级例外已并入缓存键（`rowBuffOverrideKey`）：同一例外命中缓存，不同例外各自成键，
+  // 因此这里**不再**需要绕开目录缓存。
   const key = buildBuffCatalogKey(ctx)
   const cached = buffCatalogCache.get(key)
   if (cached) {
@@ -1869,270 +2200,75 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
 }
 
 function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSource[] {
-  const sources: BuffModSource[] = []
-  const mainIndex = ctx.mainSlotIndex
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
+  const ctxForResolve: PanelCalcContext = { ...ctx, skillContext: skillCtx }
+  const sources: BuffModSource[] = []
+  const grouped = new Map<string, CollectedEffect[]>()
 
+  for (const item of collectAllBuffEffects(ctx)) {
+    const key = item.sourceKey.startsWith('bangboo')
+      ? 'bangboo'
+      : `${item.sourceKey}-${item.blockId}`
+    const list = grouped.get(key)
+    if (list) list.push(item)
+    else grouped.set(key, [item])
+  }
+
+  for (const [key, items] of grouped) {
+    const first = items[0]
+    if (!first) continue
+    const effects = items.map((item) => item.effect)
+    const slotIndex = key === 'bangboo' ? ctx.mainSlotIndex : parseSourceKeySlotIndex(first.sourceKey)
+    const isMain = slotIndex == null || slotIndex === ctx.mainSlotIndex
+    const mods = resolvePackModsViaEffectSpec(effects, isMain, ctxForResolve, slotIndex ?? undefined)
+    if (!hasNonZeroBuffMods(mods) && !effects.length && !first.blockNote) continue
+    sources.push({
+      key,
+      label: first.sourceLabel,
+      mods,
+      effects,
+      blockName: first.blockName,
+      note: first.blockNote || undefined,
+    })
+  }
+
+  const mainIndex = ctx.mainSlotIndex
   ctx.teamSlots.forEach((slot, index) => {
     if (ctx.restrictToSlotIndex != null && index !== ctx.restrictToSlotIndex) return
     if (!slot.agentId) return
-
     const agent = ctx.agents.find((item) => item.id === slot.agentId)
     if (!agent) return
-
-    const isMain = index === mainIndex
-    const roleLabel = isMain ? '自身' : '队友'
-    const matchesTarget = (e: BuffEffect) =>
-      isMain ? e.applyTarget === 'self' || e.applyTarget === 'team' : e.applyTarget === 'team'
     const clampedRank = Math.min(6, Math.max(0, Math.round(slot.rank)))
-
+    const roleLabel = index === mainIndex ? '自身' : '队友'
     for (let rank = 0; rank <= clampedRank; rank++) {
-      const rankBuffs = agent.mindscapeBuffs[rank] ?? createEmptySelfTeamBuffs()
       const note = getMindscapeNote(agent, rank)
-      const blockEntries = collectBlockEntriesFromPack(rankBuffs)
-      if (!blockEntries.length && note) {
-        sources.push({
-          key: `agent-${index}-${rank}`,
-          label: `${roleLabel} · ${agent.name} · ${rank}影`,
-          mods: createEmptyBuffStatModifiers(),
-          note: note || undefined,
-          effects: [],
-        })
-        continue
-      }
-      blockEntries.forEach((entry, blockIndex) => {
-        const sourceKey = `agent-${index}-${rank}`
-        const effects = entry.effects
-          .filter(matchesTarget)
-          .map((effect) => cloneEffectInstance(effect, sourceKey, entry.blockId))
-        const mindscapeMods = resolvePackMods(effects, isMain, {
-          ...ctx,
-          skillContext: skillCtx,
-        }, index)
-        if (!hasNonZeroBuffMods(mindscapeMods) && !note && !effects.length) return
-        sources.push({
-          key: `agent-${index}-${rank}-${entry.blockId}`,
-          label: `${roleLabel} · ${agent.name} · ${rank}影`,
-          mods: mindscapeMods,
-          note: blockIndex === 0 ? note || undefined : undefined,
-          effects,
-          blockName: entry.blockName,
-        })
+      if (!note) continue
+      const rankBuffs = agent.mindscapeBuffs[rank] ?? createEmptySelfTeamBuffs()
+      if (collectBlockEntriesFromPack(rankBuffs).length) continue
+      sources.push({
+        key: `agent-${index}-${rank}`,
+        label: `${roleLabel} · ${agent.name} · ${rank}影`,
+        mods: createEmptyBuffStatModifiers(),
+        note,
+        effects: [],
       })
-    }
-
-    if (slot.wengineId !== 'none') {
-      const wengine = ctx.wengines.find((item) => item.id === slot.wengineId)
-      if (wengine && isWengineProfessionMatch(agent.profession, wengine.profession)) {
-        const refineIndex = clampRefine(slot.wengineRefine) - 1
-        const refineBuffsRaw = wengine.refinementBuffs[refineIndex] ?? createEmptySelfTeamBuffs()
-        const allRefineEffects = wengine.refinementBuffs.map((rank) => rank.effects ?? [])
-        const allRefineBlocks = wengine.refinementBuffs.map((rank) => rank.effectBlocks ?? [])
-        const refineBuffs = applyAnomalyFlagsToPack(
-          refineBuffsRaw,
-          allRefineEffects,
-          allRefineBlocks,
-        )
-        const packs = [
-          { key: 'fixed', pack: wengine.fixedBuffs },
-          { key: 'refine', pack: refineBuffs },
-        ]
-        for (const item of packs) {
-          const sourceKey = `wengine-${index}-${item.key}`
-          for (const entry of collectBlockEntriesFromPack(item.pack)) {
-            const effects = entry.effects
-              .filter(matchesTarget)
-              .map((effect) => cloneEffectInstance(effect, sourceKey, entry.blockId))
-            const wengineMods = resolvePackMods(effects, isMain, {
-              ...ctx,
-              skillContext: skillCtx,
-            }, index)
-            if (!hasNonZeroBuffMods(wengineMods) && !effects.length) continue
-            sources.push({
-              key: `wengine-${index}-${item.key}-${entry.blockId}`,
-              label: `${roleLabel} · ${agent.name} · 音擎 · ${wengine.name}（精${slot.wengineRefine}）`,
-              mods: wengineMods,
-              effects,
-              blockName: entry.blockName,
-            })
-          }
-        }
-      }
-    }
-
-    // 驱动盘：与 collectAllBuffEffects 相同拆分，避免与影画/其他来源串 id
-    {
-      const selection = {
-        twoPieceId: slot.twoPieceDriveDiscId,
-        fourPieceId: slot.fourPieceDriveDiscId,
-      }
-      const fourDisc =
-        selection.fourPieceId !== 'none'
-          ? ctx.driveDiscs.find((item) => item.id === selection.fourPieceId)
-          : undefined
-      const twoDisc =
-        selection.twoPieceId !== 'none'
-          ? ctx.driveDiscs.find((item) => item.id === selection.twoPieceId)
-          : undefined
-      const baseKey = `drive-disc-${index}`
-
-      const pushDiscSource = (
-        key: string,
-        label: string,
-        blockId: string,
-        blockName: string,
-        rawEffects: BuffEffect[],
-      ) => {
-        const effects = rawEffects
-          .filter(matchesTarget)
-          .map((effect) => cloneEffectInstance(effect, key, blockId))
-        const mods = resolvePackMods(effects, isMain, {
-          ...ctx,
-          skillContext: skillCtx,
-        }, index)
-        if (!hasNonZeroBuffMods(mods) && !effects.length) return
-        sources.push({
-          key: `${key}-${blockId}`,
-          label,
-          mods,
-          effects,
-          blockName,
-        })
-      }
-
-      if (isMain && fourDisc) {
-        for (const entry of collectTwoPieceBlockEntries(fourDisc)) {
-          pushDiscSource(
-            `${baseKey}-4set-2pc`,
-            `${roleLabel} · ${agent.name} · 驱动盘 · ${fourDisc.name}（2件）`,
-            entry.blockId,
-            entry.blockName,
-            entry.effects.map((effect) => ({ ...effect, enabledDefault: false })),
-          )
-        }
-        for (const entry of collectBlockEntriesFromPack(fourDisc.fourPieceBuffs)) {
-          pushDiscSource(
-            `${baseKey}-4set`,
-            `${roleLabel} · ${agent.name} · 驱动盘 · ${fourDisc.name}（4件）`,
-            entry.blockId,
-            entry.blockName,
-            entry.effects,
-          )
-        }
-      }
-      if (isMain && twoDisc && twoDisc.id !== fourDisc?.id) {
-        for (const entry of collectTwoPieceBlockEntries(twoDisc)) {
-          pushDiscSource(
-            `${baseKey}-2set`,
-            `${roleLabel} · ${agent.name} · 驱动盘 · ${twoDisc.name}（2件）`,
-            entry.blockId,
-            entry.blockName,
-            entry.effects.map((effect) => ({ ...effect, enabledDefault: false })),
-          )
-        }
-      }
-      if (!isMain && fourDisc) {
-        for (const entry of collectBlockEntriesFromPack(fourDisc.fourPieceBuffs)) {
-          pushDiscSource(
-            `${baseKey}-4set`,
-            `${roleLabel} · ${agent.name} · 驱动盘 · ${fourDisc.name}（4件）`,
-            entry.blockId,
-            entry.blockName,
-            entry.effects,
-          )
-        }
-      }
     }
   })
 
-  if (
-    !ctx.excludeBangboo &&
-    ctx.restrictToSlotIndex == null &&
-    ctx.bangboo?.id &&
-    ctx.bangboo.id !== 'none'
-  ) {
-    const refineIndex = clampRefine(ctx.bangbooRefine) - 1
-    const fixedEffects = ctx.bangboo.effectBlocks?.length
-      ? flattenBlocks(ctx.bangboo.effectBlocks)
-      : (ctx.bangboo.effects ?? [])
-    const refineEffects = withRefinementAnomalyFlags(
-      ctx.bangboo.refinementEffectBlocks?.[refineIndex]?.length
-        ? flattenBlocks(ctx.bangboo.refinementEffectBlocks[refineIndex]!)
-        : (ctx.bangboo.refinementEffects?.[refineIndex] ?? []),
-      ctx.bangboo.refinementEffects ?? [],
-      ctx.bangboo.refinementEffectBlocks,
-    )
-    const effects = [...fixedEffects, ...refineEffects].map((effect) =>
-      cloneEffectInstance(effect, 'bangboo', 'bangboo'),
-    )
-    const bangbooMods = resolveEffectsToMods(effects, {
-      ctx: skillCtx,
-      stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
-      convertInputs: ctx.buffSelection?.convertInputs,
-      attrValues: ctx.attrValues,
-      panelSourceValues:
-        ctx.panelSourceValuesBySlot?.get(ctx.mainSlotIndex) ?? ctx.panelSourceValues,
-      skipConvert: ctx.skipConvert,
-      selection: ctx.buffSelection,
-      resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
-    })
-    const refineBlockName =
-      ctx.bangboo.refinementEffectBlocks?.[refineIndex]?.[0]?.name?.trim() ||
-      `精${ctx.bangbooRefine}`
-    sources.push({
-      key: 'bangboo',
-      label: `邦布 · ${ctx.bangboo.name}（精${ctx.bangbooRefine}）`,
-      mods: bangbooMods,
-      effects,
-      blockName: refineBlockName,
-    })
-  }
-
-  for (const env of ctx.environmentBuffs ?? []) {
-    if (!env.effectBlocks?.length) continue
-    const defenseRoomTitle =
-      env.kind === 'defense-room' && env.roomIndex != null ? `第${env.roomIndex}间` : ''
-    for (const entry of collectBlockEntriesFromPack({
-      effectBlocks: env.effectBlocks.map((block) => ({
-        ...block,
-        name: mapEnvBuffBlockDisplayName(env, block),
-      })),
-      effects: [],
-    })) {
-      const effects = entry.effects.map((effect) => ({
-        ...cloneEffectInstance(effect, env.sourceKey, entry.blockId),
-      }))
-      if (!effects.length) continue
-      const mods = resolvePackMods(effects, true, { ...ctx, skillContext: skillCtx })
-      const kindLabel = environmentBuffKindLabel(env.kind)
-      const bossLabel = isBossFieldEnvironmentKind(env.kind)
-        ? env.bossName || env.name
-        : env.name
-      sources.push({
-        key: `${env.sourceKey}-${entry.blockId}`,
-        label: [kindLabel, bossLabel, defenseRoomTitle].filter(Boolean).join(' · '),
-        mods,
-        effects,
-        blockName: mapEnvBuffBlockDisplayName(env, {
-          name: entry.blockName || env.name,
-        }),
-        note: mergeBuffDisplayNotes(
-          env.text,
-          env.kind === 'defense-room' && env.roomBosses?.length
-            ? `房间 Boss：${env.roomBosses.map((b) => b.name).join('、')}`
-            : '',
-          entry.blockNote,
-        ) || undefined,
-      })
-    }
-  }
-
-  if (ctx.extraGains?.length || ctx.extraMods) {
+  if (ctx.extraGains?.length) {
+    const extraEffects = (ctx.extraGains ?? [])
+      .filter(
+        (gain) =>
+          extraGainAppliesToSlot(gain, ctx.mainSlotIndex) &&
+          !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
+      )
+      .map((gain) => extraGainToEffect(gain))
     sources.push({
       key: 'extra',
       label: '额外 Buff',
-      mods: resolveContextExtraMods(ctx),
-      effects: [],
+      // 额外增益的数值走统一收集；这条 source 只保留它的效果清单（供来源展示）
+      mods: createEmptyBuffStatModifiers(),
+      effects: extraEffects,
     })
   }
 
@@ -2140,6 +2276,9 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 }
 
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
+  // 行级例外已并入缓存键（`rowBuffOverrideKey`），与 collectPanelBuffModSources 统一走缓存：
+  // 同一例外命中缓存、不同例外各自成键。此前"带例外绕开缓存"的写法已删（每次求值重建整份清单，
+  // 2026-09-22 实测：42 行全带例外时单次评估 3.76 → 24.42 ms）。
   const key = buildBuffCatalogKey(ctx)
   let entry = buffCatalogCache.get(key)
   if (!entry) {
@@ -2367,11 +2506,11 @@ export function resolveAnomalyReleaseMultFields(
   }
 }
 
-export function computeFinalPanel(
+export function computePanelStages(
   rawExternalPanel: PanelStats,
   ctx: PanelCalcContext,
   options?: ComputeFinalPanelOptions,
-): PanelBuffBreakdown {
+): PanelStages {
   const externalPanel = fillPanelStatsDefaults(rawExternalPanel)
   const includeDetails = options?.includeDetails !== false
   const liveIndex = resolveLiveExternalSlotIndex(ctx)
@@ -2387,6 +2526,9 @@ export function computeFinalPanel(
   // 先叠非转模，再用局外/局内面板实时折算转模，避免环依赖
   const baseCtx: PanelCalcContext = {
     ...ctxForSources,
+    // 行级例外必须显式带上：baseCtx/fullCtx 是本函数重建的 ctx，
+    // 任何一处漏掉都会让"取消勾选不影响伤害"（2026-09-20 实测踩过）
+    rowBuffOverride: ctx.rowBuffOverride ?? ctxForSources.rowBuffOverride ?? null,
     mainExternalPanel: ctxForSources.mainExternalPanel ?? externalPanel,
     panelSourceValuesBySlot,
     panelSourceValues: mainPanelSources,
@@ -2395,7 +2537,7 @@ export function computeFinalPanel(
   const baseAnomalyControl = resolveBaseAnomalyControl(baseCtx)
   const baseEnergyRegen = resolveBaseEnergyRegen(baseCtx)
   const interimMods = collectPanelBuffMods(baseCtx)
-  const interimPanel = applyBuffModsToPanel(externalPanel, interimMods, {
+  const preConvertPanel = applyBuffModsToPanel(externalPanel, interimMods, {
     baseAnomalyControl,
     baseEnergyRegen,
   })
@@ -2404,7 +2546,7 @@ export function computeFinalPanel(
     ...mainExtras,
     pierceMod: 0,
   })
-  const finalAttrs = panelToConvertAttrValues(interimPanel, {
+  const finalAttrs = panelToConvertAttrValues(preConvertPanel, {
     ...mainExtras,
     pierceMod: interimMods.pierce,
   })
@@ -2432,14 +2574,26 @@ export function computeFinalPanel(
   const combatMods = extractCombatMods(totalMods)
   applyFengYuSharpenCritMods(combatMods, fullCtx)
   return {
-    totalMods,
-    combatMods,
-    finalPanel: {
-      ...finalPanel,
-      sharpenCritDmgBonus: combatMods.sharpenCritDmgBonus,
+    externalPanel,
+    preConvertPanel,
+    finalBreakdown: {
+      totalMods,
+      combatMods,
+      finalPanel: {
+        ...finalPanel,
+        sharpenCritDmgBonus: combatMods.sharpenCritDmgBonus,
+      },
+      sources: includeDetails ? totalSources : [],
     },
-    sources: includeDetails ? totalSources : [],
   }
+}
+
+export function computeFinalPanel(
+  rawExternalPanel: PanelStats,
+  ctx: PanelCalcContext,
+  options?: ComputeFinalPanelOptions,
+): PanelBuffBreakdown {
+  return computePanelStages(rawExternalPanel, ctx, options).finalBreakdown
 }
 
 export function buildDefaultBuffSelection(

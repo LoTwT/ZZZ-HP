@@ -68,6 +68,21 @@ import type { PanelStats } from '@/types/calculatorPanel'
 import type { AgentPanelSourceKind } from '@/types/damageCalcHistory'
 import { AGENT_PANEL_SOURCE_LABELS, AGENT_PANEL_SOURCE_ORDER } from '@/utils/agentPanelSources'
 import type { SkillFlowDisplayOption } from '@/utils/skillFlowPanelSource'
+import {
+  resolveBuffSelectionForSlot,
+  type CollectedEffect,
+  type MultiSlotBuffSelection,
+} from '@/utils/panelBuffCalc'
+import type { FlowBuffOverride } from '@/types/damageCalcHistory'
+import SkillBuffOverrideModal from '@/components/calculator/SkillBuffOverrideModal.vue'
+import FlowBuffTableModal from '@/components/calculator/FlowBuffTableModal.vue'
+import {
+  buildFlowBuffTableColumns,
+  buildFlowBuffTableRows,
+  buildFlowBuffTableStates,
+  resolveRowBeneficiarySlots,
+  setFlowBuffEffectDisabled,
+} from '@/utils/flowBuffTable'
 
 const props = defineProps<{
   teamSlots: TeamSlot[]
@@ -94,11 +109,195 @@ const props = defineProps<{
     final: PanelStats | null
     sourceKind?: AgentPanelSourceKind | null
   } | null
+  /** 本行增益例外的候选列表（与全局增益选择器**同一份**，由页面传入） */
+  buffEffects?: CollectedEffect[]
+  /** 每条增益的显示文本（`effect.id` → `+123 攻击力（数值）`）；与勾选器同一套取值，转模才看得到数 */
+  buffEffectTexts?: Record<string, string>
+  /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
+  multiBuffSelection?: MultiSlotBuffSelection | null
 }>()
 
 const emit = defineEmits<{
   'update:panelSourceMode': [mode: 'config' | 'allocation' | 'sweep']
 }>()
+
+/** 本行增益例外：正在编辑的流程行 id（null = 关闭） */
+const buffOverrideEntryId = ref<string | null>(null)
+
+const buffOverrideOpen = computed({
+  get: () => buffOverrideEntryId.value != null,
+  set: (value: boolean) => {
+    if (!value) buffOverrideEntryId.value = null
+  },
+})
+
+const buffOverrideEntry = computed(() =>
+  currentSlot.value?.flow.find((item) => item.id === buffOverrideEntryId.value) ?? null,
+)
+
+/** 弹窗双向绑定：读该行覆盖，写回该行（缺省 = null = 全部继承全局） */
+const buffOverrideModel = computed<FlowBuffOverride | null>({
+  get: () => buffOverrideEntry.value?.buffOverrides ?? null,
+  set: (value) => {
+    const entry = buffOverrideEntry.value
+    if (!entry) return
+    updateFlow(entry.id, { buffOverrides: value })
+  },
+})
+
+function openBuffOverride(entryId: string) {
+  buffOverrideEntryId.value = entryId
+}
+
+/** 该行的例外条数（块级 + 单条），0 = 与全局一致 */
+function buffExceptionCount(entry: FlowEntry): number {
+  const override = entry.buffOverrides
+  return (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+}
+
+/* ============ 流程增益表（表格形态，2026-09-21 用户方案） ============ */
+
+const flowBuffTableOpen = ref(false)
+
+/** 表格行 = 当前槽位的流程招式；技能组展开为「组行 + 成员行」 */
+const flowBuffTableRows = computed(() =>
+  buildFlowBuffTableRows({
+    flow: currentSlot.value?.flow ?? [],
+    preparedName: (entry) => flowSkillName(entry),
+    groupOf: (entry) => {
+      const prepared = flowPrepared(entry)
+      return prepared && isPreparedGroup(prepared) ? preparedGroup(prepared) : null
+    },
+    memberKeyOf: (member) => skillGroupMemberKey(member),
+    sortMembers: (members) => sortSkillGroupMembers(members),
+    skillName: (skillId) => buffStore.findSkill(skillId)?.name,
+  }),
+)
+
+/** 表格列 = 一条增益一列，按提供者（角色1/2/3 → 其它 → 额外 Buff）分组 */
+const flowBuffTableColumns = computed(() =>
+  buildFlowBuffTableColumns({
+    items: props.buffEffects ?? [],
+    textById: props.buffEffectTexts ?? null,
+    slotLabels: props.teamSlots.map(
+      (slot, index) =>
+        props.agents.find((item) => item.id === slot.agentId)?.name ?? `角色${index + 1}`,
+    ),
+  }),
+)
+
+/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键 */
+const flowBuffRowBeneficiarySlots = computed(() =>
+  resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots }),
+)
+
+const flowBuffTableStates = computed(() =>
+  buildFlowBuffTableStates({
+    rows: flowBuffTableRows.value,
+    columns: flowBuffTableColumns.value,
+    items: props.buffEffects ?? [],
+    flow: currentSlot.value?.flow ?? [],
+    selection: resolveBuffSelectionForSlot(props.multiBuffSelection ?? null, activeSlotIndex.value),
+    beneficiarySlotsOf: (rowKey) =>
+      flowBuffRowBeneficiarySlots.value.get(rowKey) ?? [activeSlotIndex.value],
+  }),
+)
+
+const flowBuffTableSubtitle = computed(() => {
+  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
+  const agentName = props.agents.find((item) => item.id === agentId)?.name
+  return [props.schemeName, agentName].filter(Boolean).join(' · ')
+})
+
+function toggleFlowBuffCell(rowKey: string, columnKey: string) {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  const entry = currentSlot.value?.flow.find((item) => item.id === row?.entryId) ?? null
+  const column = flowBuffTableColumns.value.find((item) => item.key === columnKey)
+  if (!row || !entry || !column) return
+  const disabled = flowBuffTableStates.value[`${rowKey}|${columnKey}`] !== 'off'
+  setFlowBuffEffectDisabled({
+    entry,
+    effectId: column.key,
+    blockKey: column.blockKey,
+    // 同块其它效果：老数据"整组关"时，单开一条 = 只留这一条
+    siblingEffectIds: flowBuffTableColumns.value
+      .filter((item) => item.blockKey === column.blockKey && item.key !== column.key)
+      .map((item) => item.key),
+    disabled,
+    memberKey: row.memberKey ?? null,
+    skillId: row.skillId ?? null,
+  })
+  // 换引用要**换到位**：只换外层数组不够 —— 下游 `resolvedFlow` / 指纹 / 缓存键靠引用或内容比较，
+  // 行内 entry 对象不变时整条链可能都不触发（2026-09-21 实测：改完要刷新页面才更新伤害）。
+  const slotIndex = activeSlotIndex.value
+  slots.value = slots.value.map((slot, index) => {
+    if (index !== slotIndex) return slot
+    return {
+      ...slot,
+      flow: slot.flow.map((item) =>
+        item.id === entry.id
+          ? {
+              ...item,
+              buffOverrides: entry.buffOverrides ?? null,
+              memberOverrides: entry.memberOverrides,
+            }
+          : item,
+      ),
+    }
+  })
+  // 命中求值缓存里存的是「某个生效集」的结果，行级例外改了必须不复用旧条目。
+  // ⚠️ 2026-09-21 两次实测（含硬刷新 + 确认加载新模块）：加 clearHitEvalCache() **都没修好**
+  // "改完要刷新才更新"，故不留；真正卡点在"最优分配那条路的求值输入"，见 dev-docs/skill-buff-per-row.md。
+}
+
+/**
+ * 整列「全开 / 全关」（2026-09-23 用户要求）。
+ *
+ * 逐行写完之后**只换一次** slots 引用 —— 一次重算，代价与点一格同量级。
+ * 灰格（全局未启用、或这些行不吃这条增益）**跳过**，所以"全开"之后仍可能留着灰格，
+ * 这是对的：列级控制只在"能调整的格子"这种维度上有意义。
+ */
+function setFlowBuffColumn(columnKey: string, enabled: boolean) {
+  const column = flowBuffTableColumns.value.find((item) => item.key === columnKey)
+  if (!column) return
+  const siblingEffectIds = flowBuffTableColumns.value
+    .filter((item) => item.blockKey === column.blockKey && item.key !== column.key)
+    .map((item) => item.key)
+  const touchedEntryIds = new Set<string>()
+  for (const row of flowBuffTableRows.value) {
+    const state = flowBuffTableStates.value[`${row.key}|${columnKey}`]
+    if (state !== 'on' && state !== 'off') continue
+    const entry = currentSlot.value?.flow.find((item) => item.id === row.entryId) ?? null
+    if (!entry) continue
+    setFlowBuffEffectDisabled({
+      entry,
+      effectId: column.key,
+      blockKey: column.blockKey,
+      siblingEffectIds,
+      disabled: !enabled,
+      memberKey: row.memberKey ?? null,
+      skillId: row.skillId ?? null,
+    })
+    touchedEntryIds.add(entry.id)
+  }
+  if (!touchedEntryIds.size) return
+  const slotIndex = activeSlotIndex.value
+  slots.value = slots.value.map((slot, index) => {
+    if (index !== slotIndex) return slot
+    return {
+      ...slot,
+      flow: slot.flow.map((item) =>
+        touchedEntryIds.has(item.id)
+          ? {
+              ...item,
+              buffOverrides: item.buffOverrides ?? null,
+              memberOverrides: item.memberOverrides,
+            }
+          : item,
+      ),
+    }
+  })
+}
 
 const slots = defineModel<SchemeSlot[]>('slots', { required: true })
 const activeSlotIndex = defineModel<number>('editedSlotIndex', { default: 0 })
@@ -2761,6 +2960,9 @@ const showcaseTitle = computed(() => {
               <div class="col-head">
                 <div class="col-title-row">
                   <h3>流程</h3>
+                  <button type="button" class="mini-btn" @click="flowBuffTableOpen = true">
+                    流程增益表
+                  </button>
                   <label class="drag-toggle">
                     <input v-model="flowDragEnabled" type="checkbox" />
                     拖动排序
@@ -2852,6 +3054,23 @@ const showcaseTitle = computed(() => {
                   >
                     <template #actions>
                       <button
+                        type="button"
+                        class="mini-btn"
+                        draggable="false"
+                        :title="
+                          buffExceptionCount(entry)
+                            ? `本行增益例外 ${buffExceptionCount(entry)} 条`
+                            : '本行增益例外（缺省继承全局）'
+                        "
+                        @click="openBuffOverride(entry.id)"
+                      >
+                        增益<span
+                          v-if="buffExceptionCount(entry)"
+                          style="margin-left: 0.25rem; color: #ffd479"
+                          >{{ buffExceptionCount(entry) }}</span
+                        >
+                      </button>
+                      <button
                         v-if="flowIsGroup(entry)"
                         type="button"
                         class="mini-btn"
@@ -2891,6 +3110,23 @@ const showcaseTitle = computed(() => {
                 </li>
               </ul>
             </div>
+
+            <SkillBuffOverrideModal
+              v-model:open="buffOverrideOpen"
+              v-model:override="buffOverrideModel"
+              :effects="props.buffEffects ?? []"
+              :row-label="buffOverrideEntry?.id ?? ''"
+            />
+
+            <FlowBuffTableModal
+              v-model:open="flowBuffTableOpen"
+              :rows="flowBuffTableRows"
+              :columns="flowBuffTableColumns"
+              :states="flowBuffTableStates"
+              :subtitle="flowBuffTableSubtitle"
+              @toggle="toggleFlowBuffCell"
+              @set-column="setFlowBuffColumn"
+            />
           </div>
           <SkillFlowStatsPanel
             :team-slots="teamSlots"

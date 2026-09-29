@@ -80,8 +80,6 @@ const props = defineProps<{
   driveDiscs: DriveDiscBuffDoc[]
   teamSlots: TeamSlot[]
   activeSlot: number
-  /** 打开时的默认录入模式；用户可在弹窗内切换，不再跟随页面计算方式 */
-  preferredEntryMode?: Extract<PanelCalcMode, 'panel' | 'affix'>
   /** 每个角色的两份局外面板（面板导入 / 词条导入）+ 当前激活那份 */
   slotPanels?: Record<string, AgentPanelSources>
   /** 每人五大类技能等级；打开/换人时回填 */
@@ -125,23 +123,27 @@ const draftExternalPanel = reactive<ExternalPanelDraft>(createEmptyExternalPanel
 const draftAffixCounts = reactive(createEmptyAffixCounts())
 const draftAffixMains = reactive(createEmptyAffixDriveDiscMainStats())
 const draftSkillTalentLevels = reactive<SkillTalentLevels>(createDefaultSkillTalentLevels())
-/** 录入方式记忆 key：记住上次「面板导入 / 词条导入」，下次打开不强制回面板 */
-const ENTRY_MODE_STORAGE_KEY = 'zzz-hp-panel-import-entry-mode'
-
-function readRememberedEntryMode(): Extract<PanelCalcMode, 'panel' | 'affix'> | null {
-  const raw = localStorage.getItem(ENTRY_MODE_STORAGE_KEY)
-  return raw === 'panel' || raw === 'affix' ? raw : null
+/**
+ * 打开时的录入方式（用户口径 2026-09-17：两种方式**严格区分、不许默认**，「没导入过就是没有」）：
+ * - 该角色**激活的是哪一份** → 就按那一份开（激活词条导入 → 词条页；激活面板导入 → 面板页）；
+ * - 该角色**一份都没导入过** → **`null`（未选）**：弹窗不替他选，先显示两个入口让他选。
+ *
+ * 不做 localStorage 记忆：方案里本来就存了每人的两份面板 + `active`，
+ * 「上次点了哪个页签」这种跨会话状态没有额外价值；真要用哪份，改激活份即可。
+ */
+function entryModeForAgent(agentId: string): Extract<PanelCalcMode, 'panel' | 'affix'> | null {
+  const active = props.slotPanels?.[agentId]?.active
+  if (active === 'affixDerived') return 'affix'
+  if (active === 'imported') return 'panel'
+  return null
 }
 
-function rememberEntryMode(mode: Extract<PanelCalcMode, 'panel' | 'affix'>) {
-  localStorage.setItem(ENTRY_MODE_STORAGE_KEY, mode)
-}
+const currentAgentId = () => props.teamSlots[props.activeSlot]?.agentId || ''
 
-/** 面板 Tab 独立切换：面板导入 / 词条导入 */
-const entryMode = ref<Extract<PanelCalcMode, 'panel' | 'affix'>>(
-  readRememberedEntryMode() ?? props.preferredEntryMode ?? 'panel',
+/** 录入方式：`null` = 这个角色还没导入过任何一份（未选，不默认） */
+const entryMode = ref<Extract<PanelCalcMode, 'panel' | 'affix'> | null>(
+  entryModeForAgent(currentAgentId()),
 )
-watch(entryMode, (mode) => rememberEntryMode(mode))
 /** 面板草稿是不是来自截图识别（只用于记录来历，元数据） */
 let draftFromRecognition = false
 /** 识别写进草稿的那份数值快照：用来区分「识别来的」与「后来手改的」 */
@@ -281,7 +283,7 @@ watch(open, (isOpen) => {
     agentIdRestoredOnOpen = null
     return
   }
-  entryMode.value = readRememberedEntryMode() ?? props.preferredEntryMode ?? 'panel'
+  entryMode.value = entryModeForAgent(props.teamSlots[props.activeSlot]?.agentId || '')
   const slot = props.teamSlots[props.activeSlot]
   if (!slot) return
   selected.value = {
@@ -324,6 +326,8 @@ watch(
     // 不塞默认值、不清空 —— 那些默认值会让人以为「面板/词条已经被填过」，
     // 而且点确定导入时会把这些没录入过的数字写成真面板。
     resetDraftPanelFromSlot()
+    // 录入方式也按角色重判（用户口径 2026-09-17：按角色的激活份，不是全局记忆）
+    if (open.value) entryMode.value = entryModeForAgent(newId || '')
   },
 )
 
@@ -491,6 +495,8 @@ const summary = computed(() => {
   parts.push(discParts.join(' + ') || '未佩戴驱动盘')
   if (!selectedAgent.value) {
     parts.push('面板暂无')
+  } else if (entryMode.value === null) {
+    parts.push('未选录入方式')
   } else if (entryMode.value === 'affix') {
     const total = Object.values(draftAffixCounts).reduce((sum, n) => sum + (Number(n) || 0), 0)
     parts.push(`词条 ${total} 条`)
@@ -539,6 +545,11 @@ watch(
 function confirm() {
   if (!selected.value.agentId) return
   confirmHint.value = ''
+  // 「没导入过就是没有」：还没选录入方式时不写盘，也不替他猜是哪一份
+  if (entryMode.value == null) {
+    confirmHint.value = '先选一种录入方式：面板导入 / 词条导入'
+    return
+  }
   // 限制：必须有**这次导入的内容**才写盘 —— 否则会凭空生成一份没有数据的面板
   let external: PanelStats
   let panelSource: AgentPanelSourceKind
@@ -861,6 +872,21 @@ const canConfirm = computed(() => !!selected.value.agentId)
               <p class="panel-locked-title">面板暂不可导入</p>
               <p class="panel-locked-desc">请先在「角色」Tab 选择代理人，再录入或识别局外面板。</p>
             </div>
+            <div v-else-if="entryMode === null" class="panel-locked-state" role="status">
+              <p class="panel-locked-title">当前角色首次导入面板</p>
+              <p class="panel-locked-desc">
+                两种录入方式严格区分、独立保存<br />
+                请选一种：
+              </p>
+              <div class="entry-mode-row">
+                <button type="button" class="entry-mode-tab" @click="entryMode = 'panel'">
+                  面板导入
+                </button>
+                <button type="button" class="entry-mode-tab" @click="entryMode = 'affix'">
+                  词条导入
+                </button>
+              </div>
+            </div>
             <div v-else class="panel-import-stack">
               <div class="panel-source-bar">
                 <span class="panel-source-title">面板来源</span>
@@ -894,7 +920,8 @@ const canConfirm = computed(() => !!selected.value.agentId)
                 v-model:affix-counts="draftAffixCounts"
                 v-model:affix-drive-disc-main-stats="draftAffixMains"
                 v-model:skill-talent-levels="draftSkillTalentLevels"
-                v-model:calc-mode="entryMode"
+                :calc-mode="entryMode ?? 'panel'"
+                @update:calc-mode="entryMode = $event"
                 :agents="agents"
                 :wengines="wengines"
                 :drive-discs="driveDiscs"

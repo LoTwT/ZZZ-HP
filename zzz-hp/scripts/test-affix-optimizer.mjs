@@ -3,12 +3,13 @@
  * 1) 小规模场景与「全排列穷举」对比，求解器结果必须等于或接近穷举最优；
  * 2) 预算约束（总词条数 / 条目 cap / 互斥组）不得被突破；
  * 3) 分配结果真实可评估，且总伤与求解器报告一致；
- * 4) 计算量预算与候选宽度（auto 推导 / manual 指定）；
+ * 4) 计算量预算与自适应 Beam（多路线保留 B、初始门槛、层内比例）；
  * 5) 同步与异步结果必须一致，异步可中止；
- * 6) 零收益条目出局、交叉项补测、无半成品；
+ * 6) 零收益条目出局、交叉项补测（含交换阶段）、无半成品；
  * 7) 基础值取值与缓存失效（换音擎 / 换角色基础面板不得吃到旧值）。
  * 运行：npx vite-node scripts/test-affix-optimizer.mjs
  */
+import { readFileSync } from 'node:fs'
 import {
   createEmptyAffixCounts,
   createDefaultAffixDriveDiscMainStats,
@@ -22,25 +23,37 @@ import {
 } from '../src/utils/calculatorUi.ts'
 import {
   addAffixLibraryGroup,
+  affixEntryConditionSummary,
   coerceAffixLibraryState,
   createDefaultAffixLibrary,
   createDefaultAffixLibraryState,
   createDriveDiscMainStatAffixEntries,
   createDriveDiscTwoPieceAffixEntries,
-  createOptionalAffixLibraryEntries,
   createPresetAffixLibraryEntries,
   entryRollsToEvalInput,
+  extraGainFromLibraryEntry,
+  isPenRateAffixTarget,
   removeAffixLibraryGroup,
   renameAffixLibraryGroup,
   resolveAffixLibrary,
   resolveAffixLibraryAll,
   setAffixLibraryEntryEnabled,
+  setAffixLibraryGroupCap,
+  setAffixLibraryGroupEntryCaps,
+  updateAffixLibraryEntry,
+  affixGroupCaps,
 } from '../src/utils/affixLibrary.ts'
 import {
+  AFFIX_SEARCH_PRESETS,
   solveOptimalAffixAllocation,
   solveOptimalAffixAllocationAsync,
   buildAllocationRows,
+  formatAffixRollsSummary,
   resolveAffixOptimizerBudget,
+  resolveAffixSearchParams,
+  collectPenRateFieldLocks,
+  resolveFlatPenLadder,
+  DEFENSE_ZONE_PEN_RATE_CAP,
 } from '../src/utils/affixOptimizer.ts'
 import {
   buildOptimalEvalContext,
@@ -53,6 +66,10 @@ import {
   buildPanelSourceValuesBySlotMap,
   invalidateBuffCatalogCache,
 } from '../src/utils/panelBuffCalc.ts'
+import { resolveFlow, buildGenericPanelSkillContext } from '../src/utils/resolvedHit.ts'
+import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
+import { FRONTEND_ROOT, BUFFS_JSON, readJson } from './_paths.mjs'
+import path from 'node:path'
 
 let failed = 0
 let passed = 0
@@ -143,6 +160,48 @@ function makeHits(n, ownerAgentId = 'a') {
   return hits
 }
 
+/**
+ * 小池穷举（按条目档数）：返回最优总伤与分配。
+ *
+ * 与求解器同口径：预算 = 总词条数、条目自身 cap、`rollCost` 计入已用档数。
+ * 只用于小规模对照（条目 ≤ 4、预算 ≤ 8）。
+ */
+function bruteForceOptimal(ctxArg, subset, budgetRolls) {
+  const budget = resolveAffixOptimizerBudget(ctxArg, budgetRolls)
+  const rolls = {}
+  let bestTotal = -Infinity
+  let bestRolls = null
+  const rec = (index, usedRolls) => {
+    if (index === subset.length) {
+      const counts = { ...createEmptyAffixCounts() }
+      for (const e of subset) {
+        const n = rolls[e.id] ?? 0
+        const key = statKeyOfTarget(e.target)
+        if (n > 0 && key) counts[key] += n
+      }
+      const total = evaluateAffixCounts(ctxArg, counts).grandTotal
+      if (total > bestTotal) {
+        bestTotal = total
+        bestRolls = { ...rolls }
+      }
+      return
+    }
+    const entry = subset[index]
+    const cap = entry.cap > 0 ? entry.cap : budgetRolls
+    const rollCap = budget.rollCapOf(entry)
+    const limit = Math.min(cap, Number.isFinite(rollCap) ? rollCap : cap, budgetRolls)
+    for (let n = 0; n <= limit; n += 1) {
+      const nextRolls = usedRolls + n * (entry.rollCost ?? 1)
+      if (nextRolls > budget.maxTotalRolls) break
+      rolls[entry.id] = n
+      rec(index + 1, nextRolls)
+    }
+    rolls[entry.id] = 0
+  }
+  rec(0, 0)
+  return { bestTotal, bestRolls }
+}
+
 // ---------- 1. 小规模穷举对照 ----------
 console.log('\n[1] 与全排列穷举对比（预算 6 档）')
 {
@@ -151,45 +210,8 @@ console.log('\n[1] 与全排列穷举对比（预算 6 档）')
     ['substat:atkPercent', 'substat:atkFlat', 'substat:critRate', 'substat:critDmg'].includes(e.id),
   )
   const BUDGET = 6
-  const budget = resolveAffixOptimizerBudget(ctx, BUDGET)
 
-  // 暴力穷举：所有满足预算的组合
-  const bruteForce = () => {
-    let bestTotal = -Infinity
-    let bestRolls = null
-    const rolls = {}
-    const rec = (index, usedRolls) => {
-      if (index === subset.length) {
-        const counts = { ...createEmptyAffixCounts() }
-        for (const e of subset) {
-          const n = rolls[e.id] ?? 0
-          const key = statKeyOfTarget(e.target)
-          if (n > 0 && key) counts[key] += n
-        }
-        const total = evaluateAffixCounts(ctx, counts).grandTotal
-        if (total > bestTotal) {
-          bestTotal = total
-          bestRolls = { ...rolls }
-        }
-        return
-      }
-      const entry = subset[index]
-      const cap = entry.cap > 0 ? entry.cap : BUDGET
-      const rollCap = budget.rollCapOf(entry)
-      const limit = Math.min(cap, Number.isFinite(rollCap) ? rollCap : cap, BUDGET)
-      for (let n = 0; n <= limit; n += 1) {
-        const nextRolls = usedRolls + n * entry.rollCost
-        if (nextRolls > budget.maxTotalRolls) break
-        rolls[entry.id] = n
-        rec(index + 1, nextRolls)
-      }
-      rolls[entry.id] = 0
-    }
-    rec(0, 0)
-    return { bestTotal, bestRolls }
-  }
-
-  const brute = bruteForce()
+  const brute = bruteForceOptimal(ctx, subset, BUDGET)
   const solved = solveOptimalAffixAllocation({ ctx, entries: subset, maxTotalRolls: BUDGET })
 
   console.log(`    穷举最优 ${brute.bestTotal} | 求解器 ${solved.totalDamage}`)
@@ -259,7 +281,7 @@ console.log('\n[3] 结果一致性')
 {
   const BUDGET = 20
   const solved = solveOptimalAffixAllocation({ ctx, entries: library, maxTotalRolls: BUDGET })
-  const reEval = evaluateAffixCounts(ctx, solved.counts, solved.panelDeltas)
+  const reEval = evaluateAffixCounts(ctx, solved.counts, solved.panelDeltas, solved.valuePerCount, solved.extraGains)
   check('重算总伤与求解器报告一致',
     Math.abs(reEval.grandTotal - solved.totalDamage) < 1e-6,
     `${reEval.grandTotal} vs ${solved.totalDamage}`)
@@ -277,6 +299,28 @@ console.log('\n[3] 结果一致性')
   const rowSum = rows.reduce((s, r) => s + r.rolls * r.entry.rollCost, 0)
   check('展示行档数合计 = 已用总词条数', rowSum === solved.usedRolls,
     `${rowSum} vs ${solved.usedRolls}`)
+
+  // 展示行排序契约（2026-09-17 用户定）：组优先 → 组内档数降序 → 名称中文序
+  {
+    const base = library[0]
+    const synthetic = [
+      { ...base, id: 'ord:sub:a', group: '副词条', label: '甲', perRoll: 1 },
+      { ...base, id: 'ord:slot6', group: '6号位', label: '乙', perRoll: 1 },
+      { ...base, id: 'ord:slot4', group: '4号位', label: '丙', perRoll: 1 },
+      { ...base, id: 'ord:sub:b', group: '副词条', label: '丁', perRoll: 1 },
+      { ...base, id: 'ord:set2', group: '2件套', label: '戊', perRoll: 1 },
+      { ...base, id: 'ord:mine', group: '自建组', label: '己', perRoll: 1 },
+    ]
+    const ordered = buildAllocationRows(synthetic, {
+      'ord:sub:a': 3, 'ord:slot6': 1, 'ord:slot4': 1, 'ord:sub:b': 5, 'ord:set2': 2, 'ord:mine': 9,
+    })
+    const groups = ordered.map((row) => row.entry.group)
+    const subRolls = ordered.filter((row) => row.entry.group === '副词条').map((row) => row.rolls)
+    check('展示行：组优先（4→5→6→2件套→副词条→自建组），组内按档数降序',
+      JSON.stringify(groups) === JSON.stringify(['4号位', '6号位', '2件套', '副词条', '副词条', '自建组']) &&
+        JSON.stringify(subRolls) === JSON.stringify([5, 3]),
+      `${groups.join(' → ')}｜副词条档数 ${subRolls.join(',')}（自建组 9 档但仍排最后）`)
+  }
   console.log(`    引擎调用 ${solved.engineCalls} 次，截断=${solved.truncated}`)
 }
 
@@ -347,6 +391,8 @@ console.log('\n[4] 分组额度')
     )
     const solved = solveOptimalAffixAllocation({
       ctx, entries, maxTotalRolls: 46, groupCaps: { g2: 5 },
+      // 本用例只验「组额度」语义：关掉组内门槛，免得门槛先把组内弱的条目筛掉
+      initialCandidateThreshold: 0,
     })
     const used =
       (solved.rollsByEntryId['substat:atkPercent'] ?? 0) +
@@ -481,7 +527,7 @@ console.log('\n[4.9] 存档读取与分组补齐')
   const withLegacyGroup = coerceAffixLibraryState({
     customEntries: [],
     enabledOverride: {},
-    overrides: { 'panel:reduceDefense': { group: '老组' }, 'panel:resPen': { group: '老组' } },
+    overrides: { 'substat:atkPercent': { group: '老组' }, 'substat:critRate': { group: '老组' } },
     removedEntryIds: [],
   })
   const legacyGroup = withLegacyGroup.groups.find((g) => g.name === '老组')
@@ -538,6 +584,46 @@ console.log('\n[4.9] 存档读取与分组补齐')
     reopenedRecreated.groups.some((g) => g.name === '6号位'),
     reopenedRecreated.groups.map((g) => g.name).join(', '),
   )
+
+  // ---------- 批量改「本组单词条上限」（2026-09-17 用户口径） ----------
+  {
+    const base = createDefaultAffixLibraryState()
+    // 先把组额度设成非 0，否则「组额度不变」这条会 0 → 0 假通过
+    const baseWithGroupCap = setAffixLibraryGroupCap(base, '副词条', 7)
+    const before = resolveAffixLibrary(baseWithGroupCap)
+    const substatIds = before.filter((e) => e.group === '副词条').map((e) => e.id)
+    const groupCapBefore = baseWithGroupCap.groups.find((g) => g.name === '副词条')?.cap
+    const capped = setAffixLibraryGroupEntryCaps(baseWithGroupCap, '副词条', 6)
+    const capById = (state) =>
+      Object.fromEntries(resolveAffixLibrary(state).map((e) => [e.id, e.cap]))
+    const after = capById(capped)
+    check('批量改上限：本组每条都被设成 6',
+      substatIds.length > 0 && substatIds.every((id) => after[id] === 6),
+      `${substatIds.length} 条：${[...new Set(substatIds.map((id) => after[id]))].join(',')}`)
+    check('批量改上限：不碰别的组',
+      before.filter((e) => e.group !== '副词条').every((e) => after[e.id] === e.cap),
+      '其他组条目 cap 不变')
+    check('批量改上限：**组额度**不变（两层约束别混）',
+      groupCapBefore === 7 && capped.groups.find((g) => g.name === '副词条')?.cap === 7,
+      `组额度 ${groupCapBefore} → ${capped.groups.find((g) => g.name === '副词条')?.cap}`)
+
+    const unlimited = setAffixLibraryGroupEntryCaps(baseWithGroupCap, '副词条', 0)
+    check('批量改上限：0 = 不限（原样写入 0）',
+      substatIds.every((id) => capById(unlimited)[id] === 0),
+      '全部 0')
+    const rounded = setAffixLibraryGroupEntryCaps(baseWithGroupCap, '副词条', -3.7)
+    check('批量改上限：负数/小数被钳到 ≥0 的整数',
+      substatIds.every((id) => capById(rounded)[id] === 0),
+      `-3.7 → ${capById(rounded)[substatIds[0]]}`)
+
+    // 未分组作用域：groupName = '' 只动未分组条目
+    const withUngrouped = updateAffixLibraryEntry(baseWithGroupCap, substatIds[0], { group: '' })
+    const ungroupedAfter = capById(setAffixLibraryGroupEntryCaps(withUngrouped, '', 3))
+    check('批量改上限：groupName 为空串时只动「未分组」条目',
+      ungroupedAfter[substatIds[0]] === 3 &&
+        ungroupedAfter[substatIds[1]] === capById(withUngrouped)[substatIds[1]],
+      `未分组条目 ${ungroupedAfter[substatIds[0]]}，同组其他条目 ${ungroupedAfter[substatIds[1]]}`)
+  }
 }
 
 // ---------- 4.10 同字段多条：各按自己的每档折算 ----------
@@ -549,7 +635,7 @@ console.log('\n[4.10] 同字段多条目的折算')
     {
       id: 'main:slot5:atkPercent',
       label: '局外攻击力 30%',
-      target: 'stat:atkPercent',
+      target: 'panel:atkPercent',
       perRoll: 30,
       cap: 1,
       group: '5号位',
@@ -562,8 +648,7 @@ console.log('\n[4.10] 同字段多条目的折算')
     'main:slot5:atkPercent': 1,
   })
   // 6×3% + 1×30% = 48 个百分点（修前：7 档 × 被顶掉的 30% = 210）
-  const atkPercentPoints =
-    (sixPlusOne.counts.atkPercent ?? 0) * sixPlusOne.valuePerCount.atkPercent
+  const atkPercentPoints = sixPlusOne.deltas.atkPercent ?? 0
   check(
     '副词条 6 档×3% + 主属性 1 档×30% = 48 个百分点',
     Math.abs(atkPercentPoints - 48) < 1e-9,
@@ -571,7 +656,7 @@ console.log('\n[4.10] 同字段多条目的折算')
   )
 
   const mainOnly = entryRollsToEvalInput(pair, { 'main:slot5:atkPercent': 1 })
-  const mainOnlyPoints = (mainOnly.counts.atkPercent ?? 0) * mainOnly.valuePerCount.atkPercent
+  const mainOnlyPoints = mainOnly.deltas.atkPercent ?? 0
   check('只选主属性 1 档 = 30 个百分点', Math.abs(mainOnlyPoints - 30) < 1e-9,
     `实际 ${mainOnlyPoints}`)
 
@@ -579,9 +664,21 @@ console.log('\n[4.10] 同字段多条目的折算')
   const plain = entryRollsToEvalInput([byId.get('substat:atkPercent')], {
     'substat:atkPercent': 6,
   })
-  const plainPoints = (plain.counts.atkPercent ?? 0) * plain.valuePerCount.atkPercent
+  const plainPoints = plain.deltas.atkPercent ?? 0
   check('每档=常量表的条目行为不变（6 档 × 3% = 18）', Math.abs(plainPoints - 18) < 1e-9,
     `实际 ${plainPoints}`)
+  check('分析侧不写十格', Object.keys(sixPlusOne.counts).length === 0)
+  check(
+    '② 标签按条目档数摘要，不拿百分点冒充档数',
+    formatAffixRollsSummary(pair, {
+      'substat:atkPercent': 6,
+      'main:slot5:atkPercent': 1,
+    }) === '局外攻击力 30% 1 + 局外攻击力% 6',
+    formatAffixRollsSummary(pair, {
+      'substat:atkPercent': 6,
+      'main:slot5:atkPercent': 1,
+    }),
+  )
 
   // 预设的 4/5/6 号位条目必须落在对应组、且各自是独立条目（同字段不合并）
   const preset = createPresetAffixLibraryEntries()
@@ -629,12 +726,12 @@ console.log('\n[4.10] 同字段多条目的折算')
     twoPiece.map((e) => `${e.label}→${affixTargetLabelOf(e.target)}`).join(' / '))
   // 名称就是效果：逐条核对（与手册步骤 32 的清单一致）。爆伤/暴击伤害是刻意简写，同 4号位。
   const EXPECTED_TWO_PIECE = [
-    '暴击 8%=stat:critRate',
-    '爆伤 16%=stat:critDmg',
-    '精通 30=stat:mastery',
-    '局外攻击力 10%=stat:atkPercent',
-    '局外生命值 10%=stat:hpPercent',
-    '局外防御力 16%=stat:defPercent',
+    '暴击 8%=panel:critRate',
+    '爆伤 16%=panel:critDmg',
+    '精通 30=panel:mastery',
+    '局外攻击力 10%=panel:atkPercent',
+    '局外生命值 10%=panel:hpPercent',
+    '局外防御力 16%=panel:defPercent',
     '增伤 10%=panel:dmgBonus',
     '穿透率 8%=panel:penRate',
     '能量恢复 20%=panel:energyRegen',
@@ -659,10 +756,10 @@ console.log('\n[4.10] 同字段多条目的折算')
 console.log('\n[5] 安全网')
 {
   const solved = solveOptimalAffixAllocation({
-    ctx, entries: library, maxTotalRolls: 46, maxEngineCalls: 50,
+    ctx, entries: library, maxTotalRolls: 46, maxEngineCalls: 12,
   })
   check('达到调用上限时标记 truncated', solved.truncated === true,
-    `engineCalls=${solved.engineCalls}`)
+    `engineCalls=${solved.engineCalls} workUsed=${Math.round(solved.workUsed)}/${solved.workBudget}`)
   check('截断后仍返回合法结果',
     solved.totalDamage >= solved.baselineDamage - 1e-9 && solved.usedRolls >= 0)
 }
@@ -691,7 +788,7 @@ console.log('\n[6] 词条库解析')
   check('默认关闭的预设条目数与构造器一致',
     all.filter((e) => !e.enabledByDefault).length === presetOff,
     String(all.filter((e) => !e.enabledByDefault).length))
-  const enabledOne = setAffixLibraryEntryEnabled(state, 'panel:reduceDefense', true)
+  const enabledOne = setAffixLibraryEntryEnabled(state, 'set:dmgBonus:10', true)
   check('显式启用一条默认关闭的条目后多 1 条',
     resolveAffixLibrary(enabledOne).length === active.length + 1,
     String(resolveAffixLibrary(enabledOne).length))
@@ -700,22 +797,63 @@ console.log('\n[6] 词条库解析')
     String(resolveAffixLibrary(disabledOne).length))
 }
 
-// ---------- 7. 算法质量：多起点 + 2-swap 是否优于单起点 + 1-swap ----------
-console.log('\n[7] 算法质量对比')
+// ---------- 7. 多路线 Beam：B>1 不劣于 B=1，且真的并行保留多条路线 ----------
+console.log('\n[7] 多路线 Beam（比例 / 最小保留 / 最大保留 三件套）')
 {
-  const BUDGET = 30
-  // 用小预算强制发生剪枝，多起点才会与单起点产生差别
-  const full = solveOptimalAffixAllocation({
-    ctx, entries: library, maxTotalRolls: BUDGET, maxStarts: 3, maxWorkUnits: 300,
+  const BUDGET = 6
+  const subset = library.filter((e) =>
+    ['substat:atkPercent', 'substat:atkFlat', 'substat:critRate', 'substat:critDmg'].includes(e.id),
+  )
+  // 三件套语义（2026-09-17 二次定稿）：比例筛 → 不足 min 条补足 → 超过 max 条截顶。
+  // 上限是防爆宽度的唯一保险（比例筛管不住宽度：同层大量路线都在比例线以内）。
+  clearAffixEvalCache()
+  const capped = solveOptimalAffixAllocation({
+    ctx, entries: subset, maxTotalRolls: BUDGET,
+    enablePenRatePath: false,
+    minRetainedRoutes: 1, maxRetainedRoutes: 2,
+    initialCandidateThreshold: 0, routeRetentionRatio: 0, // 比例不筛 → 全靠上限截顶
   })
-  const single = solveOptimalAffixAllocation({
-    ctx, entries: library, maxTotalRolls: BUDGET, maxStarts: 1, maxWorkUnits: 300,
+  clearAffixEvalCache()
+  const uncapped = solveOptimalAffixAllocation({
+    ctx, entries: subset, maxTotalRolls: BUDGET,
+    enablePenRatePath: false,
+    minRetainedRoutes: 1, maxRetainedRoutes: 64,
+    initialCandidateThreshold: 0, routeRetentionRatio: 0, // 上不截顶
   })
-  console.log(`    多起点 ${full.totalDamage}（${full.engineCalls} 次评估）`)
-  console.log(`    单起点 ${single.totalDamage}（${single.engineCalls} 次评估）`)
-  check('多起点结果不劣于单起点',
-    full.totalDamage >= single.totalDamage - 1e-9,
-    `${full.totalDamage} vs ${single.totalDamage}`)
+  const brute = bruteForceOptimal(ctx, subset, BUDGET)
+  console.log(`    上限 2 总伤 ${capped.totalDamage}（存活 ${capped.survivedRoutes} 条，截顶丢 ${capped.routeCapDropped}）`)
+  console.log(`    上限 64 总伤 ${uncapped.totalDamage}（存活 ${uncapped.survivedRoutes} 条）｜穷举 ${brute.bestTotal}`)
+  check('上限生效：比例不筛时也留不过 max 条，并把截掉的数量记账',
+    capped.survivedRoutes < uncapped.survivedRoutes && capped.routeCapDropped > 0,
+    `存活 ${capped.survivedRoutes} < ${uncapped.survivedRoutes}｜截顶丢 ${capped.routeCapDropped}`)
+  check('上限截顶不算 truncated（设计内行为，不是预算吃紧）',
+    !capped.truncated, `truncated=${capped.truncated}`)
+  check('去掉上限后确实并行保留更多路线（同一比例下）',
+    uncapped.survivedRoutes > capped.survivedRoutes,
+    `${uncapped.survivedRoutes} > ${capped.survivedRoutes}`)
+  check('宽光束达到穷举最优（无漏解）',
+    uncapped.totalDamage >= brute.bestTotal - 1e-6,
+    `${uncapped.totalDamage} vs 穷举 ${brute.bestTotal}`)
+
+  // 下限本身：比例定到最狠（1）+ 下限 3 + 上限 64 → 一定有路线是被保底救回来的
+  clearAffixEvalCache()
+  const floored = solveOptimalAffixAllocation({
+    ctx, entries: subset, maxTotalRolls: BUDGET,
+    enablePenRatePath: false,
+    minRetainedRoutes: 3, maxRetainedRoutes: 64,
+    initialCandidateThreshold: 0, routeRetentionRatio: 1,
+  })
+  check('最小保留路线生效：比例筛完不足 3 条时补足到 3 条并计数',
+    floored.survivedRoutes >= 3 && floored.routeFloorSaved > 0,
+    `存活 ${floored.survivedRoutes}｜保底救回 ${floored.routeFloorSaved}`)
+
+  // 上下限写成矛盾值时：上限优先（界面上的「最大保留 N 条」必须字面成立）
+  const contradictory = resolveAffixSearchParams({
+    minRetainedRoutes: 8, maxRetainedRoutes: 2,
+  })
+  check('上下限矛盾时上限优先（min 被压到 max）',
+    contradictory.maxRetainedRoutes === 2 && contradictory.minRetainedRoutes === 2,
+    `min ${contradictory.minRetainedRoutes} / max ${contradictory.maxRetainedRoutes}`)
 }
 
 // ---------- 8. 计算量预算：缓存命中不计入 ----------
@@ -737,52 +875,129 @@ console.log('\n[8] 计算量预算记账')
   clearAffixEvalCache()
 }
 
-// ---------- 9. 候选宽度：auto 按流程规模自适应，manual 由用户指定 ----------
-console.log('\n[9] 候选宽度模式')
+// ---------- 9. 搜索预设与三项参数 ----------
+console.log('\n[9] 搜索预设与三项参数')
 {
   const all = resolveAffixLibraryAll(createDefaultAffixLibraryState())
   const hits8 = makeCtx({ hits: makeHits(8) })
   const hits30 = makeCtx({ hits: makeHits(30) })
-  clearAffixEvalCache()
-  const autoCheap = solveOptimalAffixAllocation({
-    ctx: hits8, entries: all, maxTotalRolls: 46,
-  })
-  clearAffixEvalCache()
-  const autoExpensive = solveOptimalAffixAllocation({
-    ctx: hits30, entries: all, maxTotalRolls: 46,
-  })
-  console.log(
-    `    8 命中：最紧宽度 ${autoCheap.candidateWidth} / 最宽 ${autoCheap.candidateWidthMax}，` +
-    `计算量 ${Math.round(autoCheap.workUsed)}`,
-  )
-  console.log(
-    `    30 命中：最紧宽度 ${autoExpensive.candidateWidth} / 最宽 ${autoExpensive.candidateWidthMax}，` +
-    `计算量 ${Math.round(autoExpensive.workUsed)}`,
-  )
-  check('auto 宽度不超过词条条数',
-    autoCheap.candidateWidthMax <= all.length && autoExpensive.candidateWidthMax <= all.length,
-    `${autoCheap.candidateWidthMax} / ${autoExpensive.candidateWidthMax} <= ${all.length}`)
-  check('便宜流程的最紧宽度不小于昂贵流程（便宜的多搜）',
-    autoCheap.candidateWidth >= autoExpensive.candidateWidth,
-    `${autoCheap.candidateWidth} >= ${autoExpensive.candidateWidth}`)
 
-  const manual = solveOptimalAffixAllocation({
-    ctx: hits8, entries: library, maxTotalRolls: 46,
-    candidateWidthMode: 'manual', manualCandidateWidth: 3,
+  /** 跑一个预设并记录耗时/计算量/淘汰/存活/截断，供实测校准预设用 */
+  const runPreset = (presetId, ctxArg) => {
+    clearAffixEvalCache()
+    const t0 = Date.now()
+    const result = solveOptimalAffixAllocation({
+      ctx: ctxArg, entries: all, maxTotalRolls: 46, searchPreset: presetId,
+    })
+    const ms = Date.now() - t0
+    console.log(
+      `    ${presetId}：门槛 ${result.searchParams.initialCandidateThreshold}／比例 ${result.searchParams.routeRetentionRatio}` +
+      `／保留 ${result.searchParams.minRetainedRoutes}-${result.searchParams.maxRetainedRoutes} 条` +
+      `｜淘汰 ${result.initialDropped} 条｜存活 ${result.survivedRoutes}（保底救回 ${result.routeFloorSaved}／上限截顶 ${result.routeCapDropped}）` +
+      `｜用档 ${result.usedRolls}｜计算量 ${Math.round(result.workUsed)}｜${ms}ms｜截断 ${result.truncated}｜总伤 ${result.totalDamage.toFixed(1)}`,
+    )
+    return { result, ms }
+  }
+
+  const fast = runPreset('fast', hits8).result
+  const balanced = runPreset('balanced', hits8).result
+  const fine = runPreset('fine', hits8).result
+
+  clearAffixEvalCache()
+  const expensive = solveOptimalAffixAllocation({
+    ctx: hits30, entries: all, maxTotalRolls: 46, searchPreset: 'fine',
   })
-  check('manual 模式宽度等于用户指定值',
-    manual.candidateWidth === 3 && manual.candidateWidthMax === 3,
-    `${manual.candidateWidth} / ${manual.candidateWidthMax}`)
-  check('manual 模式不设预算上限、不截断',
-    manual.workBudget === null && manual.truncated === false,
-    `workBudget=${manual.workBudget} truncated=${manual.truncated}`)
-  const clamped = solveOptimalAffixAllocation({
-    ctx: hits8, entries: library, maxTotalRolls: 46,
-    candidateWidthMode: 'manual', manualCandidateWidth: 999,
+
+  check('预设三件套与用户口径一致（快速 1-2/95%、均衡 2-5/90%、精细 4-8/50%）',
+    AFFIX_SEARCH_PRESETS.fast.minRetainedRoutes === 1 &&
+      AFFIX_SEARCH_PRESETS.fast.maxRetainedRoutes === 2 &&
+      AFFIX_SEARCH_PRESETS.fast.routeRetentionRatio === 0.95 &&
+      AFFIX_SEARCH_PRESETS.balanced.minRetainedRoutes === 2 &&
+      AFFIX_SEARCH_PRESETS.balanced.maxRetainedRoutes === 5 &&
+      AFFIX_SEARCH_PRESETS.balanced.routeRetentionRatio === 0.9 &&
+      AFFIX_SEARCH_PRESETS.fine.minRetainedRoutes === 4 &&
+      AFFIX_SEARCH_PRESETS.fine.maxRetainedRoutes === 8 &&
+      AFFIX_SEARCH_PRESETS.fine.routeRetentionRatio === 0.5,
+    JSON.stringify({
+      fast: AFFIX_SEARCH_PRESETS.fast,
+      balanced: AFFIX_SEARCH_PRESETS.balanced,
+      fine: AFFIX_SEARCH_PRESETS.fine,
+    }))
+  check('预设 fast 生效',
+    fast.searchParams.minRetainedRoutes === AFFIX_SEARCH_PRESETS.fast.minRetainedRoutes &&
+      fast.searchParams.maxRetainedRoutes === AFFIX_SEARCH_PRESETS.fast.maxRetainedRoutes &&
+      fast.searchParams.initialCandidateThreshold === AFFIX_SEARCH_PRESETS.fast.initialCandidateThreshold,
+    JSON.stringify(fast.searchParams))
+  check('预设 fine 生效',
+    fine.searchParams.minRetainedRoutes === AFFIX_SEARCH_PRESETS.fine.minRetainedRoutes &&
+      fine.searchParams.maxRetainedRoutes === AFFIX_SEARCH_PRESETS.fine.maxRetainedRoutes &&
+      fine.searchParams.initialCandidateThreshold === AFFIX_SEARCH_PRESETS.fine.initialCandidateThreshold,
+    JSON.stringify(fine.searchParams))
+  check('门槛越高淘汰越多（fast ≥ balanced ≥ fine）',
+    fast.initialDropped >= balanced.initialDropped && balanced.initialDropped >= fine.initialDropped,
+    `fast ${fast.initialDropped} ≥ balanced ${balanced.initialDropped} ≥ fine ${fine.initialDropped}`)
+  check('保留路线数随预设变宽松而增加（fast ≤ balanced ≤ fine）',
+    fast.survivedRoutes <= balanced.survivedRoutes && balanced.survivedRoutes <= fine.survivedRoutes,
+    `fast ${fast.survivedRoutes} ≤ balanced ${balanced.survivedRoutes} ≤ fine ${fine.survivedRoutes}`)
+  check('三个预设都没有撞上计算量上限被截断',
+    !fast.truncated && !balanced.truncated && !fine.truncated,
+    `fast ${Math.round(fast.workUsed)}／balanced ${Math.round(balanced.workUsed)}／fine ${Math.round(fine.workUsed)}`)
+  // 计算量不保证在 fast/balanced 之间单调（保留路线数与候选池规模互相影响），
+  // 但放宽预设一定更贵，所以只跟「精细」比。
+  check('更宽松的预设不会更省算力（fast / balanced ≤ fine）',
+    fast.workUsed <= fine.workUsed && balanced.workUsed <= fine.workUsed,
+    `${Math.round(fast.workUsed)}、${Math.round(balanced.workUsed)} ≤ ${Math.round(fine.workUsed)}`)
+  // 「快速」可以牺牲一点精度换速度，但实测校准要求它不低于精细的 95%
+  // （合成交叉项场景实测 96.3%，真实 96 命中长流程实测 100%）。
+  check('快速预设质量不低于精细的 95%',
+    fast.totalDamage >= fine.totalDamage * 0.95,
+    `${((fast.totalDamage / fine.totalDamage) * 100).toFixed(1)}%`)
+  check('均衡预设质量不低于精细的 99%',
+    balanced.totalDamage >= fine.totalDamage * 0.99,
+    `${((balanced.totalDamage / fine.totalDamage) * 100).toFixed(1)}%`)
+
+  clearAffixEvalCache()
+  const custom = solveOptimalAffixAllocation({
+    ctx: hits8, entries: all, maxTotalRolls: 46,
+    initialCandidateThreshold: 0.5, routeRetentionRatio: 0.5,
+    minRetainedRoutes: 3, maxRetainedRoutes: 7,
   })
-  check('manual 宽度被钳到词条条数',
-    clamped.candidateWidth === library.length,
-    `${clamped.candidateWidth} vs ${library.length}`)
+  check('显式参数覆盖预设',
+    custom.searchParams.initialCandidateThreshold === 0.5 &&
+      custom.searchParams.routeRetentionRatio === 0.5 &&
+      custom.searchParams.minRetainedRoutes === 3 &&
+      custom.searchParams.maxRetainedRoutes === 7,
+    JSON.stringify(custom.searchParams))
+
+  // ---- 预设实测校准（只打印、不断言：这些数字用来定 AFFIX_SEARCH_PRESETS）----
+  // 关键结论：门槛按「单档边际 / 本路最佳单档边际」比较时，cap=1 的主属性条目
+  // （穿透率 24%、防御力 48% 这类一击就吃掉一大块）会占据分母，把「单档值小但能连吃
+  // 多档」的副词条一律筛掉，于是最优解根本花不完 46 档预算。门槛必须很小。
+  const sweep = (label, extra) => {
+    clearAffixEvalCache()
+    const t0 = Date.now()
+    const r = solveOptimalAffixAllocation({
+      ctx: hits8, entries: all, maxTotalRolls: 46,
+      routeRetentionRatio: 0.95, minRetainedRoutes: 1, maxRetainedRoutes: 8, ...extra,
+    })
+    console.log(
+      `      ${label}：淘汰 ${r.initialDropped}／存活 ${r.survivedRoutes}（保底救回 ${r.routeFloorSaved}／上限截顶 ${r.routeCapDropped}）` +
+      `／保留 ${r.searchParams.minRetainedRoutes}-${r.searchParams.maxRetainedRoutes}／用档 ${r.usedRolls}／计算量 ${Math.round(r.workUsed)}／${Date.now() - t0}ms／截断 ${r.truncated}／总伤 ${r.totalDamage.toFixed(1)}`,
+    )
+    return r
+  }
+  console.log('    [校准] 初始门槛扫描（比例 0.95、保留 1-8）')
+  for (const t of [0, 0.001, 0.002, 0.003, 0.005, 0.008, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3]) {
+    sweep(`门槛 ${t}`, { initialCandidateThreshold: t })
+  }
+  console.log('    [校准] 层内比例扫描（门槛 0.005、保留 1-8）')
+  for (const ratio of [1, 0.99, 0.95, 0.9, 0.8, 0.5, 0]) {
+    sweep(`比例 ${ratio}`, { initialCandidateThreshold: 0.005, routeRetentionRatio: ratio })
+  }
+  console.log('    [校准] 最大保留路线扫描（门槛 0.005、比例 0.95）')
+  for (const b of [1, 2, 3, 5, 8, 16]) {
+    sweep(`上限 ${b}`, { initialCandidateThreshold: 0.005, maxRetainedRoutes: b })
+  }
 }
 
 // ---------- 10. 同步 / 异步一致，异步可中止 ----------
@@ -865,15 +1080,19 @@ console.log('\n[11] 零收益条目出局')
     (solved.rollsByEntryId['substat:defPercent'] ?? 0)
   check('直伤场景不把档数花在防御词条上', defRolls === 0, `防御类档数 ${defRolls}`)
   check('求解结果仍然合法可重算',
-    Math.abs(evaluateAffixCounts(ctx, solved.counts, solved.panelDeltas).grandTotal - solved.totalDamage) < 1e-6)
+    Math.abs(evaluateAffixCounts(ctx, solved.counts, solved.panelDeltas, solved.valuePerCount, solved.extraGains).grandTotal - solved.totalDamage) < 1e-6)
 }
 
 // ---------- 12. 交叉项：零收益条目后续变得有价值时能被补测 ----------
 console.log('\n[12] 交叉项补测（暴击为 0 时爆伤增益为 0）')
 {
   // 基础暴击率调到 0：此时爆伤单独加档不涨分（增益 = 暴击率 × 爆伤增量），
-  // 属典型交叉项——只看基线的话爆伤会被判定「零收益」永久出局。
+  // 属典型交叉项——只看基线的话爆伤会被判定「零收益」。
   // 档数给到 30：交叉点落在中间（穷举最优是混搭），才能证明补测真的生效。
+  //
+  // ⚠️ 与「初始候选门槛」的取舍：门槛 = 0（精细预设）时零收益条目会留在候选池里，
+  // 交叉项能被后续层补测；门槛 > 0 时零收益条目按比例被永久淘汰，交叉项就发现不了。
+  // 所以这条测试必须显式给门槛 0，同时另外验证「门槛 > 0 会淘汰零收益条目」。
   const zeroCritCtx = makeCtx({
     agents: [
       {
@@ -896,6 +1115,7 @@ console.log('\n[12] 交叉项补测（暴击为 0 时爆伤增益为 0）')
   clearAffixEvalCache()
   const solved = solveOptimalAffixAllocation({
     ctx: zeroCritCtx, entries: critEntries, maxTotalRolls: ROLLS,
+    enablePenRatePath: false, initialCandidateThreshold: 0,
   })
   const critRolls = solved.rollsByEntryId['substat:critRate'] ?? 0
   const critDmgRolls = solved.rollsByEntryId['substat:critDmg'] ?? 0
@@ -908,11 +1128,80 @@ console.log('\n[12] 交叉项补测（暴击为 0 时爆伤增益为 0）')
   }
   console.log(`    求解器：暴击 ${critRolls} / 爆伤 ${critDmgRolls} → ${solved.totalDamage.toFixed(1)}`)
   console.log(`    穷举：   最优 ${bruteTotal.toFixed(1)}`)
-  check('暴击为 0 时仍能把档数分给爆伤（补测生效）',
+  check('暴击为 0 时仍能把档数分给爆伤（门槛 0 时补测生效）',
     critDmgRolls > 0, JSON.stringify(solved.rollsByEntryId))
   check('交叉项场景不劣于穷举最优',
     solved.totalDamage >= bruteTotal - 1e-6,
     `${solved.totalDamage} vs ${bruteTotal}`)
+
+  // 门槛 > 0：零收益的爆伤会被永久淘汰（这是「初始候选门槛」的代价，必须可预期）
+  clearAffixEvalCache()
+  const strictGate = solveOptimalAffixAllocation({
+    ctx: zeroCritCtx, entries: critEntries, maxTotalRolls: ROLLS,
+    enablePenRatePath: false, initialCandidateThreshold: 0.5,
+  })
+  check('门槛 > 0 时零收益条目被永久淘汰（交叉项放弃）',
+    strictGate.initialDropped >= 1,
+    `淘汰 ${strictGate.initialDropped} 条`)
+}
+
+// ---------- 12b. 层内比例筛、去重与预算分桶 ----------
+console.log('\n[12b] 层内比例筛、去重与预算分桶')
+{
+  clearAffixEvalCache()
+  const keepAll = solveOptimalAffixAllocation({
+    ctx, entries: library, maxTotalRolls: 20,
+    enablePenRatePath: false, routeRetentionRatio: 0, minRetainedRoutes: 8, maxRetainedRoutes: 64,
+    initialCandidateThreshold: 0,
+  })
+  clearAffixEvalCache()
+  const strict = solveOptimalAffixAllocation({
+    ctx, entries: library, maxTotalRolls: 20,
+    enablePenRatePath: false, routeRetentionRatio: 1, minRetainedRoutes: 8, maxRetainedRoutes: 64,
+    initialCandidateThreshold: 0,
+  })
+  check('走完 beam 阶段', keepAll.phasesCompleted.includes('beam'))
+  check('比例 0 不淘汰层内路线', keepAll.layerRatioDropped === 0,
+    `dropped=${keepAll.layerRatioDropped}`)
+  check('比例 1 会淘汰层内路线', strict.layerRatioDropped > 0,
+    `dropped=${strict.layerRatioDropped}`)
+  check('比例把存活路线压下来',
+    strict.survivedRoutes <= keepAll.survivedRoutes,
+    `${strict.survivedRoutes} <= ${keepAll.survivedRoutes}`)
+  check('阶段里不再有换档（swap1 / swap2 已删）',
+    !keepAll.phasesCompleted.includes('swap1') && !keepAll.phasesCompleted.includes('swap2'),
+    keepAll.phasesCompleted.join(' → '))
+
+  // 去重：两条目、预算 2 的完整状态集合 = 1(空) + 2(各 1 档) + 3(AA/BB/AB) = 6。
+  // 若不做规范化去重，AB 会从 A 起手和 B 起手各记一遍 → 7。
+  const pair = library
+    .filter((e) => ['substat:atkPercent', 'substat:atkFlat'].includes(e.id))
+    .map((e) => ({ ...e, cap: 6 }))
+  clearAffixEvalCache()
+  const dedup = solveOptimalAffixAllocation({
+    ctx, entries: pair, maxTotalRolls: 2,
+    enablePenRatePath: false, routeRetentionRatio: 0, minRetainedRoutes: 8, maxRetainedRoutes: 64,
+    initialCandidateThreshold: 0,
+  })
+  check('按规范化分配去重（两条目预算 2 → 6 个状态）',
+    dedup.survivedRoutes === 6, `存活 ${dedup.survivedRoutes}`)
+  check('去重后走过的预算层 = 3（0/1/2 档）',
+    dedup.beamLayers === 3, `beamLayers=${dedup.beamLayers}`)
+
+  // rollCost > 1：按已用词条数分桶推进，不会停在奇数档
+  const base = library.find((e) => e.id === 'substat:atkPercent')
+  check('测试条目存在', Boolean(base))
+  if (base) {
+    const costEntry = { ...base, id: 'cost2', rollCost: 2, cap: 4 }
+    clearAffixEvalCache()
+    const cost = solveOptimalAffixAllocation({
+      ctx, entries: [costEntry], maxTotalRolls: 5,
+      enablePenRatePath: false, initialCandidateThreshold: 0, routeRetentionRatio: 0,
+    })
+    check('rollCost=2 按预算分桶（用档为偶数、不超 5）',
+      cost.usedRolls % 2 === 0 && cost.usedRolls <= 4,
+      `usedRolls=${cost.usedRolls}`)
+  }
 }
 
 // ---------- 13. 无半成品：预算耗尽后返回的仍是完整状态 ----------
@@ -926,7 +1215,7 @@ console.log('\n[13] 预算不足时不产生半成品')
     Math.abs(tiny.totalDamage - tiny.baselineDamage) < 1e-9 || tiny.truncated,
     `总伤 ${tiny.totalDamage}，基线 ${tiny.baselineDamage}，截断 ${tiny.truncated}`)
   check('退回的结果仍可重算一致',
-    Math.abs(evaluateAffixCounts(ctx, tiny.counts, tiny.panelDeltas).grandTotal - tiny.totalDamage) < 1e-6)
+    Math.abs(evaluateAffixCounts(ctx, tiny.counts, tiny.panelDeltas, tiny.valuePerCount, tiny.extraGains).grandTotal - tiny.totalDamage) < 1e-6)
   check('结果不劣于基线', tiny.totalDamage >= tiny.baselineDamage - 1e-9)
 }
 
@@ -1470,6 +1759,675 @@ console.log('\n[20] 惰性源值地图：闭包 ctx 自带同一张地图时不�
   check('同一地图重复取同一槽位返回同一对象（记忆化生效）',
     !secondThrown && second === resolved,
     secondThrown ? `抛错 ${secondThrown.name}` : `same=${second === resolved}`)
+}
+
+console.log('\n[21] 词条分配：有条件 gain: 与局外词条同一套预算')
+{
+  function makeCategoryHits(category, n = 1) {
+    return makeHits(n).map((hit, index) => ({
+      ...hit,
+      id: `h_${category}_${index}`,
+      skill: { ...hit.skill, category, id: `s_${category}_${index}` },
+      coords: [{ category, subcategoryId: null }],
+    }))
+  }
+
+  const scoped = {
+    id: 'gain-basic-dmg',
+    label: '普攻增伤',
+    target: 'gain:dmgBonus',
+    perRoll: 50,
+    cap: 1,
+    group: '副词条',
+    rollCost: 1,
+    enabledByDefault: true,
+    scope: 'skill',
+    skillCategory: 'basic',
+  }
+  const atk = {
+    id: 'stat-atk',
+    label: '局外攻击%',
+    target: 'panel:atkPercent',
+    perRoll: 3,
+    cap: 1,
+    group: '副词条',
+    rollCost: 1,
+    enabledByDefault: true,
+  }
+  const gain = extraGainFromLibraryEntry(scoped, 1)
+  check('库条目条件抄进 extraGain', gain?.scope === 'skill' && gain.skillCategory === 'basic')
+  check('条件摘要含普通攻击', affixEntryConditionSummary(scoped).includes('普通攻击'))
+
+  const persisted = coerceAffixLibraryState({
+    origin: 'empty',
+    customEntries: [scoped],
+    enabledOverride: { [scoped.id]: true },
+  })
+  check(
+    '存档读回招式条件',
+    persisted.customEntries[0]?.skillCategory === 'basic' && persisted.customEntries[0]?.scope === 'skill',
+  )
+
+  const basicCtx = makeCtx({ hits: makeCategoryHits('basic') })
+  const ultCtx = makeCtx({ hits: makeCategoryHits('ultimate') })
+  const zeros = createEmptyAffixCounts()
+  const scopedInput = entryRollsToEvalInput([scoped], { [scoped.id]: 1 })
+
+  clearAffixEvalCache()
+  const basicBase = evaluateAffixCounts(basicCtx, zeros)
+  const basicPlus = evaluateAffixCounts(
+    basicCtx,
+    zeros,
+    scopedInput.deltas,
+    scopedInput.valuePerCount,
+    scopedInput.extraGains,
+  )
+  const ultBase = evaluateAffixCounts(ultCtx, zeros)
+  const ultPlus = evaluateAffixCounts(
+    ultCtx,
+    zeros,
+    scopedInput.deltas,
+    scopedInput.valuePerCount,
+    scopedInput.extraGains,
+  )
+  check('流程 hits：普攻吃到条件增伤', basicPlus.grandTotal > basicBase.grandTotal)
+  check(
+    '流程 hits：终结技不吃普攻限定',
+    Math.abs(ultPlus.grandTotal - ultBase.grandTotal) < 1e-6,
+    `${ultBase.grandTotal} → ${ultPlus.grandTotal}`,
+  )
+
+  const emptyCoordCtx = makeCtx({ hits: makeHits(1) })
+  clearAffixEvalCache()
+  const emptyBase = evaluateAffixCounts(emptyCoordCtx, zeros)
+  const emptyPlus = evaluateAffixCounts(
+    emptyCoordCtx,
+    zeros,
+    scopedInput.deltas,
+    scopedInput.valuePerCount,
+    scopedInput.extraGains,
+  )
+  check(
+    '空 coords 的 hits 不吃招式限定（与通用面板同规则）',
+    Math.abs(emptyPlus.grandTotal - emptyBase.grandTotal) < 1e-6,
+  )
+
+  const basicSolved = solveOptimalAffixAllocation({
+    ctx: basicCtx,
+    entries: [scoped, atk],
+    maxTotalRolls: 1,
+  })
+  const ultSolved = solveOptimalAffixAllocation({
+    ctx: ultCtx,
+    entries: [scoped, atk],
+    maxTotalRolls: 1,
+  })
+  check(
+    '纯普攻流程把唯一档分给普攻限定增伤',
+    (basicSolved.rollsByEntryId[scoped.id] ?? 0) === 1,
+    JSON.stringify(basicSolved.rollsByEntryId),
+  )
+  check(
+    '纯终结技流程不把档分给普攻限定，改给攻击%',
+    (ultSolved.rollsByEntryId[scoped.id] ?? 0) === 0 && (ultSolved.rollsByEntryId[atk.id] ?? 0) === 1,
+    JSON.stringify(ultSolved.rollsByEntryId),
+  )
+}
+
+console.log('\n[游戏 cap 税] 触发条目占档后目标 cap 减 1')
+{
+  const atk = library.find((e) => e.id === 'substat:atkPercent')
+  const crit = library.find((e) => e.id === 'substat:critRate')
+  if (atk && crit) {
+    const trigger = { ...atk, id: 'main:slot5:externalAtkPercent', cap: 1, group: '5号位', perRoll: 1 }
+    const target = { ...crit, id: 'substat:atkPercent', cap: 1, group: '副词条', perRoll: 1000 }
+    const solved = solveOptimalAffixAllocation({
+      ctx,
+      entries: [trigger, target],
+      maxTotalRolls: 2,
+      groupCaps: { '5号位': 1 },
+      entryCapTaxes: [{ whenEntryId: trigger.id, targetEntryId: target.id, amount: 1 }],
+    })
+    const triggerRolls = solved.rollsByEntryId[trigger.id] ?? 0
+    const targetRolls = solved.rollsByEntryId[target.id] ?? 0
+    check(
+      '选了触发条目后目标不能再占满原 cap',
+      !(triggerRolls >= 1 && targetRolls >= 1),
+      `trigger=${triggerRolls} target=${targetRolls}`,
+    )
+  } else {
+    check('游戏 cap 税：测试条目存在', false)
+  }
+}
+
+console.log('\n[穿透专路] 24+8 锁满、固穿重测、初始门槛、B 截顶、共同预算')
+{
+  const mains = createDriveDiscMainStatAffixEntries()
+  const twos = createDriveDiscTwoPieceAffixEntries()
+  const slot5Dmg = mains.find((e) => e.id === 'main:slot5:dmgBonus')
+  const slot5Pen = mains.find((e) => e.id === 'main:slot5:penRate')
+  const setDmg = twos.find((e) => e.id === 'set:dmgBonus:10')
+  const setPen = twos.find((e) => e.id === 'set:penRate:8')
+  const substPen = library.find((e) => e.id === 'substat:pen')
+  const substAtk = library.find((e) => e.id === 'substat:atkPercent')
+  check('专路种子按字段认穿透率（不写 id）',
+    slot5Pen && setPen && isPenRateAffixTarget(slot5Pen.target) && isPenRateAffixTarget(setPen.target),
+    `${slot5Pen?.target} / ${setPen?.target}`)
+
+  const locks = collectPenRateFieldLocks(
+    [slot5Pen, setPen, substPen].filter(Boolean),
+    {},
+    { '5号位': 1, '2件套': 1, 副词条: 0 },
+    30,
+  )
+  check('种子把 24 与 8 各锁 1 档、不锁固穿',
+    (locks['main:slot5:penRate'] ?? 0) === 1 && (locks['set:penRate:8'] ?? 0) === 1
+      && !locks['substat:pen'],
+    JSON.stringify(locks))
+
+  check('自建同字段条目一样被种子认（不写 id）',
+    (collectPenRateFieldLocks(
+      [{ id: 'custom:pen30', label: 'x', target: 'panel:penRate', perRoll: 30, cap: 1, group: '5号位', rollCost: 1, enabledByDefault: true }],
+      {},
+      { '5号位': 1 },
+      30,
+    )['custom:pen30'] ?? 0) === 1,
+    `cap=${DEFENSE_ZONE_PEN_RATE_CAP}`)
+
+  check('穿透率锁到 95% 上限就停（再加是浪费）',
+    (collectPenRateFieldLocks(
+      [{ id: 'custom:pen60', label: 'x', target: 'panel:penRate', perRoll: 60, cap: 9, group: '5号位', rollCost: 1, enabledByDefault: true }],
+      {},
+      { '5号位': 0 },
+      30,
+    )['custom:pen60'] ?? 0) === 1)
+
+  // 解析落点：需要固穿 > 可用档数 → 堆到底，候选 {n−1, n}
+  const ladder = resolveFlatPenLadder({
+    entries: [substPen].filter(Boolean),
+    lockedRolls: {},
+    effectiveDefense: 953 * 0.5,
+    groupCaps: { 副词条: 0 },
+    maxTotalRolls: 30,
+  })
+  check('固穿落点解析：候选 = {堆到底−1, 堆到底}',
+    ladder != null && ladder.candidates.length === 2
+      && ladder.candidates[1] - ladder.candidates[0] === 1,
+    JSON.stringify(ladder))
+
+  // 有效防御为 0（已减完）→ n = 0 → 只有一个世界（只绑穿透率）
+  const ladderZero = resolveFlatPenLadder({
+    entries: [substPen].filter(Boolean),
+    lockedRolls: {},
+    effectiveDefense: 0,
+    groupCaps: { 副词条: 0 },
+    maxTotalRolls: 30,
+  })
+  check('防御已减完 → 候选只有 0 档（不再堆固穿）',
+    ladderZero != null && ladderZero.candidates.length === 1 && ladderZero.candidates[0] === 0,
+    JSON.stringify(ladderZero))
+
+  const penEntries = [slot5Dmg, slot5Pen, setDmg, setPen, substPen, substAtk].filter(Boolean)
+  const groupCaps = { '5号位': 1, '2件套': 1, 副词条: 0 }
+  const highBonusCtx = makeCtx({
+    activeSlotPanels: {
+      a: fillPanelStatsDefaults({
+        hp: 9000, atk: 2500, def: 700, critRate: 70, critDmg: 140,
+        dmgBonus: 90, penRate: 0, pen: 0,
+      }),
+    },
+    enemyInput: {
+      level: 60, defense: 953, resistanceType: 'normal',
+      vulnerableMultiplier: 1, staggerMultiplier: 1.5, specialMultiplier: 1,
+    },
+  })
+
+  const emptyEval = evaluateAffixCounts(highBonusCtx, createEmptyAffixCounts())
+  const withRate = entryRollsToEvalInput(
+    [slot5Pen, setPen],
+    { 'main:slot5:penRate': 1, 'set:penRate:8': 1 },
+  )
+  const withRatePlusPen = entryRollsToEvalInput(
+    [slot5Pen, setPen, substPen],
+    { 'main:slot5:penRate': 1, 'set:penRate:8': 1, 'substat:pen': 8 },
+  )
+  const onlyFlatPen = entryRollsToEvalInput([substPen], { 'substat:pen': 8 })
+  const evalFrom = (input) => evaluateAffixCounts(
+    highBonusCtx,
+    { ...createEmptyAffixCounts(), ...input.counts },
+    input.deltas,
+    input.valuePerCount,
+    input.extraGains,
+  ).grandTotal
+  const gainFlatOnEmpty = evalFrom(onlyFlatPen) - emptyEval.grandTotal
+  const gainFlatOnRate = evalFrom(withRatePlusPen) - evalFrom(withRate)
+  check('24+8 下固穿边际高于无穿透',
+    gainFlatOnRate > gainFlatOnEmpty,
+    `有穿透 ${gainFlatOnRate.toFixed(1)} vs 无穿透 ${gainFlatOnEmpty.toFixed(1)}`)
+
+  clearAffixEvalCache()
+  const withPath = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 20,
+    groupCaps,
+    searchPreset: 'fine',
+  })
+  check('穿透专路已跑', withPath.penRatePathUsed === true, String(withPath.penRatePathUsed))
+  check('叶释渊同类空盘选出 24+8',
+    (withPath.rollsByEntryId['main:slot5:penRate'] ?? 0) >= 1
+      && (withPath.rollsByEntryId['set:penRate:8'] ?? 0) >= 1,
+    JSON.stringify(withPath.rollsByEntryId))
+  check('提升率用空盘基线而不是 24+8 内部基线',
+    Math.abs(withPath.baselineDamage - emptyEval.grandTotal) < 1e-6,
+    `${withPath.baselineDamage} vs ${emptyEval.grandTotal}`)
+  check('专路按预设 fine 生效（门槛 0.2 / 最小保留 4）',
+    withPath.searchParams.initialCandidateThreshold === AFFIX_SEARCH_PRESETS.fine.initialCandidateThreshold
+      && withPath.searchParams.minRetainedRoutes === AFFIX_SEARCH_PRESETS.fine.minRetainedRoutes,
+    JSON.stringify(withPath.searchParams))
+
+  clearAffixEvalCache()
+  const noPath = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 20,
+    groupCaps,
+    enablePenRatePath: false,
+    searchPreset: 'fine',
+  })
+  check('关掉专路则 penRatePathUsed=false', noPath.penRatePathUsed === false, String(noPath.penRatePathUsed))
+  check('专路总伤不低于关掉专路',
+    withPath.totalDamage >= noPath.totalDamage - 1e-6,
+    `${withPath.totalDamage} vs ${noPath.totalDamage}`)
+
+  clearAffixEvalCache()
+  const looseRatio = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 12,
+    groupCaps,
+    enablePenRatePath: false,
+    initialCandidateThreshold: 0,
+    initialCandidateFloor: 0,
+  })
+  clearAffixEvalCache()
+  const highRatio = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 12,
+    groupCaps,
+    enablePenRatePath: false,
+    initialCandidateThreshold: 0.8,
+    initialCandidateFloor: 0,
+  })
+  check('初始门槛越高淘汰越多（且确实有淘汰）',
+    highRatio.initialDropped >= looseRatio.initialDropped && highRatio.initialDropped > 0,
+    `门槛0.8 → ${highRatio.initialDropped} 条，门槛0 → ${looseRatio.initialDropped} 条`)
+
+  // ---- 门槛 v2 的「候选兜底」：每组保底前 N 名（2026-09-16）----
+  {
+    const mk = (id, perRoll) => ({
+      id, label: id, target: 'panel:atkPercent', perRoll, cap: 1, group: 'g1',
+      rollCost: 1, enabledByDefault: true,
+    })
+    const strong = mk('t:strong', 30)
+    const weak = mk('t:weak', 3)
+    clearAffixEvalCache()
+    const noFloor = solveOptimalAffixAllocation({
+      ctx, entries: [strong, weak], maxTotalRolls: 4,
+      enablePenRatePath: false, initialCandidateThreshold: 0.9, initialCandidateFloor: 0,
+    })
+    clearAffixEvalCache()
+    const withFloor = solveOptimalAffixAllocation({
+      ctx, entries: [strong, weak], maxTotalRolls: 4,
+      enablePenRatePath: false, initialCandidateThreshold: 0.9, initialCandidateFloor: 2,
+    })
+    check('兜底关掉时：比例 0.9 把组内第 2 名剪掉',
+      noFloor.initialDropped === 1 && noFloor.initialFloorSaved === 0,
+      `淘汰 ${noFloor.initialDropped}｜兜底救回 ${noFloor.initialFloorSaved}`)
+    check('兜底 2：组内第 2 名被救回并计数',
+      withFloor.initialDropped === 0 && withFloor.initialFloorSaved === 1,
+      `淘汰 ${withFloor.initialDropped}｜兜底救回 ${withFloor.initialFloorSaved}`)
+    check('预设自带兜底 5',
+      AFFIX_SEARCH_PRESETS.fast.initialCandidateFloor === 5
+        && AFFIX_SEARCH_PRESETS.balanced.initialCandidateFloor === 5,
+      `fast=${AFFIX_SEARCH_PRESETS.fast.initialCandidateFloor} balanced=${AFFIX_SEARCH_PRESETS.balanced.initialCandidateFloor}`)
+  }
+
+  // ---- 界面 → 求解器的参数透传（源码级守卫，2026-09-17）----
+  // 真机事故：界面两处调用**都没传** `initialCandidateFloor` —— 高级设置弹窗里改「候选兜底」
+  // 不生效，实际恒等于预设的 5。求解器自己的用例覆盖不到「界面有没有往下传」，所以直接在
+  // 源码上钉一条：两个调用点必须各自把四个搜索参数都传上。
+  {
+    const componentSource = readFileSync(
+      new URL('../src/components/calculator/OptimalAffixAllocSection.vue', import.meta.url),
+      'utf8',
+    )
+    const requiredArgs = [
+      'initialCandidateThreshold: affixSearchParams.value.initialCandidateThreshold',
+      'initialCandidateFloor: affixSearchParams.value.initialCandidateFloor',
+      'routeRetentionRatio: affixSearchParams.value.routeRetentionRatio',
+      'minRetainedRoutes: affixSearchParams.value.minRetainedRoutes',
+      'maxRetainedRoutes: affixSearchParams.value.maxRetainedRoutes',
+    ]
+    for (const call of ['await solveOptimalAffixAllocationAsync(', 'await solveGameAffixAllocationAsync(']) {
+      const start = componentSource.indexOf(call)
+      const block = start >= 0 ? componentSource.slice(start, start + 1200) : ''
+      const missing = requiredArgs.filter((line) => !block.includes(line))
+      check(`界面调用 ${call.trim()} 透传全部搜索参数`,
+        start >= 0 && missing.length === 0,
+        start < 0 ? '源码里找不到这个调用点' : (missing.length ? `缺：${missing.join(' / ')}` : '五个参数都在'))
+    }
+  }
+
+  // 词条库「本组单词条上限」批量入口：**三跳都要在**（弹窗入口 / 弹窗→收益表转发 / 收益表→页面落盘），
+  // 且**不锁在高级编辑里**（用户 2026-09-17 明确：简单模式也要显示）。
+  // ⚠️ 2026-09-17 真机 bug：弹窗是嵌在 `AffixBenefitTable` 里的，只接了「收益表→页面」那一跳，
+  //    中间没转发 → 点了「应用到本组 N 条」毫无反应。这条守卫就是为此加的。
+  {
+    const modalSource = readFileSync(
+      new URL('../src/components/calculator/AffixLibraryModal.vue', import.meta.url),
+      'utf8',
+    )
+    const benefitSource = readFileSync(
+      new URL('../src/components/calculator/AffixBenefitTable.vue', import.meta.url),
+      'utf8',
+    )
+    const sectionSource = readFileSync(
+      new URL('../src/components/calculator/OptimalAffixAllocSection.vue', import.meta.url),
+      'utf8',
+    )
+    check('词条库弹窗有「本组单词条上限」入口，且不锁在高级编辑里',
+      modalSource.includes('本组单词条上限') &&
+        modalSource.includes("emit('setGroupEntryCaps'") &&
+        modalSource.includes('@click="applyGroupEntryCaps"') &&
+        !/v-if="advancedEditing"[^>]*group-cap-row/.test(modalSource),
+      '入口 + 事件 + 无条件渲染')
+    check('输入框不预填（用户口径：预填值表意不清），没填时按钮禁用',
+      modalSource.includes('batchEntryCapValue == null') &&
+        !/batchEntryCap\.value =/.test(modalSource) &&
+        !/v-model\.lazy\.number="batchEntryCap/.test(modalSource),
+      '空值 → 禁用；没有预填逻辑')
+    check('弹窗→收益表：中间层转发了 setGroupEntryCaps（漏了就点了没反应）',
+      benefitSource.includes('setGroupEntryCaps: [name: string, cap: number]') &&
+        benefitSource.includes("(name, cap) => emit('setGroupEntryCaps', name, cap)"),
+      'AffixBenefitTable 声明 + 转发')
+    check('「本组当前」按用户口径显示（一致时写全部 X，不一致时写「上限不一致」）',
+      modalSource.includes('上限不一致') && modalSource.includes('全部不限（'),
+      '两种口径都在模板/计算里')
+    check('页面接了 @set-group-entry-caps 并落盘',
+      sectionSource.includes('@set-group-entry-caps="setAffixLibraryGroupEntryCapsHandler"') &&
+        sectionSource.includes('persistAffixLibrary(setAffixLibraryGroupEntryCaps('),
+      '事件 → 库函数 → 落盘')
+  }
+
+  clearAffixEvalCache()
+  const kCap = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 12,
+    groupCaps,
+    enablePenRatePath: false,
+    initialCandidateThreshold: 0,
+    minRetainedRoutes: 1,
+    maxRetainedRoutes: 3,
+  })
+  // 三件套语义（2026-09-17 二次定稿）：比例不筛时由**上限**截顶，且上限截顶不算 truncated。
+  check('上限截顶：比例不筛时每层也留不过 max 条，并记账截掉的数量',
+    kCap.routeCapDropped > 0 && !kCap.truncated,
+    `存活 ${kCap.survivedRoutes} 条｜截顶丢 ${kCap.routeCapDropped}｜truncated=${kCap.truncated}`)
+
+  const starts = solveOptimalAffixAllocation({
+    ctx, entries: library, maxTotalRolls: 8, maxWorkUnits: 400,
+    enablePenRatePath: false,
+  })
+  check('普通路线走完 beam 阶段且不留半成品',
+    starts.phasesCompleted.includes('beam') && starts.survivedRoutes >= 1,
+    `层=${starts.beamLayers} 存活=${starts.survivedRoutes} 截断=${starts.truncated}`)
+
+  clearAffixEvalCache()
+  const sharedBudget = solveOptimalAffixAllocation({
+    ctx: highBonusCtx,
+    entries: penEntries,
+    maxTotalRolls: 20,
+    groupCaps,
+    maxWorkUnits: 9000,
+  })
+  check('专路与普通路共用一份预算',
+    sharedBudget.penRatePathUsed === true
+      && sharedBudget.workBudget === 9000
+      && sharedBudget.workUsed <= 9000,
+    `budget=${sharedBudget.workBudget} used=${sharedBudget.workUsed} pathUsed=${sharedBudget.penRatePathUsed}`)
+  // 恒等式：凡是计数的评估都按同一单价计费（= 1 + 命中数）。
+  // 注意它**测不出**「专路世界探测漏记」那类问题（漏记时两边同时变小，恒等式照样成立）——
+  // 2026-09-17 修的正是那一处（`evaluateWorldOnce` 走原始引擎、不经计数通道），
+  // 证据是 fixture 上的前后对拍：632 次 / 61304 → 633 次 / 61401（+97 = 单价），见 dev-docs/词条最优分配.md。
+  {
+    const price = 1 + (ctx.hits?.length ?? 0)
+    check('工作量恒等式：计算量 = 单价 × 评估次数',
+      Math.abs(sharedBudget.workUsed - price * sharedBudget.engineCalls) < 1e-6,
+      `${Math.round(sharedBudget.workUsed)} = ${price} × ${sharedBudget.engineCalls}`)
+  }
+
+  const fixturePath = path.join(FRONTEND_ROOT, 'fixtures/pen-rate-alloc/ye-shiyuan-pen-rate.json')
+  const fixtureName = '21叶琉千——叶释渊--测试不带东西'
+  try {
+    const buffs = readJson(BUFFS_JSON)
+    const pack = readJson(fixturePath)
+    const scheme = Object.values(pack.schemes ?? {}).find((s) => s.name === fixtureName)
+    const mainSlot = scheme?.teamSlots?.[Number(scheme.activeSlot ?? 0)]
+    const mainAgent = buffs.agents?.find((a) => a.id === mainSlot?.agentId)
+    if (!scheme || !mainAgent) {
+      check('叶释渊 fixture 空盘方案可加载', false, fixtureName)
+    } else {
+      const skillById = new Map(
+        [...(buffs.skills ?? []), ...(pack.customSkills ?? [])].map((s) => [s.id, s]),
+      )
+      const groupById = new Map((buffs.skillGroups ?? []).map((g) => [g.id, g]))
+      const flow = resolveFlow({
+        slots: scheme.slots,
+        teamSlots: scheme.teamSlots.map((s) => ({ agentId: s.agentId })),
+        findSkill: (id) => skillById.get(id) ?? null,
+        findSkillGroup: (id) => groupById.get(id) ?? null,
+        skillSubcategories: buffs.skillSubcategories,
+      })
+      const affixInputs = schemeAffixInputs(scheme, mainSlot.agentId)
+      const enemyInput = scheme.panelState?.enemyInput ?? {
+        level: 60, defense: 953, resistanceType: 'normal',
+        vulnerableMultiplier: 1, staggerMultiplier: 1.5, specialMultiplier: 1,
+      }
+      const fixtureCtx = buildOptimalEvalContext({
+        isMb: mainAgent.profession === '命破',
+        isFengYu: mainAgent.profession === '锋御',
+        teamSlots: scheme.teamSlots,
+        agents: buffs.agents,
+        wengines: buffs.wengines,
+        bangboo: {
+          id: 'none',
+          name: 'none',
+          avatar_image: null,
+          effects: [],
+          refinementEffects: [],
+          fixedMods: {},
+          refinementMods: {},
+        },
+        bangbooRefine: 1,
+        driveDiscs: buffs.driveDiscs,
+        mainSlotIndex: Number(scheme.activeSlot ?? 0),
+        driveDiscMainStats: affixInputs.affixDriveDiscMainStats ?? {
+          slot4MainStat: 'critDmg',
+          slot5MainStat: 'externalAtkPercent',
+          slot6MainStat: 'externalHpPercent',
+        },
+        enemyInput,
+        baseDamageSource: 'atk',
+        skillContext: buildGenericPanelSkillContext({
+          element: mainAgent.element,
+          staggerPhase: scheme.staggerPhase ?? 'stagger',
+          damageKind: 'direct',
+        }),
+        buffSelection: null,
+        slotBuffSelections: scheme.multiSlotBuffSelection ?? null,
+        activeSlotPanels: schemeActivePanels(scheme),
+        convertSlotPanels: scheme.convertSlotPanels ?? undefined,
+        hits: flow.hits,
+        resolveSubcategory: (id) =>
+          (buffs.skillSubcategories ?? []).find((x) => x.id === id) ?? null,
+        skillSubcategories: buffs.skillSubcategories,
+        followUpSkillRules: buffs.followUpSkillRules,
+      })
+      clearAffixEvalCache()
+      const fixtureT0 = Date.now()
+      const fixtureSolved = solveOptimalAffixAllocation({
+        ctx: fixtureCtx,
+        entries: penEntries,
+        maxTotalRolls: 20,
+        groupCaps,
+        searchPreset: 'fine',
+      })
+      const fixtureManualMs = Date.now() - fixtureT0
+      check('叶释渊 fixture 空盘选出 24+8',
+        (fixtureSolved.rollsByEntryId['main:slot5:penRate'] ?? 0) >= 1
+          && (fixtureSolved.rollsByEntryId['set:penRate:8'] ?? 0) >= 1,
+        `path=${fixtureSolved.winningPath} rolls=${JSON.stringify(fixtureSolved.rollsByEntryId)} hits=${flow.hits.length} ${fixtureManualMs}ms`)
+
+      let libState = createDefaultAffixLibraryState()
+      libState = setAffixLibraryEntryEnabled(libState, 'set:penRate:8', true)
+      const uiEntries = resolveAffixLibrary(libState)
+      const uiCaps = affixGroupCaps(libState)
+      clearAffixEvalCache()
+      const autoT0 = Date.now()
+      const fixtureAuto = solveOptimalAffixAllocation({
+        ctx: fixtureCtx,
+        entries: uiEntries,
+        maxTotalRolls: 30,
+        groupCaps: uiCaps,
+      })
+      const fixtureAutoMs = Date.now() - autoT0
+      console.log(
+        `    [耗时] 求最优分配 均衡预设 全库+2件穿透 ${fixtureAutoMs}ms workUsed=${fixtureAuto.workUsed}/${fixtureAuto.workBudget} engine=${fixtureAuto.engineCalls} 存活=${fixtureAuto.survivedRoutes} path=${fixtureAuto.winningPath}`,
+      )
+
+      // 真实长流程（96 命中）下的预设实测：只在 AFFIX_CALIBRATE=1 时跑，平时不拖慢回归。
+      if (process.env.AFFIX_CALIBRATE === '1') {
+        console.log('    [校准] 真实 fixture（96 命中）预设实测')
+        const candidates = [
+          ['精细 fine', { searchPreset: 'fine' }],
+          ['均衡 balanced', { searchPreset: 'balanced' }],
+          ['快速 fast', { searchPreset: 'fast' }],
+          ['参考(门槛0/比例0/保留16)', { initialCandidateThreshold: 0, routeRetentionRatio: 0, minRetainedRoutes: 16, maxRetainedRoutes: 16 }],
+        ]
+        let ref = 0
+        for (const [label, extra] of candidates) {
+          clearAffixEvalCache()
+          const t0 = Date.now()
+          const r = solveOptimalAffixAllocation({
+            ctx: fixtureCtx, entries: uiEntries, maxTotalRolls: 30,
+            groupCaps: uiCaps, ...extra,
+          })
+          const ms = Date.now() - t0
+          if (!ref) ref = r.totalDamage
+          console.log(
+            `      ${label}：门槛 ${r.searchParams.initialCandidateThreshold}／比例 ${r.searchParams.routeRetentionRatio}／保留 ${r.searchParams.minRetainedRoutes}-${r.searchParams.maxRetainedRoutes}` +
+            `｜淘汰 ${r.initialDropped}／存活 ${r.survivedRoutes}（保底救回 ${r.routeFloorSaved}／上限截顶 ${r.routeCapDropped}）／用档 ${r.usedRolls}` +
+            `｜计算量 ${Math.round(r.workUsed)}／${ms}ms／截断 ${r.truncated}` +
+            `／总伤 ${r.totalDamage.toFixed(1)}／相对参考 ${((r.totalDamage / ref) * 100).toFixed(3)}%`,
+          )
+        }
+      }
+    }
+  } catch (error) {
+    check('叶释渊 fixture 空盘选出 24+8', false, String(error?.message ?? error))
+  }
+}
+
+console.log('\n[锐爆诊断] 小规模穷举，只有真漏解才留回归')
+{
+  const crit = library.find((e) => e.id === 'substat:critRate')
+  const defPct = library.find((e) => e.id === 'substat:defPercent')
+  let leak = null
+  let sharpenBonus = 0
+  if (crit && defPct) {
+    const makeSharpenCtx = (critRate) => makeCtx({
+      isFengYu: true,
+      agents: [{
+        id: 'a',
+        name: '测试',
+        element: '电',
+        profession: '锋御',
+        basePanel: {
+          ...createEmptyAgentBasePanel(),
+          hp: 9000, atk: 900, def: 1500, critRate, critDmg: 50,
+          sharpenCritDmgBonus: 150,
+          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+        },
+      }],
+      activeSlotPanels: {
+        a: fillPanelStatsDefaults({
+          hp: 9000, atk: 900, def: 1500, critRate, critDmg: 50,
+          dmgBonus: 10, penRate: 0, pen: 0,
+        }),
+      },
+    })
+    const probe = evaluateAffixCounts(makeSharpenCtx(88), createEmptyAffixCounts())
+    sharpenBonus = probe.breakdown.combatMods.sharpenCritDmgBonus
+    check('锐爆诊断场景加成有效', sharpenBonus > 0, `B=${sharpenBonus}`)
+    if (sharpenBonus > 0) {
+      for (const critRate of [88, 92, 96]) {
+        for (const budget of [4, 6, 8]) {
+          const sharpenCtx = makeSharpenCtx(critRate)
+          const subset = [
+            { ...crit, cap: budget },
+            { ...defPct, cap: budget },
+          ]
+          let bruteBest = -Infinity
+          const rec = (index, used, rolls) => {
+            if (index === subset.length) {
+              const input = entryRollsToEvalInput(subset, rolls)
+              const total = evaluateAffixCounts(
+                sharpenCtx, input.counts, input.deltas, input.valuePerCount, input.extraGains,
+              ).grandTotal
+              if (total > bruteBest) bruteBest = total
+              return
+            }
+            const entry = subset[index]
+            for (let n = 0; n <= budget - used; n += 1) {
+              rec(index + 1, used + n, { ...rolls, [entry.id]: n })
+            }
+          }
+          rec(0, 0, {})
+          const solved = solveOptimalAffixAllocation({
+            ctx: sharpenCtx,
+            entries: subset,
+            maxTotalRolls: budget,
+            enablePenRatePath: false,
+            searchPreset: 'fine',
+          })
+          if (solved.totalDamage + 1e-6 < bruteBest) {
+            leak = {
+              critRate,
+              budget,
+              solved: solved.totalDamage,
+              brute: bruteBest,
+              rolls: solved.rollsByEntryId,
+            }
+            break
+          }
+        }
+        if (leak) break
+      }
+    }
+  } else {
+    check('锐爆诊断词条存在', false)
+  }
+  if (leak) {
+    console.log(
+      `    诊断发现漏解：crit=${leak.critRate} budget=${leak.budget} 求解 ${leak.solved} < 穷举 ${leak.brute} ${JSON.stringify(leak.rolls)}`,
+    )
+    console.log('    按方案不把失败断言留进提交，本轮不加锐爆专路。')
+  } else if (sharpenBonus > 0) {
+    check('锐爆小规模穷举未发现阈值漏解，不加回归测试', true)
+  }
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

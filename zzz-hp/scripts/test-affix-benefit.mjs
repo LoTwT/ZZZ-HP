@@ -38,9 +38,10 @@ import {
   resolveAffixLibraryAll,
   resolveAffixLibrary,
   setAffixLibraryEntryEnabled,
+  setAffixLibraryGroupExcluded,
   statKeyOfTarget,
 } from '../src/utils/affixLibrary.ts'
-import { affixRelativeWeights, computeAffixBenefitTable } from '../src/utils/affixBenefitAnalysis.ts'
+import { affixRelativeWeights, computeAffixBenefitSeriesForTable, computeAffixBenefitTable } from '../src/utils/affixBenefitAnalysis.ts'
 import {
   buildOptimalEvalContext,
   computeDiffAnalysis,
@@ -69,8 +70,8 @@ console.log('\n[1] 词条库数值口径')
 const library = createDefaultAffixLibrary()
 check('默认词条库 10 条', library.length === 10, `实际 ${library.length}`)
 for (const entry of library) {
-  const statKey = statKeyOfTarget(entry.target)
-  const expected = statKey ? AFFIX_VALUE_PER_COUNT[statKey] : undefined
+  const field = String(entry.target).slice('panel:'.length)
+  const expected = AFFIX_VALUE_PER_COUNT[field]
   check(
     `${entry.label} 每档 = AFFIX_VALUE_PER_COUNT`,
     entry.perRoll === expected,
@@ -83,10 +84,11 @@ const evalInputFromRolls = entryRollsToEvalInput(library, {
   'substat:critRate': 2,
 })
 check(
-  '3 档攻击% + 2 档暴击 → 计数',
-  evalInputFromRolls.counts.atkPercent === 3 && evalInputFromRolls.counts.critRate === 2,
-  JSON.stringify(evalInputFromRolls.counts),
+  '3 档攻击% + 2 档暴击 → 局外增量',
+  evalInputFromRolls.deltas.atkPercent === 9 && evalInputFromRolls.deltas.critRate === 4.8,
+  JSON.stringify(evalInputFromRolls.deltas),
 )
+check('分析侧不再写入十格计数桶', Object.keys(evalInputFromRolls.counts).length === 0)
 check(
   '默认条目下每档值表 = 常量表',
   Object.entries(evalInputFromRolls.valuePerCount).every(
@@ -108,7 +110,7 @@ check(
   'panelFieldOfTarget / statKeyOfTarget 命名空间解析正确',
   panelFieldOfTarget('panel:reduceDefense') === 'reduceDefense' &&
     panelFieldOfTarget('panel:mastery') === 'mastery' &&
-    statKeyOfTarget('stat:critDmg') === 'critDmg',
+    statKeyOfTarget('panel:critDmg') === 'critDmg',
 )
 // ---------- 2. 与 computeDiffAnalysis 同口径对比 ----------
 console.log('\n[2] 新收益表 vs 现有差异表（共同候选 +1 档）')
@@ -341,19 +343,15 @@ console.log('\n[6] 词条库整改验收')
   const critEntry = resolveAffixLibrary(state0).find((e) => e.id === 'substat:critRate')
   check('默认暴击率条目每档 = 2.4', critEntry?.perRoll === 2.4, `实际 ${critEntry?.perRoll}`)
 
-  const countsWithCrit = { ...createEmptyAffixCounts(), critRate: 10 }
-
   // —— 验收 1：把「每档」从 2.4 改成 4.8，伤害必须真的变 ——
-  // 口径（2026-09-12 修同字段折算后）：每档值表**恒为常量表**，
-  // 「改每档」通过等效档数生效 —— 条目 10 档 × 4.8% 折成 20 个等效档（基准 2.4%）。
   const state48 = updateAffixLibraryEntry(state0, 'substat:critRate', { perRoll: 4.8 })
   const entries48 = resolveAffixLibrary(state48)
   const eval24 = entryRollsToEvalInput(resolveAffixLibrary(state0), { 'substat:critRate': 10 })
   const eval48 = entryRollsToEvalInput(entries48, { 'substat:critRate': 10 })
   check(
-    '改每档 2.4 → 4.8 后等效档数 10 → 20',
-    nearly(eval24.counts.critRate ?? 0, 10) && nearly(eval48.counts.critRate ?? 0, 20),
-    `${eval24.counts.critRate} → ${eval48.counts.critRate}`,
+    '改每档 2.4 → 4.8 后增量 24 → 48',
+    nearly(eval24.deltas.critRate ?? 0, 24) && nearly(eval48.deltas.critRate ?? 0, 48),
+    `${eval24.deltas.critRate} → ${eval48.deltas.critRate}`,
   )
   check(
     '每档值表保持常量表（同字段多条不再互相顶掉）',
@@ -363,14 +361,14 @@ console.log('\n[6] 词条库整改验收')
 
   const dmg24 = evaluateAffixCounts(
     ctx,
-    { ...countsWithCrit, ...eval24.counts },
-    undefined,
+    createEmptyAffixCounts(),
+    eval24.deltas,
     eval24.valuePerCount,
   ).grandTotal
   const dmg48 = evaluateAffixCounts(
     ctx,
-    { ...countsWithCrit, ...eval48.counts },
-    undefined,
+    createEmptyAffixCounts(),
+    eval48.deltas,
     eval48.valuePerCount,
   ).grandTotal
   check('每档 2.4 → 4.8 伤害真的变（这正是原缺陷）', dmg48 > dmg24,
@@ -379,14 +377,14 @@ console.log('\n[6] 词条库整改验收')
   // —— 验收 2：改回 2.4，结果回到原值（缓存不串味） ——
   const dmgBack = evaluateAffixCounts(
     ctx,
-    { ...countsWithCrit, ...eval24.counts },
-    undefined,
+    createEmptyAffixCounts(),
+    eval24.deltas,
     eval24.valuePerCount,
   ).grandTotal
-  check('改回 2.4 后回到原值（缓存键含等效档数，不串味）', nearly(dmgBack, dmg24),
+  check('改回 2.4 后回到原值（缓存不串味）', nearly(dmgBack, dmg24),
     `${dmg24} vs ${dmgBack}`)
 
-  // —— 验收 3：等价条目对拍成为恒等（stat:mastery vs panel:mastery，每档都是 9） ——
+  // —— 验收 3：导入十格 1 档精通 vs 局外增量 9 恒等（每档都是 9） ——
   const statMasteryEval = evaluateAffixCounts(
     ctx,
     { ...createEmptyAffixCounts(), mastery: 1 },
@@ -398,7 +396,7 @@ console.log('\n[6] 词条库整改验收')
     createEmptyAffixCounts(),
     { mastery: 9 },
   ).grandTotal
-  check('stat:mastery(9) 与 panel:mastery(9) 结果恒等', nearly(statMasteryEval, panelMasteryEval),
+  check('十格 1 档精通 与 局外增量 9 结果恒等', nearly(statMasteryEval, panelMasteryEval),
     `${statMasteryEval} vs ${panelMasteryEval}`)
 
   // —— 验收 4：旧 localStorage 迁移（kind/affixKey → target，不丢条目、数值不变） ——
@@ -444,8 +442,8 @@ console.log('\n[6] 词条库整改验收')
 
   check('迁移后条目数不变', migrated.customEntries.length === 2,
     `实际 ${migrated.customEntries.length}`)
-  check('旧 affixKey 条目 → stat: 目标',
-    migrated.customEntries[0]?.target === 'stat:atkPercent',
+  check('旧 affixKey 条目 → panel: 目标',
+    migrated.customEntries[0]?.target === 'panel:atkPercent',
     `实际 ${migrated.customEntries[0]?.target}`)
   check('旧 panelField 条目 → panel: 目标',
     migrated.customEntries[1]?.target === 'panel:dmgBonus',
@@ -680,7 +678,7 @@ console.log('\n[?] 收益表筛选状态')
           ...createDefaultAffixLibraryState(),
           groups: [{ name: '幽灵组', cap: 1 }],
           customEntries: [
-            { id: 'custom:1', label: '未分组条目', target: 'stat:critRate', perRoll: 5, cap: 0, group: '', rollCost: 1, enabledByDefault: true },
+            { id: 'custom:1', label: '未分组条目', target: 'panel:critRate', perRoll: 5, cap: 0, group: '', rollCost: 1, enabledByDefault: true },
           ],
         },
       },
@@ -693,6 +691,98 @@ console.log('\n[?] 收益表筛选状态')
   check('用并集剪枝：另一套库独有的名字活下来',
     JSON.stringify(pruneAffixBenefitFilters({ hideNoBenefit: true, hiddenGroups: ['幽灵组', '已改名的组'] }, known).hiddenGroups) ===
       JSON.stringify(['幽灵组']))
+}
+
+// ---------- 8. 收益曲线只做组内对比 ----------
+console.log('\n[8] 收益曲线：组内对比（2026-09-17 用户口径）')
+{
+  // 跨组词条库：副词条（默认 10 条）+ 4/5/6 号位主属性候选 —— 与官方预设库的分组一致
+  const mixedLibrary = [...createDefaultAffixLibrary(), ...createDriveDiscMainStatAffixEntries()]
+  const mixedTable = computeAffixBenefitTable({
+    ctx,
+    baseCounts,
+    entries: mixedLibrary,
+    rollsPerStep: 1,
+    includeSeries: false,
+  })
+  const groupOfEntryId = new Map(mixedLibrary.map((entry) => [entry.id, entry.group]))
+  const groupsInTable = [...new Set(mixedTable.rows.map((row) => groupOfEntryId.get(row.entryId)))]
+  check('跨组库：收益表里出现多个分组', groupsInTable.length >= 2, groupsInTable.join(' / '))
+
+  // 只把某一组的行交给曲线补算 —— 页面上的「可选组」就是这么做的
+  const pickedGroup = groupsInTable[0]
+  const rowsOfGroup = mixedTable.rows.filter((row) => groupOfEntryId.get(row.entryId) === pickedGroup)
+  const outsideIds = new Set(
+    mixedTable.rows
+      .filter((row) => groupOfEntryId.get(row.entryId) !== pickedGroup)
+      .map((row) => row.entryId),
+  )
+  const groupSeries = computeAffixBenefitSeriesForTable(
+    { ctx, baseCounts, entries: mixedLibrary, rollsPerStep: 1, maxCurveRolls: 2, maxCurveSeries: 3 },
+    { baselineDamage: mixedTable.baselineDamage, rows: rowsOfGroup },
+  )
+  check(
+    `曲线只含所选组（${pickedGroup}）的条目`,
+    groupSeries.length > 0 && groupSeries.every((series) => !outsideIds.has(series.entryId)),
+    `线数 ${groupSeries.length}：${groupSeries.map((s) => s.entryId).join(', ')}`,
+  )
+  check('曲线最多画本组前 N 条', groupSeries.length <= 3, `实际 ${groupSeries.length}`)
+  check(
+    '每条曲线 = 0 档基线 + N 档（长度对得上）',
+    groupSeries.every((series) => series.cumulativePercent.length === 3 && series.marginalPercent.length === 3),
+    `实际 ${groupSeries[0]?.cumulativePercent.length}`,
+  )
+  check(
+    '第 0 档一律是基线 0%',
+    groupSeries.every((series) => series.cumulativePercent[0] === 0 && series.marginalPercent[0] === 0),
+  )
+
+  // 只画正收益条目（2026-09-17 第二轮口径）：把整张表的行（含 0 / 负收益）都交进去，画出来的必须一条都不含
+  const nonPositiveIds = new Set(
+    mixedTable.rows.filter((row) => row.percentDelta <= 0).map((row) => row.entryId),
+  )
+  const positiveRows = mixedTable.rows.filter((row) => row.percentDelta > 0)
+  check('这套库里确实有 0 / 负收益条目（否则下面两条测不到东西）', nonPositiveIds.size > 0, `共 ${nonPositiveIds.size} 条`)
+  const allRowsSeries = computeAffixBenefitSeriesForTable(
+    { ctx, baseCounts, entries: mixedLibrary, rollsPerStep: 1, maxCurveRolls: 2, maxCurveSeries: 40 },
+    { baselineDamage: mixedTable.baselineDamage, rows: mixedTable.rows },
+  )
+  check(
+    '0 收益与负收益条目一条都不进曲线',
+    allRowsSeries.every((series) => !nonPositiveIds.has(series.entryId)),
+    `线数 ${allRowsSeries.length}：${allRowsSeries.map((s) => s.entryId).join(', ')}`,
+  )
+  check(
+    '曲线条数 = 正收益条数（上限内不再被 0 / 负收益占名额）',
+    allRowsSeries.length === Math.min(40, positiveRows.length),
+    `实际 ${allRowsSeries.length}，正收益 ${positiveRows.length}`,
+  )
+}
+
+// ---------- 9. 组规则「不消耗总词条数」的读写 ----------
+console.log('\n[9] 组规则：不占词条数（2026-09-18 用户口径，普通与游戏专用都吃）')
+{
+  const baseState = createDefaultAffixLibraryState()
+  const groupName = baseState.groups[0]?.name ?? '4号位'
+  const on = setAffixLibraryGroupExcluded(baseState, groupName, true)
+  check(
+    `打开后「${groupName}」带 excludedFromTotalRolls`,
+    on.groups.find((group) => group.name === groupName)?.excludedFromTotalRolls === true,
+  )
+  const off = setAffixLibraryGroupExcluded(on, groupName, false)
+  const offGroup = off.groups.find((group) => group.name === groupName) ?? {}
+  check('关掉后字段整个删掉（不留 false）', !('excludedFromTotalRolls' in offGroup))
+  check('开关不改动别的组', off.groups.length === baseState.groups.length)
+  const reloaded = coerceAffixLibraryState(JSON.parse(JSON.stringify(on)))
+  check(
+    '存读往返保留该规则',
+    reloaded.groups.find((group) => group.name === groupName)?.excludedFromTotalRolls === true,
+  )
+  const legacy = coerceAffixLibraryState(JSON.parse(JSON.stringify(baseState)))
+  check(
+    '老存档没有这个键 → 不豁免（行为不变）',
+    legacy.groups.every((group) => group.excludedFromTotalRolls !== true),
+  )
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

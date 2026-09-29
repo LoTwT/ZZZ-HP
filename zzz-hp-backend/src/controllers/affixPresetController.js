@@ -6,24 +6,32 @@ import {
   renameAffixPresetScheme,
   replaceAffixPreset,
 } from '../services/affixPresetService.js'
+import { buildAffixEffectTemplate, parseAffixEffectTemplate } from '../utils/affixEffectTemplate.js'
 import { fail, failInternal, success } from '../utils/response.js'
 
 /**
  * 官方预设词条库：读公开、写需管理员。
  *
- * `target` 的强校验在前端（`isAffixLibraryEntryTarget`，那份字段表是唯一事实来源）；
- * 后端只拦明显不属于该命名空间的值 —— 两端都写死一份完整字段表迟早会分叉。
+ * 写入权威是 `effect_json`。列 `target` 仍 NOT NULL，值从模板 `legacyTarget` 派生，
+ * 不再当独立编辑字段。只交旧 `target` 时仍编模板（兼容迁移器）。
+ * 前缀闸门只拦明显不属于 `panel:` / `gain:` 的值 —— 完整字段表在前端。
  *
  * 写入口四个：整份替换一套方案、新建方案、重命名方案、删除方案。
  * 「改一条」这种粒度在管理页是**草稿 + 保存**（保存＝整份替换），所以没有逐条写接口 ——
  * 留着就是死接口，也会让「保存」出现半份中间状态。
+ *
+ * `gain:`（增益字段，2026-09-13 步骤 58）是局内落点：词条贡献按**增益口径**在转模之后
+ * 施加（因而能被转模的 `panelSource: 'final'` 侧读到）。这里必须放行，否则管理页存不进去。
  */
-const TARGET_PREFIXES = ['stat:', 'panel:']
+const TARGET_PREFIXES = ['panel:', 'gain:']
 
-function normalizeEntryPayload(body = {}) {
+function readOptionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+export function normalizeEntryPayload(body = {}) {
   const id = typeof body.id === 'string' ? body.id.trim() : ''
   const label = typeof body.label === 'string' ? body.label.trim() : ''
-  const target = typeof body.target === 'string' ? body.target.trim() : ''
   const perRoll = Number(body.perRoll)
   const cap = Number(body.cap ?? 0)
   const group = typeof body.group === 'string' ? body.group.trim() : ''
@@ -33,24 +41,57 @@ function normalizeEntryPayload(body = {}) {
   if (!id) return { error: '条目 ID 为必填项' }
   if (id.length > 64) return { error: '条目 ID 过长（≤64）' }
   if (!label) return { error: '名称为必填项' }
-  if (!target) return { error: '目标为必填项' }
-  if (!TARGET_PREFIXES.some((prefix) => target.startsWith(prefix))) {
-    return { error: `目标须以 ${TARGET_PREFIXES.join(' 或 ')} 开头` }
-  }
   if (!Number.isFinite(perRoll) || perRoll <= 0) return { error: '每档数值须为正数' }
   if (!Number.isFinite(cap) || cap < 0) return { error: '上限须为非负数（0 = 不限）' }
   if (!Number.isFinite(rollCost) || rollCost < 0) return { error: '每档占用须为非负数' }
 
+  const parsedTemplate = parseAffixEffectTemplate(
+    body.effectJson && typeof body.effectJson === 'object' && !Array.isArray(body.effectJson)
+      ? body.effectJson
+      : undefined,
+  )
+  const targetFromBody = typeof body.target === 'string' ? body.target.trim() : ''
+  const target = parsedTemplate?.legacyTarget || targetFromBody
+  if (!target) return { error: '效果模板或目标为必填项' }
+  if (!TARGET_PREFIXES.some((prefix) => target.startsWith(prefix))) {
+    return { error: `目标须以 ${TARGET_PREFIXES.join(' 或 ')} 开头` }
+  }
+
+  const applySituation = readOptionalString(body.applySituation)
+  const scope = readOptionalString(body.scope)
+  const skillCategory = readOptionalString(body.skillCategory)
+  const skillSubcategoryId =
+    body.skillSubcategoryId === null ? null : readOptionalString(body.skillSubcategoryId)
+  const appliesToAnomaly =
+    typeof body.appliesToAnomaly === 'boolean' ? body.appliesToAnomaly : undefined
+  const effectJson =
+    parsedTemplate ??
+    buildAffixEffectTemplate({
+      target,
+      applySituation,
+      scope,
+      skillCategory,
+      skillSubcategoryId,
+      appliesToAnomaly,
+    })
+  if (!effectJson) return { error: '无法编出效果模板' }
+
   return {
     id,
     label,
-    target,
+    target: effectJson.legacyTarget,
     perRoll,
     cap: Math.trunc(cap),
     group,
     rollCost: Math.trunc(rollCost),
     enabledByDefault: Boolean(body.enabledByDefault),
     sortOrder: Number.isFinite(sortOrder) ? Math.trunc(sortOrder) : 0,
+    ...(applySituation ? { applySituation } : {}),
+    ...(scope ? { scope } : {}),
+    ...(skillCategory ? { skillCategory } : {}),
+    ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
+    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
+    effectJson,
   }
 }
 
@@ -65,6 +106,11 @@ function normalizeGroupPayload(body = {}) {
     name,
     cap: Math.trunc(cap),
     sortOrder: Number.isFinite(sortOrder) ? Math.trunc(sortOrder) : 0,
+    // 组规则「不消耗总词条数」：**只透传布尔值**，不是布尔就整个不带这个键 ——
+    // 不带 = 保留 raw 里原有的值（备份回灌那条路靠它保真）；带 false = 明确关掉（service 会删掉 raw 里的值）。
+    ...(typeof body.excludedFromTotalRolls === 'boolean'
+      ? { excludedFromTotalRolls: body.excludedFromTotalRolls }
+      : {}),
   }
 }
 
@@ -91,6 +137,7 @@ export async function replaceAffixPresetHandler(req, res) {
   const entries = Array.isArray(req.body?.entries) ? req.body.entries : null
   const groups = Array.isArray(req.body?.groups) ? req.body.groups : null
   if (!entries || !groups) return fail(res, '需要 entries 与 groups 两个数组', 400)
+  const normalizedEntries = []
   const entryOrderSeen = new Map()
   for (const [index, entry] of entries.entries()) {
     const payload = normalizeEntryPayload(entry)
@@ -104,7 +151,9 @@ export async function replaceAffixPresetHandler(req, res) {
       )
     }
     entryOrderSeen.set(payload.sortOrder, index + 1)
+    normalizedEntries.push(payload)
   }
+  const normalizedGroups = []
   const groupOrderSeen = new Map()
   for (const [index, group] of groups.entries()) {
     const payload = normalizeGroupPayload(group)
@@ -118,12 +167,13 @@ export async function replaceAffixPresetHandler(req, res) {
       )
     }
     groupOrderSeen.set(payload.sortOrder, index + 1)
+    normalizedGroups.push(payload)
   }
   try {
     const data = await replaceAffixPreset({
       scheme: req.body?.scheme,
-      entries,
-      groups,
+      entries: normalizedEntries,
+      groups: normalizedGroups,
     })
     const schemes = await listAffixSchemes()
     return success(

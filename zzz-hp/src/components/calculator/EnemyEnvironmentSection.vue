@@ -35,8 +35,17 @@ function replaceModel(next: Partial<DamageEnemyInput>) {
 }
 
 function patchEnemyInput(patch: Partial<DamageEnemyInput>) {
-  replaceModel(patch)
+  // 用户手改之后，参数就不再是「Boss 原值」了：把来源标成 manual（bossName / 记录名保留，
+  // 界面据此显示「参数已自定义」）。危局/场地重新同步会写回 boss_info，标记自动消失。
+  const fromBoss =
+    model.value.bossSource === 'boss_info' || model.value.bossSource === 'boss_record'
+  replaceModel(fromBoss ? { ...patch, bossSource: 'manual' } : patch)
 }
+
+/** 已选怪物、但参数被用户改过 */
+const bossParamsCustomized = computed(
+  () => model.value.bossSource === 'manual' && Boolean(model.value.bossName),
+)
 
 const sectionTitle = computed(() =>
   props.title === undefined ? '敌方与环境' : props.title.trim(),
@@ -149,6 +158,7 @@ function switchMode(mode: EnemyInputMode) {
           <div class="boss-select-text">
             <span class="boss-select-label">已选怪物</span>
             <strong>{{ bossSelectionLabel }}</strong>
+            <span v-if="bossParamsCustomized" class="boss-custom-badge">参数已自定义</span>
           </div>
         </div>
         <div v-else class="boss-select-content placeholder">
@@ -418,6 +428,16 @@ function switchMode(mode: EnemyInputMode) {
 .boss-select-label {
   font-size: 0.72rem;
   color: #9aa3b2;
+}
+
+.boss-custom-badge {
+  font-size: 0.68rem;
+  color: #e8d4a8;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(201, 165, 92, 0.14);
+  border: 1px solid rgba(201, 165, 92, 0.35);
+  width: fit-content;
 }
 
 .boss-select-content strong {

@@ -16,6 +16,12 @@ import {
   computeSpecialMultZone,
 } from '@/utils/remielUtils'
 import { resolveSkillMults } from '@/utils/skillSubcategoryMult'
+import {
+  composeDefensePanel,
+  pickResPenPanel,
+  pickZonePanel,
+  type DamageZonePanels,
+} from '@/utils/damageZoneSourcePolicy'
 
 export type { DamageEnemyInput, EnemyResistanceType }
 
@@ -68,13 +74,13 @@ export interface DamageCalcInput {
   ownerAgentResistanceElement?: string | null
   /** 异常类触发者属性（展示等）；火/以太持续时间倍算优先用 triggerAgentElement */
   anomalyTriggerElement?: string
-  /** @deprecated 结算不再取主C；未传 owner/触发者时的页级预览回落 */
+  /** @deprecated 结算不再取该字段；未传 owner/触发者时的页级预览回落 */
   mainAgentElement?: string
-  /** @deprecated 结算不再取主C；未传 owner 抗性时的页级预览回落 */
+  /** @deprecated 结算不再取该字段；未传 owner 抗性时的页级预览回落 */
   mainAgentResistanceElement?: string | null
-  /** 主C id（展示用，不参与结算） */
+  /** 页级预览用的角色 id（展示用，不参与结算） */
   mainAgentId?: string
-  /** 主C 名称（展示用，不参与结算） */
+  /** 页级预览用的角色名（展示用，不参与结算） */
   mainAgentName?: string
   /** 异常子类 */
   anomalySubKind?: AnomalyDamageSubKind
@@ -567,6 +573,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const ownerAgentLevel = input.ownerAgentLevel ?? mainAgentLevel
   const triggerAgentLevel = input.triggerAgentLevel ?? mainAgentLevel
   const triggerAgentPanel = input.anomalyTriggerPanel ?? panel
+  const zonePanels: DamageZonePanels = {
+    owner: panel,
+    powerProvider: triggerPanel,
+    anomalyTrigger: triggerAgentPanel,
+  }
+  const routingKind = useTriggerBase ? subKind : 'direct'
   const ownerElement = input.ownerAgentElement ?? input.mainAgentElement
   const ownerResistanceElement =
     input.ownerAgentResistanceElement ?? input.mainAgentResistanceElement ?? ownerElement
@@ -580,7 +592,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
    * 直伤不启用双代理人，取招式持有者（finalPanel）。
    * 注：招式持有者仅标记「这个伤害事件属于谁」，不参与异常类伤害的乘区归属。
    */
-  const bonusPanel = useTriggerBase ? triggerAgentPanel : panel
+  const bonusPanel = pickZonePanel(zonePanels, 'anomalyTypeBonus', routingKind)
 
   const skillMults = input.skillSubcategory
     ? resolveSkillMults(
@@ -612,16 +624,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     staggerPhase,
     agentLevel: ownerAgentLevel,
     resistanceElement: ownerResistanceElement,
-    defensePanel: {
-      penRate: panel.penRate,
-      pen: panel.pen,
-      ignoreDefense: triggerAgentPanel.ignoreDefense,
-      reduceDefense: triggerAgentPanel.reduceDefense,
-    },
+    defensePanel: composeDefensePanel(zonePanels, 'direct'),
   })
 
   // 异常基础一律攻击力：面板取强度提供者（无则招式持有者）；不跟命破/锋御直伤规则
-  const anomalyBasePanel = useTriggerBase ? triggerPanel : panel
+  const anomalyBasePanel = pickZonePanel(zonePanels, 'baseAtk', routingKind)
   const anomalyBaseLevel = useTriggerBase ? triggerAgentLevel : ownerAgentLevel
   const anomalyBaseResistanceElement = useTriggerBase
     ? (input.triggerAgentResistanceElement ??
@@ -651,13 +658,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     agentLevel: anomalyBaseLevel,
     resistanceElement: anomalyBaseResistanceElement,
     // 异常基础防御区：穿透取强度提供者（或持有者），减防/无视取异常类触发者
-    defensePanel: {
-      penRate: anomalyBasePanel.penRate,
-      pen: anomalyBasePanel.pen,
-      ignoreDefense: triggerAgentPanel.ignoreDefense,
-      reduceDefense: triggerAgentPanel.reduceDefense,
-    },
-    resPenSource: input.anomalyTriggerPanel ?? anomalyBasePanel,
+    defensePanel: composeDefensePanel(zonePanels, routingKind),
+    resPenSource: pickResPenPanel(
+      zonePanels,
+      routingKind,
+      input.anomalyTriggerPanel != null,
+    ),
     extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
   })
 

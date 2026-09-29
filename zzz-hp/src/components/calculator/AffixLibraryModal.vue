@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { AffixCounts } from '@/types/calculatorPanel'
 import { ensureAffixPresetLoaded, loadAffixPresetScheme } from '@/utils/affixPresetLoader'
+import type {
+  BuffApplySituation,
+  BuffScope,
+  BuffSkillTargetId,
+} from '@/types/calculator'
+import AffixLibraryEntryFields from '@/components/calculator/AffixLibraryEntryFields.vue'
+import { affixTargetPickerSummary } from '@/utils/affixTargetBranches'
+// 批量上限入口的纯计算（与「照另写一份」的管理侧共用同一份解析口径，见文件头注释）
+import { parseBatchEntryCapInput, summarizeEntryCaps } from '@/utils/affixBatchEntryCap'
 import {
   AFFIX_LIBRARY_SET_NAME_MAX,
-  AFFIX_PANEL_DELTA_FIELD_LABELS,
-  AFFIX_SUBSTAT_KEY_LABELS,
   DEFAULT_AFFIX_GROUP_CAP,
   activateAffixLibrarySet,
   activeAffixLibrarySet,
+  affixEntryConditionSummary,
   affixPerRollUnit,
-  affixTargetLabel,
   createAffixLibraryStateForOrigin,
   createAffixLibraryStateFromPreset,
   createAffixLibrarySet,
@@ -18,6 +24,7 @@ import {
   deleteAffixLibrarySet,
   exportAffixLibrarySet,
   importAffixLibrarySet,
+  isGainTarget,
   isUsingServerAffixPreset,
   loadAffixLibraryStore,
   panelTarget,
@@ -26,13 +33,11 @@ import {
   resolveAffixLibrary,
   resolveAffixLibraryAll,
   saveAffixLibraryStore,
-  statTarget,
   type AffixLibraryEntry,
   type AffixLibraryEntryTarget,
   type AffixLibraryGroup,
   type AffixLibraryState,
   type AffixLibraryStore,
-  type AffixPanelDeltaField,
 } from '@/utils/affixLibrary'
 
 /**
@@ -74,6 +79,10 @@ const emit = defineEmits<{
   addGroup: [name: string, cap: number]
   /** 改组额度 */
   setGroupCap: [name: string, cap: number]
+  /** 开关某组的「不消耗总词条数」规则（见 `AffixLibraryGroup.excludedFromTotalRolls`） */
+  setGroupExcluded: [name: string, excluded: boolean]
+  /** 批量设定某组所有条目的单词条上限（`name = ''` 表示未分组） */
+  setGroupEntryCaps: [name: string, cap: number]
   /** 改组名（页面负责同步条目引用） */
   renameGroup: [from: string, to: string]
   /** 只删分组，组内条目变回自由条目 */
@@ -81,6 +90,15 @@ const emit = defineEmits<{
   /** 库级变更（切换/新建/重命名/删除/导入）已完成并落盘，页面应重新载入 */
   switched: []
 }>()
+
+let maskDownSelf = false
+function onMaskMouseDown(e: MouseEvent) {
+  maskDownSelf = e.target === e.currentTarget
+}
+function onMaskMouseUp(e: MouseEvent) {
+  if (maskDownSelf && e.target === e.currentTarget) emit('close')
+  maskDownSelf = false
+}
 
 const enabledSet = computed(() => new Set(props.enabledIds))
 
@@ -93,6 +111,11 @@ const enabledSet = computed(() => new Set(props.enabledIds))
  */
 const UNGROUPED_TAB = '__ungrouped__'
 const activeTab = ref<string>('manage')
+const editingEntryId = ref('')
+
+watch(activeTab, () => {
+  if (editingEntryId.value) cancelEdit()
+})
 
 /** 当前页对应的组名；组管理页与未分组页为 '' */
 const activeGroupName = computed(() =>
@@ -171,6 +194,8 @@ watch(
     if (!open) return
     store.value = loadAffixLibraryStore()
     editingSetId.value = ''
+    editingEntryId.value = ''
+    resetDraft()
     setMessage.value = ''
     importError.value = ''
     activeTab.value = 'manage'
@@ -479,6 +504,7 @@ function onUpdateEntry(entryId: string, patch: Partial<AffixLibraryEntry>) {
 }
 
 function onRemoveEntry(entryId: string) {
+  if (editingEntryId.value === entryId) cancelEdit()
   forwardEntryEdit(() => emit('removeEntry', entryId))
 }
 
@@ -516,6 +542,10 @@ async function onRestoreDefaults() {
 /** 组额度说明：一句话讲清这个数字管什么 */
 const GROUP_CAP_HINT = '组内各条档数之和 ≤ 额度'
 
+/** 组规则「不消耗总词条数」的说明（用户 2026-09-18 口径） */
+const GROUP_EXCLUDE_HINT =
+  '打开后：本组条目的基础占用不计入总词条数（买了不占数）；与副词条冲突的额外 x 仍照扣'
+
 /** 额度 0 的说明：别只说「不限」，要说清它还是一种约束的关闭状态 */
 const GROUP_CAP_UNLIMITED_HINT = '0 = 不限制（这几条可以同时用满各自上限）'
 
@@ -531,6 +561,46 @@ function onPickGroup(target: string, value: string) {
 
 function onSetGroupCap(name: string, value: number) {
   forwardEntryEdit(() => emit('setGroupCap', name, value))
+}
+
+/** 开关某组的「不消耗总词条数」（组管理页里的勾选框） */
+function onSetGroupExcluded(name: string, excluded: boolean) {
+  forwardEntryEdit(() => emit('setGroupExcluded', name, excluded))
+}
+
+/**
+ * 「本组单词条上限」批量入口（2026-09-17 加）：
+ * 把当前页签这一组每条的 `cap` 一次设成同一个值（0 = 不限）。
+ *
+ * 与「组额度」是两层：本行改的是**每条各自的档数上限**，组额度仍在组管理页改。
+ * 未分组页签也走这里 —— `activeGroupName` 对未分组返回 `''`，与库里 `group === ''` 的口径一致。
+ *
+ * ⚠️ **故意不预填**（用户 2026-09-17 口径）：输入框默认留空，只放占位提示。
+ * 试过"预填本组最常见的上限"，但那个数字不管取什么值都容易被当成"本组当前的设置"来读，
+ * 表意不清 —— 当前状态由右边「本组当前：…」负责说，输入框只回答"你想改成几"。
+ *
+ * ⚠️ 类型：`<input type="number">` + `v-model` 会**自动按数字解析**，所以这里可能是 **number 而不是字符串**
+ * （空输入则是 `''`）。所以 ref 声明成 `string | number`，解析一律走 `parseBatchEntryCapInput`
+ * —— 2026-09-17 事故：写成 `.trim()` 时 computed 抛错、渲染整体崩掉，按钮永远停在禁用态（"填了数字点不动"）。
+ */
+const batchEntryCapInput = ref<string | number>('')
+
+/** 输入框里的合法值（空 / 非数字 → null，此时按钮禁用） */
+const batchEntryCapValue = computed<number | null>(() => parseBatchEntryCapInput(batchEntryCapInput.value))
+
+/**
+ * 本组当前上限的显示口径（用户 2026-09-17 定）：
+ * - 全部一致 → `全部 30（10 条）` / `全部不限（10 条）`
+ * - **只要有一条不一样 → `上限不一致`**（不列分布：批量入口只需要回答"能不能一次改"，明细在表里看）
+ */
+const entryCapSummary = computed(() => summarizeEntryCaps(visibleEntries.value.map((entry) => entry.cap)))
+
+function applyGroupEntryCaps() {
+  const cap = batchEntryCapValue.value
+  if (!visibleEntries.value.length || cap == null) return
+  // 应用后清空：这个框是「一次性动作」的入参，不是状态显示
+  batchEntryCapInput.value = ''
+  forwardEntryEdit(() => emit('setGroupEntryCaps', activeGroupName.value, cap))
 }
 
 /** 改组名：空名 / 重名一律拒绝，并把输入框还原成原值（否则界面与实际不符） */
@@ -578,52 +648,99 @@ function submitNewGroup() {
 
 // ---------- 条目编辑（新增表单） ----------
 
-/** `stat:` 落点的可选属性 */
-const STAT_TARGET_OPTIONS = (Object.keys(AFFIX_SUBSTAT_KEY_LABELS) as (keyof AffixCounts)[]).map(
-  (key) => ({ id: statTarget(key), label: AFFIX_SUBSTAT_KEY_LABELS[key] }),
-)
+type EntryFormDraft = {
+  label: string
+  target: AffixLibraryEntryTarget
+  perRoll: number
+  cap: number
+  group: string
+  applySituation: BuffApplySituation
+  scope: BuffScope
+  skillCategory: BuffSkillTargetId
+  appliesToAnomaly: boolean
+}
 
-/** `panel:` 落点的可选属性 */
-const PANEL_TARGET_OPTIONS = (
-  Object.keys(AFFIX_PANEL_DELTA_FIELD_LABELS) as AffixPanelDeltaField[]
-).map((field) => ({ id: panelTarget(field), label: AFFIX_PANEL_DELTA_FIELD_LABELS[field] }))
-
-/**
- * 「新增条目」的属性清单：两个落点**合并成一个列表**。
- *
- * 条目不再区分「词条数 / 面板增量」（用户 2026-09-12 裁定：词条只表达「给哪个属性加多少」，
- * 怎么折算由字段语义决定）。同名属性只列一次 —— `异常精通` 在两个落点里都有，
- * 语义相同（平铺加），保留先出现的那个。
- */
-const TARGET_OPTIONS = (() => {
-  const seen = new Set<string>()
-  const merged: { id: AffixLibraryEntryTarget; label: string }[] = []
-  for (const option of [...STAT_TARGET_OPTIONS, ...PANEL_TARGET_OPTIONS]) {
-    if (seen.has(option.label)) continue
-    seen.add(option.label)
-    merged.push(option)
+function emptyDraft(): EntryFormDraft {
+  return {
+    label: '',
+    target: panelTarget('atkPercent'),
+    perRoll: 3,
+    cap: 0,
+    group: '',
+    applySituation: 'global',
+    scope: 'general',
+    skillCategory: 'basic',
+    appliesToAnomaly: false,
   }
-  return merged
-})()
+}
 
-const draft = ref({
-  label: '',
-  target: statTarget('atkPercent') as AffixLibraryEntryTarget,
-  perRoll: 3,
-  cap: 0,
-  group: '',
-})
+const draft = ref(emptyDraft())
 const draftError = ref<string | null>(null)
-
-const draftPerRollUnit = computed(() =>
-  affixPerRollUnit(draft.value.target) === 'percent' ? '%' : '',
-)
 
 function perRollUnitHint(target: AffixLibraryEntryTarget): string {
   return affixPerRollUnit(target) === 'percent' ? '%' : ''
 }
 
-function submitDraft() {
+function conditionFieldsFromForm(row: EntryFormDraft): Partial<AffixLibraryEntry> {
+  if (!isGainTarget(row.target)) {
+    return {
+      applySituation: undefined,
+      scope: undefined,
+      skillCategory: undefined,
+      skillSubcategoryId: undefined,
+      appliesToAnomaly: undefined,
+    }
+  }
+  return {
+    applySituation: row.applySituation,
+    scope: row.scope,
+    ...(row.scope === 'skill'
+      ? {
+          skillCategory: row.skillCategory,
+          skillSubcategoryId: null,
+          appliesToAnomaly: row.appliesToAnomaly,
+        }
+      : {
+          skillCategory: undefined,
+          skillSubcategoryId: undefined,
+          appliesToAnomaly: undefined,
+        }),
+  }
+}
+
+function resetDraft() {
+  draft.value = emptyDraft()
+  draftError.value = null
+}
+
+function cancelEdit() {
+  editingEntryId.value = ''
+  resetDraft()
+}
+
+async function toggleEdit(entry: AffixLibraryEntry) {
+  if (editingEntryId.value === entry.id) {
+    cancelEdit()
+    return
+  }
+  editingEntryId.value = entry.id
+  draftError.value = null
+  draft.value = {
+    label: entry.label,
+    target: entry.target,
+    perRoll: entry.perRoll,
+    cap: entry.cap,
+    group: entry.group,
+    applySituation: entry.applySituation || 'global',
+    scope: entry.scope || 'general',
+    skillCategory: entry.skillCategory || 'basic',
+    appliesToAnomaly: entry.appliesToAnomaly === true,
+  }
+  await nextTick()
+  document.querySelector('.affix-library-modal .add-entry')?.scrollIntoView({ block: 'nearest' })
+}
+
+function submitForm() {
   const label = draft.value.label.trim()
   if (!label) {
     draftError.value = '请填写词条名称'
@@ -634,6 +751,19 @@ function submitDraft() {
     return
   }
   draftError.value = null
+  const editingId = editingEntryId.value
+  if (editingId) {
+    onUpdateEntry(editingId, {
+      label,
+      target: draft.value.target,
+      perRoll: draft.value.perRoll,
+      cap: draft.value.cap,
+      group: draft.value.group.trim(),
+      ...conditionFieldsFromForm(draft.value),
+    })
+    cancelEdit()
+    return
+  }
   forwardEntryEdit(() =>
     emit('addEntry', {
       label,
@@ -641,20 +771,18 @@ function submitDraft() {
       perRoll: draft.value.perRoll,
       cap: draft.value.cap,
       group: draft.value.group.trim(),
-      // 独立功能口径：每条词条 1 档一律占 1 个总词条数
       rollCost: 1,
       enabledByDefault: true,
+      ...conditionFieldsFromForm(draft.value),
     }),
   )
-  draft.value.label = ''
-  draft.value.cap = 0
-  draft.value.group = ''
+  resetDraft()
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="affix-library-overlay" role="presentation" @click.self="emit('close')">
+    <div v-if="open" class="affix-library-overlay" role="presentation" @mousedown="onMaskMouseDown" @mouseup="onMaskMouseUp">
       <div class="affix-library-modal" role="dialog" aria-modal="true" aria-label="词条库">
         <header class="modal-header">
           <h2>词条库</h2>
@@ -671,8 +799,8 @@ function submitDraft() {
 
             <!-- 常驻说明：界面上看不到「官方预设」那一套，它是所有库的底料，容易被误当成 bug -->
             <p class="set-list-hint">
-              官方预设在服务器上、由管理员维护，你改不到它。新建时可复制其中一套预设方案；
-              新建后存于本机浏览器，后续由你维护，勾选 / 改名 / 每档 / 删除 / 导出 / 导入都只存本机
+              官方预设在服务器上、仅由管理员维护。你新建时可以复制其中的预设方案用于快速创建；
+              新建后存于本机浏览器，后续由你维护。
             </p>
 
             <div v-if="newSetMode" class="set-new-panel">
@@ -892,6 +1020,39 @@ function submitDraft() {
               </button>
             </div>
 
+            <!-- 批量改本组单词条上限：简单模式也显示（单词条上限在简单模式下本就能逐条调）
+                 输入框**故意不预填**：它是一次性动作的入参，当前状态由右边「本组当前」说。
+                 ⚠️ 这里**不能**用 `v-model.lazy`（2026-09-17 用户真机：填了数字直接点按钮没反应）：
+                 lazy 只在失焦/回车时提交 → 按钮处于禁用态 → 禁用按钮既不接收点击、又不会让输入框失焦
+                 → 值永远提交不上去，死锁。必须实时绑定，让按钮可用性跟着输入走。 -->
+            <div v-if="activeTab !== 'manage'" class="group-cap-row">
+              <span class="group-cap-label">本组单词条上限统一改成</span>
+              <input
+                v-model="batchEntryCapInput"
+                class="group-cap-input"
+                type="number"
+                min="0"
+                step="1"
+                title="0 = 不限；填好再点右边按钮"
+              />
+              <button
+                type="button"
+                class="chip group-cap-apply"
+                :disabled="!visibleEntries.length || batchEntryCapValue == null"
+                :title="
+                  batchEntryCapValue == null
+                    ? '先填一个上限（0 = 不限）'
+                    : `把本组 ${visibleEntries.length} 条的单词条上限都设成 ${batchEntryCapValue}`
+                "
+                @click="applyGroupEntryCaps"
+              >
+                应用到本组 {{ visibleEntries.length }} 条
+              </button>
+              <span class="group-cap-now">
+                本组当前：<strong>{{ entryCapSummary }}</strong>
+              </span>
+            </div>
+
             <div v-if="activeTab !== 'manage'" class="entry-scroll">
               <table class="library-table library-table--entries">
                 <colgroup>
@@ -915,10 +1076,9 @@ function submitDraft() {
                   </tr>
                 </thead>
                 <tbody>
+                  <template v-for="entry in visibleEntries" :key="entry.id">
                   <tr
-                    v-for="entry in visibleEntries"
-                    :key="entry.id"
-                    :class="{ disabled: !enabledSet.has(entry.id) }"
+                    :class="{ disabled: !enabledSet.has(entry.id), editing: editingEntryId === entry.id }"
                   >
                     <td>
                       <input
@@ -941,9 +1101,14 @@ function submitDraft() {
                         "
                       />
                     </td>
-                    <!-- 目标只读：名称是自由文本、目标才是实际效果；改目标＝删掉再新增 -->
                     <td class="target-cell" :title="entry.target">
-                      {{ affixTargetLabel(entry.target) }}
+                      {{ affixTargetPickerSummary(entry.target) }}
+                      <span
+                        v-if="affixEntryConditionSummary(entry)"
+                        class="condition-hint"
+                      >
+                        {{ affixEntryConditionSummary(entry) }}
+                      </span>
                     </td>
                     <td>
                       <span class="per-roll-cell">
@@ -959,8 +1124,6 @@ function submitDraft() {
                             })
                           "
                         />
-                        <!-- 单位槽恒存在（非百分比行为空串）：用 v-if 会让百分比行的输入框被单位挤窄 13px，
-                             整列右边缘参差不齐（用户 2026-09-12 报的「对齐」）。 -->
                         <span class="unit-hint">{{ perRollUnitHint(entry.target) }}</span>
                       </span>
                     </td>
@@ -992,7 +1155,16 @@ function submitDraft() {
                         </option>
                       </select>
                     </td>
-                    <td>
+                    <td class="actions-cell">
+                      <button
+                        v-if="!simpleMode"
+                        type="button"
+                        class="edit-btn"
+                        :title="editingEntryId === entry.id ? '取消修改，回到新增' : '用下方表单改这条'"
+                        @click="toggleEdit(entry)"
+                      >
+                        {{ editingEntryId === entry.id ? '收起' : '修改' }}
+                      </button>
                       <button
                         type="button"
                         class="del-btn"
@@ -1004,50 +1176,22 @@ function submitDraft() {
                       </button>
                     </td>
                   </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
 
             <div v-if="activeTab !== 'manage' && !simpleMode" class="add-entry">
-              <h5>新增词条</h5>
-              <div class="add-grid">
-                <label>
-                  <span>名称</span>
-                  <input v-model="draft.label" type="text" placeholder="如：5号位增伤" />
-                </label>
-                <label>
-                  <span>目标</span>
-                  <select v-model="draft.target">
-                    <option v-for="opt in TARGET_OPTIONS" :key="opt.id" :value="opt.id">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  <span>每档</span>
-                  <span class="per-roll-cell">
-                    <input v-model.number="draft.perRoll" type="number" step="0.1" min="0" />
-                    <span class="unit-hint">{{ draftPerRollUnit }}</span>
-                  </span>
-                </label>
-                <label>
-                  <span>上限</span>
-                  <input v-model.number="draft.cap" type="number" min="0" step="1" title="0 = 不设上限" />
-                </label>
-                <label>
-                  <span>分组</span>
-                  <select
-                    :value="draft.group"
-                    @change="onPickGroup('draft', ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">空=自由</option>
-                    <option v-for="group in groups" :key="group.name" :value="group.name">
-                      {{ group.name }}
-                    </option>
-                  </select>
-                </label>
-                <button type="button" class="btn-primary" @click="submitDraft">添加</button>
-              </div>
+              <h5>{{ editingEntryId ? '修改词条' : '新增词条' }}</h5>
+              <AffixLibraryEntryFields
+                :entry="draft"
+                :groups="groups"
+                empty-group-label="空=自由"
+              >
+                <button type="button" class="btn-primary" @click="submitForm">
+                  {{ editingEntryId ? '完成' : '添加' }}
+                </button>
+              </AffixLibraryEntryFields>
               <p v-if="draftError" class="err">{{ draftError }}</p>
             </div>
 
@@ -1064,6 +1208,7 @@ function submitDraft() {
                   <colgroup>
                     <col class="col-groupname" />
                     <col class="col-groupcap" />
+                    <col class="col-groupexclude" />
                     <col class="col-groupnote" />
                     <col class="col-del" />
                   </colgroup>
@@ -1071,6 +1216,7 @@ function submitDraft() {
                     <tr>
                       <th>组名</th>
                       <th>组额度</th>
+                      <th>不占词条数</th>
                       <th>说明</th>
                       <th></th>
                     </tr>
@@ -1102,6 +1248,22 @@ function submitDraft() {
                             )
                           "
                         />
+                      </td>
+                      <td class="group-exclude-cell">
+                        <label class="group-exclude-toggle" :title="GROUP_EXCLUDE_HINT">
+                          <input
+                            type="checkbox"
+                            aria-label="不占词条数"
+                            :checked="group.excludedFromTotalRolls === true"
+                            :disabled="simpleMode"
+                            @change="
+                              onSetGroupExcluded(
+                                group.name,
+                                ($event.target as HTMLInputElement).checked,
+                              )
+                            "
+                          />
+                        </label>
                       </td>
                       <td class="type-cell">
                         {{ group.cap === 0 ? GROUP_CAP_UNLIMITED_HINT : GROUP_CAP_HINT }}
@@ -1338,6 +1500,52 @@ function submitDraft() {
 .group-select-all {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* 批量改本组单词条上限：一行（标签 + 输入 + 应用 + 当前值）
+   颜色不硬写：跟着所在表格的正文色走，白天主题由 calculatorLight.css 覆盖 */
+/* 组管理：不占词条数的勾选 + 额度说明（配色不硬写，跟着所在表格的正文字色走） */
+.group-exclude-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.group-cap-note {
+  display: block;
+  margin-top: 0.15rem;
+  opacity: 0.75;
+}
+
+.group-cap-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: inherit;
+}
+
+.group-cap-input {
+  width: 4.5rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #3a4049;
+  border-radius: 6px;
+  background: #10131a;
+  color: #e4e8ef;
+  font: inherit;
+}
+
+/* 「本组当前」跟标签同色（之前用注释灰 → 白天主题下几乎看不见） */
+.group-cap-now {
+  color: inherit;
+  font-size: 0.78rem;
+}
+
+.group-cap-now strong {
+  color: #f0dfb4;
 }
 
 .empty-cell {
@@ -1624,12 +1832,32 @@ function submitDraft() {
   opacity: 0.5;
 }
 
-/** 目标列：只读文本，展示条目实际作用的字段（名称是自由文本，可能对不上） */
+.library-table tr.editing td {
+  background: rgba(201, 165, 92, 0.08);
+}
+
+/** 目标列：只读摘要（时机 · 组 · 叶子）；改目标走底部同一套表单 */
 .target-cell {
   color: #9aa3b0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.condition-hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.7rem;
+  color: #c9a55c;
+  white-space: normal;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #e4e8ef;
+  font-size: 0.8rem;
 }
 
 /* ---------- 列宽（固定表格布局，不锁宽度输入框会把列撑到 200px+） ---------- */
@@ -1646,7 +1874,7 @@ function submitDraft() {
   width: 190px;
 }
 .library-table--entries .col-target {
-  width: 104px;
+  width: 200px;
 }
 .library-table--entries .col-perroll {
   width: 104px;
@@ -1659,14 +1887,22 @@ function submitDraft() {
 }
 .library-table--entries .col-del,
 .library-table--groups .col-del {
-  width: 34px;
+  width: 88px;
 }
 
 .library-table--groups .col-groupcap {
   width: 96px;
 }
+/* 「不占词条数」单独一列：与说明文字分开，别再挤在一格里（用户 2026-09-18） */
+.library-table--groups .col-groupexclude {
+  width: 96px;
+}
 .library-table--groups .col-groupnote {
   width: 260px;
+}
+
+.group-exclude-cell {
+  text-align: center;
 }
 
 .inline-input {
@@ -1720,6 +1956,26 @@ function submitDraft() {
   color: #f08c8c;
 }
 
+.actions-cell {
+  white-space: nowrap;
+}
+
+.edit-btn {
+  border: 1px solid #3a4049;
+  border-radius: 6px;
+  background: #10131a;
+  color: #e4e8ef;
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.12rem 0.4rem;
+  margin-right: 0.2rem;
+  cursor: pointer;
+}
+
+.edit-btn:hover {
+  border-color: #c9a55c;
+}
+
 .add-entry {
   flex-shrink: 0;
 }
@@ -1759,6 +2015,10 @@ function submitDraft() {
   min-width: 0;
 }
 
+.add-grid .add-grid--wide {
+  grid-column: 1 / -1;
+}
+
 .btn-primary {
   border: 1px solid #c9a55c;
   border-radius: 8px;
@@ -1780,5 +2040,9 @@ function submitDraft() {
   font-size: 0.72rem;
   color: #8b94a1;
   flex-shrink: 0;
+}
+
+.add-entry + .footnote {
+  margin-top: 2.4em;
 }
 </style>

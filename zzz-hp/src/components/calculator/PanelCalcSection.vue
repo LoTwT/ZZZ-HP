@@ -10,7 +10,6 @@ import type {
   BangbooBuffDoc,
   BaseDamageSource,
   BuffStatKey,
-  BuffStatModifiers,
   CharacterAttrKey,
   DriveDiscBuffDoc,
   WengineBuffDoc,
@@ -85,7 +84,6 @@ import {
   type HitEvalCacheEntry,
 } from '@/utils/hitEvalCache'
 import {
-  mergeExtraModsForEvent,
   normalizeExtraGain,
 } from '@/utils/extraBuffCalc'
 import {
@@ -252,31 +250,6 @@ function loadAffixFromCurrentSlot() {
 
 
 
-/** 局内通用面板上的额外 Buff：只吃通用，不跟流程第一条招式走 */
-function buildExtraModsForMainPanel(): BuffStatModifiers {
-  if (!extraGains.value.length) return createEmptyBuffStatModifiers()
-  const mainId = mainAgent.value?.id ?? ''
-  const phase = props.staggerPhase ?? 'stagger'
-  return mergeExtraModsForEvent(
-    extraGains.value,
-    buildGenericPanelSkillContext({
-      element: mainAgent.value?.element,
-      staggerPhase: phase,
-    }),
-    {
-      slotIndex: mainSlotIndex.value,
-      slotAgentId: mainId,
-      staggerPhase: phase,
-      resolveAgentProfession: (agentId) =>
-        props.agents.find((item) => item.id === agentId)?.profession,
-      teamSlots: props.teamSlots,
-      agents: props.agents,
-    },
-  )
-}
-
-const extraMods = computed(() => buildExtraModsForMainPanel())
-
 const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
 
 
@@ -406,10 +379,7 @@ function buildSkillContextForSlot(slotIndex: number) {
   })
 }
 
-function buildPanelCalcContextForSlot(
-  slotIndex: number,
-  extraModsOverride?: BuffStatModifiers,
-) {
+function buildPanelCalcContextForSlot(slotIndex: number) {
   return {
     teamSlots: props.teamSlots,
     agents: props.agents,
@@ -419,7 +389,6 @@ function buildPanelCalcContextForSlot(
     mainSlotIndex: slotIndex,
     liveExternalSlotIndex: mainSlotIndex.value,
     driveDiscs: props.driveDiscs,
-    extraMods: extraModsOverride ?? extraMods.value,
     extraGains: extraGains.value,
     skillContext: buildSkillContextForSlot(slotIndex),
     buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
@@ -985,7 +954,6 @@ function getSnapshot(): DamageCalcPanelSnapshot {
   return {
     baseDamageSource: baseDamageSource.value,
     externalPanel: { ...externalPanel },
-    extraMods: { ...extraMods.value },
     extraGains: extraGains.value.map((item) => ({ ...item })),
     enemyInput: { ...enemyInput.value },
   }

@@ -9,6 +9,7 @@
  *
  * 运行：npx vite-node scripts/test-affix-preset-source.mjs
  */
+import { readFileSync } from 'node:fs'
 import {
   AFFIX_PRESET_GROUPS,
   activeAffixLibrarySet,
@@ -24,15 +25,18 @@ import {
   freezePendingAffixLibrarySets,
   importAffixLibrarySet,
   isUsingServerAffixPreset,
+  loadAffixLibraryStore,
   normalizeAffixLibraryStateForSave,
   presetAffixEntriesBase,
   presetAffixGroupsBase,
   resolveAffixLibrary,
   resolveAffixLibraryAll,
   restoreAffixLibraryDefaults,
+  saveAffixLibraryStore,
   setAffixLibraryEntryEnabled,
   setServerAffixPreset,
   skippedServerPresetEntries,
+  stripRetiredHiddenPanelAffixFromDefaultCopy,
   updateAffixLibraryEntry,
 } from '../src/utils/affixLibrary.ts'
 
@@ -85,7 +89,7 @@ console.log('\n[2] 服务端有数据 → 以服务端为准')
   setServerAffixPreset({
     entries: [
       { id: 'srv:1', label: '服务端条目甲', target: 'panel:dmgBonus', perRoll: 12, cap: 2, group: '副词条', rollCost: 1, enabledByDefault: true },
-      { id: 'srv:2', label: '服务端条目乙', target: 'stat:critRate', perRoll: 5, cap: 0, group: '副词条', rollCost: 1, enabledByDefault: false },
+      { id: 'srv:2', label: '服务端条目乙', target: 'panel:critRate', perRoll: 5, cap: 0, group: '副词条', rollCost: 1, enabledByDefault: false },
     ],
     groups: [
       { name: '副词条', cap: 0 },
@@ -157,7 +161,7 @@ console.log('\n[5] 新建即独立 + 过渡态冻结')
   setServerAffixPreset({
     entries: [
       { id: 'off:1', label: '官方甲', target: 'panel:dmgBonus', perRoll: 12, cap: 1, group: '副词条', rollCost: 1, enabledByDefault: true },
-      { id: 'off:2', label: '官方乙', target: 'stat:critRate', perRoll: 5, cap: 0, group: '副词条', rollCost: 1, enabledByDefault: false },
+      { id: 'off:2', label: '官方乙', target: 'panel:critRate', perRoll: 5, cap: 0, group: '副词条', rollCost: 1, enabledByDefault: false },
     ],
     groups: [
       { name: '副词条', cap: 0 },
@@ -354,7 +358,157 @@ console.log('\n[5] 新建即独立 + 过渡态冻结')
     resolveAffixLibraryAll(importedState).map((e) => e.id).join(', '))
 }
 
-// ---------- 6. 收尾：清空，别把状态带给后续 import ----------
+console.log('\n[6] 用户侧「默认」副本同步去掉隐藏局外条目')
+{
+  const keep = {
+    id: 'substat:atkPercent',
+    label: '局外攻击力%',
+    target: 'panel:atkPercent',
+    perRoll: 3,
+    cap: 0,
+    group: '副词条',
+    rollCost: 1,
+    enabledByDefault: true,
+  }
+  const dropReduce = {
+    id: 'panel:reduceDefense',
+    label: '减防%',
+    target: 'panel:reduceDefense',
+    perRoll: 30,
+    cap: 1,
+    group: '副词条',
+    rollCost: 1,
+    enabledByDefault: false,
+  }
+  const dropResPen = {
+    id: 'panel:resPen',
+    label: '抗性穿透%',
+    target: 'panel:resPen',
+    perRoll: 24,
+    cap: 1,
+    group: '副词条',
+    rollCost: 1,
+    enabledByDefault: false,
+  }
+  const copyState = {
+    origin: 'copy',
+    customEntries: [keep, dropReduce, dropResPen],
+    enabledOverride: { 'panel:reduceDefense': true },
+    overrides: {},
+    removedEntryIds: [],
+    groups: [{ name: '副词条', cap: 0 }],
+    removedGroupNames: [],
+  }
+  const store = {
+    version: 2,
+    activeId: 'set:1',
+    sets: [
+      {
+        id: 'set:1',
+        name: '默认',
+        state: copyState,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'set:2',
+        name: '我的配装',
+        state: { ...copyState, customEntries: [dropReduce] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+  }
+  const synced = stripRetiredHiddenPanelAffixFromDefaultCopy(store)
+  const defaultIds = resolveAffixLibraryAll(synced.sets[0].state).map((entry) => entry.id)
+  check(
+    '默认副本去掉减防和抗穿，留下攻击%',
+    defaultIds.length === 1 && defaultIds[0] === 'substat:atkPercent',
+    defaultIds.join(', '),
+  )
+  check(
+    '其它库名不改',
+    resolveAffixLibraryAll(synced.sets[1].state).some((entry) => entry.id === 'panel:reduceDefense'),
+  )
+  saveAffixLibraryStore(store)
+  const loaded = loadAffixLibraryStore()
+  const loadedDefault = loaded.sets.find((set) => set.name === '默认')
+  check(
+    '载入写盘后默认副本已同步',
+    loadedDefault != null &&
+      resolveAffixLibraryAll(loadedDefault.state).every((entry) => entry.id === 'substat:atkPercent') &&
+      !resolveAffixLibraryAll(loadedDefault.state).some((entry) => entry.id === 'panel:reduceDefense'),
+    loadedDefault ? resolveAffixLibraryAll(loadedDefault.state).map((entry) => entry.id).join(', ') : 'missing',
+  )
+}
+
+// ---------- [7] 组规则「不占词条数」的接线（源码级） ----------
+console.log('\n[7] 组规则「不占词条数」：预设链路（源码级守卫）')
+{
+  const adminSource = readFileSync(
+    new URL('../src/components/admin/calculator/AdminAffixPresetPanel.vue', import.meta.url),
+    'utf8',
+  )
+  const apiSource = readFileSync(new URL('../src/api/affixPreset.ts', import.meta.url), 'utf8')
+  const serviceSource = readFileSync(
+    new URL('../../zzz-hp-backend/src/services/affixPresetService.js', import.meta.url),
+    'utf8',
+  )
+  check(
+    '管理端组管理表有「不占词条数」列（勾选框绑到草稿）',
+    adminSource.includes('v-model="group.excludedFromTotalRolls"') &&
+      adminSource.includes('col-groupexclude'),
+    '列 + 勾选框都在',
+  )
+  check(
+    '管理端保存载荷带上该字段（显式布尔值，false 也要送）',
+    adminSource.includes('excludedFromTotalRolls: row.excludedFromTotalRolls === true'),
+    'groupDoc 显式送布尔',
+  )
+  check(
+    '草稿脏标记认得这个字段（勾了要能保存）',
+    /function groupSignature[\s\S]{0,260}?row\.excludedFromTotalRolls === true/.test(adminSource),
+    'groupSignature 含该字段',
+  )
+  check('前端 API 类型有该字段', apiSource.includes('excludedFromTotalRolls?: boolean'))
+  check(
+    '后端读时在顶层透出该字段',
+    serviceSource.includes('group.excludedFromTotalRolls = true'),
+    'rowToGroup',
+  )
+  check(
+    '后端写时收进 raw、送 false 才删、没送则保留（备份回灌保真）',
+    serviceSource.includes('if (doc.excludedFromTotalRolls === true) raw.excludedFromTotalRolls = true') &&
+      serviceSource.includes('else if (doc.excludedFromTotalRolls === false) delete raw.excludedFromTotalRolls'),
+    'replaceAffixPreset 的组写入',
+  )
+  // 2026-09-19 事故：控制器 normalizeGroupPayload 是白名单，第一版没带这个字段 → 前端勾了也存不住。
+  // 守卫补在这一层（当初漏的就是它）。
+  const controllerSource = readFileSync(
+    new URL('../../zzz-hp-backend/src/controllers/affixPresetController.js', import.meta.url),
+    'utf8',
+  )
+  check(
+    '控制器白名单透传该字段（只认布尔）',
+    /typeof body\.excludedFromTotalRolls === 'boolean'/.test(controllerSource) &&
+      /excludedFromTotalRolls: body\.excludedFromTotalRolls/.test(controllerSource),
+    'normalizeGroupPayload',
+  )
+  check(
+    '复制方案时 raw 整份拷（规则跟着走）',
+    /INSERT INTO \$\{GROUP_TABLE\}[\s\S]{0,120}SELECT \?, name, cap, sort_order, raw_json/.test(serviceSource),
+    'createAffixPresetScheme 的 INSERT ... SELECT',
+  )
+  check(
+    '用户侧读预设时认这个字段',
+    readFileSync(new URL('../src/utils/affixLibrary.ts', import.meta.url), 'utf8').includes(
+      'if (item.excludedFromTotalRolls === true) group.excludedFromTotalRolls = true',
+    ),
+    'parseAffixPresetGroups',
+  )
+}
+
+// ---------- 收尾：清空，别把状态带给后续 import ----------
 setServerAffixPreset(null)
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

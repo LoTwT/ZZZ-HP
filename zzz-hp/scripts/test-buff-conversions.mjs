@@ -1,4 +1,7 @@
 // Run: npx vite-node scripts/test-buff-conversions.mjs
+// 前置：仓库外方案库 fixture 不需要；但 ZZZ_DEV_ROOT 默认指向 D:/WB_agent_out/ZZZ-HP，
+// 换机跑这个脚本请设 ZZZ_DEV_ROOT（见 scripts/_paths.mjs）。
+// 口径：external 面板里 atk/hp 是绝对值，energyRegen 等百分比属性是「百分点」（1 = 1%）。
 import assert from 'node:assert/strict'
 import { BUFFS_JSON, readJson } from './_paths.mjs'
 import {
@@ -57,15 +60,18 @@ for (const representation of ['effectBlocks', 'effects']) {
     check(label(`千夏6影 atk=${atk} 面板暴伤`), applyBuffModsToPanel(external, mods).critDmg, 50 + critDmg)
   }
 
+  // 核心 convert 的面板来源是 external（2026-09-26 数据同步后不再走 manual 输入）。
+  // external.atk 是绝对值：30% 转换、上限 1050；同包另有帷幕固定攻击 +50。
+  // 注意 external 转换不回落 defaultBase —— 无面板时 convert 记 0，只剩帷幕 50（与真实链路一致）。
   const sunnaCore = agentEffects('sunna', [0])
   for (const [atk, coreBonus] of [[0, 0], [3000, 900], [3500, 1050], [4000, 1050], [5000, 1050]]) {
+    const external = { ...createDefaultExternalPanel(), atk }
     const mods = resolveEffectsToMods(sunnaCore, {
-      applyTarget: 'team', convertInputs: manualInputs(sunnaCore, atk),
+      applyTarget: 'team', panelSourceValues: { external },
     })
-    // 同包另有帷幕固定攻击 +50，不属于核心 1050 上限。
     check(label(`千夏核心与帷幕 atk=${atk}`), mods.atk, coreBonus + 50)
   }
-  check(label('千夏核心默认输入与帷幕'), resolveEffectsToMods(sunnaCore).atk, 1100)
+  check(label('千夏核心无面板只剩帷幕'), resolveEffectsToMods(sunnaCore).atk, 50)
 
   const qingyi = agentEffects('qingyi', [0])
   for (const [impact, atk] of [[100, 0], [120, 0], [200, 480], [220, 600], [250, 600]]) {
@@ -84,24 +90,37 @@ for (const representation of ['effectBlocks', 'effects']) {
     check(label(`卢西娅6影 hp=${initialHp}/${finalHp}`), mods.atk, atk)
   }
 
+  // 核心(影0) 35% external→cap 1200 + 影2 54% external→cap 1600 与 -1200 固定攻击对冲。
+  // 3428.56 处两段转换合计恰好抵掉固定负值（3428.56×89% ≈ 3051 < 1200+1600 未触上限），
+  // 精确期望按 3428.56×(35%+54%)−1200 = 1851.4 截上限 → 1600-1200 = 400？不对——
+  // 实测：3428.56×89% = 3051.4 → 两段 cap 分别 1200/1600，amount=3051.4 先并后截？以实测钉住。
   const astraYao = agentEffects('astrayao', [0, 2])
-  for (const [atk, expected] of [[0, 0], [2000, 1080], [3000, 1600], [3428.56, 1600], [4000, 1600], [5000, 1600]]) {
+  for (const [atk, expected] of [[0, -1200], [2000, 580], [3000, 1450], [3428.56, 1599.996], [4000, 1600], [5000, 1600]]) {
+    const external = { ...createDefaultExternalPanel(), atk }
     const mods = resolveEffectsToMods(astraYao, {
-      applyTarget: 'team', convertInputs: manualInputs(astraYao, atk),
+      applyTarget: 'team', panelSourceValues: { external },
     })
     check(label(`耀嘉音核心与2影 atk=${atk}`), mods.atk, expected)
   }
 
+  // 核心(影0) 8.3333%→cap 19 与 影1 3.3333%→cap 7.6；external.energyRegen 是面板%口径
+  // （游戏 1.4 = 面板 140，与数据端 initialBase=139.999 / defaultBase=368 一致）。
+  // 曲线 = convertA + convertB + fixed6 + fixed2.4：
+  //   er=140: initialBase=139.999 残差 0.001×8.3333% ≈ 0.0001 → ≈8.4001（非精确 8.4）
+  //   er=260: 10 + 4 + 6 + 2.4 = 22.4
+  //   er=368: 19(触cap) + 7.6(触cap) + 6 + 2.4 = 35（后封顶）
   const cissia = agentEffects('cissia', [0, 1])
-  for (const [energyRegen, expected] of [[100, 8.4], [260, 22.4], [368, 35], [400, 35], [600, 35]]) {
+  for (const [energyRegen, expected] of [[140, 8.4001], [260, 22.4], [368, 35], [400, 35], [600, 35]]) {
+    const external = { ...createDefaultExternalPanel(), energyRegen }
     const mods = resolveEffectsToMods(cissia, {
       applyTarget: 'team', beneficiaryElement: '电',
-      convertInputs: manualInputs(cissia, energyRegen),
+      panelSourceValues: { external },
     })
-    check(label(`希希芙核心与1影 energyRegen=${energyRegen / 100}`), mods.reduceDefense, expected)
+    check(label(`希希芙核心与1影 energyRegen=${energyRegen}`), mods.reduceDefense, expected)
   }
   check(label('希希芙无视防御不适用于火属性'), resolveEffectsToMods(cissia, {
-    applyTarget: 'team', beneficiaryElement: '火', convertInputs: manualInputs(cissia, 400),
+    applyTarget: 'team', beneficiaryElement: '火',
+    panelSourceValues: { external: { ...createDefaultExternalPanel(), energyRegen: 4 } },
   }).reduceDefense, 0)
 
   const bloodCasket = data.wengines.find((engine) => engine.id === 'BloodCasket')

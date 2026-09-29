@@ -30,7 +30,11 @@ import {
   type AffixExternalFixedParts,
   type AffixPanelCalcInput,
 } from '@/utils/affixPanelCalc'
-import { applyPanelDeltas, type AffixPanelDeltaField } from '@/utils/affixLibrary'
+import {
+  applyPanelDeltas,
+  type AffixDeltaMap,
+  type AffixPanelDeltaField,
+} from '@/utils/affixLibrary'
 import {
   createEmptyAgentBasePanel,
   createEmptyBuffStatModifiers,
@@ -55,19 +59,16 @@ import {
   applyHitPanelMods,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
-import { mergeExtraModsForEvent } from '@/utils/extraBuffCalc'
 import { deepUnwrapReactive } from '@/utils/reactiveUnwrap'
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
-  isRemielSelfRadiancePowerProvider,
   resolveDamageCalcResistanceElements,
 } from '@/utils/remielUtils'
 import {
-  collectRemielSelfRestrictedContributions,
-  computeRemielSelfInCombatPanel,
-  resolveRemielSelfRadianceCalcInput,
-} from '@/utils/remielSelfRadiancePanel'
+  REMIEL_SELF_RADIANCE_VIEW_POLICY,
+  resolvePanelViewPolicyForRadiance,
+} from '@/utils/panelViewPolicy'
 import { mergeSkillSubcategoryMultOverrides } from '@/utils/skillSubcategoryMult'
 import { isEffectEnabled } from '@/utils/buffEffect'
 import {
@@ -606,43 +607,12 @@ function computePiercePower(hp: number, atk: number, pierceMod = 0) {
 
 export type OptimalPanelBreakdown = ReturnType<typeof computeFinalPanel>
 
-function buildOptimalExtraModsForEvent(
-  ctx: OptimalEvalContext,
-  hit: ResolvedHit,
-  slotAgentId: string,
-): BuffStatModifiers {
-  const gains = ctx.extraGains ?? []
-  if (!gains.length) return createEmptyBuffStatModifiers()
-  const ownerAgentId = hit.ownerAgentId
-  // 直伤用招式持有者属性；异常类改用异常强度提供者属性（元素恒取强度提供者）
-  const isAnomalyHit = hit.skill.damageType !== 'direct'
-  const powerElement =
-    isAnomalyHit && hit.anomalyPowerAgentId
-      ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
-      : undefined
-  const ownerElement =
-    powerElement ||
-    ctx.panelContext.agents.find((item) => item.id === ownerAgentId)?.element
-  const slotIndex = ctx.panelContext.teamSlots.findIndex((slot) => slot.agentId === slotAgentId)
-  return mergeExtraModsForEvent(gains, buildSkillContextFromHit(hit, ownerElement), {
-    slotIndex,
-    slotAgentId,
-    staggerPhase: hit.staggerPhase,
-    resolveAgentProfession: (agentId) =>
-      ctx.panelContext.agents.find((item) => item.id === agentId)?.profession,
-    teamSlots: ctx.panelContext.teamSlots,
-    agents: ctx.panelContext.agents,
-  })
-}
-
 function buildPanelContextForSlot(
   ctx: OptimalEvalContext,
   slotIndex: number,
   externalForSlot: PanelStats,
   mainExternalPanel: PanelStats,
-  extraModsOverride?: BuffStatModifiers,
 ): PanelCalcContext {
-  const extraMods = extraModsOverride ?? ctx.panelContext.extraMods ?? createEmptyBuffStatModifiers()
   const level =
     slotIndex === ctx.panelContext.mainSlotIndex
       ? ctx.enemyInput.level
@@ -651,7 +621,6 @@ function buildPanelContextForSlot(
     ...ctx.panelContext,
     mainSlotIndex: slotIndex,
     mainExternalPanel: mainExternalPanel,
-    extraMods,
     extraGains: ctx.extraGains,
     buffSelection: ctx.slotBuffSelections
       ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex)
@@ -674,13 +643,14 @@ function resolveRemielSelfRadianceCalcForOptimal(
   skillContext?: import('@/types/calculator').SkillCalcContext,
 ) {
   const remiel = findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)
-  if (!remiel || !isRemielSelfRadiancePowerProvider(anomalyPowerAgentId, remiel.id)) {
+  const policy = resolvePanelViewPolicyForRadiance(anomalyPowerAgentId, remiel?.id)
+  if (policy.id !== 'remiel-self-radiance' || !remiel || !policy.resolveRadianceCalcInput) {
     return undefined
   }
   const external = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainExternal)
   const agent = ctx.panelContext.agents.find((item) => item.id === remiel.id)
   const baseCtx = buildPanelContextForSlot(ctx, remiel.slotIndex, external, mainExternal)
-  return resolveRemielSelfRadianceCalcInput({
+  return policy.resolveRadianceCalcInput({
     teamSlots: ctx.panelContext.teamSlots,
     agents: ctx.panelContext.agents,
     externalPanel: external,
@@ -884,16 +854,11 @@ export function evaluateOptimalEventDetail(
     ownerSlotIndex,
     mainPanel,
   )
-  const ownerExtraMods = buildOptimalExtraModsForEvent(ctx, hit, ownerAgentId)
   const evtPanelCtx = {
-    ...buildPanelContextForSlot(
-      ctx,
-      ownerSlotIndex,
-      ownerExternal,
-      mainPanel,
-      ownerExtraMods,
-    ),
+    ...buildPanelContextForSlot(ctx, ownerSlotIndex, ownerExternal, mainPanel),
     skillContext: skillCtx,
+    // 行级增益例外：只影响本行结算（不动面板、不动层数累计）
+    rowBuffOverride: hit.buffOverride ?? null,
   }
   const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
@@ -937,12 +902,13 @@ export function evaluateOptimalEventDetail(
     } else {
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainPanel)
       producerExternalPanel = tExternal
-      const tExtraMods = buildOptimalExtraModsForEvent(ctx, hit, evtPowerAgentId)
       producerBreakdown = computeFinalPanel(
         tExternal,
         {
-          ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainPanel, tExtraMods),
+          ...buildPanelContextForSlot(ctx, tSlotIndex, tExternal, mainPanel),
           skillContext: buildSkillContextFromHit(hit, tAgent?.element),
+          // 同上：异常强度提供者那一侧也要吃本行的增益例外
+          rowBuffOverride: hit.buffOverride ?? null,
         },
         panelOpts,
       )
@@ -1016,13 +982,7 @@ export function evaluateOptimalEventDetail(
       bonusBreakdown = computeFinalPanel(
         trigExternal,
         {
-          ...buildPanelContextForSlot(
-            ctx,
-            trigSlotIndex,
-            trigExternal,
-            mainPanel,
-            buildOptimalExtraModsForEvent(ctx, hit, hit.triggerAgentId),
-          ),
+          ...buildPanelContextForSlot(ctx, trigSlotIndex, trigExternal, mainPanel),
           // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
           skillContext: buildSkillContextFromHit(
             hit,
@@ -1030,6 +990,8 @@ export function evaluateOptimalEventDetail(
               ? ctx.panelContext.agents.find((item) => item.id === hit.anomalyPowerAgentId)?.element
               : undefined) || trigAgent?.element,
           ),
+          // 行级增益例外：重建 ctx 的地方必须显式带一遍，否则这一侧会漏掉本行的例外
+          rowBuffOverride: hit.buffOverride ?? null,
         },
         panelOpts,
       )
@@ -1064,15 +1026,11 @@ export function evaluateOptimalEventDetail(
         triggerId === ownerAgentId
           ? evtPanelCtx
           : {
-              ...buildPanelContextForSlot(
-                ctx,
-                trigSlotIndex,
-                trigExternal,
-                mainPanel,
-                buildOptimalExtraModsForEvent(ctx, hit, triggerId),
-              ),
+              ...buildPanelContextForSlot(ctx, trigSlotIndex, trigExternal, mainPanel),
               // 元素（属性系别）恒取异常强度提供者，避免触发者自身属性误匹配元素限定增益
               skillContext: buildSkillContextFromHit(hit, evtPowerElement || trigAgent?.element),
+              // 同上：异常触发者一侧也要吃本行的增益例外
+              rowBuffOverride: hit.buffOverride ?? null,
             }
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,
@@ -1203,12 +1161,12 @@ export function evaluateOptimalEventDetail(
   if (includeDetails && result.remielSelfRadianceActive && remiel) {
     const remielExternal = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainPanel)
     const remielCtx = buildPanelContextForSlot(ctx, remiel.slotIndex, remielExternal, mainPanel)
-    const restricted = collectRemielSelfRestrictedContributions(
+    const restricted = REMIEL_SELF_RADIANCE_VIEW_POLICY.collectRestrictedContributions!(
       remielExternal,
       { ...remielCtx, skillContext: skillCtx },
       remiel.slotIndex,
     )
-    const selfBreakdown = computeRemielSelfInCombatPanel(
+    const selfBreakdown = REMIEL_SELF_RADIANCE_VIEW_POLICY.computeInCombatPanel(
       remielExternal,
       remielCtx,
       remiel.slotIndex,
@@ -1403,7 +1361,7 @@ const affixSweepCache = new Map<
 export function evaluateAffixCountsForSweep(
   ctx: OptimalEvalContext,
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
 ): { grandTotal: number; eventLines: OptimalEventDamageLine[] } {
   resetAffixEvalCacheIfNeeded(ctx)
   const cacheKey = affixEvalCacheKey(affixCounts, panelDeltas, ctx.valuePerCount)
@@ -1490,8 +1448,10 @@ let affixEvalCacheCtxSig = ''
  */
 let affixEvalCacheCtxKey = ''
 let affixEvalCacheCtxSeq = 0
-/** 自定义词条（panelField 类）叠加到局外面板的增量表 */
-export type AffixPanelDeltaMap = Partial<Record<AffixPanelDeltaField, number>>
+/**
+ * 增量表类型在 `affixLibrary.ts`（`AffixDeltaMap`）：只装局外增量。
+ * `gain:` 走 `extraGains`，不进这张表。
+ */
 const affixEvalCache = new Map<
   string,
   {
@@ -1508,9 +1468,8 @@ const affixEvalCache = new Map<
 /**
  * 词条计数各字段的「每档值」。
  *
- * 由词条库条目决定（`entryRollsToEvalInput` 产出）：`stat:` 目标的条目用自己的
- * `perRoll` 覆盖对应字段，未覆盖的字段回落 `AFFIX_VALUE_PER_COUNT`。
- * 省略时全部走常量表 —— 柱图（词条计算页）等调用点因此行为不变。
+ * 分析侧现在把局外 `panel:` 都写进 `panelDeltas`，本表对分析路径恒为常量表。
+ * 省略时全部走常量表 —— 柱图（词条计算页）等仍按十格计数 × 本表折算。
  */
 export type AffixValuePerCount = Record<keyof AffixCounts, number>
 
@@ -1525,8 +1484,9 @@ function isDefaultValuePerCount(valuePerCount: AffixValuePerCount): boolean {
 
 function affixCountsCacheKey(
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
+  extraGains?: ExtraBuffGain[],
 ): string {
   // 必须覆盖 AffixCounts 的全部字段：锋御走 defFlat/defPercent，
   // 漏掉会让不同防御档数命中同一条缓存，返回错误伤害。
@@ -1545,13 +1505,31 @@ function affixCountsCacheKey(
           .map((key) => valuePerCount[key])
           .join(',')}`
       : ''
-  if (!panelDeltas) return `${base}${valuePart}`
+  const extraGainPart = extraGainsCachePart(extraGains)
+  if (!panelDeltas) return `${base}${valuePart}${extraGainPart}`
   const parts = (Object.keys(panelDeltas) as AffixPanelDeltaField[])
     .sort()
     .filter((key) => Boolean(panelDeltas[key]))
     .map((key) => `${key}=${panelDeltas[key]}`)
   const deltaPart = parts.length ? `|${parts.join(',')}` : ''
-  return `${base}${valuePart}${deltaPart}`
+  return `${base}${valuePart}${deltaPart}${extraGainPart}`
+}
+
+/**
+ * 候选词条的 extraGains 指纹：进**每评估键**，不进 ctx 签名。
+ *
+ * 若把它们写进 `{ ...ctx, extraGains }` 再当缓存上下文，每次评估都会清整表。
+ * 空数组 / undefined 不进键，默认库路径的键形态与改造前一致。
+ */
+function extraGainsCachePart(extraGains?: ExtraBuffGain[]): string {
+  if (!extraGains?.length) return ''
+  const parts = extraGains
+    .map(
+      (gain) =>
+        `${gain.id}:${gain.stat}:${gain.value}:${gain.applySituation ?? ''}:${gain.scope ?? ''}:${gain.skillCategory ?? ''}:${gain.skillSubcategoryId ?? ''}:${gain.appliesToAnomaly ? '1' : '0'}`,
+    )
+    .sort()
+  return `|eg:${parts.join(',')}`
 }
 
 /**
@@ -1570,10 +1548,11 @@ function affixCountsCacheKey(
  */
 function affixEvalCacheKey(
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
+  extraGains?: ExtraBuffGain[],
 ): string {
-  return `${affixEvalCacheCtxKey}|${affixCountsCacheKey(affixCounts, panelDeltas, valuePerCount)}`
+  return `${affixEvalCacheCtxKey}|${affixCountsCacheKey(affixCounts, panelDeltas, valuePerCount, extraGains)}`
 }
 
 function serializeBuffSelection(state: BuffSelectionState | null | undefined): string {
@@ -1712,7 +1691,6 @@ function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
      */
     ctx.panelContext.bangbooRefine ?? 1,
     JSON.stringify(ctx.panelContext.buffSelection ?? null),
-    JSON.stringify(ctx.panelContext.extraMods ?? null),
     /**
      * 场地 / 环境 Buff（危局、Boss 场地、防卫房间）必须入签名，且要含**内容**。
      *
@@ -1793,7 +1771,7 @@ function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixed
 function computeExternalForEval(
   ctx: OptimalEvalContext,
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
 ): PanelStats {
   // 显式参数优先（求解器 / 收益表按自己的条目表算），否则用上下文里那份 ——
@@ -1822,14 +1800,38 @@ function computeExternalForEval(
   return applyPanelDeltas(external, panelDeltas, {
     anomalyControl: ctx.agentBase?.anomalyControl ?? 0,
     energyRegen: ctx.agentBase?.energyRegen ?? 0,
+    hp: ctx.agentBase?.hp ?? 0,
+    atk: (ctx.agentBase?.atk ?? 0) + (ctx.wengineBaseAtk ?? 0),
+    def: (ctx.agentBase?.def ?? 0) + (ctx.wengineBaseDef ?? 0),
   })
+}
+
+/**
+ * 库路径 `gain:` 条目的 extraGains：缓存查找之后才并入 ctx 副本。
+ * 页级 extraGains 仍在原 ctx 上，走上下文签名。
+ *
+ * 招式流程选「最优分配 / 当前柱」重算时也要走这里：这些增益不在局外面板上。
+ */
+export function withAffixLibraryExtraGains(
+  ctx: OptimalEvalContext,
+  extraGains?: ExtraBuffGain[],
+): OptimalEvalContext {
+  if (!extraGains?.length) return ctx
+  const applySlot = ctx.panelContext.mainSlotIndex
+  const tagged = extraGains.map((gain) => ({
+    ...gain,
+    applySlot: gain.applySlot ?? applySlot,
+    applyTarget: gain.applyTarget ?? 'self',
+  }))
+  return { ...ctx, extraGains: [...(ctx.extraGains ?? []), ...tagged] }
 }
 
 function evaluateAffixCountsUncached(
   ctx: OptimalEvalContext,
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
+  extraGains?: ExtraBuffGain[],
 ): {
   finalPanel: PanelStats
   result: DamageCalcResult
@@ -1840,17 +1842,18 @@ function evaluateAffixCountsUncached(
   eventLines: OptimalEventDamageLine[]
 } {
   const external = computeExternalForEval(ctx, affixCounts, panelDeltas, valuePerCount)
+  const evalCtx = withAffixLibraryExtraGains(ctx, extraGains)
 
   if (ctx.hits?.length) {
     const { grandTotal, eventLines, firstResult, firstBreakdown } = computeEventDamageLines(
-      ctx,
+      evalCtx,
       external,
     )
     const breakdown =
       firstBreakdown ??
       computeFinalPanel(external, {
-        ...buildPanelContextForSlot(ctx, ctx.panelContext.mainSlotIndex, external, external),
-        skillContext: ctx.panelContext.skillContext ?? undefined,
+        ...buildPanelContextForSlot(evalCtx, evalCtx.panelContext.mainSlotIndex, external, external),
+        skillContext: evalCtx.panelContext.skillContext ?? undefined,
       })
     const piercePower = computePiercePower(
       breakdown.finalPanel.hp,
@@ -1900,8 +1903,8 @@ function evaluateAffixCountsUncached(
   }
 
   const breakdown = computeFinalPanel(external, {
-    ...buildPanelContextForSlot(ctx, ctx.panelContext.mainSlotIndex, external, external),
-    skillContext: ctx.panelContext.skillContext ?? undefined,
+    ...buildPanelContextForSlot(evalCtx, evalCtx.panelContext.mainSlotIndex, external, external),
+    skillContext: evalCtx.panelContext.skillContext ?? undefined,
   })
 
   const piercePower = computePiercePower(
@@ -1974,16 +1977,17 @@ export interface AffixCountsEvalResult {
 export function evaluateAffixCountsWithCacheInfo(
   ctx: OptimalEvalContext,
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
+  extraGains?: ExtraBuffGain[],
 ): { value: AffixCountsEvalResult; cacheHit: boolean } {
   resetAffixEvalCacheIfNeeded(ctx)
   const vpc = valuePerCount ?? ctx.valuePerCount
-  const cacheKey = affixEvalCacheKey(affixCounts, panelDeltas, vpc)
+  const cacheKey = affixEvalCacheKey(affixCounts, panelDeltas, vpc, extraGains)
   const cached = affixEvalCache.get(cacheKey)
   if (cached) return { value: cached, cacheHit: true }
 
-  const result = evaluateAffixCountsUncached(ctx, affixCounts, panelDeltas, vpc)
+  const result = evaluateAffixCountsUncached(ctx, affixCounts, panelDeltas, vpc, extraGains)
   if (affixEvalCache.size >= AFFIX_EVAL_CACHE_MAX) {
     const firstKey = affixEvalCache.keys().next().value
     if (firstKey) affixEvalCache.delete(firstKey)
@@ -1995,10 +1999,17 @@ export function evaluateAffixCountsWithCacheInfo(
 export function evaluateAffixCounts(
   ctx: OptimalEvalContext,
   affixCounts: AffixCounts,
-  panelDeltas?: AffixPanelDeltaMap,
+  panelDeltas?: AffixDeltaMap,
   valuePerCount?: AffixValuePerCount,
+  extraGains?: ExtraBuffGain[],
 ): AffixCountsEvalResult {
-  return evaluateAffixCountsWithCacheInfo(ctx, affixCounts, panelDeltas, valuePerCount).value
+  return evaluateAffixCountsWithCacheInfo(
+    ctx,
+    affixCounts,
+    panelDeltas,
+    valuePerCount,
+    extraGains,
+  ).value
 }
 
 /**

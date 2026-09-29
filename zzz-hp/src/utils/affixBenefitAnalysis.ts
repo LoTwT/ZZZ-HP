@@ -1,19 +1,22 @@
 import type { AffixCounts } from '@/types/calculatorPanel'
 import {
-  affixRollsToEquivalentRolls,
+  AFFIX_GAIN_SOURCE_ID_PREFIX,
   affixValuePerCountFromEntries,
   entryRollsToEvalInput,
+  extraGainFromLibraryEntry,
+  isGainTarget,
   panelFieldOfTarget,
   statKeyOfTarget,
+  type AffixDeltaMap,
   type AffixLibraryEntry,
   type AffixLibraryEntryTarget,
 } from '@/utils/affixLibrary'
 import {
   evaluateAffixCounts,
-  type AffixPanelDeltaMap,
   type AffixValuePerCount,
   type OptimalEvalContext,
 } from '@/utils/optimalAffixAlloc'
+import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
 
 /**
  * 全词条收益分析（词条功能改造 · 阶段 1）
@@ -90,7 +93,9 @@ export interface AffixBenefitInput {
   /** 当前副词条分配 */
   baseCounts: AffixCounts
   /** 当前自定义条目的面板增量 */
-  basePanelDeltas?: AffixPanelDeltaMap
+  basePanelDeltas?: AffixDeltaMap
+  /** 当前分配里已有的 `gain:` extraGains（不进扁平增量表） */
+  baseExtraGains?: ExtraBuffGain[]
   /** 参与分析的词条库条目 */
   entries: AffixLibraryEntry[]
   /** 每档增量（>1 时按 N 档一起评估，用于「看 +4 档收益」） */
@@ -133,17 +138,33 @@ export function computeAffixBenefitTable(input: AffixBenefitInput): AffixBenefit
   const { ctx, baseCounts, entries } = input
   const step = Math.max(1, Math.round(input.rollsPerStep ?? 1))
   const basePanelDeltas = input.basePanelDeltas
+  const baseExtraGains = input.baseExtraGains
   // 每档值以词条库条目为准（合并后副词条也读 entry.perRoll）
   const valuePerCount = affixValuePerCountFromEntries(entries)
 
-  const baseEval = evaluateAffixCounts(ctx, baseCounts, basePanelDeltas, valuePerCount)
+  const baseEval = evaluateAffixCounts(
+    ctx,
+    baseCounts,
+    basePanelDeltas,
+    valuePerCount,
+    baseExtraGains,
+  )
   const baselineDamage = metricOf(baseEval)
 
   const rows: AffixBenefitRow[] = []
+  // 临时条目（`group` 为空）不进收益表（2026-09-16 口径：空组属于临时条目，不算正式条目）
   for (const entry of entries) {
+    if (!entry.group) continue
     const nextCounts = bumpEntryCounts(baseCounts, entry, step)
-    const nextDeltas = bumpEntryPanelDeltas(basePanelDeltas, entry, step)
-    const evaluated = evaluateAffixCounts(ctx, nextCounts, nextDeltas, valuePerCount)
+    const nextDeltas = bumpEntryDeltas(basePanelDeltas, entry, step)
+    const nextGains = bumpEntryExtraGains(baseExtraGains, entry, step)
+    const evaluated = evaluateAffixCounts(
+      ctx,
+      nextCounts,
+      nextDeltas,
+      valuePerCount,
+      nextGains,
+    )
     const damageDelta = metricOf(evaluated) - baselineDamage
     const percentDelta = baselineDamage > 0 ? (damageDelta / baselineDamage) * 100 : 0
     rows.push({
@@ -171,6 +192,7 @@ export function computeAffixBenefitTable(input: AffixBenefitInput): AffixBenefit
         ctx,
         baseCounts,
         basePanelDeltas,
+        baseExtraGains,
         entries,
         baselineDamage,
         rankedRows: rows,
@@ -195,6 +217,7 @@ export function computeAffixBenefitSeriesForTable(
     ctx: input.ctx,
     baseCounts: input.baseCounts,
     basePanelDeltas: input.basePanelDeltas,
+    baseExtraGains: input.baseExtraGains,
     entries: input.entries,
     baselineDamage: table.baselineDamage,
     rankedRows: table.rows,
@@ -206,40 +229,42 @@ export function computeAffixBenefitSeriesForTable(
 /**
  * 逐档收益曲线：对收益最高的若干条目，逐档累加并真实重算。
  * 第 0 档为基线（0%），第 n 档为「该条目累计 n 档」相对基线的收益率。
+ *
+ * **只画正收益条目**：`rankedRows` 里 `percentDelta <= 0` 的条目一律不进曲线。
+ * 调用方按分组切好 `rankedRows` 就得到「组内对比」，本函数只负责「取正收益里的前 N 条」。
  */
 function computeAffixBenefitSeries(input: {
   ctx: OptimalEvalContext
   baseCounts: AffixCounts
-  basePanelDeltas?: AffixPanelDeltaMap
+  basePanelDeltas?: AffixDeltaMap
+  baseExtraGains?: ExtraBuffGain[]
   entries: AffixLibraryEntry[]
   baselineDamage: number
   rankedRows: AffixBenefitRow[]
   maxCurveRolls: number
   maxCurveSeries: number
 }): AffixBenefitSeries[] {
-  const { ctx, baseCounts, basePanelDeltas, baselineDamage, rankedRows } = input
+  const { ctx, baseCounts, basePanelDeltas, baseExtraGains, baselineDamage, rankedRows } = input
   if (baselineDamage <= 0) return []
   const entryById = new Map(input.entries.map((entry) => [entry.id, entry]))
   const valuePerCount = affixValuePerCountFromEntries(input.entries)
-  const picked = rankedRows.slice(0, input.maxCurveSeries)
-  const series: AffixBenefitSeries[] = []
 
-  picked.forEach((row, index) => {
-    const entry = entryById.get(row.entryId)
-    if (!entry) return
+  /** 算一条完整曲线（第 0 档 = 基线，第 n 档 = 这条累计 n 档） */
+  const buildSeries = (row: AffixBenefitRow, entry: AffixLibraryEntry, index: number): AffixBenefitSeries => {
     const cumulativePercent: number[] = [0]
     const marginalPercent: number[] = [0]
     let prevDamage = baselineDamage
     for (let n = 1; n <= input.maxCurveRolls; n += 1) {
       const counts = bumpEntryCounts(baseCounts, entry, n)
-      const deltas = bumpEntryPanelDeltas(basePanelDeltas, entry, n)
-      const evaluated = evaluateAffixCounts(ctx, counts, deltas, valuePerCount)
+      const deltas = bumpEntryDeltas(basePanelDeltas, entry, n)
+      const gains = bumpEntryExtraGains(baseExtraGains, entry, n)
+      const evaluated = evaluateAffixCounts(ctx, counts, deltas, valuePerCount, gains)
       const damage = metricOf(evaluated)
       cumulativePercent.push(((damage - baselineDamage) / baselineDamage) * 100)
       marginalPercent.push(prevDamage > 0 ? ((damage - prevDamage) / prevDamage) * 100 : 0)
       prevDamage = damage
     }
-    series.push({
+    return {
       entryId: entry.id,
       key: entry.id,
       label: entry.label,
@@ -247,47 +272,75 @@ function computeAffixBenefitSeries(input: {
       cumulativePercent,
       marginalPercent,
       cappedAt: cumulativePercent.map(() => false),
-    })
-  })
+    }
+  }
 
-  return series
+  // 画谁（2026-09-18 用户口径：**整条曲线都 ≤ 0 才排除**）：
+  // - 正收益的照旧取前 N 条；
+  // - `+1 档 ≤ 0` 的**不再一律排除**：只要在 `maxCurveRolls` 档内出现过正收益（阈值型收益 ——
+  //   典型是"前段 0、越过某个阈值后暴涨"），就把它救回来，最多再 N 条；
+  // - 整条都 ≤ 0 的（纯平线 / 下降线）仍然不画（画出来没信息量，还白占名额）。
+  // 代价：本组条目都要算一遍曲线（组不大，可接受）；这也正是"50 档"的意义所在。
+  const built: { row: AffixBenefitRow; series: AffixBenefitSeries }[] = []
+  rankedRows.forEach((row, index) => {
+    const entry = entryById.get(row.entryId)
+    if (!entry) return
+    built.push({ row, series: buildSeries(row, entry, index) })
+  })
+  const positive = built.filter((item) => item.row.percentDelta > 0).slice(0, input.maxCurveSeries)
+  const rescued = built
+    .filter((item) => !(item.row.percentDelta > 0) && item.series.cumulativePercent.some((v) => v > 0))
+    .slice(0, input.maxCurveSeries)
+  return [...positive, ...rescued].map((item, index) => ({
+    ...item.series,
+    color: CURVE_COLORS[index % CURVE_COLORS.length]!,
+  }))
 }
 
 function bumpEntryCounts(
   counts: AffixCounts,
-  entry: AffixLibraryEntry,
-  step: number,
+  _entry: AffixLibraryEntry,
+  _step: number,
 ): AffixCounts {
-  const key = statKeyOfTarget(entry.target)
-  if (!key) return counts
-  const next = { ...counts }
-  // 与 entryRollsToEvalInput 同口径：按条目自己的每档值折成等效档数，
-  // 这样同字段多条（副词条 3%/档 与 主属性 30%/档）互不顶掉
-  next[key] = (next[key] ?? 0) + affixRollsToEquivalentRolls(entry, key, step)
-  return next
+  return counts
 }
 
-function bumpEntryPanelDeltas(
-  deltas: AffixPanelDeltaMap | undefined,
+function bumpEntryDeltas(
+  deltas: AffixDeltaMap | undefined,
   entry: AffixLibraryEntry,
   step: number,
-): AffixPanelDeltaMap | undefined {
-  const field = panelFieldOfTarget(entry.target)
+): AffixDeltaMap | undefined {
+  if (isGainTarget(entry.target)) return deltas
+  const field = panelFieldOfTarget(entry.target) ?? statKeyOfTarget(entry.target)
   if (!field) return deltas
-  const next: AffixPanelDeltaMap = { ...(deltas ?? {}) }
+  const next: AffixDeltaMap = { ...(deltas ?? {}) }
   next[field] = (next[field] ?? 0) + step * entry.perRoll
   return next
 }
 
-/** 把「条目档数表」换算成求解器可直接使用的 (counts, panelDeltas, valuePerCount) */
+function bumpEntryExtraGains(
+  gains: ExtraBuffGain[] | undefined,
+  entry: AffixLibraryEntry,
+  step: number,
+): ExtraBuffGain[] | undefined {
+  const id = `${AFFIX_GAIN_SOURCE_ID_PREFIX}${entry.id}`
+  const others = (gains ?? []).filter((gain) => gain.id !== id)
+  const added = extraGainFromLibraryEntry(entry, step)
+  if (!added) return others.length ? others : gains
+  return [...others, added]
+}
+
+/** 把「条目档数表」换算成求解器可直接使用的 (counts, panelDeltas, extraGains, valuePerCount) */
 export function rollsToEvalInput(
   entries: AffixLibraryEntry[],
   rollsByEntryId: Record<string, number>,
   baseCounts: AffixCounts,
-  basePanelDeltas?: AffixPanelDeltaMap,
+  basePanelDeltas?: AffixDeltaMap,
+  baseExtraGains?: ExtraBuffGain[],
 ): {
   counts: AffixCounts
-  panelDeltas: AffixPanelDeltaMap | undefined
+  panelDeltas: AffixDeltaMap | undefined
+  extraGains: ExtraBuffGain[] | undefined
   valuePerCount: AffixValuePerCount
 } {
   const input = entryRollsToEvalInput(entries, rollsByEntryId)
@@ -295,13 +348,30 @@ export function rollsToEvalInput(
   for (const key of Object.keys(input.counts) as (keyof AffixCounts)[]) {
     counts[key] = (counts[key] ?? 0) + (input.counts[key] ?? 0)
   }
+  const extraGains = mergeExtraGains(baseExtraGains, input.extraGains)
   const deltaKeys = Object.keys(input.deltas) as (keyof typeof input.deltas)[]
   if (!deltaKeys.length) {
-    return { counts, panelDeltas: basePanelDeltas, valuePerCount: input.valuePerCount }
+    return {
+      counts,
+      panelDeltas: basePanelDeltas,
+      extraGains,
+      valuePerCount: input.valuePerCount,
+    }
   }
-  const panelDeltas: AffixPanelDeltaMap = { ...(basePanelDeltas ?? {}) }
+  const panelDeltas: AffixDeltaMap = { ...(basePanelDeltas ?? {}) }
   for (const key of deltaKeys) {
     panelDeltas[key] = (panelDeltas[key] ?? 0) + (input.deltas[key] ?? 0)
   }
-  return { counts, panelDeltas, valuePerCount: input.valuePerCount }
+  return { counts, panelDeltas, extraGains, valuePerCount: input.valuePerCount }
+}
+
+function mergeExtraGains(
+  base: ExtraBuffGain[] | undefined,
+  added: ExtraBuffGain[],
+): ExtraBuffGain[] | undefined {
+  if (!added.length) return base?.length ? base : undefined
+  if (!base?.length) return added
+  const byId = new Map(base.map((gain) => [gain.id, gain]))
+  for (const gain of added) byId.set(gain.id, gain)
+  return [...byId.values()]
 }
