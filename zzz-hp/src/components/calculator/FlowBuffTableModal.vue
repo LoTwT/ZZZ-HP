@@ -619,6 +619,31 @@ function onColumnBulkClick(columnKey: string) {
   font-size: 0.78rem;
   color: #8695a8;
 }
+/* 「上一个／下一个」原先只挂了 class="mini-btn"，而 .mini-btn 在各组件里都是各自 scoped 的，
+   本弹窗没有这份规则 → 掉回浏览器原生按钮：双层立体边（用户说的"箭头"感）、13.33px 默认字号、
+   2px 边框、line-height: normal，文字顶出内框 = 越界。这里给本弹窗自己的一套，字号跟回页面。 */
+.fbt-search .mini-btn {
+  appearance: none;
+  height: 1.6rem;
+  padding: 0 0.6rem;
+  border: 1px solid #3d4653;
+  border-radius: 4px;
+  background: #10141b;
+  color: #cfd8e3;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fbt-search .mini-btn:hover:not(:disabled) {
+  border-color: #4c5866;
+  background: #161c25;
+}
+.fbt-search .mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .fbt-body {
   overflow: auto;
   padding: 0 0 0.6rem;
@@ -787,15 +812,20 @@ thead th {
   text-align: left;
 }
 .fbt-bulk-btn {
-  display: block;
+  /* 居中：原来是 display:block + height 1.05rem，字形贴内容框顶部、墨迹超出被裁
+     （用户截图里那个"坏掉的箭头"） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  height: 1.05rem;
+  height: 1.15rem;
+  padding: 0;
   border-radius: 3px;
   border: 1px solid #3d4653;
   background: #10141b;
   color: #7f8fa3;
   font-size: 0.72rem;
-  line-height: 1;
+  line-height: 1.15rem;
   cursor: pointer;
 }
 .fbt-bulk-btn.is-on {
@@ -1018,5 +1048,14 @@ thead th {
   border-color: #d5dae3;
   background: #ffffff;
   color: #7b8798;
+}
+:global([data-theme='light'] .fbt-search .mini-btn) {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #2a3340;
+}
+:global([data-theme='light'] .fbt-search .mini-btn:hover:not(:disabled)) {
+  border-color: #b9c2cf;
+  background: #f2f5f9;
 }
 </style>
