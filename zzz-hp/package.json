@@ -18,13 +18,14 @@
     "test:mode-routes": "npx vite-node scripts/test-mode-panel-routes.mjs",
     "test:affix-preagg": "npx vite-node scripts/test-affix-preagg.mjs",
     "test:buff-catalog-cache": "npx vite-node scripts/test-buff-catalog-cache.mjs",
+    "test:buff-conversions": "npx vite-node scripts/test-buff-conversions.mjs",
     "test:user-auth-session": "npx vite-node scripts/test-user-auth-session-race.mjs",
     "test:mult-factor-percent": "npx vite-node scripts/test-mult-factor-percent.mjs",
     "test:formula-align": "npx vite-node scripts/test-formula-align-compare.mjs",
     "test:sharpen-crit": "npx vite-node scripts/test-sharpen-crit.mjs",
     "test:guestbook-upload-session": "npx vite-node scripts/test-guestbook-upload-session.mjs",
     "test:skill-talent-levels": "npx vite-node scripts/test-skill-talent-levels.mjs",
-    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:env-buff-cache-key test:hit-eval-cache test:user-auth-session test:mult-factor-percent test:formula-align test:sharpen-crit test:defense-zone-clamp test:guestbook-upload-session test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge",
+    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:buff-conversions test:env-buff-cache-key test:hit-eval-cache test:user-auth-session test:mult-factor-percent test:formula-align test:sharpen-crit test:defense-zone-clamp test:guestbook-upload-session test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
@@ -57,6 +58,7 @@
     "test:scheme-pack-merge": "npx vite-node scripts/test-scheme-pack-merge.mjs"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
     "isomorphic-dompurify": "^3.19.0",
     "markdown-it": "^14.3.0",
     "pinia": "^3.0.4",

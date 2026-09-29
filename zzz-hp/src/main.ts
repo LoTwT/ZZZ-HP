@@ -4,6 +4,8 @@ import './assets/interknot.css'
 import './assets/calculatorChip.css'
 // 录入方式（面板导入 / 词条导入）二选一按钮：全站唯一来源（弹窗跨 Teleport 也要同款视觉）
 import './assets/entryModeTabs.css'
+// 面板导出图片的截图展开样式：见 dev-docs/panel-image-export.md §3.4
+import './assets/panelImageExport.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
