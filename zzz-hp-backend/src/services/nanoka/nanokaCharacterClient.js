@@ -8,15 +8,27 @@ const NANOKA_CHARACTER_PAGE = 'https://zzz.nanoka.cc/character'
 const STATIC_BASE = 'https://static.nanoka.cc/zzz'
 
 /**
- * 从角色页 HTML 解析当前数据 build tag（如 `3.2.12+18747718`）。
+ * 从 nanoka 角色页静态数据解析当前数据 build tag（如 `3.2.12+18747718`）。
+ *
+ * 2026-10-02 页面改版为 SvelteKit SPA：HTML 不再嵌 character.json 直链，
+ * 数据版本改由 `static.nanoka.cc/manifest.json` 的 `zzz.latest` 提供。
+ * 解析顺序：manifest 优先，页面直链兜底。
  */
 export async function resolveNanokaCharacterBuildTag(pageUrl = NANOKA_CHARACTER_PAGE) {
+  // manifest 在 static 域名根下（不在 /zzz/ 路径内）
+  try {
+    const manifest = await fetchJson('https://static.nanoka.cc/manifest.json')
+    const latest = manifest?.zzz?.latest
+    if (latest) return latest
+  } catch {
+    /* manifest 不可用 → 走旧解析 */
+  }
   const html = await fetchText(pageUrl)
   const match = html.match(
     /data-url="https:\/\/static\.nanoka\.cc\/zzz\/([^"]+)\/character\.json"/,
   )
   if (!match) {
-    throw new Error('无法从 nanoka 角色页解析数据版本号')
+    throw new Error('无法从 nanoka manifest 或角色页解析数据版本号')
   }
   return match[1]
 }
