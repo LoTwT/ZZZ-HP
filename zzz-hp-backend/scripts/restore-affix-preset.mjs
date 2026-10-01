@@ -5,6 +5,10 @@
  *   node scripts/restore-affix-preset.mjs <backup.json> --dry
  *   node scripts/restore-affix-preset.mjs <backup.json>
  *
+ * 支持两种来源格式：
+ *   ① 独立导出文件：顶层 `{ kind, defaultScheme, schemes: [...] }`
+ *   ② 主数据 JSON（zzz-hp-calculator-buffs.json）：`affixPresets.schemes`
+ *
  * 语义：备份里的每一套方案整份替换写库；备份里没有的方案不删。
  * 迁移失败时先用备份灌回，再查。见方案 §5.1。
  */
@@ -29,9 +33,14 @@ if (!fs.existsSync(sourceFile)) {
 }
 
 const payload = JSON.parse(fs.readFileSync(sourceFile, 'utf8'))
-const schemes = Array.isArray(payload.schemes) ? payload.schemes : []
+// 兼容两种来源：顶层 schemes（独立导出文件）或 affixPresets.schemes（主数据 JSON）
+const schemes = Array.isArray(payload.affixPresets?.schemes)
+  ? payload.affixPresets.schemes
+  : Array.isArray(payload.schemes)
+    ? payload.schemes
+    : []
 if (!schemes.length) {
-  console.error('备份里没有 schemes')
+  console.error('备份里没有可恢复的 schemes（顶层 schemes 或 affixPresets.schemes 都没有）')
   process.exit(1)
 }
 
