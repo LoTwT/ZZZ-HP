@@ -1,3 +1,33 @@
+import type { AffixPresetEntryDoc, AffixPresetGroupDoc } from '@/api/affixPreset'
+
+/**
+ * 词条库快照里的一套方案。
+ *
+ * 形状对齐 `zzz-hp-backend/scripts/export-affix-preset.mjs` 的输出、以及主数据
+ * `zzz-hp-calculator-buffs.json` 的 `affixPresets.schemes` —— 同一份文件既能被
+ * 管理页导入，也能直接喂给 `scripts/import-affix-preset.mjs`。
+ */
+export interface CalculatorBuffAffixPresetScheme {
+  name: string
+  isDefault?: boolean
+  sortOrder?: number
+  entries: AffixPresetEntryDoc[]
+  groups: AffixPresetGroupDoc[]
+}
+
+/**
+ * 词条库快照（导入 / 导出面板的第 10 类）。
+ *
+ * 与其余 9 类的区别：那些是「扁平数组 + 按 id 增量 upsert」，这份是
+ * 「方案 → 分组 + 条目」的层级结构，**导入时整份替换同名方案**。
+ */
+export interface CalculatorBuffAffixPresets {
+  kind?: string
+  exportedAt?: string
+  defaultScheme?: string
+  schemes: CalculatorBuffAffixPresetScheme[]
+}
+
 export type AdminCalculatorPanel =
   | 'agent'
   | 'wengine'
@@ -743,6 +773,8 @@ export interface CalculatorBuffData {
   damageEventModes?: DamageEventMode[]
   skills?: Skill[]
   skillGroups?: SkillGroup[]
+  /** 官方预设词条库（第 10 类；导入时整份替换同名方案，不是按 id 增量） */
+  affixPresets?: CalculatorBuffAffixPresets
   exportedAt?: string
 }
 
@@ -763,4 +795,9 @@ export interface CalculatorBuffImportSummary {
   damageEventModes: CalculatorBuffImportTypeSummary
   skills: CalculatorBuffImportTypeSummary
   skillGroups: CalculatorBuffImportTypeSummary
+  /**
+   * 词条库这一行的 created / updated 计数单位是**方案**，不是条目
+   * （整份替换语义下没有「这条条目是新增还是更新」的区分），界面上要标注。
+   */
+  affixPresets: CalculatorBuffImportTypeSummary
 }
