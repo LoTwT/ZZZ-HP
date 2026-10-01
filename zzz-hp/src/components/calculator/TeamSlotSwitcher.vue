@@ -133,6 +133,39 @@ function panelSourceTitle(kind: AgentPanelSourceKind, index: number) {
     : `未生效：${AGENT_PANEL_SOURCE_LABELS[kind]}；在导入弹窗的「面板来源」里切换`
 }
 
+/**
+ * 悬停卡顶部的角色身份三行（2026-10-01 用户口径，显示在「局外面板」之前）：
+ * 名字 · 属性 · 职业 / 影 · 音擎 / 驱动盘。按槽位取数（卡片是逐槽悬停的），
+ * 与编辑区那套 activeSlot 版摘要同口径。
+ */
+function identityLinesOf(index: number): string[] {
+  const slot = props.teamSlots[index]
+  if (!slot?.agentId) return []
+  const agent = agentOf(slot)
+  if (!agent) return []
+  const lines: string[] = []
+  lines.push([agent.name, agent.element, agent.profession].filter(Boolean).join(' · '))
+  const wengine = wengineOf(slot)
+  const wengineParts = [`${slot.rank}影`]
+  if (wengine) {
+    wengineParts.push(
+      isWengineProfessionMatch(agent.profession, wengine.profession)
+        ? `${wengine.name} · 精${slot.wengineRefine}`
+        : `${wengine.name} · 异职`,
+    )
+  } else {
+    wengineParts.push('未佩戴音擎')
+  }
+  lines.push(wengineParts.join(' · '))
+  const discParts: string[] = []
+  const four = discOf(slot.fourPieceDriveDiscId)
+  const two = discOf(slot.twoPieceDriveDiscId)
+  if (four?.name) discParts.push(`4件套 ${four.name}`)
+  if (two?.name) discParts.push(`2件套 ${two.name}`)
+  lines.push(discParts.length ? discParts.join(' · ') : '未选驱动盘')
+  return lines
+}
+
 const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'hp', label: '生命值' },
   { key: 'atk', label: '攻击力' },
@@ -265,6 +298,11 @@ const driveDiscLine = computed(() => {
           @mouseenter="showHover(index)"
           @mouseleave="scheduleHideHover"
         >
+          <div v-if="identityLinesOf(index).length" class="panel-hover-identity">
+            <p v-for="(line, lineIndex) in identityLinesOf(index)" :key="`identity-${index}-${lineIndex}`">
+              {{ line }}
+            </p>
+          </div>
           <div class="panel-hover-head">
             <p class="panel-hover-title">局外面板</p>
             <span v-if="panelSourceKindOf(index)" class="panel-source-tags">
@@ -665,6 +703,36 @@ const driveDiscLine = computed(() => {
   justify-content: space-between;
   gap: 0.6rem;
   margin-bottom: 0.4rem;
+}
+
+/* 角色身份三行（2026-10-01）：名字·属性·职业 / 影·音擎 / 驱动盘，压在「局外面板」之前 */
+.panel-hover-identity {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(201, 165, 92, 0.25);
+}
+
+.panel-hover-identity p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #dfe6ef;
+  white-space: nowrap;
+}
+
+.panel-hover-identity p:first-child {
+  font-weight: 600;
+  color: #f0d7a2;
+}
+
+/* 白天主题（2026-10-01 随身份行补充）：悬停卡本身是深底硬编码，本组件原无 light 覆盖；
+   只给身份行的两行文字做浅色调，避免将来卡片改浅底时撞色 */
+:global([data-theme='light'] .panel-hover-identity p) {
+  color: #e8ecf4;
+}
+
+:global([data-theme='light'] .panel-hover-identity p:first-child) {
+  color: #f5e3bb;
 }
 
 .panel-hover-head .panel-hover-title {
