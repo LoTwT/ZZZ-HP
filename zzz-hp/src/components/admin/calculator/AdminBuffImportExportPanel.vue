@@ -537,7 +537,7 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
           <span>范围</span>
           <select v-model="exportScope">
             <option value="picked">自选若干条</option>
-            <option value="all">全部增益</option>
+            <option value="all">全部</option>
             <option value="agents">全部角色</option>
             <option value="wengines">全部音擎</option>
             <option value="bangboos">全部邦布</option>
