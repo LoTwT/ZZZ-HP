@@ -3087,7 +3087,17 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 
     <div class="source-mode-row">
       <h3 class="block-title">基础伤害来源</h3>
-      <div class="section-mode-row" role="tablist" aria-label="功能模式">        <button
+      <!-- select 直接进标题行（2026-10-01 二轮）：删掉原字段的小字标签，当前值本身就是「攻击力/防御力/贯穿力」 -->
+      <select v-model="baseDamageSource" class="source-mode-select" :disabled="isMb || isFengYu">
+        <option value="atk">攻击力</option>
+        <option value="def">防御力</option>
+        <option value="pierce">贯穿力</option>
+      </select>
+      <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
+      <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
+      <span class="source-mode-spacer" />
+      <div class="section-mode-row" role="tablist" aria-label="功能模式">
+        <button
           type="button"
           role="tab"
           class="chip chip--mode"
@@ -3108,18 +3118,6 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           扫掠柱图
         </button>
       </div>
-    </div>
-    <div class="grid three">
-      <label class="field">
-        <span>基础伤害来源</span>
-        <select v-model="baseDamageSource" :disabled="isMb || isFengYu">
-          <option value="atk">攻击力</option>
-          <option value="def">防御力</option>
-          <option value="pierce">贯穿力</option>
-        </select>
-        <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
-        <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
-      </label>
     </div>
 
     <!-- ============ 词条分配模式 ============ -->
@@ -3472,6 +3470,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             >
               停止
             </button>
+            <!-- 收起求解结果 + 收益曲线（2026-10-01 二轮：位置在「编辑游戏专用规则」之后） -->
+            <button
+              v-if="affixAllocResult && !affixAllocLoading"
+              type="button"
+              class="ghost-btn alloc-fold-btn"
+              @click="affixAllocCollapsed = !affixAllocCollapsed"
+            >
+              {{ affixAllocCollapsed ? '展开求解结果' : '收起求解结果' }}
+            </button>
           </div>
           <ul class="alloc-mode-notes">
             <li>
@@ -3483,7 +3490,10 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           </ul>
         </div>
         <p v-if="affixAllocError" class="err">{{ affixAllocError }}</p>
-        <!-- 结果收起（2026-10-01 用户要求）：折叠时只留标题行 + 切换按钮，进度/错误不受影响 -->
+        <!--
+          结果收起（2026-10-01 二轮口径）：收起范围 = 求解结果 + 收益曲线整块；
+          切换按钮放在「编辑游戏专用规则」之后（见上方 alloc-mode-row），不占结果区位置。
+        -->
         <template v-if="affixAllocLoading || !affixAllocResult">
           <AffixAllocationResult
             :result="affixAllocResult"
@@ -3499,30 +3509,20 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             :free-roll-groups="affixAllocFreeRollGroupNames"
           />
         </template>
-        <div v-else class="alloc-result-fold">
-          <button
-            type="button"
-            class="chip"
-            :class="{ active: !affixAllocCollapsed }"
-            @click="affixAllocCollapsed = !affixAllocCollapsed"
-          >
-            {{ affixAllocCollapsed ? '展开求解结果' : '收起求解结果' }}
-          </button>
-          <div v-show="!affixAllocCollapsed">
-            <AffixAllocationResult
-              :result="affixAllocResult"
-              :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
-              :loading="affixAllocLoading"
-              :error="affixAllocError"
-              :progress="affixAllocProgress"
-              :stale="affixAllocResultStale"
-              :elapsed-ms="affixAllocElapsedMs"
-              :live-ms="affixAllocLoading ? affixAllocTickMs : null"
-              :conflict-extra-cost="affixAllocConflictExtraCost"
-              :roll-split="affixAllocRollSplit"
-              :free-roll-groups="affixAllocFreeRollGroupNames"
-            />
-          </div>
+        <div v-else v-show="!affixAllocCollapsed">
+          <AffixAllocationResult
+            :result="affixAllocResult"
+            :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
+            :loading="affixAllocLoading"
+            :error="affixAllocError"
+            :progress="affixAllocProgress"
+            :stale="affixAllocResultStale"
+            :elapsed-ms="affixAllocElapsedMs"
+            :live-ms="affixAllocLoading ? affixAllocTickMs : null"
+            :conflict-extra-cost="affixAllocConflictExtraCost"
+            :roll-split="affixAllocRollSplit"
+            :free-roll-groups="affixAllocFreeRollGroupNames"
+          />
         </div>
         <GameAffixRulesModal
           :open="gameAffixRulesOpen"
@@ -3538,7 +3538,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           @toggle-entries="toggleGameAffixEntries"
         />
 
-        <template v-if="affixAllocResult">
+        <div v-if="affixAllocResult" v-show="!affixAllocCollapsed">
           <div class="detail-tabs alloc-subtabs">
             <button
               type="button"
@@ -3566,7 +3566,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <p v-else-if="affixBenefitSeriesLoading" class="hint">收益曲线计算中…（首屏只算「+1 档」表，曲线按需补算）</p>
             <p v-else-if="!affixAllocCurveData" class="hint">暂无收益曲线数据。</p>
           </template>
-        </template>
+        </div>
       </template>
     </template>
     <!-- ============ 扫掠柱图模式（原逻辑） ============ -->
@@ -4711,7 +4711,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   color: #9aa3b0;
 }
 
-/* 「基础伤害来源」标题与模式切换同行（2026-10-01 用户布局调整） */
+/* 「基础伤害来源」标题行：select 与模式切换同排（2026-10-01 二轮） */
 .source-mode-row {
   display: flex;
   flex-wrap: wrap;
@@ -4721,6 +4721,27 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 
 .source-mode-row .block-title {
   margin: 0;
+}
+
+.source-mode-spacer {
+  flex: 1 1 auto;
+}
+
+.source-mode-select {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #3d4653;
+  background: #10141b;
+  color: #e6ebf2;
+  cursor: pointer;
+}
+
+:global([data-theme='light'] .source-mode-select) {
+  border-color: #cfd6e0;
+  background: #ffffff;
+  color: #1c212a;
 }
 
 .section-mode-row {
@@ -4751,7 +4772,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
  * 改造前它们各自写了一套（其中模式切换还是青柠色选中，且白天主题没有任何覆盖 —— 一直是黑的）。
  */
 
-/* 最优分配结果收起容器（2026-10-01）：按钮行 + 可折叠的结果体 */
+/* 最优分配结果收起（2026-10-01 二轮）：按钮入「分配方式」行，折叠容器不再带自己的按钮行 */
 .alloc-result-fold {
   display: flex;
   flex-direction: column;
@@ -4760,6 +4781,10 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 
 .alloc-result-fold > .chip {
   align-self: flex-start;
+}
+
+.alloc-fold-btn {
+  margin-left: 0;
 }
 
 .alloc-input-row {

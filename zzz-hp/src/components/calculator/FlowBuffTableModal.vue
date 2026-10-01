@@ -350,7 +350,7 @@ const stickyTopBulk = computed(() => {
           <span class="fbt-stat">生效 {{ onCount }}</span>
           <span class="fbt-stat is-off">关闭 {{ offCount }}</span>
         </div>
-        <button type="button" class="mini-btn" @click="open = false">关闭</button>
+        <button type="button" class="mini-btn fbt-close-btn" @click="open = false">关闭</button>
       </header>
 
       <p class="fbt-hint">
@@ -606,6 +606,30 @@ const stickyTopBulk = computed(() => {
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid #2a3038;
+}
+/* 头部「关闭」按钮（2026-10-01 用户要求优化）：本弹窗没有全局 .mini-btn 样式，
+   原先掉回浏览器原生按钮（双层立体边 + 大字号）很突兀。给一套与搜索条 mini-btn
+   同款的规则，并加显眼的红色边底，一眼可辨「关掉整个表」。 */
+.fbt-close-btn {
+  appearance: none;
+  height: 1.6rem;
+  margin-left: 0.25rem;
+  padding: 0 0.7rem;
+  border: 1px solid #7a3f46;
+  border-radius: 4px;
+  background: #241618;
+  color: #d38f95;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fbt-close-btn:hover {
+  border-color: #a05258;
+  background: #2e1a1d;
+  color: #f0b9bd;
 }
 .fbt-head-main {
   display: flex;
@@ -1141,5 +1165,14 @@ thead th {
 :global([data-theme='light'] .fbt-search .mini-btn:hover:not(:disabled)) {
   border-color: #b9c2cf;
   background: #f2f5f9;
+}
+:global([data-theme='light'] .fbt-close-btn) {
+  border-color: #e0a9ad;
+  background: #fdf1f1;
+  color: #b4434b;
+}
+:global([data-theme='light'] .fbt-close-btn:hover) {
+  border-color: #c9828a;
+  background: #fbe4e4;
 }
 </style>

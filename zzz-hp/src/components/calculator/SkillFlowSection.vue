@@ -2960,9 +2960,11 @@ const showcaseTitle = computed(() => {
               <div class="col-head">
                 <div class="col-title-row">
                   <h3>流程</h3>
+                  <!-- 增益表入口紧随「流程」标题（2026-10-01 用户要求）：拖动排序移到行尾 -->
                   <button type="button" class="mini-btn" @click="flowBuffTableOpen = true">
                     流程增益表
                   </button>
+                  <span class="col-title-spacer" />
                   <label class="drag-toggle">
                     <input v-model="flowDragEnabled" type="checkbox" />
                     拖动排序
@@ -4221,6 +4223,11 @@ const showcaseTitle = computed(() => {
   justify-content: space-between;
   gap: 0.5rem;
   min-width: 0;
+}
+
+/* 「流程」标题行：增益表入口紧跟标题，拖动排序推到行尾（2026-10-01） */
+.col-title-spacer {
+  flex: 1 1 auto;
 }
 .col-title-actions {
   display: flex;
