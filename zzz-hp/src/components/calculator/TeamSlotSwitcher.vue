@@ -712,6 +712,8 @@ const driveDiscLine = computed(() => {
   border-bottom: 1px solid rgba(201, 165, 92, 0.25);
 }
 
+/* 白天主题：悬停卡在白天是**白底**（calculatorLight.css 有整卡覆盖），身份行必须给深字。
+   组件内不再写 light 覆盖（此前误按深底写了浅字，正是"白天看不清"的根因）。 */
 .panel-hover-identity p {
   margin: 0;
   font-size: 0.8rem;
@@ -723,16 +725,6 @@ const driveDiscLine = computed(() => {
 .panel-hover-identity p:first-child {
   font-weight: 600;
   color: #f0d7a2;
-}
-
-/* 白天主题（2026-10-01 随身份行补充）：悬停卡本身是深底硬编码，本组件原无 light 覆盖；
-   只给身份行的两行文字做浅色调，避免将来卡片改浅底时撞色 */
-:global([data-theme='light'] .panel-hover-identity p) {
-  color: #e8ecf4;
-}
-
-:global([data-theme='light'] .panel-hover-identity p:first-child) {
-  color: #f5e3bb;
 }
 
 .panel-hover-head .panel-hover-title {
