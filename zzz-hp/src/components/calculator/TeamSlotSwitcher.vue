@@ -133,6 +133,39 @@ function panelSourceTitle(kind: AgentPanelSourceKind, index: number) {
     : `未生效：${AGENT_PANEL_SOURCE_LABELS[kind]}；在导入弹窗的「面板来源」里切换`
 }
 
+/**
+ * 悬停卡顶部的角色身份三行（2026-10-01 用户口径，显示在「局外面板」之前）：
+ * 名字 · 属性 · 职业 / 影 · 音擎 / 驱动盘。按槽位取数（卡片是逐槽悬停的），
+ * 与编辑区那套 activeSlot 版摘要同口径。
+ */
+function identityLinesOf(index: number): string[] {
+  const slot = props.teamSlots[index]
+  if (!slot?.agentId) return []
+  const agent = agentOf(slot)
+  if (!agent) return []
+  const lines: string[] = []
+  lines.push([agent.name, agent.element, agent.profession].filter(Boolean).join(' · '))
+  const wengine = wengineOf(slot)
+  const wengineParts = [`${slot.rank}影`]
+  if (wengine) {
+    wengineParts.push(
+      isWengineProfessionMatch(agent.profession, wengine.profession)
+        ? `${wengine.name} · 精${slot.wengineRefine}`
+        : `${wengine.name} · 异职`,
+    )
+  } else {
+    wengineParts.push('未佩戴音擎')
+  }
+  lines.push(wengineParts.join(' · '))
+  const discParts: string[] = []
+  const four = discOf(slot.fourPieceDriveDiscId)
+  const two = discOf(slot.twoPieceDriveDiscId)
+  if (four?.name) discParts.push(`4件套 ${four.name}`)
+  if (two?.name) discParts.push(`2件套 ${two.name}`)
+  lines.push(discParts.length ? discParts.join(' · ') : '未选驱动盘')
+  return lines
+}
+
 const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'hp', label: '生命值' },
   { key: 'atk', label: '攻击力' },
@@ -265,6 +298,11 @@ const driveDiscLine = computed(() => {
           @mouseenter="showHover(index)"
           @mouseleave="scheduleHideHover"
         >
+          <div v-if="identityLinesOf(index).length" class="panel-hover-identity">
+            <p v-for="(line, lineIndex) in identityLinesOf(index)" :key="`identity-${index}-${lineIndex}`">
+              {{ line }}
+            </p>
+          </div>
           <div class="panel-hover-head">
             <p class="panel-hover-title">局外面板</p>
             <span v-if="panelSourceKindOf(index)" class="panel-source-tags">
@@ -667,6 +705,28 @@ const driveDiscLine = computed(() => {
   margin-bottom: 0.4rem;
 }
 
+/* 角色身份三行（2026-10-01）：名字·属性·职业 / 影·音擎 / 驱动盘，压在「局外面板」之前 */
+.panel-hover-identity {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(201, 165, 92, 0.25);
+}
+
+/* 白天主题：悬停卡在白天是**白底**（calculatorLight.css 有整卡覆盖），身份行必须给深字。
+   组件内不再写 light 覆盖（此前误按深底写了浅字，正是"白天看不清"的根因）。 */
+.panel-hover-identity p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #ecf1f8;
+  white-space: nowrap;
+}
+
+.panel-hover-identity p:first-child {
+  font-weight: 600;
+  color: #f0d7a2;
+}
+
 .panel-hover-head .panel-hover-title {
   margin: 0;
 }
@@ -678,12 +738,12 @@ const driveDiscLine = computed(() => {
   flex-shrink: 0;
 }
 
-/* 两枚胶囊：生效那份红字（同导入弹窗的「面板来源」），另一枚淡灰 */
+/* 两枚胶囊：生效那份红字（同导入弹窗的「面板来源」），另一枚淡灰提亮到可读（2026-10-01 用户反馈） */
 .panel-source-tag {
   padding: 0.05rem 0.45rem;
-  border: 1px solid #3a4658;
+  border: 1px solid #4a5668;
   border-radius: 999px;
-  color: #7b8698;
+  color: #a3aebb;
   font-size: 0.68rem;
   line-height: 1.5;
   white-space: nowrap;
@@ -705,7 +765,7 @@ const driveDiscLine = computed(() => {
 .panel-hover-empty {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;
-  color: #8b93a3;
+  color: #b6c0cd;
 }
 
 .panel-hover-grid {
@@ -727,7 +787,7 @@ const driveDiscLine = computed(() => {
   margin: 0;
   flex: 1 1 auto;
   font-size: 0.72rem;
-  color: #8b93a3;
+  color: #b6c0cd;
   line-height: 1.35;
 }
 
@@ -736,7 +796,7 @@ const driveDiscLine = computed(() => {
   flex: 0 0 auto;
   font-size: 0.74rem;
   font-weight: 600;
-  color: #e8edf5;
+  color: #f2f6fb;
   font-variant-numeric: tabular-nums;
 }
 

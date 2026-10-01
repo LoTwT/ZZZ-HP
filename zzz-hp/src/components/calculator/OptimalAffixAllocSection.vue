@@ -303,6 +303,8 @@ const selectedSweepKey = ref<{ outPercent: number; secondary: number } | null>(n
 const detailTab = ref<DetailTab>('diff')
 const anomalyChartMetric = ref<AnomalyMetric>('anomaly')
 const curveMode = ref<CurveMode>('cumulative')
+/** 扫掠模式收益曲线的收起态（2026-10-01 用户要求）：曲线区可折叠，标题行保留文字入口 */
+const curveFolded = ref(false)
 /** 异常模式三张图共享的悬停索引，实现联动 */
 const anomalyHoverIndex = ref<number | null>(null)
 
@@ -1791,6 +1793,12 @@ const affixAllocError = ref<string | null>(null)
 const affixAllocMode = ref<'default' | 'game' | null>(null)
 
 /**
+ * 最优分配结果的收起态（2026-10-01 用户要求）：求解完成后可把结果详情折叠，
+ * 只留「最优总伤 / 提升」摘要行。重新求解时自动展开。
+ */
+const affixAllocCollapsed = ref(false)
+
+/**
  * 求解计时（纯界面，不落盘、不参与计算）。
  *
  * 口径：从「点下按钮」到「求解返回」的墙钟时间，**包含**门槛测量 / 专路 / Beam / 换档，
@@ -1995,13 +2003,6 @@ const comboBaselineReady = computed(() => {
   return Boolean(analysisCounts.value && analysisEval.value)
 })
 
-/** 词条分析页组合试算能否走「导入面板反推」：需要页级基准局外 */
-const comboUsesImportedPanel = computed(
-  () =>
-    sectionMode.value === 'allocation' &&
-    Boolean(evalCtx.value.mainBaseExternalPanel),
-)
-
 // 两个来源的面板就绪 / 失效时上报给页级（招式流程三选项据此启用与判过期；
 // 面板展示专用通道同一时机一并上报）
 watch(
@@ -2203,6 +2204,7 @@ async function runAffixAllocation() {
   affixAllocTotalRolls.value = total
   affixAllocMode.value = 'default'
   affixAllocLoading.value = true
+  affixAllocCollapsed.value = false
   startAllocTimer()
   affixAllocError.value = null
   affixAllocProgress.value = null
@@ -2317,6 +2319,7 @@ async function runGameAffixAllocation() {
   affixAllocTotalRolls.value = total
   affixAllocMode.value = 'game'
   affixAllocLoading.value = true
+  affixAllocCollapsed.value = false
   startAllocTimer()
   affixAllocError.value = null
   affixAllocProgress.value = null
@@ -3082,41 +3085,38 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </p>
     </header>
 
-    <h3 class="block-title">基础伤害来源</h3>
-    <div class="grid three">
-      <label class="field">
-        <span>基础伤害来源</span>
-        <select v-model="baseDamageSource" :disabled="isMb || isFengYu">
-          <option value="atk">攻击力</option>
-          <option value="def">防御力</option>
-          <option value="pierce">贯穿力</option>
-        </select>
-        <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
-        <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
-      </label>
-    </div>
-
-    <div class="section-mode-row" role="tablist" aria-label="功能模式">
-      <button
-        type="button"
-        role="tab"
-        class="chip chip--mode"
-        :class="{ active: sectionMode === 'allocation' }"
-        :aria-selected="sectionMode === 'allocation'"
-        @click="sectionMode = 'allocation'"
-      >
-        词条分析
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="chip chip--mode"
-        :class="{ active: sectionMode === 'sweep' }"
-        :aria-selected="sectionMode === 'sweep'"
-        @click="sectionMode = 'sweep'"
-      >
-        扫掠柱图
-      </button>
+    <div class="source-mode-row">
+      <h3 class="block-title">基础伤害来源</h3>
+      <!-- select 直接进标题行（2026-10-01 二轮）：删掉原字段的小字标签，当前值本身就是「攻击力/防御力/贯穿力」 -->
+      <select v-model="baseDamageSource" class="source-mode-select" :disabled="isMb || isFengYu">
+        <option value="atk">攻击力</option>
+        <option value="def">防御力</option>
+        <option value="pierce">贯穿力</option>
+      </select>
+      <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
+      <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
+      <div class="section-mode-row" role="tablist" aria-label="功能模式">
+        <button
+          type="button"
+          role="tab"
+          class="chip chip--mode"
+          :class="{ active: sectionMode === 'allocation' }"
+          :aria-selected="sectionMode === 'allocation'"
+          @click="sectionMode = 'allocation'"
+        >
+          词条分析
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="chip chip--mode"
+          :class="{ active: sectionMode === 'sweep' }"
+          :aria-selected="sectionMode === 'sweep'"
+          @click="sectionMode = 'sweep'"
+        >
+          扫掠柱图
+        </button>
+      </div>
     </div>
 
     <!-- ============ 词条分配模式 ============ -->
@@ -3141,10 +3141,6 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <span class="ctl-spacer" />
           <button type="button" class="ghost-btn" @click="runAffixBenefitOnly">重新计算收益</button>
         </div>
-        <p class="hint">
-          按「流程全部事件总伤」口径，逐条词条 +{{ affixBenefitStep }} 档评估；
-          相对权重 = 本行收益率 ÷ 当前显示的最大收益率（筛选后按显示的行重算）。
-        </p>
         <AffixBenefitTable
           :table="affixBenefitTable"
           :library="affixLibraryAllEntries"
@@ -3168,12 +3164,6 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         />
 
         <h3 class="block-title">主属性组合试算</h3>
-        <p class="hint">
-          与「全词条收益 / 最优分配」同级独立模块。有面板导入时：按当前 4/5/6（及 2 件套）从局外数字反推扣减，再加回试算组合；
-          请先在导入里填对当前主属性。无面板时回退为配置推导。不改动下方最优分配求解。
-          <template v-if="comboUsesImportedPanel"> · 当前：已接导入面板</template>
-          <template v-else> · 当前：无导入面板，走配置推导</template>
-        </p>
         <template v-if="combinedMainStatPreview">
           <div class="combined-main-stat-card">
             <header class="combined-main-stat-card__header">
@@ -3479,6 +3469,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             >
               停止
             </button>
+            <!-- 收起求解结果 + 收益曲线（2026-10-01 二轮：位置在「编辑游戏专用规则」之后） -->
+            <button
+              v-if="affixAllocResult && !affixAllocLoading"
+              type="button"
+              class="ghost-btn alloc-fold-btn"
+              @click="affixAllocCollapsed = !affixAllocCollapsed"
+            >
+              {{ affixAllocCollapsed ? '展开求解结果' : '收起求解结果' }}
+            </button>
           </div>
           <ul class="alloc-mode-notes">
             <li>
@@ -3490,19 +3489,40 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           </ul>
         </div>
         <p v-if="affixAllocError" class="err">{{ affixAllocError }}</p>
-        <AffixAllocationResult
-          :result="affixAllocResult"
-          :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
-          :loading="affixAllocLoading"
-          :error="affixAllocError"
-          :progress="affixAllocProgress"
-          :stale="affixAllocResultStale"
-          :elapsed-ms="affixAllocElapsedMs"
-          :live-ms="affixAllocLoading ? affixAllocTickMs : null"
-          :conflict-extra-cost="affixAllocConflictExtraCost"
-          :roll-split="affixAllocRollSplit"
-          :free-roll-groups="affixAllocFreeRollGroupNames"
-        />
+        <!--
+          结果收起（2026-10-01 二轮口径）：收起范围 = 求解结果 + 收益曲线整块；
+          切换按钮放在「编辑游戏专用规则」之后（见上方 alloc-mode-row），不占结果区位置。
+        -->
+        <template v-if="affixAllocLoading || !affixAllocResult">
+          <AffixAllocationResult
+            :result="affixAllocResult"
+            :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
+            :loading="affixAllocLoading"
+            :error="affixAllocError"
+            :progress="affixAllocProgress"
+            :stale="affixAllocResultStale"
+            :elapsed-ms="affixAllocElapsedMs"
+            :live-ms="affixAllocLoading ? affixAllocTickMs : null"
+            :conflict-extra-cost="affixAllocConflictExtraCost"
+            :roll-split="affixAllocRollSplit"
+            :free-roll-groups="affixAllocFreeRollGroupNames"
+          />
+        </template>
+        <div v-else v-show="!affixAllocCollapsed">
+          <AffixAllocationResult
+            :result="affixAllocResult"
+            :library="affixAllocResultLibrary.length ? affixAllocResultLibrary : affixLibraryEntries"
+            :loading="affixAllocLoading"
+            :error="affixAllocError"
+            :progress="affixAllocProgress"
+            :stale="affixAllocResultStale"
+            :elapsed-ms="affixAllocElapsedMs"
+            :live-ms="affixAllocLoading ? affixAllocTickMs : null"
+            :conflict-extra-cost="affixAllocConflictExtraCost"
+            :roll-split="affixAllocRollSplit"
+            :free-roll-groups="affixAllocFreeRollGroupNames"
+          />
+        </div>
         <GameAffixRulesModal
           :open="gameAffixRulesOpen"
           :extra-cost="gameAffixSettings.extraCost"
@@ -3517,18 +3537,12 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           @toggle-entries="toggleGameAffixEntries"
         />
 
-        <template v-if="affixAllocResult">
-          <div class="detail-tabs alloc-subtabs">
-            <button
-              type="button"
-              class="chip"
-              :class="{ active: affixAllocDetailTab === 'curve' }"
-              @click="affixAllocDetailTab = 'curve'"
-            >
-              收益曲线
-            </button>
-          </div>
-
+        <div v-if="affixAllocResult" v-show="!affixAllocCollapsed">
+          <!--
+            「收益曲线」做成面板行首标题（2026-10-01 用户口径），不再用 tab chip。
+            原 alloc-subtabs 只剩这一个 tab，chip 行连同 affixAllocDetailTab 的 UI 一并去掉；
+            状态量保留（曲线按需补算的 watch 仍在用），只不再渲染切换按钮。
+          -->
           <template v-if="affixAllocDetailTab === 'curve'">
             <!-- 空数组也渲染：分组 chip 在面板里，选到「没有正收益条目」的组时得留个换回去的入口 -->
             <BenefitCurvePanel
@@ -3538,7 +3552,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             v-model:max-added="affixAllocCurveMaxRolls"
               :series="affixAllocCurveData"
               :groups="affixAllocCurveGroups"
-              hint="逐档真实重算；只比同组条目，画正收益前几条（前段 0、后段才涨的也会画）"
+              title="收益曲线"
             />
             <p v-if="affixAllocCurveData && !affixAllocCurveData.length" class="hint">
               本组没有正收益条目（0 收益与负收益不画）；换一组看看。
@@ -3546,7 +3560,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <p v-else-if="affixBenefitSeriesLoading" class="hint">收益曲线计算中…（首屏只算「+1 档」表，曲线按需补算）</p>
             <p v-else-if="!affixAllocCurveData" class="hint">暂无收益曲线数据。</p>
           </template>
-        </template>
+        </div>
       </template>
     </template>
     <!-- ============ 扫掠柱图模式（原逻辑） ============ -->
@@ -4326,14 +4340,26 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       <p v-if="detailTab === 'diff'" class="hint">词条差异计算中…若长时间无结果，请再点一次「开始计算」。</p>
 
       <template v-if="detailTab === 'curve' && benefitData">
-        <BenefitCurvePanel
-          v-model:mode="curveMode"
-          :series="benefitData.series"
-          :max-added="BENEFIT_CURVE_MAX_ADDED"
-          :hint="`最大新增 ${BENEFIT_CURVE_MAX_ADDED} 词条`"
-        />
+        <div class="curve-title-row">
+          <button
+            type="button"
+            class="sub-title sub-title--link"
+            @click="curveFolded = !curveFolded"
+          >
+            {{ curveFolded ? '收益曲线（已收起，点开）' : '收益曲线（点收起）' }}
+          </button>
+          <h4 class="sub-title">下一条累计提升</h4>
+        </div>
 
-        <h4 class="sub-title">下一条累计提升</h4>
+        <div v-show="!curveFolded">
+          <BenefitCurvePanel
+            v-model:mode="curveMode"
+            :series="benefitData.series"
+            :max-added="BENEFIT_CURVE_MAX_ADDED"
+            :hint="`最大新增 ${BENEFIT_CURVE_MAX_ADDED} 词条`"
+          />
+        </div>
+
         <ul class="next-bars">
           <li
             v-for="row in [...benefitData.nextStep].sort((a, b) => Number(a.capped) - Number(b.capped) || b.percentDelta - a.percentDelta)"
@@ -4679,14 +4705,40 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   color: #9aa3b0;
 }
 
+/* 「基础伤害来源」标题行：select 与模式切换同排（2026-10-01 二轮） */
+.source-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.25rem;
+}
+
+.source-mode-row .block-title {
+  margin: 0;
+}
+
+.source-mode-select {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #3d4653;
+  background: #10141b;
+  color: #e6ebf2;
+  cursor: pointer;
+}
+
+:global([data-theme='light'] .source-mode-select) {
+  border-color: #cfd6e0;
+  background: #ffffff;
+  color: #1c212a;
+}
+
 .section-mode-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   align-items: center;
-  margin: 0.75rem 0 0.5rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid #2a2f37;
 }
 
 /*
@@ -4709,6 +4761,21 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
  * 都直接用统一 chip：见 `assets/calculatorChip.css`。
  * 改造前它们各自写了一套（其中模式切换还是青柠色选中，且白天主题没有任何覆盖 —— 一直是黑的）。
  */
+
+/* 最优分配结果收起（2026-10-01 二轮）：按钮入「分配方式」行，折叠容器不再带自己的按钮行 */
+.alloc-result-fold {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.alloc-result-fold > .chip {
+  align-self: flex-start;
+}
+
+.alloc-fold-btn {
+  margin-left: 0;
+}
 
 .alloc-input-row {
   display: flex;
@@ -4857,6 +4924,31 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   margin: 0.35rem 0 0;
   font-size: 0.92rem;
   color: #e8eaed;
+}
+
+/* 收益曲线文字入口 + 「下一条累计提升」同行（2026-10-01 用户布局调整） */
+.curve-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1.25rem;
+}
+
+/* 曲线入口做成可点的文字（不再是 tab 按钮 / 框），跟随标题字号 */
+.sub-title--link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0.35rem 0 0;
+  font: inherit;
+  font-size: 0.92rem;
+  color: #c9a55c;
+  cursor: pointer;
+}
+
+.sub-title--link:hover {
+  text-decoration: underline;
 }
 
 .grid {

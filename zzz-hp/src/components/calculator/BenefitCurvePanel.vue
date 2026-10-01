@@ -18,8 +18,10 @@ withDefaults(
     hint?: string
     /** 可选分组（顺序由调用方定；空数组 = 不显示分组 chip） */
     groups?: string[]
+    /** 工具条行首标题（2026-10-01 用户口径：「收益曲线」做成标题式，放在「累计提升/边际收益」左边） */
+    title?: string
   }>(),
-  { hint: '', groups: () => [] },
+  { hint: '', groups: () => [], title: '' },
 )
 
 const mode = defineModel<'cumulative' | 'marginal'>('mode', { default: 'cumulative' })
@@ -33,6 +35,7 @@ const group = defineModel<string>('group', { default: '' })
 
 <template>
   <div class="curve-toolbar">
+    <h4 v-if="title" class="curve-heading">{{ title }}</h4>
     <button
       type="button"
       class="chip"
@@ -104,6 +107,14 @@ const group = defineModel<string>('group', { default: '' })
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+}
+
+/* 行首标题（2026-10-01）：「收益曲线」标题式，与「累计提升/边际收益」chip 同排 */
+.curve-heading {
+  margin: 0 0.35rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #e8eaed;
 }
 
 /* 曲线模式切换用统一 chip：见 `assets/calculatorChip.css`（改造前这里自带一套青柠色选中） */

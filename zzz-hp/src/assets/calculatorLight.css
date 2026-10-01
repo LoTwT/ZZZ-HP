@@ -3037,6 +3037,15 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #667085 !important;
 }
 
+/* 角色身份三行（2026-10-01）：白天主题下浅底深字 —— 组件里那两条 light 覆盖写的是深底口径，这里按真实浅底纠正 */
+.calculator-page.theme-light .panel-hover-identity p {
+  color: #1c212a !important;
+}
+
+.calculator-page.theme-light .panel-hover-identity p:first-child {
+  color: #8a6d2e !important;
+}
+
 .calculator-page.theme-light .panel-hover-item dd {
   color: #1c212a !important;
 }

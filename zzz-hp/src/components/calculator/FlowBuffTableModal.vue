@@ -12,7 +12,7 @@
  * - 名字显示不全时用 `title` 悬停看完整信息（增益效果 / 来源）
  * - 白天主题：`html[data-theme='light']` 覆盖（写法对齐 GameAffixRulesModal）
  */
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
   flowBuffColumnBulkState,
   flowBuffColumnMatchesName,
@@ -290,6 +290,52 @@ function onColumnBulkClick(columnKey: string) {
   if (state === 'na') return
   emit('setColumn', columnKey, state !== 'on')
 }
+
+/* ---------- 表头三行依次堆叠冻结（2026-09-29 用户要求） ----------
+ * 原状：thead 所有 th 都钉 top:0（分组行与列名行滚动时重叠在同一位置），
+ * 「整列」行被显式 static，纵向完全不粘。现在：分组行 top:0、列名行 top=分组行高、
+ * 整列行 top=前两行高。行高由内容决定，用 ResizeObserver 实测后写进表格上的 CSS 变量。 */
+const groupRowRef = ref<HTMLTableRowElement | null>(null)
+const blockRowRef = ref<HTMLTableRowElement | null>(null)
+const headerRowHeights = ref({ group: 0, block: 0 })
+let headerRowsObserver: ResizeObserver | null = null
+
+function measureHeaderRows() {
+  headerRowHeights.value = {
+    group: groupRowRef.value?.getBoundingClientRect().height ?? 0,
+    block: blockRowRef.value?.getBoundingClientRect().height ?? 0,
+  }
+}
+
+watch(open, (isOpen) => {
+  headerRowsObserver?.disconnect()
+  if (!isOpen) return
+  nextTick(() => {
+    measureHeaderRows()
+    if (!groupRowRef.value || !blockRowRef.value) return
+    if (!headerRowsObserver && typeof ResizeObserver !== 'undefined') {
+      headerRowsObserver = new ResizeObserver(measureHeaderRows)
+    }
+    headerRowsObserver?.observe(groupRowRef.value)
+    headerRowsObserver?.observe(blockRowRef.value)
+  })
+})
+
+onUnmounted(() => {
+  headerRowsObserver?.disconnect()
+  headerRowsObserver = null
+})
+
+/** 量不到（0）时给 undefined，让样式里的回退值兜底，避免三行全叠回 top:0 */
+const stickyTopBlock = computed(() =>
+  headerRowHeights.value.group > 0
+    ? `${Math.round(headerRowHeights.value.group)}px`
+    : undefined,
+)
+const stickyTopBulk = computed(() => {
+  const { group, block } = headerRowHeights.value
+  return group + block > 0 ? `${Math.round(group + block)}px` : undefined
+})
 </script>
 
 <template>
@@ -304,7 +350,7 @@ function onColumnBulkClick(columnKey: string) {
           <span class="fbt-stat">生效 {{ onCount }}</span>
           <span class="fbt-stat is-off">关闭 {{ offCount }}</span>
         </div>
-        <button type="button" class="mini-btn" @click="open = false">关闭</button>
+        <button type="button" class="mini-btn fbt-close-btn" @click="open = false">关闭</button>
       </header>
 
       <p class="fbt-hint">
@@ -344,7 +390,14 @@ function onColumnBulkClick(columnKey: string) {
       </div>
 
       <div ref="bodyRef" class="fbt-body" @wheel="onBodyWheel">
-        <table class="fbt-table" :style="{ width: tableWidth }">
+        <table
+          class="fbt-table"
+          :style="{
+            width: tableWidth,
+            '--fbt-sticky-2': stickyTopBlock,
+            '--fbt-sticky-3': stickyTopBulk,
+          }"
+        >
           <colgroup>
             <!-- 用行内 style：scoped 选择器依赖 data-v 属性，<col> 常常拿不到，规则不生效 -->
             <col :style="{ width: `${nameColWidth}px` }" />
@@ -356,7 +409,7 @@ function onColumnBulkClick(columnKey: string) {
           </colgroup>
           <thead>
             <!-- 第一行 = 提供者分组（角色1/2/3 → 其它 → 额外 Buff），第二行 = 一条增益一列 -->
-            <tr>
+            <tr ref="groupRowRef">
               <th class="fbt-th-name" rowspan="2">
                 招式
                 <span
@@ -374,7 +427,7 @@ function onColumnBulkClick(columnKey: string) {
                 {{ group.label }}
               </th>
             </tr>
-            <tr>
+            <tr ref="blockRowRef">
               <th
                 v-for="column in columns"
                 :key="column.key"
@@ -392,8 +445,8 @@ function onColumnBulkClick(columnKey: string) {
                 <span class="fbt-th-beneficiary">生效者：{{ column.beneficiaryLabel }}</span>
               </th>
             </tr>
-            <!-- 第三行 = 整列「全开 / 全关」（2026-09-23 用户要求）。只作用于本列非灰格；
-                 这一行**不跟表头一起粘住**，滚动时让位给列名，维持原来的观感。 -->
+            <!-- 第三行 = 整列「全开 / 全关」（2026-09-23 用户要求）。随表头一起粘住（2026-09-29），
+                 钉在分组行 + 列名行下方，形成三层堆叠表头。 -->
             <tr class="fbt-row-bulk">
               <th class="fbt-th-name fbt-th-bulk">整列</th>
               <th
@@ -553,6 +606,30 @@ function onColumnBulkClick(columnKey: string) {
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid #2a3038;
+}
+/* 头部「关闭」按钮（2026-10-01 用户要求优化）：本弹窗没有全局 .mini-btn 样式，
+   原先掉回浏览器原生按钮（双层立体边 + 大字号）很突兀。给一套与搜索条 mini-btn
+   同款的规则，并加显眼的红色边底，一眼可辨「关掉整个表」。 */
+.fbt-close-btn {
+  appearance: none;
+  height: 1.6rem;
+  margin-left: 0.25rem;
+  padding: 0 0.7rem;
+  border: 1px solid #7a3f46;
+  border-radius: 4px;
+  background: #241618;
+  color: #d38f95;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fbt-close-btn:hover {
+  border-color: #a05258;
+  background: #2e1a1d;
+  color: #f0b9bd;
 }
 .fbt-head-main {
   display: flex;
@@ -782,6 +859,9 @@ thead th {
   color: #cbd5e1;
   white-space: nowrap;
   max-width: 8rem;
+  /* 表头堆叠冻结（2026-09-29）：钉在分组行下方，不再与分组行同挤 top:0 互相重叠。
+     变量由 ResizeObserver 实测分组行高后写上；量不到走回退值。 */
+  top: var(--fbt-sticky-2, 2.2rem);
   /* 每列自成一块 + 右侧竖线：线条比纯间距更容易分辨列边界（2026-09-21 用户反馈） */
   background: #171c25;
   border-right: 1px solid #313947;
@@ -796,20 +876,21 @@ thead th {
   white-space: nowrap;
   vertical-align: bottom;
 }
-/* 整列「全开 / 全关」第三行（2026-09-23 用户要求）：不跟表头一起粘住，滚动时让位给列名 */
+/* 整列「全开 / 全关」第三行（2026-09-23 用户要求；2026-09-29 改为随表头一起粘住）：
+   三行表头依次堆叠 —— 分组行 top:0、列名行 top=分组行高、本行 top=前两行高。 */
 .fbt-row-bulk th {
-  /* 这一行的普通格保持 static：纵向**不**跟表头粘住（原意"滚动时让位给列名"）；
-     横向冻结由下面只给「招式」格的那条规则负责 —— 这里若写成 sticky 会让整行纵向也粘住。 */
-  position: static;
+  position: sticky;
+  top: var(--fbt-sticky-3, 4.4rem);
+  z-index: 2;
   padding: 0.1rem 0.25rem;
   text-align: center;
   border-bottom: 1px solid #2a3038;
 }
 .fbt-row-bulk .fbt-th-name {
-  /* 只做横向粘性：left: 0 + **显式 top: auto** —— 不写 auto 会继承表头那条 `top: 0`，
-     于是这一格纵向也粘住、盖住列名（正是原注释担心的）。比 .fbt-row-bulk th 更具体，能压过上面的 static。 */
+  /* 横竖双向粘性：left: 0（来自 .fbt-th-name）+ top=前两行高。
+     原先写 top:auto 是「让位给列名、不纵向粘」的旧口径，2026-09-29 按用户要求整行也冻结。 */
   position: sticky;
-  top: auto;
+  top: var(--fbt-sticky-3, 4.4rem);
   left: 0;
   z-index: 3;
 }
@@ -1084,5 +1165,14 @@ thead th {
 :global([data-theme='light'] .fbt-search .mini-btn:hover:not(:disabled)) {
   border-color: #b9c2cf;
   background: #f2f5f9;
+}
+:global([data-theme='light'] .fbt-close-btn) {
+  border-color: #e0a9ad;
+  background: #fdf1f1;
+  color: #b4434b;
+}
+:global([data-theme='light'] .fbt-close-btn:hover) {
+  border-color: #c9828a;
+  background: #fbe4e4;
 }
 </style>

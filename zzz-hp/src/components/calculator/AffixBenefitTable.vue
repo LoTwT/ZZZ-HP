@@ -353,56 +353,52 @@ function onLibrarySwitched() {
 
 <template>
   <div class="benefit-workbench">
-    <div class="toolbar">
+    <!--
+      筛选条：词条库按钮在行首，其后按组多选 + 隐藏无收益（2026-10-01 用户布局调整）。
+      词条多了以后整表太长，分组是现成的分类维度（用户 2026-09-13 口径「做分类显示」）。
+    -->
+    <div class="toolbar filter-bar">
       <button
         type="button"
-        class="chip chip--lg"
+        class="chip"
         :class="{ active: showLibraryModal }"
         @click="showLibraryModal = true"
       >
         词条库（{{ library.length }} 条）
       </button>
-      <span class="ctl-spacer" />
-      <!-- 排序固定为收益率降序，没有开关；用一句灰字说明口径（点了没反应的东西不如不叫按钮） -->
-      <span class="ctl-label">按收益降序</span>
-    </div>
-
-    <!--
-      筛选条：按组多选 + 隐藏无收益。
-      词条多了以后整表太长，分组是现成的分类维度（用户 2026-09-13 口径「做分类显示」）。
-    -->
-    <div v-if="tableGroupNames.length" class="toolbar filter-bar">
-      <span class="ctl-label">分组</span>
-      <button
-        v-for="name in tableGroupNames"
-        :key="name || '__ungrouped__'"
-        type="button"
-        class="chip"
-        :class="{ active: isGroupVisible(name) }"
-        :title="isGroupVisible(name) ? '点一下把这组从表里去掉' : '点一下把这组加回表里'"
-        @click="toggleGroupFilter(name)"
-      >
-        {{ groupChipLabel(name) }}（{{ countInGroup(name) }}）
-      </button>
-      <span class="ctl-spacer" />
-      <button
-        type="button"
-        class="chip"
-        :class="{ active: hideNoBenefit }"
-        title="只留收益率大于 0 的条目（收益率为 0 或为负的都算无收益）"
-        @click="hideNoBenefit = !hideNoBenefit"
-      >
-        隐藏无收益
-      </button>
-      <button
-        type="button"
-        class="chip"
-        :disabled="!filteringActive"
-        :title="filteringActive ? '回到默认视图（分组全显示、隐藏无收益开着）' : '当前就是默认视图'"
-        @click="resetFilters"
-      >
-        清除筛选
-      </button>
+      <template v-if="tableGroupNames.length">
+        <span class="ctl-label">分组</span>
+        <button
+          v-for="name in tableGroupNames"
+          :key="name || '__ungrouped__'"
+          type="button"
+          class="chip"
+          :class="{ active: isGroupVisible(name) }"
+          :title="isGroupVisible(name) ? '点一下把这组从表里去掉' : '点一下把这组加回表里'"
+          @click="toggleGroupFilter(name)"
+        >
+          {{ groupChipLabel(name) }}（{{ countInGroup(name) }}）
+        </button>
+        <span class="ctl-spacer" />
+        <button
+          type="button"
+          class="chip"
+          :class="{ active: hideNoBenefit }"
+          title="只留收益率大于 0 的条目（收益率为 0 或为负的都算无收益）"
+          @click="hideNoBenefit = !hideNoBenefit"
+        >
+          隐藏无收益
+        </button>
+        <button
+          type="button"
+          class="chip"
+          :disabled="!filteringActive"
+          :title="filteringActive ? '回到默认视图（分组全显示、隐藏无收益开着）' : '当前就是默认视图'"
+          @click="resetFilters"
+        >
+          清除筛选
+        </button>
+      </template>
     </div>
 
     <AffixLibraryModal
