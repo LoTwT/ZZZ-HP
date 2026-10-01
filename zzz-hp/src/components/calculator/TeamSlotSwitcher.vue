@@ -716,7 +716,7 @@ const driveDiscLine = computed(() => {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.55;
-  color: #dfe6ef;
+  color: #ecf1f8;
   white-space: nowrap;
 }
 
@@ -746,12 +746,12 @@ const driveDiscLine = computed(() => {
   flex-shrink: 0;
 }
 
-/* 两枚胶囊：生效那份红字（同导入弹窗的「面板来源」），另一枚淡灰 */
+/* 两枚胶囊：生效那份红字（同导入弹窗的「面板来源」），另一枚淡灰提亮到可读（2026-10-01 用户反馈） */
 .panel-source-tag {
   padding: 0.05rem 0.45rem;
-  border: 1px solid #3a4658;
+  border: 1px solid #4a5668;
   border-radius: 999px;
-  color: #7b8698;
+  color: #a3aebb;
   font-size: 0.68rem;
   line-height: 1.5;
   white-space: nowrap;
@@ -773,7 +773,7 @@ const driveDiscLine = computed(() => {
 .panel-hover-empty {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;
-  color: #8b93a3;
+  color: #b6c0cd;
 }
 
 .panel-hover-grid {
@@ -795,7 +795,7 @@ const driveDiscLine = computed(() => {
   margin: 0;
   flex: 1 1 auto;
   font-size: 0.72rem;
-  color: #8b93a3;
+  color: #b6c0cd;
   line-height: 1.35;
 }
 
@@ -804,7 +804,7 @@ const driveDiscLine = computed(() => {
   flex: 0 0 auto;
   font-size: 0.74rem;
   font-weight: 600;
-  color: #e8edf5;
+  color: #f2f6fb;
   font-variant-numeric: tabular-nums;
 }
 
