@@ -3095,7 +3095,6 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </select>
       <small v-if="isMb" class="hint">命破角色固定使用贯穿力</small>
       <small v-else-if="isFengYu" class="hint">锋御角色固定使用防御力（锐化公式）</small>
-      <span class="source-mode-spacer" />
       <div class="section-mode-row" role="tablist" aria-label="功能模式">
         <button
           type="button"
@@ -3539,17 +3538,11 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         />
 
         <div v-if="affixAllocResult" v-show="!affixAllocCollapsed">
-          <div class="detail-tabs alloc-subtabs">
-            <button
-              type="button"
-              class="chip"
-              :class="{ active: affixAllocDetailTab === 'curve' }"
-              @click="affixAllocDetailTab = 'curve'"
-            >
-              收益曲线
-            </button>
-          </div>
-
+          <!--
+            「收益曲线」做成面板行首标题（2026-10-01 用户口径），不再用 tab chip。
+            原 alloc-subtabs 只剩这一个 tab，chip 行连同 affixAllocDetailTab 的 UI 一并去掉；
+            状态量保留（曲线按需补算的 watch 仍在用），只不再渲染切换按钮。
+          -->
           <template v-if="affixAllocDetailTab === 'curve'">
             <!-- 空数组也渲染：分组 chip 在面板里，选到「没有正收益条目」的组时得留个换回去的入口 -->
             <BenefitCurvePanel
@@ -3559,6 +3552,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             v-model:max-added="affixAllocCurveMaxRolls"
               :series="affixAllocCurveData"
               :groups="affixAllocCurveGroups"
+              title="收益曲线"
             />
             <p v-if="affixAllocCurveData && !affixAllocCurveData.length" class="hint">
               本组没有正收益条目（0 收益与负收益不画）；换一组看看。
@@ -4721,10 +4715,6 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 
 .source-mode-row .block-title {
   margin: 0;
-}
-
-.source-mode-spacer {
-  flex: 1 1 auto;
 }
 
 .source-mode-select {
