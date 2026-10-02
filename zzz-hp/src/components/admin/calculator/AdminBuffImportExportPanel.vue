@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import {
@@ -7,6 +7,7 @@ import {
   importCalculatorBuffSnapshotFile,
   isAdminAuthError,
 } from '@/api/calculatorBuffs'
+import { fetchAffixPreset, type AffixPresetSchemeDoc } from '@/api/affixPreset'
 import AdminConfirmDialog from '@/components/admin/AdminConfirmDialog.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type {
@@ -48,6 +49,7 @@ type SnapshotKey = keyof Pick<
   | 'damageEventModes'
   | 'skills'
   | 'skillGroups'
+  | 'affixPresets'
 >
 type ExportScope = 'all' | SnapshotKey | 'picked'
 
@@ -67,9 +69,24 @@ const TYPE_LABELS: Record<SnapshotKey, string> = {
   damageEventModes: '伤害事件模式',
   skills: '招式库',
   skillGroups: '技能组',
+  affixPresets: '词条库',
 }
 
 const SNAPSHOT_KEYS = Object.keys(TYPE_LABELS) as SnapshotKey[]
+
+/**
+ * 词条库这一类与前 9 类的两处不同，凡涉及它的分支都从此处取键，别散写字面量：
+ * 1. 值不是数组，是 `{ kind, schemes }` 层级结构；
+ * 2. 写入是**整份替换同名方案**，不是按 id 增量。
+ *
+ * 声明成字面量（而不是 `: SnapshotKey`）是必要的：各处的
+ * `if (key === AFFIX_PRESET_KEY) …continue` 靠它把 key 收窄成其余 9 类的数组类型，
+ * 否则 `snapshot[key].filter(...)` 这类访问过不了类型检查。
+ */
+const AFFIX_PRESET_KEY = 'affixPresets' as const
+
+/** 快照 `kind` 标记，与后端 / `scripts/export-affix-preset.mjs` 同值 */
+const AFFIX_PRESET_KIND = 'zzz-hp-affix-preset'
 
 const exportScope = ref<ExportScope>('picked')
 const pickType = ref<SnapshotKey>('agents')
@@ -84,6 +101,19 @@ const selectedIds = ref<Record<SnapshotKey, string[]>>({
   damageEventModes: [],
   skills: [],
   skillGroups: [],
+  affixPresets: [],
+})
+
+/** 词条库的方案清单（供自选 picker 列行）；拉不到就空着，不影响其他 9 类 */
+const affixSchemeRows = ref<AffixPresetSchemeDoc[]>([])
+
+onMounted(async () => {
+  try {
+    const snapshot = await fetchAffixPreset()
+    affixSchemeRows.value = snapshot.schemes ?? []
+  } catch {
+    affixSchemeRows.value = []
+  }
 })
 
 const exporting = ref(false)
@@ -154,6 +184,11 @@ const pickLists = computed<Record<SnapshotKey, PickRow[]>>(() => ({
     title: item.name,
     hint: `${agentHint(item.agentId)} · ${item.members.length} 段 · ${item.id}`,
   })),
+  affixPresets: affixSchemeRows.value.map((item) => ({
+    id: item.name,
+    title: item.name,
+    hint: `${item.isDefault ? '默认方案 · ' : ''}${item.entryCount} 条 · 导入时整份替换同名方案`,
+  })),
 }))
 
 const counts = computed(() =>
@@ -184,6 +219,13 @@ const selectedSummary = computed(() =>
   SNAPSHOT_KEYS.filter((key) => selectedIds.value[key].length)
     .map((key) => `${TYPE_LABELS[key]} ${selectedIds.value[key].length}`)
     .join('、'),
+)
+
+/** 只勾了词条库时，计数单位是「套方案」而不是「条」 */
+const selectedUnit = computed(() =>
+  selectedCount.value > 0 && selectedIds.value[AFFIX_PRESET_KEY].length === selectedCount.value
+    ? '套方案'
+    : '条',
 )
 
 function isPicked(id: string) {
@@ -228,8 +270,25 @@ function emptySnapshot(exportedAt?: string): CalculatorBuffData {
     damageEventModes: [],
     skills: [],
     skillGroups: [],
+    affixPresets: { kind: AFFIX_PRESET_KIND, exportedAt, schemes: [] },
     exportedAt,
   }
+}
+
+/** 快照里某一类的条数 —— 词条库数的是**方案数**，不是条目数 */
+function countInSnapshot(data: CalculatorBuffData, key: SnapshotKey): number {
+  if (key === AFFIX_PRESET_KEY) return data.affixPresets?.schemes.length ?? 0
+  return data[key]?.length ?? 0
+}
+
+/** 选中文件后的预览条数（读的是还没过校验的裸 JSON，所以单独判一层） */
+function previewCount(data: Record<string, unknown>, key: SnapshotKey): number {
+  if (key === AFFIX_PRESET_KEY) {
+    const affix = data[AFFIX_PRESET_KEY] as { schemes?: unknown } | undefined
+    return Array.isArray(affix?.schemes) ? affix.schemes.length : 0
+  }
+  const value = data[key]
+  return Array.isArray(value) ? value.length : 0
 }
 
 function stamp() {
@@ -252,6 +311,10 @@ function downloadJson(filename: string, data: unknown) {
 
 function pickSnapshotSlice(snapshot: CalculatorBuffData, scope: SnapshotKey): CalculatorBuffData {
   const empty = emptySnapshot(snapshot.exportedAt)
+  if (scope === AFFIX_PRESET_KEY) {
+    empty.affixPresets = snapshot.affixPresets ?? empty.affixPresets
+    return empty
+  }
   empty[scope] = (snapshot[scope] ?? []) as never
   return empty
 }
@@ -261,6 +324,15 @@ function filterSnapshotByPicks(snapshot: CalculatorBuffData): CalculatorBuffData
   for (const key of SNAPSHOT_KEYS) {
     const ids = new Set(selectedIds.value[key])
     if (!ids.size) continue
+    if (key === AFFIX_PRESET_KEY) {
+      // 词条库这边勾的是**方案名**（不是条目 id），整份方案一起进出
+      empty.affixPresets = {
+        ...(snapshot.affixPresets ?? {}),
+        kind: snapshot.affixPresets?.kind ?? AFFIX_PRESET_KIND,
+        schemes: (snapshot.affixPresets?.schemes ?? []).filter((item) => ids.has(item.name)),
+      }
+      continue
+    }
     empty[key] = (snapshot[key] ?? []).filter((item) => ids.has(item.id)) as never
   }
   return empty
@@ -275,9 +347,9 @@ async function exportSnapshot() {
       if (!selectedCount.value) throw new Error('请先勾选要导出的条目')
       const snapshot = await fetchCalculatorBuffSnapshot()
       const payload = filterSnapshotByPicks(snapshot)
-      const total = SNAPSHOT_KEYS.reduce((sum, key) => sum + (payload[key]?.length ?? 0), 0)
+      const total = SNAPSHOT_KEYS.reduce((sum, key) => sum + countInSnapshot(payload, key), 0)
       if (!total) throw new Error('勾选的条目在数据库中已不存在，请刷新后再试')
-      const onlyKey = SNAPSHOT_KEYS.find((key) => (payload[key]?.length ?? 0) === total)
+      const onlyKey = SNAPSHOT_KEYS.find((key) => countInSnapshot(payload, key) === total)
       const filename = onlyKey
         ? `zzz-hp-${onlyKey}-picked-${total}-${stamp()}.json`
         : `zzz-hp-picked-${total}-${stamp()}.json`
@@ -331,17 +403,29 @@ async function onFileChosen(event: Event) {
     const data = (raw.data && typeof raw.data === 'object' ? raw.data : raw) as Record<string, unknown>
     pendingPreview.value = SNAPSHOT_KEYS.map((key) => ({
       label: TYPE_LABELS[key],
-      count: Array.isArray(data[key]) ? data[key].length : 0,
+      count: previewCount(data, key),
     })).filter((row) => row.count > 0)
     if (!pendingPreview.value.length) {
-      if (data.id) {
+      // 整份文件只有词条库：`export-affix-preset.mjs` 的产物，或旧单方案扁平格式
+      if (Array.isArray(data.schemes)) {
+        pendingPreview.value = [
+          { label: `${TYPE_LABELS[AFFIX_PRESET_KEY]}（按方案整份替换）`, count: data.schemes.length },
+        ]
+      } else if (Array.isArray(data.entries) || Array.isArray(data.groups)) {
+        pendingPreview.value = [
+          { label: `${TYPE_LABELS[AFFIX_PRESET_KEY]}（单方案 → 默认方案）`, count: 1 },
+        ]
+      } else if (data.id) {
         pendingPreview.value = [{ label: '单条增益（导入时自动识别类型）', count: 1 }]
       } else {
         throw new Error('文件中没有可识别的增益条目')
       }
     }
     messageKind.value = 'ok'
-    message.value = `已读取 ${file.name}，确认后写入数据库（按 ID 更新，不删除未出现的条目）`
+    message.value =
+      previewCount(data, AFFIX_PRESET_KEY) > 0
+        ? `已读取 ${file.name}，确认后写入数据库（词条库按方案整份替换，其余按 ID 更新、不删除未出现的条目）`
+        : `已读取 ${file.name}，确认后写入数据库（按 ID 更新，不删除未出现的条目）`
   } catch (err) {
     pendingFile.value = null
     pendingPreview.value = []
@@ -425,8 +509,9 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
     <header class="panel-header">
       <h2 class="panel-title">增益导入 / 导出</h2>
       <p class="panel-desc">
-        用于备份和批量维护角色、音擎、邦布、驱动盘、招式小类、招式库等计算器增益。导入按 ID
-        新增或覆盖，不会清空文件中没有的条目。
+        用于备份和批量维护角色、音擎、邦布、驱动盘、招式小类、招式库、词条库等计算器增益。
+        角色 / 音擎 等 9 类按 ID 新增或覆盖，不会清空文件中没有的条目；
+        <strong>词条库按方案整份替换</strong>（同名方案被覆盖，文件里没有的方案保留不动）。
       </p>
     </header>
 
@@ -452,7 +537,7 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
           <span>范围</span>
           <select v-model="exportScope">
             <option value="picked">自选若干条</option>
-            <option value="all">全部增益</option>
+            <option value="all">全部</option>
             <option value="agents">全部角色</option>
             <option value="wengines">全部音擎</option>
             <option value="bangboos">全部邦布</option>
@@ -461,6 +546,7 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
             <option value="followUpSkillRules">全部追击规则</option>
             <option value="damageEventModes">全部伤害事件模式</option>
             <option value="skills">全部招式库</option>
+            <option value="affixPresets">全部词条库</option>
           </select>
         </label>
       </div>
@@ -522,7 +608,7 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
             exporting
               ? '导出中...'
               : exportScope === 'picked'
-                ? `导出已选 ${selectedCount} 条`
+                ? `导出已选 ${selectedCount} ${selectedUnit}`
                 : '导出 JSON'
           }}
         </button>
@@ -577,7 +663,10 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
         </thead>
         <tbody>
           <tr v-for="row in summaryRows(importSummary)" :key="row.key">
-            <td>{{ row.label }}</td>
+            <td>
+              {{ row.label }}
+              <span v-if="row.key === AFFIX_PRESET_KEY" class="unit-tag">（单位：套方案）</span>
+            </td>
             <td>{{ row.created }}</td>
             <td>{{ row.updated }}</td>
             <td>{{ row.skipped }}</td>
@@ -597,7 +686,7 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
     <AdminConfirmDialog
       :visible="importConfirmVisible"
       title="确认导入增益"
-      message="将按 ID 新增或覆盖对应增益，不会删除文件中没有的条目。导入前建议先导出备份。"
+      message="角色 / 音擎等 9 类按 ID 新增或覆盖，不会删除文件中没有的条目；词条库按方案整份替换同名方案，文件里没有的方案保留不动。导入前建议先导出备份。"
       confirm-text="导入"
       :danger="true"
       :loading="importing"
@@ -845,6 +934,12 @@ function summaryRows(summary: CalculatorBuffImportSummary) {
   padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--color-border);
   text-align: left;
+}
+
+.unit-tag {
+  font-size: 0.75rem;
+  color: var(--color-text);
+  opacity: 0.7;
 }
 
 @media (max-width: 900px) {

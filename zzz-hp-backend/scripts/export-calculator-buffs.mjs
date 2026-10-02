@@ -41,6 +41,8 @@ try {
     out = JSON.parse(fs.readFileSync(outPath, 'utf8'))
     out.agents = data.agents
   } else {
+    // 全量导出时保留已合并进文件的预设词条库（affixPresets 键），避免被冲掉
+    const existing = fs.existsSync(outPath) ? JSON.parse(fs.readFileSync(outPath, 'utf8')) : {}
     out = {
       agents: data.agents,
       wengines: data.wengines,
@@ -51,6 +53,7 @@ try {
       damageEventModes,
       skills,
       skillGroups,
+      affixPresets: existing.affixPresets,
     }
   }
 

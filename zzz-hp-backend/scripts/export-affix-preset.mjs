@@ -1,17 +1,19 @@
 /**
- * 把「官方预设词条库」导出成 JSON（多方案：每套方案含条目 + 分组）。
+ * 把「官方预设词条库」导出并**写回主数据 JSON**（多方案：每套方案含条目 + 分组）。
  *
  * 用法：
- *   node scripts/export-affix-preset.mjs                  # 全方案 → scripts/data/affix-preset.export.json
- *   node scripts/export-affix-preset.mjs --file out.json   # 指定输出
+ *   node scripts/export-affix-preset.mjs                  # 默认：写回 scripts/data/zzz-hp-calculator-buffs.json 的 affixPresets 键
  *   node scripts/export-affix-preset.mjs --scheme 默认      # 只导一套
+ *   node scripts/export-affix-preset.mjs --file out.json   # 显式指定才写独立文件（逃生门，不再默认）
+ *
+ * 为什么默认写回 buffs.json 而不是独立文件：
+ * 官方预设词条库与游戏主数据统一在主数据 JSON 里管理（第 10 类 `affixPresets` 键）。
+ * 默认写回该键，与 `import-affix-preset.mjs`（默认从该键读）形成「改库 → 同步文件 → 回灌」
+ * 的闭环，不再产生游离的独立预设文件。
  *
  * 为什么直接读表、不走 `services/affixPresetService.js`：
  * 这是个**数据**导出工具，要能在任意分支上跑 —— 方案维度（步骤 44）是后加的，
  * 老分支的服务只有单方案版本，import 上就报错。SQL 读表与分支无关。
- *
- * 与 `import-affix-preset.mjs` 的关系：那个脚本吃**单方案**旧格式（`{entries, groups}`，
- * 灌进默认方案）。要把本文件灌回去，目前得 `--scheme` 逐套导、或给 import 侧补多方案支持。
  *
  * 口径：只读；`raw` 带上 raw_json 的内容（入库时的原样副本，保真）。
  */
@@ -41,8 +43,8 @@ function parseRaw(raw) {
 }
 
 const onlyScheme = readArg('--scheme')
-const outPath =
-  readArg('--file') || path.resolve(__dirname, 'data', 'affix-preset.export.json')
+const fileArg = readArg('--file')
+const buffsPath = path.resolve(__dirname, 'data', 'zzz-hp-calculator-buffs.json')
 
 try {
   const [schemeRows] = await pool.query(
@@ -104,9 +106,28 @@ try {
     }),
   }
 
-  fs.mkdirSync(path.dirname(outPath), { recursive: true })
-  fs.writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`, 'utf8')
-  console.log(`\n已导出 ${out.schemes.length} 套方案 → ${outPath}`)
+  if (fileArg) {
+    // 显式 --file 才写独立文件（逃生门，不默认）
+    const outPath = path.resolve(fileArg)
+    fs.mkdirSync(path.dirname(outPath), { recursive: true })
+    fs.writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`, 'utf8')
+    console.log(`\n已导出 ${out.schemes.length} 套方案 → ${outPath}`)
+  } else {
+    // 默认：只替换主数据 JSON 的 affixPresets 键，其余键原样保留
+    if (!fs.existsSync(buffsPath)) {
+      console.error(`找不到主数据文件：${buffsPath}`)
+      process.exit(1)
+    }
+    const buffs = JSON.parse(fs.readFileSync(buffsPath, 'utf8'))
+    const before = Array.isArray(buffs.affixPresets?.schemes)
+      ? buffs.affixPresets.schemes.length
+      : 0
+    buffs.affixPresets = out
+    fs.writeFileSync(buffsPath, `${JSON.stringify(buffs, null, 2)}\n`, 'utf8')
+    console.log(
+      `\n已写回 ${out.schemes.length} 套方案 → ${buffsPath} 的 affixPresets 键（原 ${before} 套）`,
+    )
+  }
 } finally {
   await pool.end()
 }
