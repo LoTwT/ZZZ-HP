@@ -504,6 +504,75 @@ const isMb = computed(() => mainAgent.value?.profession === MB_PROFESSION)
 const isFengYu = computed(() => mainAgent.value?.profession === FENGYU_PROFESSION)
 
 /**
+ * 扫掠柱图的「面板来源 = 初始面板」时实际喂给引擎的面板表（2026-10-06 用户口径：**只管主 C**）。
+ *
+ * 只把**主 C**从录入面板里摘掉 → 主 C 回退配置推导（角色基础 + 音擎 + 驱动盘 456 + 候选词条）；
+ * 队友仍用各自录入面板（不再像首版那样把全队清空 —— 那会让队友也变成推导值）。
+ */
+const sweepEffectiveSlotPanels = computed<Record<string, PanelStats>>(() => {
+  const base = effectiveAnomalySlotPanels.value
+  if (!(sectionMode.value === 'sweep' && sweepPanelSource.value === 'initial')) return base
+  const mainAgentId = mainSlot.value?.agentId
+  if (!mainAgentId || !(mainAgentId in base)) return base
+  const rest = { ...base }
+  delete rest[mainAgentId]
+  return rest
+})
+
+/**
+ * 直伤模式「当前输入」的词条数（不受扫掠结果影响）。
+ *
+ * 为什么单独一份：`displayCounts` / `displayEval` 会优先复用**扫掠柱或选中柱的快照**，
+ * 于是改了「暴击」输入框以后，面板与满爆提示都不跟着动（2026-10-06 用户实测反馈）。
+ * 满爆提示要的是「现在这套输入下的主 C 面板」，所以直接按当前输入构造词条数并评估。
+ */
+const directInputCounts = computed<AffixCounts | null>(() => {
+  if (sweepDamageKind.value !== 'direct') return null
+  if (directError.value || !mainAgent.value?.id) return null
+  const crit = Math.round(directAlloc.critRate)
+  const total = Math.round(directAlloc.totalRolls)
+  const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
+  const remain = isMb.value ? total - crit - fixedAtk : total - crit
+  if (remain < 0) return null
+  return buildDirectAffixCounts(
+    isMb.value,
+    { ...directAlloc, critRate: crit, totalRolls: total },
+    0,
+    remain,
+    isFengYu.value,
+  )
+})
+
+/** 防抖后的「当前输入」词条数（与面板预览同一档延迟，避免每个按键都全量评估） */
+const debouncedDirectInputCounts = ref<AffixCounts | null>(null)
+let directInputPreviewTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  directInputCounts,
+  (counts) => {
+    if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
+    if (!counts) {
+      debouncedDirectInputCounts.value = null
+      return
+    }
+    directInputPreviewTimer = setTimeout(() => {
+      debouncedDirectInputCounts.value = counts
+    }, PANEL_PREVIEW_DEBOUNCE_MS)
+  },
+  { immediate: true },
+)
+
+/** 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板） */
+const fullCritPanelCrit = computed<number | null>(() => {
+  const counts = debouncedDirectInputCounts.value ?? directInputCounts.value
+  if (!counts) {
+    const fallback = displayEval.value?.finalPanel ?? displayEval.value?.external
+    return fallback ? fallback.critRate : null
+  }
+  const ev = evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts)
+  return ev.finalPanel.critRate
+})
+
+/**
  * 词条功能改造：词条库 + 全词条收益 + 最优分配。
  *
  * 声明位置在 `evalCtx` 之前：评估上下文要带词条库的「每档值」，而 computed 首次求值时
@@ -530,8 +599,7 @@ const affixLibraryValuePerCount = computed(() =>
 
 const evalCtx = computed(() =>
   buildOptimalEvalContext({
-    isMb: isMb.value,
-    isFengYu: isFengYu.value,
+    isMb: isMb.value,    isFengYu: isFengYu.value,
     teamSlots: props.teamSlots,
     agents: props.agents,
     wengines: props.wengines,
@@ -552,13 +620,11 @@ const evalCtx = computed(() =>
     }),
     buffSelection: props.buffSelection ?? null,
     slotBuffSelections: props.slotBuffSelections ?? null,
-    // 扫掠柱图「初始面板」口径（2026-10-05）：清空录入面板 → 主 C 基准回退配置推导
-    //（computeExternalForEval 的 mainBaseExternalPanel=null 分支），队友/转模也无录入面板可用。
+    // 扫掠柱图「初始面板」口径（2026-10-05；2026-10-06 改为**只管主 C**）：
+    // 只摘掉主 C 的录入面板 → 主 C 基准回退配置推导（computeExternalForEval 的
+    // mainBaseExternalPanel=null 分支），**队友仍用各自录入面板**（用户口径）。
     // 仅影响扫掠柱图：allocation 模式与其它链路仍走导入面板（effectiveAnomalySlotPanels 原样）。
-    activeSlotPanels:
-      sectionMode.value === 'sweep' && sweepPanelSource.value === 'initial'
-        ? {}
-        : effectiveAnomalySlotPanels.value,
+    activeSlotPanels: sweepEffectiveSlotPanels.value,
     convertSlotPanels: evalConvertSlotPanels.value,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
     hits: props.hits,
@@ -1311,9 +1377,8 @@ const fullCritRemaining = computed<{
   const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
   // 满爆基准：锋御 200%，其余职业 100%（自动匹配）
   const target = fullCritTarget.value
-  // 当前暴击率取**局内面板**（含增益）；没有局内结果时退回局外
-  const panel = displayEval.value?.finalPanel ?? displayEval.value?.external
-  const panelCrit = Math.round((panel?.critRate ?? 0) * 100) / 100
+  // 当前暴击率取**当前输入下的主 C 局内面板**（fullCritPanelCrit；不再读会被扫掠快照短路的 displayEval）
+  const panelCrit = Math.round((fullCritPanelCrit.value ?? 0) * 100) / 100
   const allocatedRolls = Math.max(0, Math.round(directAlloc.critRate))
   const diff = target - panelCrit
   if (diff > 0.05) {
