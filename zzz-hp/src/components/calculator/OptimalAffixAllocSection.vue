@@ -769,6 +769,8 @@ onBeforeUnmount(() => {
 })
 
 const showEventAffixImpact = ref(false)
+/** 事件词条敏感度结果折叠态（2026-10-05 用户要求）：算完可收起，标题行保留 */
+const eventAffixImpactFolded = ref(false)
 const eventAffixImpactLoading = ref(false)
 const combinedMainStatRankingsLoading = ref(false)
 
@@ -3887,7 +3889,17 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         >
           {{ eventAffixImpactLoading ? '计算中…' : showEventAffixImpact ? '重新计算' : '计算敏感度' }}
         </button>
+        <!-- 计算完成后可收起（2026-10-05 用户要求）：折叠表格与说明，保留标题行与操作 -->
+        <button
+          v-if="showEventAffixImpact"
+          type="button"
+          class="chip"
+          @click="eventAffixImpactFolded = !eventAffixImpactFolded"
+        >
+          {{ eventAffixImpactFolded ? '展开结果' : '收起结果' }}
+        </button>
       </div>
+      <div v-show="showEventAffixImpact && !eventAffixImpactFolded">
       <p v-if="!showEventAffixImpact" class="hint">
         事件较多时自动计算较慢，需要时再点击「计算敏感度」。
       </p>
@@ -3928,6 +3940,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </div>
       </template>
       <p v-else class="hint">当前分配下暂无敏感度结果。</p>
+      </div>
     </div>
 
     <div v-if="analysisCounts && analysisEval" class="detail">
