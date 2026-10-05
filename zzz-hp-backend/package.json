@@ -25,7 +25,8 @@
     "check:guestbook-images": "node scripts/check-guestbook-images.mjs",
     "check:guestbook-orphans": "node scripts/check-guestbook-images.mjs --orphans",
     "seed:admin": "node scripts/seed-admin.mjs",
-    "set:admin-password": "node scripts/set-admin-password.mjs"
+    "set:admin-password": "node scripts/set-admin-password.mjs",
+    "export:site-content": "node scripts/export-site-content.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
