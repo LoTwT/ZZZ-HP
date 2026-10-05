@@ -43,6 +43,8 @@ zzz-hp-backend/data/*
 
 # Certificates
 *.pfx
+# 阿里云证书下载目录（{订单号}_{域名}_iis/）：既不入库也不打包（pack-update.ps1 的 $ExcludeDirs 含 *_iis）
+*_iis/
 
 # Local Cursor search dumps
 **/.cursor-search/
