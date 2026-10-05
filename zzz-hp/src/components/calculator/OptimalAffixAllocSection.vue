@@ -250,6 +250,15 @@ type CurveMode = 'cumulative' | 'marginal'
 /** 本模块需手动选择直伤/异常；未选时只展示模式入口。默认跟随招式流程的首个伤害类型 */
 const sweepDamageKind = ref<OptimalDamageKind | null>(null)
 
+/**
+ * 扫掠柱图的**面板来源**（2026-10-05 用户口径，只作用于扫掠柱图，不影响其它链路）：
+ * - `imported`（默认）：现行链路 —— 基准 = 导入的激活局外面板，词条叠加其上；
+ * - `initial`：**初始面板** —— 主 C 基准用全 0 空面板（没有导入贡献），
+ *   柱图数值 = 角色基础属性 + 音擎 + 当前 456 主属性 + 扫掠词条本身；
+ *   队友/转模槽位同样给空面板（他们的录入面板不参与）。
+ */
+const sweepPanelSource = ref<'imported' | 'initial'>('imported')
+
 watch(
   () => props.damageKind,
   (kind) => {
@@ -491,7 +500,13 @@ const evalCtx = computed(() =>
     }),
     buffSelection: props.buffSelection ?? null,
     slotBuffSelections: props.slotBuffSelections ?? null,
-    activeSlotPanels: effectiveAnomalySlotPanels.value,
+    // 扫掠柱图「初始面板」口径（2026-10-05）：清空录入面板 → 主 C 基准回退配置推导
+    //（computeExternalForEval 的 mainBaseExternalPanel=null 分支），队友/转模也无录入面板可用。
+    // 仅影响扫掠柱图：allocation 模式与其它链路仍走导入面板（effectiveAnomalySlotPanels 原样）。
+    activeSlotPanels:
+      sectionMode.value === 'sweep' && sweepPanelSource.value === 'initial'
+        ? {}
+        : effectiveAnomalySlotPanels.value,
     convertSlotPanels: evalConvertSlotPanels.value,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
     hits: props.hits,
@@ -524,6 +539,8 @@ const sweepConfigFingerprint = computed(() =>
     extraGains: extraGains.value,
     convert: props.convertSlotPanels ?? {},
     participants: props.activeSlotPanels ?? {},
+    // 扫掠面板来源（2026-10-05）：初始/导入切换后需重算
+    panelSource: sectionMode.value === 'sweep' ? sweepPanelSource.value : 'imported',
     damageKind: sweepDamageKind.value,
     buffSelection: props.buffSelection,
     slotBuffSelections: props.slotBuffSelections,
@@ -3588,6 +3605,29 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         @click="setDamageKind('anomaly')"
       >
         异常
+      </button>
+      <span class="kind-mode-label">面板来源</span>
+      <button
+        type="button"
+        role="tab"
+        class="chip"
+        :class="{ active: sweepPanelSource === 'initial' }"
+        :aria-selected="sweepPanelSource === 'initial'"
+        :title="'初始面板：角色全 0 词条的面板 —— 数值 = 角色基础 + 音擎 + 当前 456 主属性 + 扫掠词条本身，不含任何导入数据'"
+        @click="sweepPanelSource = 'initial'"
+      >
+        初始面板
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="chip"
+        :class="{ active: sweepPanelSource === 'imported' }"
+        :aria-selected="sweepPanelSource === 'imported'"
+        :title="'导入面板：现行计算链路 —— 以导入的局外面板为起点，扫掠词条叠加其上'"
+        @click="sweepPanelSource = 'imported'"
+      >
+        导入面板
       </button>
       <p v-if="!sweepDamageKind" class="hint kind-mode-hint">请先选择直伤或异常，再配置词条并开始计算。</p>
     </div>
