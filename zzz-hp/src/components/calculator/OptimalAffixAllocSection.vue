@@ -520,68 +520,6 @@ const sweepEffectiveSlotPanels = computed<Record<string, PanelStats>>(() => {
 })
 
 /**
- * 直伤模式「当前输入」的词条数（不受扫掠结果影响）。
- *
- * 为什么单独一份：`displayCounts` / `displayEval` 会优先复用**扫掠柱或选中柱的快照**，
- * 于是改了「暴击」输入框以后，面板与满爆提示都不跟着动（2026-10-06 用户实测反馈）。
- * 满爆提示要的是「现在这套输入下的主 C 面板」，所以直接按当前输入构造词条数并评估。
- */
-const directInputCounts = computed<AffixCounts | null>(() => {
-  if (sweepDamageKind.value !== 'direct') return null
-  if (directError.value || !mainAgent.value?.id) return null
-  const crit = Math.round(directAlloc.critRate)
-  const total = Math.round(directAlloc.totalRolls)
-  const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
-  const remain = isMb.value ? total - crit - fixedAtk : total - crit
-  if (remain < 0) return null
-  return buildDirectAffixCounts(
-    isMb.value,
-    { ...directAlloc, critRate: crit, totalRolls: total },
-    0,
-    remain,
-    isFengYu.value,
-  )
-})
-
-/** 防抖后的「当前输入」词条数（与面板预览同一档延迟，避免每个按键都全量评估） */
-const debouncedDirectInputCounts = ref<AffixCounts | null>(null)
-let directInputPreviewTimer: ReturnType<typeof setTimeout> | null = null
-watch(
-  directInputCounts,
-  (counts) => {
-    if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
-    if (!counts) {
-      debouncedDirectInputCounts.value = null
-      return
-    }
-    directInputPreviewTimer = setTimeout(() => {
-      debouncedDirectInputCounts.value = counts
-    }, PANEL_PREVIEW_DEBOUNCE_MS)
-  },
-  { immediate: true },
-)
-
-/** 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板） */
-/**
- * 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板）。
- *
- * 注意两点性能约束（2026-10-06 页面卡顿排查）：
- * - **不给 ctx 做 spread 副本、也不摘掉 hits**：副本每次都是新对象，
- *   会让上下文签名缓存（WeakMap，按对象记忆）全部失效，并且每次调用都重算签名
- *   —— 实测 16ms/次 vs 同 ctx 的 12.5ms/次；更要命的是「带 hits / 去 hits」两种签名
- *   交替出现会**每次都清空 affixEvalCache 与 affixSweepCache**，把正在跑的扫掠拖垮。
- * - 结果走 `debouncedDirectInputCounts`（180ms 防抖），输入时不逐键评估。
- */
-const fullCritPanelCrit = computed<number | null>(() => {
-  const counts = debouncedDirectInputCounts.value ?? directInputCounts.value
-  if (!counts) {
-    const fallback = displayEval.value?.finalPanel ?? displayEval.value?.external
-    return fallback ? fallback.critRate : null
-  }
-  return evaluateAffixCounts(evalCtx.value, counts).finalPanel.critRate
-})
-
-/**
  * 词条功能改造：词条库 + 全词条收益 + 最优分配。
  *
  * 声明位置在 `evalCtx` 之前：评估上下文要带词条库的「每档值」，而 computed 首次求值时
@@ -657,6 +595,7 @@ const directError = computed(() =>
 const anomalyError = computed(() =>
   validateAnomalyAlloc(anomalyAlloc, isMb.value, activeDriveDiscMainStats.value, isFengYu.value),
 )
+
 
 const sweepConfigFingerprint = computed(() =>
   JSON.stringify({
@@ -1301,6 +1240,67 @@ const displayEval = computed(() => {
   if (!displayCounts.value) return null
   const panelOnlyCtx = { ...evalCtx.value, hits: undefined }
   return evaluateAffixCounts(panelOnlyCtx, displayCounts.value)
+})
+
+/**
+ * 直伤模式「当前输入」的词条数（不受扫掠结果影响）。
+ *
+ * 为什么单独一份：`displayCounts` / `displayEval` 会优先复用**扫掠柱或选中柱的快照**，
+ * 于是改了「暴击」输入框以后，面板与满爆提示都不跟着动（2026-10-06 用户实测反馈）。
+ * 满爆提示要的是「现在这套输入下的主 C 面板」，所以直接按当前输入构造词条数并评估。
+ */
+const directInputCounts = computed<AffixCounts | null>(() => {
+  if (sweepDamageKind.value !== 'direct') return null
+  if (directError.value || !mainAgent.value?.id) return null
+  const crit = Math.round(directAlloc.critRate)
+  const total = Math.round(directAlloc.totalRolls)
+  const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
+  const remain = isMb.value ? total - crit - fixedAtk : total - crit
+  if (remain < 0) return null
+  return buildDirectAffixCounts(
+    isMb.value,
+    { ...directAlloc, critRate: crit, totalRolls: total },
+    0,
+    remain,
+    isFengYu.value,
+  )
+})
+
+/** 防抖后的「当前输入」词条数（与面板预览同一档延迟，避免每个按键都全量评估） */
+const debouncedDirectInputCounts = ref<AffixCounts | null>(null)
+let directInputPreviewTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  directInputCounts,
+  (counts) => {
+    if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
+    if (!counts) {
+      debouncedDirectInputCounts.value = null
+      return
+    }
+    directInputPreviewTimer = setTimeout(() => {
+      debouncedDirectInputCounts.value = counts
+    }, PANEL_PREVIEW_DEBOUNCE_MS)
+  },
+  { immediate: true },
+)
+
+/**
+ * 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板）。
+ *
+ * 注意两点性能约束（2026-10-06 页面卡顿排查）：
+ * - **不给 ctx 做 spread 副本、也不摘掉 hits**：副本每次都是新对象，
+ *   会让上下文签名缓存（WeakMap，按对象记忆）全部失效，并且每次调用都重算签名
+ *   —— 实测 16ms/次 vs 同 ctx 的 12.5ms/次；更要命的是「带 hits / 去 hits」两种签名
+ *   交替出现会**每次都清空 affixEvalCache 与 affixSweepCache**，把正在跑的扫掠拖垮。
+ * - 结果走 `debouncedDirectInputCounts`（180ms 防抖），输入时不逐键评估。
+ */
+const fullCritPanelCrit = computed<number | null>(() => {
+  const counts = debouncedDirectInputCounts.value ?? directInputCounts.value
+  if (!counts) {
+    const fallback = displayEval.value?.finalPanel ?? displayEval.value?.external
+    return fallback ? fallback.critRate : null
+  }
+  return evaluateAffixCounts(evalCtx.value, counts).finalPanel.critRate
 })
 
 /**
