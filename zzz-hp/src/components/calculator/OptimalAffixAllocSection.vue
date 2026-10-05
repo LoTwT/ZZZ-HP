@@ -432,9 +432,21 @@ watch(
 )
 
 /** 当前模式实际使用的 4/5/6：扫掠柱图用独立那份，词条分析页用导入面板那份 */
-const activeDriveDiscMainStats = computed<AffixDriveDiscMainStats>(() =>
-  sectionMode.value === 'sweep' ? sweepMainStats.value : driveDiscMainStats.value,
-)
+/**
+ * 当前模式实际使用的 4/5/6（2026-10-06 用户口径）：
+ * - 词条分析页：导入面板那份；
+ * - 扫掠 + **初始面板**：扫掠专用那份（**可改**）；
+ * - 扫掠 + **导入面板**：**固定按导入的 456**（不可改）——导入面板是起点，
+ *   不在这条链路上改主属性，避免"改了 456 但面板数字不动"的歧义。
+ */
+const activeDriveDiscMainStats = computed<AffixDriveDiscMainStats>(() => {
+  if (sectionMode.value !== 'sweep') return driveDiscMainStats.value
+  if (sweepPanelSource.value === 'initial') return sweepMainStats.value
+  return driveDiscMainStats.value
+})
+
+/** 扫掠 456 是否可编辑：只有「初始面板」口径允许改 */
+const sweepMainStatsEditable = computed(() => sweepPanelSource.value === 'initial')
 
 /** 把扫掠 456 重置为导入面板的 456，并恢复「跟随导入」 */
 function resetSweepMainStats() {
@@ -446,11 +458,12 @@ function resetSweepMainStats() {
   sweepMainStatsTouched.value = false
 }
 
-/** 单独调整扫掠柱图的 4/5/6（只影响扫掠计算，不动导入面板） */
+/** 单独调整扫掠柱图的 4/5/6（只在「初始面板」口径下可改；不动导入面板） */
 function setSweepMainStat(
   slot: 'slot4MainStat' | 'slot5MainStat' | 'slot6MainStat',
   event: Event,
 ) {
+  if (!sweepMainStatsEditable.value) return
   const value = (event.target as HTMLSelectElement).value
   const next = { ...sweepMainStats.value }
   if (slot === 'slot4MainStat') next.slot4MainStat = value as DriveDiscSlot4StatId
@@ -4004,13 +4017,22 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
     <div class="sweep-main-stats">
       <div class="sweep-main-stats-head">
         <span class="filter-label">4/5/6 号主属性（扫掠专用）</span>
-        <button type="button" class="ghost-btn" @click="resetSweepMainStats">重置为导入</button>
+        <button
+          type="button"
+          class="ghost-btn"
+          :disabled="!sweepMainStatsEditable"
+          :title="sweepMainStatsEditable ? '重置为导入面板的 4/5/6' : '导入面板口径下固定按导入的 4/5/6，不可修改'"
+          @click="resetSweepMainStats"
+        >
+          重置为导入
+        </button>
       </div>
       <div class="main-stat-selects">
         <label>
           <span class="combined-main-stat-label">4号</span>
           <select
             :value="sweepMainStats.slot4MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot4MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_4_OPTIONS" :key="`sweep-4-${opt.id}`" :value="opt.id">
@@ -4022,6 +4044,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <span class="combined-main-stat-label">5号</span>
           <select
             :value="sweepMainStats.slot5MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot5MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_5_OPTIONS" :key="`sweep-5-${opt.id}`" :value="opt.id">
@@ -4033,6 +4056,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <span class="combined-main-stat-label">6号</span>
           <select
             :value="sweepMainStats.slot6MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot6MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_6_OPTIONS" :key="`sweep-6-${opt.id}`" :value="opt.id">
@@ -4042,8 +4066,13 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         </label>
       </div>
       <p class="hint">
-        默认与导入面板的 4/5/6 一致；在此调整只影响扫掠柱图的计算（词条上限 / 柱图 / 差异 / 曲线 /
-        组合试算），不改动导入面板与词条分析页。改完需重新点「开始计算」。
+        <template v-if="sweepMainStatsEditable">
+          初始面板口径：这里的 4/5/6 决定面板推导（词条上限 / 柱图 / 差异 / 曲线 / 组合试算），
+          不改动导入面板与词条分析页。改完需重新点「开始计算」。
+        </template>
+        <template v-else>
+          导入面板口径：4/5/6 固定按导入的来，不在此处修改（要改请切「初始面板」）。
+        </template>
       </p>
     </div>
     <div class="alloc-layout">
@@ -6177,6 +6206,17 @@ th {
   color: #e8edf5;
   padding: 0.38rem 0.5rem;
   font-size: 0.8rem;
+}
+
+/* 禁用态（导入面板口径下 456 固定按导入的来，不可改） */
+.main-stat-selects select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .combined-result {
