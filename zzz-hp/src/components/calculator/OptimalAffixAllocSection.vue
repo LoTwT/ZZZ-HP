@@ -1251,6 +1251,8 @@ const displayEval = computed(() => {
  */
 const directInputCounts = computed<AffixCounts | null>(() => {
   if (sweepDamageKind.value !== 'direct') return null
+  // 锋御不显示满爆提示（2026-10-06 用户口径）：直接不给词条数，省掉每次输入的评估开销
+  if (isFengYu.value) return null
   if (directError.value || !mainAgent.value?.id) return null
   const crit = Math.round(directAlloc.critRate)
   const total = Math.round(directAlloc.totalRolls)
@@ -1363,7 +1365,11 @@ function formatPanelShowcaseStat(key: keyof PanelStats, value: number): string {
  * - 「还差多少词条」按**词条库暴击每档值**折算（无覆盖时默认 2.4%/条），向上取整；
  * - 已达满爆显示「已满爆」。
  */
-const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
+/**
+ * 满爆基准：**只有非锋御职业显示该提示**（用户口径 2026-10-06「锋御不要这个提示」），
+ * 因此基准恒为 100%（锋御的 200% 不再有消费者）。
+ */
+const fullCritTarget = computed(() => 100)
 
 /**
  * 直伤模式「距满爆」的换算（**按输入框的暴击条数**，不是面板）：
@@ -4082,7 +4088,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <label class="field">
               <span>暴击</span>
               <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
-              <small class="hint">
+              <small v-if="!isFengYu" class="hint">
                 {{
                   fullCritRemaining.status === 'need'
                     ? `${fullCritRemaining.capRolls} 条满爆，当前还需 ${fullCritRemaining.rolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
