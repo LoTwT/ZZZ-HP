@@ -1288,14 +1288,23 @@ function formatPanelShowcaseStat(key: keyof PanelStats, value: number): string {
  */
 const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
 
-const fullCritRemainingText = computed(() => {
-  const panel = displayEval.value?.finalPanel
-  if (!panel) return '—'
-  const remaining = Math.max(0, fullCritTarget.value - panel.critRate)
-  if (remaining <= 0) return '已满爆'
+/**
+ * 直伤模式「距满爆」的换算（**按输入框的暴击条数**，不是面板）：
+ * 满爆还差的暴击率 ÷ 词条库暴击每档值，向上取整。
+ * `panelCrit` 供提示展示当前口径（输入暴击条数 + 面板基础暴击）——需要面板时才给，
+ * 没有面板（初始面板 0 词条）只给条数口径。
+ */
+const fullCritRemaining = computed<{ status: 'ok' | 'need'; rolls?: number; panelCrit?: number; direct?: 'ok' | 'need' }>(() => {
+  // 输入条数换算的暴击率贡献
+  const rollsInput = Math.max(0, Math.round(directAlloc.critRate))
   const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
-  const rolls = Math.ceil(remaining / perRoll)
-  return `还需约 ${rolls} 条暴击（+${formatCalcDecimal(remaining, 2)}%）`
+  const rollsCrit = rollsInput * perRoll
+  // 面板基础暴击率（无导入面板时为 0，即「初始面板」口径）
+  const baseCrit = displayEval.value?.external?.critRate ?? 0
+  const panelCrit = baseCrit + rollsCrit
+  const remaining = Math.max(0, fullCritTarget.value - panelCrit)
+  if (remaining <= 0) return { status: 'ok' }
+  return { status: 'need', rolls: Math.ceil(remaining / perRoll), panelCrit: Math.round(panelCrit * 100) / 100 }
 })
 
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
@@ -3945,6 +3954,13 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <label class="field">
               <span>暴击</span>
               <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
+              <small class="hint">
+                {{
+                  fullCritRemaining.status === 'ok'
+                    ? `已满爆（${fullCritTarget}%）`
+                    : `距满爆 ${fullCritRemaining.rolls} 条（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
+                }}
+              </small>
             </label>
             <label class="field">
               <span>总词条数</span>
@@ -4170,23 +4186,14 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <template v-if="displayEval.finalPanel">
             <p class="bar-panel-showcase-sub bar-panel-showcase-sub--final">局内面板（含增益）</p>
             <dl class="bar-panel-showcase-grid">
-              <template
+              <div
                 v-for="field in barPanelShowcaseFinalFields"
                 :key="`bfin-${field.key}`"
+                class="bar-panel-showcase-item"
               >
-                <div class="bar-panel-showcase-item">
-                  <dt>{{ field.label }}</dt>
-                  <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
-                </div>
-                <!-- 直伤模式的暴击率：附注距满爆（锋御 200%、其余 100%）还差多少条暴击词条 -->
-                <div
-                  v-if="field.key === 'critRate'"
-                  class="bar-panel-showcase-item bar-panel-showcase-item--note"
-                >
-                  <dt>距满爆（{{ fullCritTarget }}%）</dt>
-                  <dd>{{ fullCritRemainingText }}</dd>
-                </div>
-              </template>
+                <dt>{{ field.label }}</dt>
+                <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
+              </div>
             </dl>
           </template>
           <p v-else class="hint">暂无局内结果</p>
