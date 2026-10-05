@@ -1294,16 +1294,13 @@ const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
  * `panelCrit` 供提示展示当前口径（输入暴击条数 + 面板基础暴击）——需要面板时才给，
  * 没有面板（初始面板 0 词条）只给条数口径。
  */
-const fullCritRemaining = computed<{ status: 'ok' | 'need'; rolls?: number; panelCrit?: number; direct?: 'ok' | 'need' }>(() => {
-  // 输入条数换算的暴击率贡献
-  const rollsInput = Math.max(0, Math.round(directAlloc.critRate))
-  const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
-  const rollsCrit = rollsInput * perRoll
-  // 面板基础暴击率（无导入面板时为 0，即「初始面板」口径）
-  const baseCrit = displayEval.value?.external?.critRate ?? 0
-  const panelCrit = baseCrit + rollsCrit
+const fullCritRemaining = computed<{ status: 'ok' | 'need'; rolls?: number; panelCrit?: number }>(() => {
+  // 基于**局内面板**（含增益，即查看面板里展示的那个暴击率）；没有局内结果时退回局外
+  const panel = displayEval.value?.finalPanel ?? displayEval.value?.external
+  const panelCrit = panel?.critRate ?? 0
   const remaining = Math.max(0, fullCritTarget.value - panelCrit)
-  if (remaining <= 0) return { status: 'ok' }
+  if (remaining <= 0) return { status: 'ok', panelCrit: Math.round(panelCrit * 100) / 100 }
+  const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
   return { status: 'need', rolls: Math.ceil(remaining / perRoll), panelCrit: Math.round(panelCrit * 100) / 100 }
 })
 
