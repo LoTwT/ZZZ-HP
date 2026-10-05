@@ -1294,14 +1294,24 @@ const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
  * `panelCrit` 供提示展示当前口径（输入暴击条数 + 面板基础暴击）——需要面板时才给，
  * 没有面板（初始面板 0 词条）只给条数口径。
  */
-const fullCritRemaining = computed<{ status: 'ok' | 'need'; rolls?: number; panelCrit?: number }>(() => {
+const fullCritRemaining = computed<{
+  status: 'need' | 'ok' | 'overflow'
+  rolls?: number
+  overflowRolls?: number
+  panelCrit?: number
+}>(() => {
   // 基于**局内面板**（含增益，即查看面板里展示的那个暴击率）；没有局内结果时退回局外
   const panel = displayEval.value?.finalPanel ?? displayEval.value?.external
   const panelCrit = panel?.critRate ?? 0
-  const remaining = Math.max(0, fullCritTarget.value - panelCrit)
-  if (remaining <= 0) return { status: 'ok', panelCrit: Math.round(panelCrit * 100) / 100 }
   const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
-  return { status: 'need', rolls: Math.ceil(remaining / perRoll), panelCrit: Math.round(panelCrit * 100) / 100 }
+  const rounded = Math.round(panelCrit * 100) / 100
+  const remaining = fullCritTarget.value - panelCrit
+  if (remaining > 0) {
+    return { status: 'need', rolls: Math.ceil(remaining / perRoll), panelCrit: rounded }
+  }
+  // 溢出：超出满爆的暴击率换算回词条条数（向上取整）；恰好 == 0 记 ok
+  const overflowRolls = Math.ceil(-remaining / perRoll)
+  return { status: remaining === 0 ? 'ok' : 'overflow', overflowRolls, panelCrit: rounded }
 })
 
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
@@ -3953,9 +3963,11 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
               <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
               <small class="hint">
                 {{
-                  fullCritRemaining.status === 'ok'
-                    ? `已满爆（${fullCritTarget}%）`
-                    : `距满爆 ${fullCritRemaining.rolls} 条（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
+                  fullCritRemaining.status === 'need'
+                    ? `${fullCritRemaining.rolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
+                    : fullCritRemaining.status === 'overflow'
+                      ? `${fullCritRemaining.overflowRolls} 条满爆，当前溢出 ${fullCritRemaining.overflowRolls} 条暴击（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
+                      : `已满爆（${fullCritTarget}%）`
                 }}
               </small>
             </label>
