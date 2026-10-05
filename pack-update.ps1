@@ -154,11 +154,12 @@ New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
 $ExcludeDirs = @(
   'node_modules',
   '.git',
+  # 阿里云证书下载目录（{订单号}_{域名}_iis/）：留存在仓库但绝不进包（含 .pfx 私钥与口令）
+  '*_iis',
   'dist-ssr',
   'coverage',
   '.idea',
-  '.vscode',
-  '.cursor',
+  '.vscode',  '.cursor',
   '.cursor-search',
   'packages',
   'uploads',

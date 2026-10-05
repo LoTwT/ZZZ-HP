@@ -248,6 +248,7 @@ foreach ($file in Get-ScanFiles) {
   }
 
   $isEnvName = ($name -ieq '.env') -or ($name.StartsWith('.env.') -and $name -ine '.env.example')
+  $isKeyName = ($name -match '(?i)SecretKey') -or ($name -match '(?i)\.(pem|key|pfx)$')
 
   # An ignored local .env inside the working tree is expected. Staged files and
   # assembled package paths outside the repository still fail this gate.
@@ -255,11 +256,18 @@ foreach ($file in Get-ScanFiles) {
     continue
   }
 
+  # 同理：被 .gitignore 忽略的密钥文件（阿里云证书下载目录 *_iis 里的 .pfx 等）跳过工作区扫描 ——
+  # 这类文件永不入库，打包也已排除（pack-update.ps1 的 $ExcludeDirs 含 *_iis、robocopy 排除 *.pfx）。
+  # 进索引（staged）或出现在打包暂存区里的密钥文件仍然一律拦下。
+  if (-not $file.FromIndex -and $isKeyName -and (Test-IsGitIgnored $file.FullName)) {
+    continue
+  }
+
   if ($isEnvName) {
     Add-Finding "secret env file: $rel"
     continue
   }
-  if ($name -match '(?i)SecretKey' -or $name -match '(?i)\.(pem|key|pfx)$') {
+  if ($isKeyName) {
     Add-Finding "credential/key file: $rel"
     continue
   }
