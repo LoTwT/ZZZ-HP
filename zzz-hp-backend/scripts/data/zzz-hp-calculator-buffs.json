@@ -126157,11 +126157,11 @@
       ]
     },
     {
-      "id": "Promotion Stats",
+      "id": "Promotion_Stats",
       "name": "喵运当头",
       "profession": "锋御",
       "rarity": "A",
-      "avatar_image": "/wengine/Promotion Stats.webp",
+      "avatar_image": "/wengine/Promotion_Stats.webp",
       "note": "",
       "baseAtk": 0,
       "baseDef": 356,
