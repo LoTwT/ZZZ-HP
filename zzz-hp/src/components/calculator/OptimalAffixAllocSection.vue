@@ -1280,6 +1280,24 @@ function formatPanelShowcaseStat(key: keyof PanelStats, value: number): string {
   return formatCalcDecimal(value, 2)
 }
 
+/**
+ * 直伤模式「距满爆」（2026-10-05 用户口径）：
+ * - 满爆基准：面板暴击率 = 100%，**锋御 200%**；
+ * - 「还差多少词条」按**词条库暴击每档值**折算（无覆盖时默认 2.4%/条），向上取整；
+ * - 已达满爆显示「已满爆」。
+ */
+const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
+
+const fullCritRemainingText = computed(() => {
+  const panel = displayEval.value?.finalPanel
+  if (!panel) return '—'
+  const remaining = Math.max(0, fullCritTarget.value - panel.critRate)
+  if (remaining <= 0) return '已满爆'
+  const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
+  const rolls = Math.ceil(remaining / perRoll)
+  return `还需约 ${rolls} 条暴击（+${formatCalcDecimal(remaining, 2)}%）`
+})
+
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
 
 const analysisEval = computed(() => {
@@ -4138,30 +4156,39 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </button>
       <div v-if="barPanelShowcaseOpen" class="bar-panel-showcase-body">
         <template v-if="displayEval">
-          <div class="bar-panel-showcase-grid">
-            <p class="bar-panel-showcase-section-title">局外面板</p>
-            <p
+          <p class="bar-panel-showcase-sub">局外面板</p>
+          <dl class="bar-panel-showcase-grid">
+            <div
               v-for="field in PANEL_SHOWCASE_EXTERNAL_FIELDS"
               :key="`bext-${field.key}`"
-              class="bar-panel-showcase-row"
+              class="bar-panel-showcase-item"
             >
-              {{ field.label }}：
-              <span>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</span>
-            </p>
-          </div>
-          <div v-if="displayEval.finalPanel" class="bar-panel-showcase-grid bar-panel-showcase-grid--final">
-            <p class="bar-panel-showcase-section-title bar-panel-showcase-section-title--final">
-              局内面板（含增益）
-            </p>
-            <p
-              v-for="field in barPanelShowcaseFinalFields"
-              :key="`bfin-${field.key}`"
-              class="bar-panel-showcase-row"
-            >
-              {{ field.label }}：
-              <span>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</span>
-            </p>
-          </div>
+              <dt>{{ field.label }}</dt>
+              <dd>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</dd>
+            </div>
+          </dl>
+          <template v-if="displayEval.finalPanel">
+            <p class="bar-panel-showcase-sub bar-panel-showcase-sub--final">局内面板（含增益）</p>
+            <dl class="bar-panel-showcase-grid">
+              <template
+                v-for="field in barPanelShowcaseFinalFields"
+                :key="`bfin-${field.key}`"
+              >
+                <div class="bar-panel-showcase-item">
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
+                </div>
+                <!-- 直伤模式的暴击率：附注距满爆（锋御 200%、其余 100%）还差多少条暴击词条 -->
+                <div
+                  v-if="field.key === 'critRate'"
+                  class="bar-panel-showcase-item bar-panel-showcase-item--note"
+                >
+                  <dt>距满爆（{{ fullCritTarget }}%）</dt>
+                  <dd>{{ fullCritRemainingText }}</dd>
+                </div>
+              </template>
+            </dl>
+          </template>
           <p v-else class="hint">暂无局内结果</p>
         </template>
         <p v-else class="hint">暂无可展示的面板数据（先点「开始计算」生成柱状图）。</p>
@@ -4712,8 +4739,8 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   margin-top: 0.25rem;
 }
 
-/* 柱状图下方「查看面板」（2026-10-05）：行式布局，对齐流程事件详情 result-grid 的格式 ——
-   每行「标签： 数值」，行间分隔线，数值右对齐 */
+/* 柱状图下方「查看面板」（2026-10-05）：样式**完全对齐**招式流程区的 sf-panel-showcase ——
+   两列网格（label 左灰 / 数值右白），间距逐项一致；白天主题同口径覆盖 */
 .bar-panel-showcase {
   margin-top: 0.4rem;
   display: flex;
@@ -4726,51 +4753,87 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 }
 
 .bar-panel-showcase-body {
-  padding: 0.55rem 0.75rem;
+  padding: 0.65rem 0.8rem;
   border: 1px solid #2d323a;
   border-radius: 10px;
   background: #0f1217;
-  color: #e6ebf2;
-  font-size: 0.8rem;
 }
 
-.bar-panel-showcase-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-}
-
-.bar-panel-showcase-grid--final {
-  margin-top: 0.5rem;
-}
-
-.bar-panel-showcase-section-title {
-  margin: 0;
+.bar-panel-showcase-sub {
+  margin: 0 0 0.4rem;
   font-size: 0.76rem;
   font-weight: 700;
   color: #c9a55c;
 }
 
-.bar-panel-showcase-section-title--final {
+.bar-panel-showcase-sub--final {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #343a44;
   color: #8fbc7a;
 }
 
-.bar-panel-showcase-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-start;
-  gap: 0.6rem;
+.bar-panel-showcase-grid {
   margin: 0;
-  padding: 0.3rem 0.1rem;
-  border-bottom: 1px solid color-mix(in srgb, #d5dae3 14%, transparent);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem 0.85rem;
 }
 
-.bar-panel-showcase-row > span {
-  flex-shrink: 0;
-  margin-left: auto;
-  text-align: right;
+.bar-panel-showcase-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.bar-panel-showcase-item dt {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 0.72rem;
+  color: #8b93a3;
+  line-height: 1.35;
+}
+
+.bar-panel-showcase-item dd {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 0.74rem;
   font-weight: 600;
+  color: #e8edf5;
   font-variant-numeric: tabular-nums;
+}
+
+.bar-panel-showcase-item--note dt {
+  color: #d8a25c;
+}
+
+.bar-panel-showcase-item--note dd {
+  color: #ffd479;
+}
+
+/* 白天主题（跟随卡片与流程区展示的浅色口径） */
+:global(html[data-theme='light'] .bar-panel-showcase-body) {
+  border-color: #e4e7ec;
+  background: #ffffff;
+  color: #1c212a;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dt) {
+  color: #667085;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dd) {
+  color: #1c212a;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item--note dt) {
+  color: #9a6a00;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item--note dd) {
+  color: #8a5a00;
 }
 
 /* 白天主题（跟随卡片与流程区展示的浅色口径） */
