@@ -9,6 +9,12 @@ import {
   watch,
 } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  PANEL_QUERY_KEYS,
+  readSingleQueryValue,
+  buildQueryWithValues,
+} from '@/utils/panelUrlState'
 import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import BenefitCurvePanel from '@/components/calculator/BenefitCurvePanel.vue'
 import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart.vue'
@@ -159,6 +165,7 @@ import {
   saveAffixSearchSettings,
   type AffixSearchSettings,
 } from '@/utils/affixSearchSettings'
+import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 import {
   clampGameExtraCost,
   clampGameSubstatEntryCap,
@@ -250,6 +257,16 @@ type CurveMode = 'cumulative' | 'marginal'
 /** 本模块需手动选择直伤/异常；未选时只展示模式入口。默认跟随招式流程的首个伤害类型 */
 const sweepDamageKind = ref<OptimalDamageKind | null>(null)
 
+/**
+ * 扫掠柱图的**面板来源**（2026-10-05 用户口径，只作用于扫掠柱图，不影响其它链路）：
+ * - `imported`（默认）：现行链路 —— 基准 = 导入的激活局外面板，词条叠加其上；
+ * - `initial`：**初始面板** —— 主 C 基准用全 0 空面板（没有导入贡献），
+ *   柱图数值 = 角色基础属性 + 音擎 + 当前 456 主属性 + 扫掠词条本身；
+ *   队友/转模槽位同样给空面板（他们的录入面板不参与）。
+ */
+const sweepPanelSource = ref<'imported' | 'initial'>('imported')
+
+
 watch(
   () => props.damageKind,
   (kind) => {
@@ -323,7 +340,51 @@ const mainSlot = computed(() => props.teamSlots[mainSlotIndex.value]!)
  * 定义在 `driveDiscMainStats` 之前：`activeDriveDiscMainStats` / `evalCtx` 依赖它，
  * 而它们在 setup 中靠后声明（computed 惰性求值，定义顺序必须先于引用）。
  */
-const sectionMode = ref<'allocation' | 'sweep'>('allocation')
+const sectionMode = ref<'allocation' | 'sweep'>(readSectionModeFromQuery())
+
+/**
+ * 模式与 URL `?mode=sweep` 双向同步（2026-10-05 用户要求：刷新/分享不丢状态）。
+ * 约定沿用 mode-panel-url-state.md：缺省不写进 URL（allocation 时不带 mode），
+ * 写入用 replace（不堆历史），并监听 query 反向同步（前进后退/手改地址）。
+ * query 键复用 `PANEL_QUERY_KEYS.mode`：与危局等面板同一键名，但路由不同不会冲突。
+ */
+const route = useRoute()
+const router = useRouter()
+
+const SWEEP_MODE_VALUE = 'sweep'
+
+function readSectionModeFromQuery(): 'allocation' | 'sweep' {
+  const route = useRoute()
+  return readSingleQueryValue(route.query, PANEL_QUERY_KEYS.mode) === SWEEP_MODE_VALUE
+    ? 'sweep'
+    : 'allocation'
+}
+
+function syncSectionModeToQuery(mode: 'allocation' | 'sweep') {
+  const current = readSingleQueryValue(route.query, PANEL_QUERY_KEYS.mode)
+  const next = mode === 'sweep' ? SWEEP_MODE_VALUE : null
+  if ((next ?? undefined) === current) return
+  void router.replace({
+    path: route.path,
+    query: buildQueryWithValues(route.query, { [PANEL_QUERY_KEYS.mode]: next }),
+    hash: route.hash,
+  })
+}
+
+watch(sectionMode, (mode) => {
+  syncSectionModeToQuery(mode)
+  if (mode === 'allocation') scheduleAffixBenefitRecompute()
+  // 主属性组合试算已按模式拆分：切换模式不清空各自的草稿 / 排行 / 筛选
+})
+
+// URL 变化（前进后退 / 手改地址）→ 同步回面板状态
+watch(
+  () => route.query[PANEL_QUERY_KEYS.mode],
+  () => {
+    const next = readSectionModeFromQuery()
+    if (next !== sectionMode.value) sectionMode.value = next
+  },
+)
 
 /**
  * 4/5/6 号驱动盘主属性 —— 单一来源：「词条导入」那份来源记录（它只服务这一路）。
@@ -371,9 +432,21 @@ watch(
 )
 
 /** 当前模式实际使用的 4/5/6：扫掠柱图用独立那份，词条分析页用导入面板那份 */
-const activeDriveDiscMainStats = computed<AffixDriveDiscMainStats>(() =>
-  sectionMode.value === 'sweep' ? sweepMainStats.value : driveDiscMainStats.value,
-)
+/**
+ * 当前模式实际使用的 4/5/6（2026-10-06 用户口径）：
+ * - 词条分析页：导入面板那份；
+ * - 扫掠 + **初始面板**：扫掠专用那份（**可改**）；
+ * - 扫掠 + **导入面板**：**固定按导入的 456**（不可改）——导入面板是起点，
+ *   不在这条链路上改主属性，避免"改了 456 但面板数字不动"的歧义。
+ */
+const activeDriveDiscMainStats = computed<AffixDriveDiscMainStats>(() => {
+  if (sectionMode.value !== 'sweep') return driveDiscMainStats.value
+  if (sweepPanelSource.value === 'initial') return sweepMainStats.value
+  return driveDiscMainStats.value
+})
+
+/** 扫掠 456 是否可编辑：只有「初始面板」口径允许改 */
+const sweepMainStatsEditable = computed(() => sweepPanelSource.value === 'initial')
 
 /** 把扫掠 456 重置为导入面板的 456，并恢复「跟随导入」 */
 function resetSweepMainStats() {
@@ -385,11 +458,12 @@ function resetSweepMainStats() {
   sweepMainStatsTouched.value = false
 }
 
-/** 单独调整扫掠柱图的 4/5/6（只影响扫掠计算，不动导入面板） */
+/** 单独调整扫掠柱图的 4/5/6（只在「初始面板」口径下可改；不动导入面板） */
 function setSweepMainStat(
   slot: 'slot4MainStat' | 'slot5MainStat' | 'slot6MainStat',
   event: Event,
 ) {
+  if (!sweepMainStatsEditable.value) return
   const value = (event.target as HTMLSelectElement).value
   const next = { ...sweepMainStats.value }
   if (slot === 'slot4MainStat') next.slot4MainStat = value as DriveDiscSlot4StatId
@@ -443,6 +517,22 @@ const isMb = computed(() => mainAgent.value?.profession === MB_PROFESSION)
 const isFengYu = computed(() => mainAgent.value?.profession === FENGYU_PROFESSION)
 
 /**
+ * 扫掠柱图的「面板来源 = 初始面板」时实际喂给引擎的面板表（2026-10-06 用户口径：**只管主 C**）。
+ *
+ * 只把**主 C**从录入面板里摘掉 → 主 C 回退配置推导（角色基础 + 音擎 + 驱动盘 456 + 候选词条）；
+ * 队友仍用各自录入面板（不再像首版那样把全队清空 —— 那会让队友也变成推导值）。
+ */
+const sweepEffectiveSlotPanels = computed<Record<string, PanelStats>>(() => {
+  const base = effectiveAnomalySlotPanels.value
+  if (!(sectionMode.value === 'sweep' && sweepPanelSource.value === 'initial')) return base
+  const mainAgentId = mainSlot.value?.agentId
+  if (!mainAgentId || !(mainAgentId in base)) return base
+  const rest = { ...base }
+  delete rest[mainAgentId]
+  return rest
+})
+
+/**
  * 词条功能改造：词条库 + 全词条收益 + 最优分配。
  *
  * 声明位置在 `evalCtx` 之前：评估上下文要带词条库的「每档值」，而 computed 首次求值时
@@ -469,8 +559,7 @@ const affixLibraryValuePerCount = computed(() =>
 
 const evalCtx = computed(() =>
   buildOptimalEvalContext({
-    isMb: isMb.value,
-    isFengYu: isFengYu.value,
+    isMb: isMb.value,    isFengYu: isFengYu.value,
     teamSlots: props.teamSlots,
     agents: props.agents,
     wengines: props.wengines,
@@ -491,7 +580,11 @@ const evalCtx = computed(() =>
     }),
     buffSelection: props.buffSelection ?? null,
     slotBuffSelections: props.slotBuffSelections ?? null,
-    activeSlotPanels: effectiveAnomalySlotPanels.value,
+    // 扫掠柱图「初始面板」口径（2026-10-05；2026-10-06 改为**只管主 C**）：
+    // 只摘掉主 C 的录入面板 → 主 C 基准回退配置推导（computeExternalForEval 的
+    // mainBaseExternalPanel=null 分支），**队友仍用各自录入面板**（用户口径）。
+    // 仅影响扫掠柱图：allocation 模式与其它链路仍走导入面板（effectiveAnomalySlotPanels 原样）。
+    activeSlotPanels: sweepEffectiveSlotPanels.value,
     convertSlotPanels: evalConvertSlotPanels.value,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
     hits: props.hits,
@@ -516,6 +609,7 @@ const anomalyError = computed(() =>
   validateAnomalyAlloc(anomalyAlloc, isMb.value, activeDriveDiscMainStats.value, isFengYu.value),
 )
 
+
 const sweepConfigFingerprint = computed(() =>
   JSON.stringify({
     baseDamageSource: baseDamageSource.value,
@@ -524,6 +618,8 @@ const sweepConfigFingerprint = computed(() =>
     extraGains: extraGains.value,
     convert: props.convertSlotPanels ?? {},
     participants: props.activeSlotPanels ?? {},
+    // 扫掠面板来源（2026-10-05）：初始/导入切换后需重算
+    panelSource: sectionMode.value === 'sweep' ? sweepPanelSource.value : 'imported',
     damageKind: sweepDamageKind.value,
     buffSelection: props.buffSelection,
     slotBuffSelections: props.slotBuffSelections,
@@ -763,6 +859,8 @@ onBeforeUnmount(() => {
   if (diffTimer) clearTimeout(diffTimer)
   if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
   if (panelPreviewTimer) clearTimeout(panelPreviewTimer)
+  if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
+  if (persistFlowUiTimer) clearTimeout(persistFlowUiTimer)
   if (eventAffixImpactTimer) clearTimeout(eventAffixImpactTimer)
   stopAllocTimer(false) // 计时器也要清，别在组件卸载后还跳
   sweepAbort?.abort()
@@ -1155,6 +1253,197 @@ const displayEval = computed(() => {
   if (!displayCounts.value) return null
   const panelOnlyCtx = { ...evalCtx.value, hits: undefined }
   return evaluateAffixCounts(panelOnlyCtx, displayCounts.value)
+})
+
+/**
+ * 直伤模式「当前输入」的词条数（不受扫掠结果影响）。
+ *
+ * 为什么单独一份：`displayCounts` / `displayEval` 会优先复用**扫掠柱或选中柱的快照**，
+ * 于是改了「暴击」输入框以后，面板与满爆提示都不跟着动（2026-10-06 用户实测反馈）。
+ * 满爆提示要的是「现在这套输入下的主 C 面板」，所以直接按当前输入构造词条数并评估。
+ */
+const directInputCounts = computed<AffixCounts | null>(() => {
+  if (sweepDamageKind.value !== 'direct') return null
+  // 锋御不显示满爆提示（2026-10-06 用户口径）：直接不给词条数，省掉每次输入的评估开销
+  if (isFengYu.value) return null
+  if (directError.value || !mainAgent.value?.id) return null
+  const crit = Math.round(directAlloc.critRate)
+  const total = Math.round(directAlloc.totalRolls)
+  const fixedAtk = isMb.value ? Math.round(directAlloc.atkPercent) : 0
+  const remain = isMb.value ? total - crit - fixedAtk : total - crit
+  if (remain < 0) return null
+  return buildDirectAffixCounts(
+    isMb.value,
+    { ...directAlloc, critRate: crit, totalRolls: total },
+    0,
+    remain,
+    isFengYu.value,
+  )
+})
+
+/** 防抖后的「当前输入」词条数（与面板预览同一档延迟，避免每个按键都全量评估） */
+const debouncedDirectInputCounts = ref<AffixCounts | null>(null)
+let directInputPreviewTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  directInputCounts,
+  (counts) => {
+    if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
+    if (!counts) {
+      debouncedDirectInputCounts.value = null
+      return
+    }
+    directInputPreviewTimer = setTimeout(() => {
+      debouncedDirectInputCounts.value = counts
+    }, PANEL_PREVIEW_DEBOUNCE_MS)
+  },
+  { immediate: true },
+)
+
+/**
+ * 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板）。
+ *
+ * 注意两点性能约束（2026-10-06 页面卡顿排查）：
+ * - **不给 ctx 做 spread 副本、也不摘掉 hits**：副本每次都是新对象，
+ *   会让上下文签名缓存（WeakMap，按对象记忆）全部失效，并且每次调用都重算签名
+ *   —— 实测 16ms/次 vs 同 ctx 的 12.5ms/次；更要命的是「带 hits / 去 hits」两种签名
+ *   交替出现会**每次都清空 affixEvalCache 与 affixSweepCache**，把正在跑的扫掠拖垮。
+ * - 结果走 `debouncedDirectInputCounts`（180ms 防抖），输入时不逐键评估。
+ */
+const fullCritPanelCrit = computed<number | null>(() => {
+  const counts = debouncedDirectInputCounts.value ?? directInputCounts.value
+  if (!counts) {
+    const fallback = displayEval.value?.finalPanel ?? displayEval.value?.external
+    return fallback ? fallback.critRate : null
+  }
+  return evaluateAffixCounts(evalCtx.value, counts).finalPanel.critRate
+})
+
+/**
+ * 柱状图下方的「查看面板」（2026-10-05 用户要求）：与招式流程区「查看面板」同款
+ * —— 展示当前柱（选中柱/首柱）的局外 + 局内面板。数据取 displayEval，与柱子数值同源。
+ */
+const barPanelShowcaseOpen = ref(false)
+
+/** 展示字段表（纯展示常量，与 SkillFlowSection 的「查看面板」同口径复制维护） */
+const PANEL_SHOWCASE_EXTERNAL_FIELDS: { key: keyof PanelStats; label: string }[] = [
+  { key: 'hp', label: '生命值' },
+  { key: 'atk', label: '攻击力' },
+  { key: 'def', label: '防御力' },
+  { key: 'critRate', label: '暴击率%' },
+  { key: 'critDmg', label: '爆伤%' },
+  { key: 'penRate', label: '穿透率%' },
+  { key: 'pen', label: '穿透值' },
+  { key: 'dmgBonus', label: '增伤%' },
+  { key: 'reduceDefense', label: '无视防御/减防%' },
+  { key: 'mastery', label: '精通' },
+  { key: 'anomalyControl', label: '异常掌控' },
+  { key: 'energyRegen', label: '能量回复效率%' },
+  { key: 'impact', label: '冲击力' },
+]
+
+const PANEL_SHOWCASE_FINAL_EXTRA_FIELDS: { key: keyof PanelStats; label: string }[] = [
+  { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
+  { key: 'anomalyCritRate', label: '异常暴击%' },
+  { key: 'anomalyCritDmg', label: '异常爆伤%' },
+  { key: 'anomalyDmgBonus', label: '异常增伤%' },
+  { key: 'disorderDmgBonus', label: '紊乱增伤%' },
+  { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
+]
+
+const barPanelShowcaseFinalFields = computed(() => {
+  if (isFengYu.value) return [...PANEL_SHOWCASE_EXTERNAL_FIELDS, ...PANEL_SHOWCASE_FINAL_EXTRA_FIELDS]
+  return [
+    ...PANEL_SHOWCASE_EXTERNAL_FIELDS,
+    ...PANEL_SHOWCASE_FINAL_EXTRA_FIELDS.filter((field) => field.key !== 'sharpenCritDmgBonus'),
+  ]
+})
+
+function formatPanelShowcaseStat(key: keyof PanelStats, value: number): string {
+  if (
+    key === 'hp' ||
+    key === 'atk' ||
+    key === 'def' ||
+    key === 'pen' ||
+    key === 'mastery' ||
+    key === 'anomalyControl'
+  ) {
+    return Math.round(value).toLocaleString('en-US')
+  }
+  return formatCalcDecimal(value, 2)
+}
+
+/**
+ * 直伤模式「距满爆」（2026-10-05 用户口径）：
+ * - 满爆基准：面板暴击率 = 100%，**锋御 200%**；
+ * - 「还差多少词条」按**词条库暴击每档值**折算（无覆盖时默认 2.4%/条），向上取整；
+ * - 已达满爆显示「已满爆」。
+ */
+/**
+ * 满爆基准：**只有非锋御职业显示该提示**（用户口径 2026-10-06「锋御不要这个提示」），
+ * 因此基准恒为 100%（锋御的 200% 不再有消费者）。
+ */
+const fullCritTarget = computed(() => 100)
+
+/**
+ * 直伤模式「距满爆」的换算（**按输入框的暴击条数**，不是面板）：
+ * 满爆还差的暴击率 ÷ 词条库暴击每档值，向上取整。
+ * `panelCrit` 供提示展示当前口径（输入暴击条数 + 面板基础暴击）——需要面板时才给，
+ * 没有面板（初始面板 0 词条）只给条数口径。
+ */
+const fullCritRemaining = computed<{
+  status: 'need' | 'ok' | 'overflow'
+  /** 满爆所需总条数（含已投入的那部分）= 已投 − 溢出 + 还需 */
+  capRolls: number
+  /** 当前已投入的暴击条数（直伤分配表单里的「暴击」输入） */
+  allocatedRolls: number
+  /** 还需条数（未满爆时） */
+  rolls: number
+  /** 溢出条数（超过满爆时） */
+  overflowRolls: number
+  panelCrit: number
+  target: number
+}>(() => {
+  // 每档值：词条库暴击每档（默认 2.4%）
+  const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
+  // 满爆基准：锋御 200%，其余职业 100%（自动匹配）
+  const target = fullCritTarget.value
+  // 当前暴击率取**当前输入下的主 C 局内面板**（fullCritPanelCrit；不再读会被扫掠快照短路的 displayEval）
+  const panelCrit = Math.round((fullCritPanelCrit.value ?? 0) * 100) / 100
+  const allocatedRolls = Math.max(0, Math.round(directAlloc.critRate))
+  const diff = target - panelCrit
+  if (diff > 0.05) {
+    const rolls = Math.ceil(diff / perRoll)
+    return {
+      status: 'need',
+      capRolls: allocatedRolls + rolls,
+      allocatedRolls,
+      rolls,
+      overflowRolls: 0,
+      panelCrit,
+      target,
+    }
+  }
+  if (diff < -0.05) {
+    const overflowRolls = Math.ceil(-diff / perRoll)
+    return {
+      status: 'overflow',
+      capRolls: Math.max(0, allocatedRolls - overflowRolls),
+      allocatedRolls,
+      rolls: 0,
+      overflowRolls,
+      panelCrit,
+      target,
+    }
+  }
+  return {
+    status: 'ok',
+    capRolls: allocatedRolls,
+    allocatedRolls,
+    rolls: 0,
+    overflowRolls: 0,
+    panelCrit,
+    target,
+  }
 })
 
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
@@ -1794,6 +2083,43 @@ const affixAllocError = ref<string | null>(null)
  */
 const affixAllocMode = ref<'default' | 'game' | null>(null)
 
+/* ---------- 词条配比分析状态的持久化 + URL 同步（2026-10-05 用户要求） ----------
+ * 刷新后这批 UI 状态原本会重置回默认值；现在：
+ * - **localStorage**（zzz-hp-flow-analysis-ui）：总词条数 / 收益评估档位 / 扫掠 456 / 扫掠伤害模式 /
+ *   扫掠面板来源 / 直伤与异常的手填分配 —— 纯输入类，落盘后下次进来原样恢复；
+ * - **URL `?mode=sweep`**：模式切换（词条分析 ↔ 扫掠柱图）写 URL，可分享直达、刷新不丢。
+ * 求解结果（affixAllocResult）不持久化：依赖太多上下文，恢复旧数字反而误导。
+ */
+const FLOW_ANALYSIS_UI_KEY = 'zzz-hp-flow-analysis-ui'
+
+interface FlowAnalysisUiState {
+  totalRolls?: number
+  benefitStep?: number
+  sweepMainStats?: { slot4MainStat: string; slot5MainStat: string; slot6MainStat: string }
+  sweepMainStatsTouched?: boolean
+  sweepDamageKind?: 'direct' | 'anomaly'
+  sweepPanelSource?: 'imported' | 'initial'
+  directAlloc?: Partial<DirectAllocState>
+  anomalyAlloc?: Partial<AnomalyAllocState>
+}
+
+function loadFlowAnalysisUi(): FlowAnalysisUiState | null {
+  try {
+    const raw = localStorage.getItem(FLOW_ANALYSIS_UI_KEY)
+    return raw ? (JSON.parse(raw) as FlowAnalysisUiState) : null
+  } catch {
+    return null
+  }
+}
+
+function saveFlowAnalysisUi(state: FlowAnalysisUiState) {
+  try {
+    localStorage.setItem(FLOW_ANALYSIS_UI_KEY, JSON.stringify(state))
+  } catch {
+    /* 存不下就只当次会话生效 */
+  }
+}
+
 /**
  * 最优分配结果的收起态（2026-10-01 用户要求）：求解完成后可把结果详情折叠，
  * 只留「最优总伤 / 提升」摘要行。重新求解时自动展开。
@@ -1975,6 +2301,81 @@ const affixBenefitSeriesRolls = ref(0)
 const affixBenefitSeriesLoading = ref(false)
 const affixBenefitLoading = ref(false)
 const affixBenefitStep = ref(1)
+
+/* ---------- 恢复持久化的 UI 状态（在所有相关 ref 声明之后执行一次） ---------- */
+const savedFlowUi = loadFlowAnalysisUi()
+if (savedFlowUi) {
+  if (savedFlowUi.totalRolls != null && Number.isFinite(savedFlowUi.totalRolls)) {
+    affixAllocTotalRolls.value = Math.max(1, Math.min(60, Math.round(savedFlowUi.totalRolls)))
+  }
+  if (
+    savedFlowUi.benefitStep != null &&
+    [1, 4, 6, 10].includes(savedFlowUi.benefitStep)
+  ) {
+    affixBenefitStep.value = savedFlowUi.benefitStep
+  }
+  if (savedFlowUi.sweepMainStats) {
+    const m = savedFlowUi.sweepMainStats
+    sweepMainStats.value = {
+      slot4MainStat: (m.slot4MainStat || '') as DriveDiscSlot4StatId,
+      slot5MainStat: (m.slot5MainStat || '') as DriveDiscSlot5StatId,
+      slot6MainStat: (m.slot6MainStat || '') as DriveDiscSlot6StatId,
+    }
+    sweepMainStatsTouched.value = Boolean(savedFlowUi.sweepMainStatsTouched)
+  }
+  if (savedFlowUi.sweepDamageKind === 'direct' || savedFlowUi.sweepDamageKind === 'anomaly') {
+    sweepDamageKind.value = savedFlowUi.sweepDamageKind
+  }
+  if (
+    savedFlowUi.sweepPanelSource === 'imported' ||
+    savedFlowUi.sweepPanelSource === 'initial'
+  ) {
+    sweepPanelSource.value = savedFlowUi.sweepPanelSource
+  }
+  if (savedFlowUi.directAlloc) {
+    Object.assign(directAlloc, savedFlowUi.directAlloc)
+  }
+  if (savedFlowUi.anomalyAlloc) {
+    Object.assign(anomalyAlloc, savedFlowUi.anomalyAlloc)
+  }
+}
+
+/** 汇集当前可持久化的 UI 状态并落盘（每次变更后调用） */
+function persistFlowAnalysisUi() {
+  saveFlowAnalysisUi({
+    totalRolls: affixAllocTotalRolls.value,
+    benefitStep: affixBenefitStep.value,
+    sweepMainStats: { ...sweepMainStats.value },
+    sweepMainStatsTouched: sweepMainStatsTouched.value,
+    sweepDamageKind: sweepDamageKind.value ?? undefined,
+    sweepPanelSource: sweepPanelSource.value,
+    directAlloc: { ...directAlloc },
+    anomalyAlloc: { ...anomalyAlloc },
+  })
+}
+
+/** localStorage 写入节流：连续改输入（每条一个字）只在停顿后落一次盘 */
+let persistFlowUiTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersistFlowAnalysisUi() {
+  if (persistFlowUiTimer) clearTimeout(persistFlowUiTimer)
+  persistFlowUiTimer = setTimeout(persistFlowAnalysisUi, 400)
+}
+
+watch(
+  [
+    affixAllocTotalRolls,
+    affixBenefitStep,
+    sweepMainStats,
+    sweepMainStatsTouched,
+    sweepDamageKind,
+    sweepPanelSource,
+    directAlloc,
+    anomalyAlloc,
+  ],
+  schedulePersistFlowAnalysisUi,
+  { deep: true },
+)
 
 /** 词条分配模式的基线：从零词条开始（回答「N 个词条怎么分」） */
 const affixAllocBaseCounts = computed(() => createEmptyAffixCounts())
@@ -2692,10 +3093,7 @@ watch(
   },
 )
 
-watch(sectionMode, (mode) => {
-  if (mode === 'allocation') scheduleAffixBenefitRecompute()
-  // 主属性组合试算已按模式拆分：切换模式不清空各自的草稿 / 排行 / 筛选
-})
+// （sectionMode 的 URL 同步与收益表重算已合并到上方 readSectionModeFromQuery 附近的 watch）
 // 首屏 / 切回本页时先算一次收益表
 watch(
   [() => hasEventMode.value, () => isSectionActive.value],
@@ -3589,6 +3987,29 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       >
         异常
       </button>
+      <span class="kind-mode-label">面板来源</span>
+      <button
+        type="button"
+        role="tab"
+        class="chip"
+        :class="{ active: sweepPanelSource === 'initial' }"
+        :aria-selected="sweepPanelSource === 'initial'"
+        :title="'初始面板：角色全 0 词条的面板 —— 数值 = 角色基础 + 音擎 + 当前 456 主属性 + 扫掠词条本身，不含任何导入数据'"
+        @click="sweepPanelSource = 'initial'"
+      >
+        初始面板
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="chip"
+        :class="{ active: sweepPanelSource === 'imported' }"
+        :aria-selected="sweepPanelSource === 'imported'"
+        :title="'导入面板：现行计算链路 —— 以导入的局外面板为起点，扫掠词条叠加其上'"
+        @click="sweepPanelSource = 'imported'"
+      >
+        导入面板
+      </button>
       <p v-if="!sweepDamageKind" class="hint kind-mode-hint">请先选择直伤或异常，再配置词条并开始计算。</p>
     </div>
 
@@ -3596,13 +4017,22 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
     <div class="sweep-main-stats">
       <div class="sweep-main-stats-head">
         <span class="filter-label">4/5/6 号主属性（扫掠专用）</span>
-        <button type="button" class="ghost-btn" @click="resetSweepMainStats">重置为导入</button>
+        <button
+          type="button"
+          class="ghost-btn"
+          :disabled="!sweepMainStatsEditable"
+          :title="sweepMainStatsEditable ? '重置为导入面板的 4/5/6' : '导入面板口径下固定按导入的 4/5/6，不可修改'"
+          @click="resetSweepMainStats"
+        >
+          重置为导入
+        </button>
       </div>
       <div class="main-stat-selects">
         <label>
           <span class="combined-main-stat-label">4号</span>
           <select
             :value="sweepMainStats.slot4MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot4MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_4_OPTIONS" :key="`sweep-4-${opt.id}`" :value="opt.id">
@@ -3614,6 +4044,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <span class="combined-main-stat-label">5号</span>
           <select
             :value="sweepMainStats.slot5MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot5MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_5_OPTIONS" :key="`sweep-5-${opt.id}`" :value="opt.id">
@@ -3625,6 +4056,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           <span class="combined-main-stat-label">6号</span>
           <select
             :value="sweepMainStats.slot6MainStat"
+            :disabled="!sweepMainStatsEditable"
             @change="setSweepMainStat('slot6MainStat', $event)"
           >
             <option v-for="opt in DRIVE_DISC_SLOT_6_OPTIONS" :key="`sweep-6-${opt.id}`" :value="opt.id">
@@ -3634,8 +4066,13 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
         </label>
       </div>
       <p class="hint">
-        默认与导入面板的 4/5/6 一致；在此调整只影响扫掠柱图的计算（词条上限 / 柱图 / 差异 / 曲线 /
-        组合试算），不改动导入面板与词条分析页。改完需重新点「开始计算」。
+        <template v-if="sweepMainStatsEditable">
+          初始面板口径：这里的 4/5/6 决定面板推导（词条上限 / 柱图 / 差异 / 曲线 / 组合试算），
+          不改动导入面板与词条分析页。改完需重新点「开始计算」。
+        </template>
+        <template v-else>
+          导入面板口径：4/5/6 固定按导入的来，不在此处修改（要改请切「初始面板」）。
+        </template>
       </p>
     </div>
     <div class="alloc-layout">
@@ -3680,6 +4117,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
             <label class="field">
               <span>暴击</span>
               <input v-model.lazy.number="directAlloc.critRate" type="number" min="0" step="1" />
+              <small v-if="!isFengYu" class="hint">
+                {{
+                  fullCritRemaining.status === 'need'
+                    ? `${fullCritRemaining.capRolls} 条满爆，当前还需 ${fullCritRemaining.rolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
+                    : fullCritRemaining.status === 'overflow'
+                      ? `${fullCritRemaining.capRolls} 条满爆，当前溢出 ${fullCritRemaining.overflowRolls} 条暴击（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
+                      : `${fullCritRemaining.capRolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
+                }}
+              </small>
             </label>
             <label class="field">
               <span>总词条数</span>
@@ -3878,6 +4324,49 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </div>
     </div>
 
+    <!-- 查看面板（2026-10-05 用户要求）：柱状图下方，与招式流程区「查看面板」同款；
+         展示当前柱（选中柱/首柱）的局外 + 局内面板，数据与柱子数值同源（displayEval） -->
+    <div v-if="sweepCommitted && sweepDamageKind" class="bar-panel-showcase">
+      <button
+        type="button"
+        class="chip"
+        :aria-expanded="barPanelShowcaseOpen"
+        @click="barPanelShowcaseOpen = !barPanelShowcaseOpen"
+      >
+        {{ barPanelShowcaseOpen ? '收起面板' : '查看面板' }}
+      </button>
+      <div v-if="barPanelShowcaseOpen" class="bar-panel-showcase-body">
+        <template v-if="displayEval">
+          <p class="bar-panel-showcase-sub">局外面板</p>
+          <dl class="bar-panel-showcase-grid">
+            <div
+              v-for="field in PANEL_SHOWCASE_EXTERNAL_FIELDS"
+              :key="`bext-${field.key}`"
+              class="bar-panel-showcase-item"
+            >
+              <dt>{{ field.label }}</dt>
+              <dd>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</dd>
+            </div>
+          </dl>
+          <template v-if="displayEval.finalPanel">
+            <p class="bar-panel-showcase-sub bar-panel-showcase-sub--final">局内面板（含增益）</p>
+            <dl class="bar-panel-showcase-grid">
+              <div
+                v-for="field in barPanelShowcaseFinalFields"
+                :key="`bfin-${field.key}`"
+                class="bar-panel-showcase-item"
+              >
+                <dt>{{ field.label }}</dt>
+                <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
+              </div>
+            </dl>
+          </template>
+          <p v-else class="hint">暂无局内结果</p>
+        </template>
+        <p v-else class="hint">暂无可展示的面板数据（先点「开始计算」生成柱状图）。</p>
+      </div>
+    </div>
+
     <div v-if="hasEventMode" class="event-affix-impact">
       <div class="lazy-action-row">
         <h4 class="sub-title">事件词条敏感度</h4>
@@ -4020,6 +4509,11 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
                 <th>加一条</th>
                 <th>伤害差</th>
                 <th>百分比差</th>
+                <th
+                  title="相对权重 = 本行百分比差 ÷ 本表最大百分比差，0~1（全表最大那条 = 1.000）"
+                >
+                  相对权重
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -4032,6 +4526,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
                 </td>
                 <td :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
                   {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
+                </td>
+                <td class="diff-weight-cell">
+                  <span
+                    class="diff-weight-bar"
+                    :style="{ width: `${Math.max(0, Math.min(1, row.weight ?? 0)) * 100}%` }"
+                  />
+                  <span class="diff-weight-text">
+                    {{ row.capped ? '—' : (row.weight ?? 0) > 0 ? (row.weight ?? 0).toFixed(3) : '—' }}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -4406,6 +4909,122 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 <style scoped>
 .event-affix-impact {
   margin-top: 0.25rem;
+}
+
+/* 柱状图下方「查看面板」（2026-10-05）：样式**完全对齐**招式流程区的 sf-panel-showcase ——
+   两列网格（label 左灰 / 数值右白），间距逐项一致；白天主题同口径覆盖 */
+.bar-panel-showcase {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.bar-panel-showcase > .chip {
+  align-self: flex-start;
+}
+
+.bar-panel-showcase-body {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #2d323a;
+  border-radius: 10px;
+  background: #0f1217;
+}
+
+.bar-panel-showcase-sub {
+  margin: 0 0 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #c9a55c;
+}
+
+.bar-panel-showcase-sub--final {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #343a44;
+  color: #8fbc7a;
+}
+
+.bar-panel-showcase-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem 0.85rem;
+}
+
+.bar-panel-showcase-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.bar-panel-showcase-item dt {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 0.72rem;
+  color: #8b93a3;
+  line-height: 1.35;
+}
+
+.bar-panel-showcase-item dd {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #e8edf5;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-panel-showcase-item--note dt {
+  color: #d8a25c;
+}
+
+.bar-panel-showcase-item--note dd {
+  color: #ffd479;
+}
+
+/* 白天主题（跟随卡片与流程区展示的浅色口径） */
+:global(html[data-theme='light'] .bar-panel-showcase-body) {
+  border-color: #e4e7ec;
+  background: #ffffff;
+  color: #1c212a;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dt) {
+  color: #667085;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dd) {
+  color: #1c212a;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item--note dt) {
+  color: #9a6a00;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item--note dd) {
+  color: #8a5a00;
+}
+
+/* 白天主题（跟随卡片与流程区展示的浅色口径） */
+:global(html[data-theme='light'] .bar-panel-showcase-body) {
+  border-color: #e4e7ec;
+  background: #ffffff;
+  color: #1c212a;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-section-title) {
+  color: #8a6d2e;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-section-title--final) {
+  color: #526b36;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-row) {
+  border-bottom-color: color-mix(in srgb, #1c212a 12%, transparent);
 }
 
 .event-insensitive td {
@@ -5344,6 +5963,28 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   border-radius: 10px;
 }
 
+/* 副词条差异表的相对权重柱（2026-10-05 用户要求）：与收益表 weight-bar 同款 ——
+   行内底色柱表示 0~1 的权重比例，数字叠在柱上 */
+.diff-weight-cell {
+  position: relative;
+  min-width: 96px;
+}
+
+.diff-weight-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 60%;
+  transform: translateY(-50%);
+  background: rgba(201, 165, 92, 0.28);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.diff-weight-text {
+  position: relative;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -5565,6 +6206,17 @@ th {
   color: #e8edf5;
   padding: 0.38rem 0.5rem;
   font-size: 0.8rem;
+}
+
+/* 禁用态（导入面板口径下 456 固定按导入的来，不可改） */
+.main-stat-selects select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .combined-result {

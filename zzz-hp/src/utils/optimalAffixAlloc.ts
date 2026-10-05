@@ -374,6 +374,12 @@ export interface AffixDiffRow {
   addOne: number
   damageDelta: number
   percentDelta: number
+  /**
+   * 相对权重 = 本行收益率 / 本表最大收益率，0~1（分母取「已产出行」的最大百分比差；
+   * 全部 ≤ 0 时为 0，与收益表 `affixRelativeWeights` 同口径）。
+   * 在 `computeDiffAnalysis` 的 addOne 排序之后统一回填。
+   */
+  weight?: number
   /** 已达主词条约束上限，无法再 +1 */
   capped?: boolean
   note?: string
@@ -2510,6 +2516,13 @@ export function computeDiffAnalysis(
   })
 
   addOne.sort((a, b) => b.damageDelta - a.damageDelta)
+
+  // 相对权重（2026-10-05 用户要求）：与收益表同口径 —— 分母 = 本表最大百分比差（≤0 全为 0）。
+  // capped 行计入分母集合但百分比恒为 0，不影响最大值。
+  const maxPercent = addOne.reduce((max, row) => Math.max(max, row.percentDelta), 0)
+  for (const row of addOne) {
+    row.weight = maxPercent > 0 ? row.percentDelta / maxPercent : 0
+  }
 
   const ownedKeys = candidates.filter((key) => (baseCounts[key] ?? 0) > 0)
   const replace: AffixReplaceRow[] = ownedKeys.map((key) => {
