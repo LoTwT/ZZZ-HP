@@ -3960,7 +3960,7 @@ const showcaseTitle = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.55rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 .sf-panel-showcase-item dt {
