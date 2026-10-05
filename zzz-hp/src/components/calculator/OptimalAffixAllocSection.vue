@@ -1296,22 +1296,59 @@ const fullCritTarget = computed(() => (isFengYu.value ? 200 : 100))
  */
 const fullCritRemaining = computed<{
   status: 'need' | 'ok' | 'overflow'
-  rolls?: number
-  overflowRolls?: number
-  panelCrit?: number
+  /** 满爆所需总条数（含已投入的那部分）= 已投 − 溢出 + 还需 */
+  capRolls: number
+  /** 当前已投入的暴击条数（直伤分配表单里的「暴击」输入） */
+  allocatedRolls: number
+  /** 还需条数（未满爆时） */
+  rolls: number
+  /** 溢出条数（超过满爆时） */
+  overflowRolls: number
+  panelCrit: number
+  target: number
 }>(() => {
-  // 基于**局内面板**（含增益，即查看面板里展示的那个暴击率）；没有局内结果时退回局外
-  const panel = displayEval.value?.finalPanel ?? displayEval.value?.external
-  const panelCrit = panel?.critRate ?? 0
+  // 每档值：词条库暴击每档（默认 2.4%）
   const perRoll = affixLibraryValuePerCount.value.critRate || 2.4
-  const rounded = Math.round(panelCrit * 100) / 100
-  const remaining = fullCritTarget.value - panelCrit
-  if (remaining > 0) {
-    return { status: 'need', rolls: Math.ceil(remaining / perRoll), panelCrit: rounded }
+  // 满爆基准：锋御 200%，其余职业 100%（自动匹配）
+  const target = fullCritTarget.value
+  // 当前暴击率取**局内面板**（含增益）；没有局内结果时退回局外
+  const panel = displayEval.value?.finalPanel ?? displayEval.value?.external
+  const panelCrit = Math.round((panel?.critRate ?? 0) * 100) / 100
+  const allocatedRolls = Math.max(0, Math.round(directAlloc.critRate))
+  const diff = target - panelCrit
+  if (diff > 0.05) {
+    const rolls = Math.ceil(diff / perRoll)
+    return {
+      status: 'need',
+      capRolls: allocatedRolls + rolls,
+      allocatedRolls,
+      rolls,
+      overflowRolls: 0,
+      panelCrit,
+      target,
+    }
   }
-  // 溢出：超出满爆的暴击率换算回词条条数（向上取整）；恰好 == 0 记 ok
-  const overflowRolls = Math.ceil(-remaining / perRoll)
-  return { status: remaining === 0 ? 'ok' : 'overflow', overflowRolls, panelCrit: rounded }
+  if (diff < -0.05) {
+    const overflowRolls = Math.ceil(-diff / perRoll)
+    return {
+      status: 'overflow',
+      capRolls: Math.max(0, allocatedRolls - overflowRolls),
+      allocatedRolls,
+      rolls: 0,
+      overflowRolls,
+      panelCrit,
+      target,
+    }
+  }
+  return {
+    status: 'ok',
+    capRolls: allocatedRolls,
+    allocatedRolls,
+    rolls: 0,
+    overflowRolls: 0,
+    panelCrit,
+    target,
+  }
 })
 
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
@@ -3964,10 +4001,10 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
               <small class="hint">
                 {{
                   fullCritRemaining.status === 'need'
-                    ? `${fullCritRemaining.rolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
+                    ? `${fullCritRemaining.capRolls} 条满爆，当前还需 ${fullCritRemaining.rolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
                     : fullCritRemaining.status === 'overflow'
-                      ? `${fullCritRemaining.overflowRolls} 条满爆，当前溢出 ${fullCritRemaining.overflowRolls} 条暴击（当前 ${fullCritRemaining.panelCrit}% / ${fullCritTarget}%）`
-                      : `已满爆（${fullCritTarget}%）`
+                      ? `${fullCritRemaining.capRolls} 条满爆，当前溢出 ${fullCritRemaining.overflowRolls} 条暴击（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
+                      : `${fullCritRemaining.capRolls} 条满爆（当前 ${fullCritRemaining.panelCrit}% / ${fullCritRemaining.target}%）`
                 }}
               </small>
             </label>
