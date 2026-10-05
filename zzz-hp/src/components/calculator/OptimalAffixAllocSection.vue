@@ -562,14 +562,23 @@ watch(
 )
 
 /** 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板） */
+/**
+ * 满爆提示用的主 C 局内面板暴击率（按当前输入评估；输入未就绪时退回展示面板）。
+ *
+ * 注意两点性能约束（2026-10-06 页面卡顿排查）：
+ * - **不给 ctx 做 spread 副本、也不摘掉 hits**：副本每次都是新对象，
+ *   会让上下文签名缓存（WeakMap，按对象记忆）全部失效，并且每次调用都重算签名
+ *   —— 实测 16ms/次 vs 同 ctx 的 12.5ms/次；更要命的是「带 hits / 去 hits」两种签名
+ *   交替出现会**每次都清空 affixEvalCache 与 affixSweepCache**，把正在跑的扫掠拖垮。
+ * - 结果走 `debouncedDirectInputCounts`（180ms 防抖），输入时不逐键评估。
+ */
 const fullCritPanelCrit = computed<number | null>(() => {
   const counts = debouncedDirectInputCounts.value ?? directInputCounts.value
   if (!counts) {
     const fallback = displayEval.value?.finalPanel ?? displayEval.value?.external
     return fallback ? fallback.critRate : null
   }
-  const ev = evaluateAffixCounts({ ...evalCtx.value, hits: undefined }, counts)
-  return ev.finalPanel.critRate
+  return evaluateAffixCounts(evalCtx.value, counts).finalPanel.critRate
 })
 
 /**
@@ -898,6 +907,8 @@ onBeforeUnmount(() => {
   if (diffTimer) clearTimeout(diffTimer)
   if (skillFlowEmitTimer) clearTimeout(skillFlowEmitTimer)
   if (panelPreviewTimer) clearTimeout(panelPreviewTimer)
+  if (directInputPreviewTimer) clearTimeout(directInputPreviewTimer)
+  if (persistFlowUiTimer) clearTimeout(persistFlowUiTimer)
   if (eventAffixImpactTimer) clearTimeout(eventAffixImpactTimer)
   stopAllocTimer(false) // 计时器也要清，别在组件卸载后还跳
   sweepAbort?.abort()
@@ -2324,6 +2335,14 @@ function persistFlowAnalysisUi() {
   })
 }
 
+/** localStorage 写入节流：连续改输入（每条一个字）只在停顿后落一次盘 */
+let persistFlowUiTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersistFlowAnalysisUi() {
+  if (persistFlowUiTimer) clearTimeout(persistFlowUiTimer)
+  persistFlowUiTimer = setTimeout(persistFlowAnalysisUi, 400)
+}
+
 watch(
   [
     affixAllocTotalRolls,
@@ -2335,7 +2354,7 @@ watch(
     directAlloc,
     anomalyAlloc,
   ],
-  persistFlowAnalysisUi,
+  schedulePersistFlowAnalysisUi,
   { deep: true },
 )
 
