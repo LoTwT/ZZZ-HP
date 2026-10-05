@@ -159,6 +159,7 @@ import {
   saveAffixSearchSettings,
   type AffixSearchSettings,
 } from '@/utils/affixSearchSettings'
+import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 import {
   clampGameExtraCost,
   clampGameSubstatEntryCap,
@@ -1173,6 +1174,60 @@ const displayEval = computed(() => {
   const panelOnlyCtx = { ...evalCtx.value, hits: undefined }
   return evaluateAffixCounts(panelOnlyCtx, displayCounts.value)
 })
+
+/**
+ * 柱状图下方的「查看面板」（2026-10-05 用户要求）：与招式流程区「查看面板」同款
+ * —— 展示当前柱（选中柱/首柱）的局外 + 局内面板。数据取 displayEval，与柱子数值同源。
+ */
+const barPanelShowcaseOpen = ref(false)
+
+/** 展示字段表（纯展示常量，与 SkillFlowSection 的「查看面板」同口径复制维护） */
+const PANEL_SHOWCASE_EXTERNAL_FIELDS: { key: keyof PanelStats; label: string }[] = [
+  { key: 'hp', label: '生命值' },
+  { key: 'atk', label: '攻击力' },
+  { key: 'def', label: '防御力' },
+  { key: 'critRate', label: '暴击率%' },
+  { key: 'critDmg', label: '爆伤%' },
+  { key: 'penRate', label: '穿透率%' },
+  { key: 'pen', label: '穿透值' },
+  { key: 'dmgBonus', label: '增伤%' },
+  { key: 'reduceDefense', label: '无视防御/减防%' },
+  { key: 'mastery', label: '精通' },
+  { key: 'anomalyControl', label: '异常掌控' },
+  { key: 'energyRegen', label: '能量回复效率%' },
+  { key: 'impact', label: '冲击力' },
+]
+
+const PANEL_SHOWCASE_FINAL_EXTRA_FIELDS: { key: keyof PanelStats; label: string }[] = [
+  { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
+  { key: 'anomalyCritRate', label: '异常暴击%' },
+  { key: 'anomalyCritDmg', label: '异常爆伤%' },
+  { key: 'anomalyDmgBonus', label: '异常增伤%' },
+  { key: 'disorderDmgBonus', label: '紊乱增伤%' },
+  { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
+]
+
+const barPanelShowcaseFinalFields = computed(() => {
+  if (isFengYu.value) return [...PANEL_SHOWCASE_EXTERNAL_FIELDS, ...PANEL_SHOWCASE_FINAL_EXTRA_FIELDS]
+  return [
+    ...PANEL_SHOWCASE_EXTERNAL_FIELDS,
+    ...PANEL_SHOWCASE_FINAL_EXTRA_FIELDS.filter((field) => field.key !== 'sharpenCritDmgBonus'),
+  ]
+})
+
+function formatPanelShowcaseStat(key: keyof PanelStats, value: number): string {
+  if (
+    key === 'hp' ||
+    key === 'atk' ||
+    key === 'def' ||
+    key === 'pen' ||
+    key === 'mastery' ||
+    key === 'anomalyControl'
+  ) {
+    return Math.round(value).toLocaleString('en-US')
+  }
+  return formatCalcDecimal(value, 2)
+}
 
 const analysisCounts = computed(() => selectedCounts.value ?? displayCounts.value)
 
@@ -3918,6 +3973,49 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </div>
     </div>
 
+    <!-- 查看面板（2026-10-05 用户要求）：柱状图下方，与招式流程区「查看面板」同款；
+         展示当前柱（选中柱/首柱）的局外 + 局内面板，数据与柱子数值同源（displayEval） -->
+    <div v-if="sweepCommitted && sweepDamageKind" class="bar-panel-showcase">
+      <button
+        type="button"
+        class="chip"
+        :aria-expanded="barPanelShowcaseOpen"
+        @click="barPanelShowcaseOpen = !barPanelShowcaseOpen"
+      >
+        {{ barPanelShowcaseOpen ? '收起面板' : '查看面板' }}
+      </button>
+      <div v-if="barPanelShowcaseOpen" class="bar-panel-showcase-body">
+        <template v-if="displayEval">
+          <p class="bar-panel-showcase-sub">局外面板</p>
+          <dl class="bar-panel-showcase-grid">
+            <div
+              v-for="field in PANEL_SHOWCASE_EXTERNAL_FIELDS"
+              :key="`bext-${field.key}`"
+              class="bar-panel-showcase-item"
+            >
+              <dt>{{ field.label }}</dt>
+              <dd>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</dd>
+            </div>
+          </dl>
+          <template v-if="displayEval.finalPanel">
+            <p class="bar-panel-showcase-sub bar-panel-showcase-sub--final">局内面板（含增益）</p>
+            <dl class="bar-panel-showcase-grid">
+              <div
+                v-for="field in barPanelShowcaseFinalFields"
+                :key="`bfin-${field.key}`"
+                class="bar-panel-showcase-item"
+              >
+                <dt>{{ field.label }}</dt>
+                <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
+              </div>
+            </dl>
+          </template>
+          <p v-else class="hint">暂无局内结果</p>
+        </template>
+        <p v-else class="hint">暂无可展示的面板数据（先点「开始计算」生成柱状图）。</p>
+      </div>
+    </div>
+
     <div v-if="hasEventMode" class="event-affix-impact">
       <div class="lazy-action-row">
         <h4 class="sub-title">事件词条敏感度</h4>
@@ -4060,6 +4158,11 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
                 <th>加一条</th>
                 <th>伤害差</th>
                 <th>百分比差</th>
+                <th
+                  title="相对权重 = 本行百分比差 ÷ 本表最大百分比差，0~1（全表最大那条 = 1.000）"
+                >
+                  相对权重
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -4073,6 +4176,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
                 <td :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
                   {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
                 </td>
+                <td>{{ row.capped ? '—' : (row.weight ?? 0).toFixed(3) }}</td>
               </tr>
             </tbody>
           </table>
@@ -4446,6 +4550,94 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 <style scoped>
 .event-affix-impact {
   margin-top: 0.25rem;
+}
+
+/* 柱状图下方「查看面板」（2026-10-05）：按钮 + 局外/局内两块字段表，风格对齐招式流程区的展示 */
+.bar-panel-showcase {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.bar-panel-showcase > .chip {
+  align-self: flex-start;
+}
+
+.bar-panel-showcase-body {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #2d323a;
+  border-radius: 10px;
+  background: #0f1217;
+}
+
+.bar-panel-showcase-sub {
+  margin: 0 0 0.35rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #c9a55c;
+}
+
+.bar-panel-showcase-sub--final {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #343a44;
+  color: #8fbc7a;
+}
+
+.bar-panel-showcase-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem 0.85rem;
+}
+
+.bar-panel-showcase-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.bar-panel-showcase-item dt {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 0.72rem;
+  color: #b6c0cd;
+  line-height: 1.35;
+}
+
+.bar-panel-showcase-item dd {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #f2f6fb;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 白天主题（跟随卡片与流程区展示的浅色口径） */
+:global(html[data-theme='light'] .bar-panel-showcase-body) {
+  border-color: #e4e7ec;
+  background: #ffffff;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-sub) {
+  color: #8a6d2e;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-sub--final) {
+  border-top-color: #e4e7ec;
+  color: #526b36;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dt) {
+  color: #667085;
+}
+
+:global(html[data-theme='light'] .bar-panel-showcase-item dd) {
+  color: #1c212a;
 }
 
 .event-insensitive td {
