@@ -9,6 +9,12 @@ import {
   watch,
 } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  PANEL_QUERY_KEYS,
+  readSingleQueryValue,
+  buildQueryWithValues,
+} from '@/utils/panelUrlState'
 import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import BenefitCurvePanel from '@/components/calculator/BenefitCurvePanel.vue'
 import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart.vue'
@@ -260,6 +266,7 @@ const sweepDamageKind = ref<OptimalDamageKind | null>(null)
  */
 const sweepPanelSource = ref<'imported' | 'initial'>('imported')
 
+
 watch(
   () => props.damageKind,
   (kind) => {
@@ -333,7 +340,51 @@ const mainSlot = computed(() => props.teamSlots[mainSlotIndex.value]!)
  * 定义在 `driveDiscMainStats` 之前：`activeDriveDiscMainStats` / `evalCtx` 依赖它，
  * 而它们在 setup 中靠后声明（computed 惰性求值，定义顺序必须先于引用）。
  */
-const sectionMode = ref<'allocation' | 'sweep'>('allocation')
+const sectionMode = ref<'allocation' | 'sweep'>(readSectionModeFromQuery())
+
+/**
+ * 模式与 URL `?mode=sweep` 双向同步（2026-10-05 用户要求：刷新/分享不丢状态）。
+ * 约定沿用 mode-panel-url-state.md：缺省不写进 URL（allocation 时不带 mode），
+ * 写入用 replace（不堆历史），并监听 query 反向同步（前进后退/手改地址）。
+ * query 键复用 `PANEL_QUERY_KEYS.mode`：与危局等面板同一键名，但路由不同不会冲突。
+ */
+const route = useRoute()
+const router = useRouter()
+
+const SWEEP_MODE_VALUE = 'sweep'
+
+function readSectionModeFromQuery(): 'allocation' | 'sweep' {
+  const route = useRoute()
+  return readSingleQueryValue(route.query, PANEL_QUERY_KEYS.mode) === SWEEP_MODE_VALUE
+    ? 'sweep'
+    : 'allocation'
+}
+
+function syncSectionModeToQuery(mode: 'allocation' | 'sweep') {
+  const current = readSingleQueryValue(route.query, PANEL_QUERY_KEYS.mode)
+  const next = mode === 'sweep' ? SWEEP_MODE_VALUE : null
+  if ((next ?? undefined) === current) return
+  void router.replace({
+    path: route.path,
+    query: buildQueryWithValues(route.query, { [PANEL_QUERY_KEYS.mode]: next }),
+    hash: route.hash,
+  })
+}
+
+watch(sectionMode, (mode) => {
+  syncSectionModeToQuery(mode)
+  if (mode === 'allocation') scheduleAffixBenefitRecompute()
+  // 主属性组合试算已按模式拆分：切换模式不清空各自的草稿 / 排行 / 筛选
+})
+
+// URL 变化（前进后退 / 手改地址）→ 同步回面板状态
+watch(
+  () => route.query[PANEL_QUERY_KEYS.mode],
+  () => {
+    const next = readSectionModeFromQuery()
+    if (next !== sectionMode.value) sectionMode.value = next
+  },
+)
 
 /**
  * 4/5/6 号驱动盘主属性 —— 单一来源：「词条导入」那份来源记录（它只服务这一路）。
@@ -1866,6 +1917,43 @@ const affixAllocError = ref<string | null>(null)
  */
 const affixAllocMode = ref<'default' | 'game' | null>(null)
 
+/* ---------- 词条配比分析状态的持久化 + URL 同步（2026-10-05 用户要求） ----------
+ * 刷新后这批 UI 状态原本会重置回默认值；现在：
+ * - **localStorage**（zzz-hp-flow-analysis-ui）：总词条数 / 收益评估档位 / 扫掠 456 / 扫掠伤害模式 /
+ *   扫掠面板来源 / 直伤与异常的手填分配 —— 纯输入类，落盘后下次进来原样恢复；
+ * - **URL `?mode=sweep`**：模式切换（词条分析 ↔ 扫掠柱图）写 URL，可分享直达、刷新不丢。
+ * 求解结果（affixAllocResult）不持久化：依赖太多上下文，恢复旧数字反而误导。
+ */
+const FLOW_ANALYSIS_UI_KEY = 'zzz-hp-flow-analysis-ui'
+
+interface FlowAnalysisUiState {
+  totalRolls?: number
+  benefitStep?: number
+  sweepMainStats?: { slot4MainStat: string; slot5MainStat: string; slot6MainStat: string }
+  sweepMainStatsTouched?: boolean
+  sweepDamageKind?: 'direct' | 'anomaly'
+  sweepPanelSource?: 'imported' | 'initial'
+  directAlloc?: Partial<DirectAllocState>
+  anomalyAlloc?: Partial<AnomalyAllocState>
+}
+
+function loadFlowAnalysisUi(): FlowAnalysisUiState | null {
+  try {
+    const raw = localStorage.getItem(FLOW_ANALYSIS_UI_KEY)
+    return raw ? (JSON.parse(raw) as FlowAnalysisUiState) : null
+  } catch {
+    return null
+  }
+}
+
+function saveFlowAnalysisUi(state: FlowAnalysisUiState) {
+  try {
+    localStorage.setItem(FLOW_ANALYSIS_UI_KEY, JSON.stringify(state))
+  } catch {
+    /* 存不下就只当次会话生效 */
+  }
+}
+
 /**
  * 最优分配结果的收起态（2026-10-01 用户要求）：求解完成后可把结果详情折叠，
  * 只留「最优总伤 / 提升」摘要行。重新求解时自动展开。
@@ -2047,6 +2135,73 @@ const affixBenefitSeriesRolls = ref(0)
 const affixBenefitSeriesLoading = ref(false)
 const affixBenefitLoading = ref(false)
 const affixBenefitStep = ref(1)
+
+/* ---------- 恢复持久化的 UI 状态（在所有相关 ref 声明之后执行一次） ---------- */
+const savedFlowUi = loadFlowAnalysisUi()
+if (savedFlowUi) {
+  if (savedFlowUi.totalRolls != null && Number.isFinite(savedFlowUi.totalRolls)) {
+    affixAllocTotalRolls.value = Math.max(1, Math.min(60, Math.round(savedFlowUi.totalRolls)))
+  }
+  if (
+    savedFlowUi.benefitStep != null &&
+    [1, 4, 6, 10].includes(savedFlowUi.benefitStep)
+  ) {
+    affixBenefitStep.value = savedFlowUi.benefitStep
+  }
+  if (savedFlowUi.sweepMainStats) {
+    const m = savedFlowUi.sweepMainStats
+    sweepMainStats.value = {
+      slot4MainStat: (m.slot4MainStat || '') as DriveDiscSlot4StatId,
+      slot5MainStat: (m.slot5MainStat || '') as DriveDiscSlot5StatId,
+      slot6MainStat: (m.slot6MainStat || '') as DriveDiscSlot6StatId,
+    }
+    sweepMainStatsTouched.value = Boolean(savedFlowUi.sweepMainStatsTouched)
+  }
+  if (savedFlowUi.sweepDamageKind === 'direct' || savedFlowUi.sweepDamageKind === 'anomaly') {
+    sweepDamageKind.value = savedFlowUi.sweepDamageKind
+  }
+  if (
+    savedFlowUi.sweepPanelSource === 'imported' ||
+    savedFlowUi.sweepPanelSource === 'initial'
+  ) {
+    sweepPanelSource.value = savedFlowUi.sweepPanelSource
+  }
+  if (savedFlowUi.directAlloc) {
+    Object.assign(directAlloc, savedFlowUi.directAlloc)
+  }
+  if (savedFlowUi.anomalyAlloc) {
+    Object.assign(anomalyAlloc, savedFlowUi.anomalyAlloc)
+  }
+}
+
+/** 汇集当前可持久化的 UI 状态并落盘（每次变更后调用） */
+function persistFlowAnalysisUi() {
+  saveFlowAnalysisUi({
+    totalRolls: affixAllocTotalRolls.value,
+    benefitStep: affixBenefitStep.value,
+    sweepMainStats: { ...sweepMainStats.value },
+    sweepMainStatsTouched: sweepMainStatsTouched.value,
+    sweepDamageKind: sweepDamageKind.value ?? undefined,
+    sweepPanelSource: sweepPanelSource.value,
+    directAlloc: { ...directAlloc },
+    anomalyAlloc: { ...anomalyAlloc },
+  })
+}
+
+watch(
+  [
+    affixAllocTotalRolls,
+    affixBenefitStep,
+    sweepMainStats,
+    sweepMainStatsTouched,
+    sweepDamageKind,
+    sweepPanelSource,
+    directAlloc,
+    anomalyAlloc,
+  ],
+  persistFlowAnalysisUi,
+  { deep: true },
+)
 
 /** 词条分配模式的基线：从零词条开始（回答「N 个词条怎么分」） */
 const affixAllocBaseCounts = computed(() => createEmptyAffixCounts())
@@ -2764,10 +2919,7 @@ watch(
   },
 )
 
-watch(sectionMode, (mode) => {
-  if (mode === 'allocation') scheduleAffixBenefitRecompute()
-  // 主属性组合试算已按模式拆分：切换模式不清空各自的草稿 / 排行 / 筛选
-})
+// （sectionMode 的 URL 同步与收益表重算已合并到上方 readSectionModeFromQuery 附近的 watch）
 // 首屏 / 切回本页时先算一次收益表
 watch(
   [() => hasEventMode.value, () => isSectionActive.value],
@@ -3986,30 +4138,30 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
       </button>
       <div v-if="barPanelShowcaseOpen" class="bar-panel-showcase-body">
         <template v-if="displayEval">
-          <p class="bar-panel-showcase-sub">局外面板</p>
-          <dl class="bar-panel-showcase-grid">
-            <div
+          <div class="bar-panel-showcase-grid">
+            <p class="bar-panel-showcase-section-title">局外面板</p>
+            <p
               v-for="field in PANEL_SHOWCASE_EXTERNAL_FIELDS"
               :key="`bext-${field.key}`"
-              class="bar-panel-showcase-item"
+              class="bar-panel-showcase-row"
             >
-              <dt>{{ field.label }}</dt>
-              <dd>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</dd>
-            </div>
-          </dl>
-          <template v-if="displayEval.finalPanel">
-            <p class="bar-panel-showcase-sub bar-panel-showcase-sub--final">局内面板（含增益）</p>
-            <dl class="bar-panel-showcase-grid">
-              <div
-                v-for="field in barPanelShowcaseFinalFields"
-                :key="`bfin-${field.key}`"
-                class="bar-panel-showcase-item"
-              >
-                <dt>{{ field.label }}</dt>
-                <dd>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</dd>
-              </div>
-            </dl>
-          </template>
+              {{ field.label }}：
+              <span>{{ formatPanelShowcaseStat(field.key, displayEval.external[field.key]) }}</span>
+            </p>
+          </div>
+          <div v-if="displayEval.finalPanel" class="bar-panel-showcase-grid bar-panel-showcase-grid--final">
+            <p class="bar-panel-showcase-section-title bar-panel-showcase-section-title--final">
+              局内面板（含增益）
+            </p>
+            <p
+              v-for="field in barPanelShowcaseFinalFields"
+              :key="`bfin-${field.key}`"
+              class="bar-panel-showcase-row"
+            >
+              {{ field.label }}：
+              <span>{{ formatPanelShowcaseStat(field.key, displayEval.finalPanel[field.key]) }}</span>
+            </p>
+          </div>
           <p v-else class="hint">暂无局内结果</p>
         </template>
         <p v-else class="hint">暂无可展示的面板数据（先点「开始计算」生成柱状图）。</p>
@@ -4560,7 +4712,8 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   margin-top: 0.25rem;
 }
 
-/* 柱状图下方「查看面板」（2026-10-05）：按钮 + 局外/局内两块字段表，风格对齐招式流程区的展示 */
+/* 柱状图下方「查看面板」（2026-10-05）：行式布局，对齐流程事件详情 result-grid 的格式 ——
+   每行「标签： 数值」，行间分隔线，数值右对齐 */
 .bar-panel-showcase {
   margin-top: 0.4rem;
   display: flex;
@@ -4577,51 +4730,46 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   border: 1px solid #2d323a;
   border-radius: 10px;
   background: #0f1217;
+  color: #e6ebf2;
+  font-size: 0.8rem;
 }
 
-.bar-panel-showcase-sub {
-  margin: 0 0 0.25rem;
+.bar-panel-showcase-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.bar-panel-showcase-grid--final {
+  margin-top: 0.5rem;
+}
+
+.bar-panel-showcase-section-title {
+  margin: 0;
   font-size: 0.76rem;
   font-weight: 700;
   color: #c9a55c;
 }
 
-.bar-panel-showcase-sub--final {
-  margin-top: 0.4rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid #343a44;
+.bar-panel-showcase-section-title--final {
   color: #8fbc7a;
 }
 
-.bar-panel-showcase-grid {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.14rem 0.6rem;
-}
-
-.bar-panel-showcase-item {
+.bar-panel-showcase-row {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 0.2rem;
-  min-width: 0;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.3rem 0.1rem;
+  border-bottom: 1px solid color-mix(in srgb, #d5dae3 14%, transparent);
 }
 
-.bar-panel-showcase-item dt {
-  margin: 0;
-  flex: 1 1 auto;
-  font-size: 0.72rem;
-  color: #b6c0cd;
-  line-height: 1.35;
-}
-
-.bar-panel-showcase-item dd {
-  margin: 0;
-  flex: 0 0 auto;
-  font-size: 0.74rem;
+.bar-panel-showcase-row > span {
+  flex-shrink: 0;
+  margin-left: auto;
+  text-align: right;
   font-weight: 600;
-  color: #f2f6fb;
   font-variant-numeric: tabular-nums;
 }
 
@@ -4629,23 +4777,19 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 :global(html[data-theme='light'] .bar-panel-showcase-body) {
   border-color: #e4e7ec;
   background: #ffffff;
+  color: #1c212a;
 }
 
-:global(html[data-theme='light'] .bar-panel-showcase-sub) {
+:global(html[data-theme='light'] .bar-panel-showcase-section-title) {
   color: #8a6d2e;
 }
 
-:global(html[data-theme='light'] .bar-panel-showcase-sub--final) {
-  border-top-color: #e4e7ec;
+:global(html[data-theme='light'] .bar-panel-showcase-section-title--final) {
   color: #526b36;
 }
 
-:global(html[data-theme='light'] .bar-panel-showcase-item dt) {
-  color: #667085;
-}
-
-:global(html[data-theme='light'] .bar-panel-showcase-item dd) {
-  color: #1c212a;
+:global(html[data-theme='light'] .bar-panel-showcase-row) {
+  border-bottom-color: color-mix(in srgb, #1c212a 12%, transparent);
 }
 
 .event-insensitive td {
