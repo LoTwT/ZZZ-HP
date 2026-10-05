@@ -4176,7 +4176,15 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
                 <td :class="row.capped ? 'capped-note' : row.percentDelta >= 0 ? 'pos' : 'neg'">
                   {{ row.capped ? row.note || '已达上限' : formatPercent(row.percentDelta) }}
                 </td>
-                <td>{{ row.capped ? '—' : (row.weight ?? 0).toFixed(3) }}</td>
+                <td class="diff-weight-cell">
+                  <span
+                    class="diff-weight-bar"
+                    :style="{ width: `${Math.max(0, Math.min(1, row.weight ?? 0)) * 100}%` }"
+                  />
+                  <span class="diff-weight-text">
+                    {{ row.capped ? '—' : (row.weight ?? 0) > 0 ? (row.weight ?? 0).toFixed(3) : '—' }}
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -4596,7 +4604,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.55rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 
@@ -5574,6 +5582,28 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   overflow: auto;
   border: 1px solid #2a2d33;
   border-radius: 10px;
+}
+
+/* 副词条差异表的相对权重柱（2026-10-05 用户要求）：与收益表 weight-bar 同款 ——
+   行内底色柱表示 0~1 的权重比例，数字叠在柱上 */
+.diff-weight-cell {
+  position: relative;
+  min-width: 96px;
+}
+
+.diff-weight-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 60%;
+  transform: translateY(-50%);
+  background: rgba(201, 165, 92, 0.28);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.diff-weight-text {
+  position: relative;
 }
 
 table {
