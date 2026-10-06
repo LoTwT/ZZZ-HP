@@ -1366,8 +1366,8 @@ const detailCalcKey = computed(() => {
 watch(
   () => detailCalcKey.value,
   () => {
-    // 换行/换段后「计算过程」的段选择回到整行
-    detailProcessSegment.value = 'row'
+    // 换行/换段后「计算过程」回到第 0 段
+    detailProcessSegment.value = 0
   },
 )
 
@@ -1443,12 +1443,12 @@ const detailEffectivePowerName = computed(
   () => agentFullName(detailAgentPowerId.value) || '',
 )
 
-/** 详情「计算过程」当前查看的段：'row' = 行键本身（第 0 段）、数字 = 第 N 段、'rest' = 未分配段 */
-const detailProcessSegment = ref<'row' | 'rest' | number>('row')
+/** 详情「计算过程」当前查看的段：数字 = 第 N 段（0 = 行键本身）、'rest' = 未分配段 */
+const detailProcessSegment = ref<number | 'rest'>(0)
 
 /** 该行可看的计算过程段（提供者次数 > 0 的段 + 未分配段），供选项条用 */
 const detailProcessOptions = computed(() => {
-  const out: Array<{ key: 'row' | 'rest' | number; label: string }> = []
+  const out: Array<{ key: number | 'rest'; label: string }> = []
   for (const row of detailAllocationRows.value) {
     if (row.segmentIndex < 0) continue
     out.push({
@@ -1458,17 +1458,19 @@ const detailProcessOptions = computed(() => {
   }
   const rowCount = detailAllocationRowCount.value
   if (rowCount != null && rowCount - detailAllocationTotal.value > 0) {
-    out.push({ key: 'rest', label: `未分配×${formatAllocationCount(rowCount - detailAllocationTotal.value)}` })
+    out.push({
+      key: 'rest',
+      label: `未分配×${formatAllocationCount(rowCount - detailAllocationTotal.value)}`,
+    })
   }
   return out
 })
 
-/** 详情「计算过程」的结算键：选了段就用段键，否则回落到行键 */
+/** 详情「计算过程」的结算键：按选中的段取，取不到回落行键 */
 const detailProcessCalcKey = computed(() => {
   const seg = detailProcessSegment.value
-  if (seg === 'row') return detailCalcKey.value
-  const fallbackIndex = typeof seg === 'number' ? seg : 0
-  return detailAllocationHitKey(fallbackIndex, seg === 'rest') ?? detailCalcKey.value
+  if (seg === 'rest') return detailAllocationHitKey(0, true) ?? detailCalcKey.value
+  return detailAllocationHitKey(seg, false) ?? detailCalcKey.value
 })
 
 const detailZoneRows = computed(() => {
@@ -4363,14 +4365,6 @@ const showcaseTitle = computed(() => {
 
               <p class="detail-section-title">计算过程</p>
               <div v-if="detailProcessOptions.length > 1" class="detail-process-picker">
-                <button
-                  type="button"
-                  class="detail-process-chip"
-                  :class="{ active: detailProcessSegment === 'row' }"
-                  @click="detailProcessSegment = 'row'"
-                >
-                  全部
-                </button>
                 <button
                   v-for="opt in detailProcessOptions"
                   :key="String(opt.key)"
