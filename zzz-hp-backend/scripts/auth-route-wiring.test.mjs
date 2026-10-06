@@ -11,6 +11,7 @@ import bossRoutes from '../src/routes/bossRoutes.js'
 import changelogRoutes from '../src/routes/changelogRoutes.js'
 import seasonContentRoutes from '../src/routes/seasonContentRoutes.js'
 import deductionAdminRoutes from '../src/routes/deductionAdminRoutes.js'
+import adminAuthRoutes from '../src/routes/adminAuthRoutes.js'
 
 function getRouteLayer(router, method, path) {
   const layer = router.stack.find(
@@ -86,6 +87,10 @@ test('deductionAdmin 整组挂载 requireAdmin', () => {
     (entry) => !entry.route && entry.handle === requireAdmin,
   )
   assert.ok(layer, 'deductionAdminRoutes 应 router.use(requireAdmin)')
+})
+
+test('会话核验接口首中间件必须是 requireAdmin', () => {
+  assertFirstHandler(adminAuthRoutes, 'get', '/session', requireAdmin)
 })
 
 test('requireUser 无 Bearer 时返回 401 且不 next', async () => {

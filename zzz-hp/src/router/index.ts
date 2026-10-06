@@ -12,7 +12,7 @@ import {
   SITE_INFO_ROUTE_PANELS,
 } from '../constants/sidebarPanelIds'
 import type { AdminScope } from '../types/admin'
-import { isAdminAuthenticated } from '../utils/adminAuth'
+import { isAdminAuthenticated, verifyAdminSessionWithServer } from '../utils/adminAuth'
 
 const AdminCalculatorLayout = () => import('../layouts/AdminCalculatorLayout.vue')
 const SiteInfoView = () => import('../views/SiteInfoView.vue')
@@ -190,16 +190,17 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const needsAdmin = to.matched.some((record) => record.meta.requiresAdmin)
   if (!needsAdmin) {
     if (to.name === 'admin-login' && isAdminAuthenticated()) {
-      return { path: '/admin' }
+      // 本地标记可能是过期的，先让服务器核验：真过期则已清态，落在登录页
+      if (await verifyAdminSessionWithServer()) return { path: '/admin' }
     }
     return true
   }
 
-  if (isAdminAuthenticated()) return true
+  if (await verifyAdminSessionWithServer()) return true
 
   return {
     path: '/admin/login',

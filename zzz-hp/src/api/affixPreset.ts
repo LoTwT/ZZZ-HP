@@ -1,4 +1,4 @@
-import { withAdminAuthHeaders } from '@/utils/adminAuth'
+import { handleAdminSessionExpired, withAdminAuthHeaders } from '@/utils/adminAuth'
 
 /**
  * 官方预设词条库（服务端）
@@ -106,10 +106,15 @@ async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T
     throw new AffixPresetApiError(`请求失败: ${response.status}`, response.status)
   }
   if (!response.ok || json.code !== 200) {
+    const apiCode = readApiCode(json.data)
+    // 会话已被服务器判死：同步清掉本地登录态，路由守卫才不会拿旧标记拦人
+    if (response.status === 401 || apiCode === 'ADMIN_AUTH_REQUIRED') {
+      handleAdminSessionExpired()
+    }
     throw new AffixPresetApiError(
       json.message || `请求失败: ${response.status}`,
       response.status,
-      readApiCode(json.data),
+      apiCode,
     )
   }
   return json.data

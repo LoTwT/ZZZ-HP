@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { loginAdmin } from '../controllers/adminAuthController.js'
+import { loginAdmin, getAdminSession } from '../controllers/adminAuthController.js'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 import {
   createGuestbookModerator,
   deleteGuestbookModerator,
@@ -16,6 +17,7 @@ import {
 const router = Router()
 
 router.post('/login', loginAdmin)
+router.get('/session', requireAdmin, getAdminSession)
 router.get('/guestbook-moderators', getGuestbookModerators)
 router.post('/guestbook-moderators', createGuestbookModerator)
 router.delete('/guestbook-moderators/:id', deleteGuestbookModerator)
