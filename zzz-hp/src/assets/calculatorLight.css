@@ -1934,24 +1934,6 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
   border-bottom-color: #e4e7ec !important;
 }
 
-/* 详情「计算过程」的段选择按键 */
-[data-theme='light'] .detail-process-chip {
-  border-color: #d5dae3 !important;
-  background: #ffffff !important;
-  color: #475467 !important;
-}
-
-[data-theme='light'] .detail-process-chip:hover {
-  border-color: #c9a55c !important;
-  background: #fff8eb !important;
-  color: #1c212a !important;
-}
-
-[data-theme='light'] .detail-process-chip.active {
-  border-color: #98a2b3 !important;
-  background: #fff8eb !important;
-  color: #1c212a !important;
-}
 
 /* 额外 Buff 弹窗（Teleport 到 body） */
 [data-theme='light'] .extra-buff-modal .extra-buff-editor .field {

@@ -6,7 +6,6 @@ import type { AgentBuffDoc, Skill, SkillDamageType, SkillGroup, SkillTypeId } fr
 import type {
   FlowEntry,
   FlowGroupMemberOverride,
-  PreparedProviderAllocation,
   PreparedSkill,
   SchemeSlot,
 } from '@/types/damageCalcHistory'
@@ -24,16 +23,9 @@ import {
   buildDefaultMemberAgents,
   defaultAnomalyAgents,
   ensureSchemeSlots,
-  flowCountFloor,
   getHitSkipReason,
-  listProviderAllocations,
-  memberTuneCountFloor,
   newLocalId,
-  providerRestHitId,
-  providerSegmentHitId,
-  rowKeyOfHitId,
   skillNeedsDualAgents,
-  sumProviderAllocations,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
 import { isLuminousAgent } from '@/utils/remielUtils'
@@ -275,18 +267,10 @@ const flowBuffTableColumns = computed(() =>
   }),
 )
 
-/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键
- *  「按提供者拆次数」的段（`#allocN` / `#rest`）并回所属行，避免行上只认第 0 段 */
-const flowBuffRowBeneficiarySlots = computed(() => {
-  const raw = resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots })
-  const merged = new Map<string, number[]>()
-  for (const [hitId, slots] of raw) {
-    const rowKey = rowKeyOfHitId(hitId)
-    const prev = merged.get(rowKey)
-    merged.set(rowKey, prev ? [...new Set([...prev, ...slots])] : [...slots])
-  }
-  return merged
-})
+/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键 */
+const flowBuffRowBeneficiarySlots = computed(() =>
+  resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots }),
+)
 
 const flowBuffTableStates = computed(() =>
   buildFlowBuffTableStates({
@@ -970,32 +954,10 @@ function agentFullName(agentId: string | null | undefined) {
   return props.agents.find((item) => item.id === agentId)?.name ?? ''
 }
 
-/** 拆次数里的次数展示（可为小数） */
-function formatAllocationCount(count: number): string {
-  const rounded = Math.round(Number(count) * 100) / 100
-  return String(rounded)
-}
-
-/** 「按提供者拆次数」短展示：`花×1+B×2`；无有效分段返回 '' */
-function providerSplitShort(allocations: PreparedProviderAllocation[] | null | undefined): string {
-  return listProviderAllocations(allocations)
-    .map((item) => `${agentShortName(item.agentId) || '?'}×${formatAllocationCount(item.count)}`)
-    .join('+')
-}
-
-/** 「按提供者拆次数」全名展示：`花羽 ×1 + 安比 ×2` */
-function providerSplitFull(allocations: PreparedProviderAllocation[] | null | undefined): string {
-  return listProviderAllocations(allocations)
-    .map((item) => `${agentFullName(item.agentId) || '未选'} ×${formatAllocationCount(item.count)}`)
-    .join(' + ')
-}
-
-/** 异常类才有胶囊；未选为空；异放等预设了触发者则显示「→安」
- *  有「按提供者拆次数」时左侧显示分段（`花×1+B×2`） */
+/** 异常类才有胶囊；未选为空；异放等预设了触发者则显示「→安」 */
 function agentPairText(prepared: PreparedSkill, skill: Skill) {
   if (!skillNeedsDualAgents(skill.damageType)) return ''
-  const split = providerSplitShort(prepared.providerAllocations)
-  const left = split || agentShortName(prepared.anomalyPowerAgentId)
+  const left = agentShortName(prepared.anomalyPowerAgentId)
   const right = agentShortName(prepared.triggerAgentId)
   if (!left && !right) return ''
   if (left && right) return `${left}→${right}`
@@ -1005,9 +967,7 @@ function agentPairText(prepared: PreparedSkill, skill: Skill) {
 
 function agentPairTitle(prepared: PreparedSkill, skill: Skill) {
   if (!skillNeedsDualAgents(skill.damageType)) return ''
-  const split = providerSplitFull(prepared.providerAllocations)
-  const base = agentFullName(prepared.anomalyPowerAgentId)
-  const left = split ? `按提供者拆次数：${split}${base ? `（剩余按 ${base}）` : ''}` : base
+  const left = agentFullName(prepared.anomalyPowerAgentId)
   const right = agentFullName(prepared.triggerAgentId)
   if (!left && !right) return ''
   return `${left || '未选'} → ${right || '未选'}`
@@ -1363,14 +1323,6 @@ const detailCalcKey = computed(() => {
   return null
 })
 
-watch(
-  () => detailCalcKey.value,
-  () => {
-    // 换行/换段后「计算过程」回到第 0 段
-    detailProcessSegment.value = 0
-  },
-)
-
 const detailSkipReason = computed(() => {
   const current = detail.value
   if (!current) return null
@@ -1402,7 +1354,7 @@ const detailSkipReason = computed(() => {
 
 /** 详情当前生效的强度提供者：行级覆盖 > 准备条目（组内成员取成员配置） */
 const detailAgentPowerId = computed(() => {
-  const target = detailAllocationTarget()
+  const target = detailAgentWriteTarget()
   const prepared = detailPrepared.value
   if (!target || !prepared) return ''
   const member = target.memberKey ? detailMemberForAgents.value : null
@@ -1421,7 +1373,7 @@ const detailAgentPowerId = computed(() => {
 
 /** 详情当前生效的异常类触发者：行级覆盖 > 准备条目（组内成员取成员配置） */
 const detailAgentTriggerId = computed(() => {
-  const target = detailAllocationTarget()
+  const target = detailAgentWriteTarget()
   const prepared = detailPrepared.value
   if (!target || !prepared) return ''
   const member = target.memberKey ? detailMemberForAgents.value : null
@@ -1438,38 +1390,13 @@ const detailAgentTriggerId = computed(() => {
   return prepared.triggerAgentId ?? ''
 })
 
-/** 详情「计算过程」当前查看的段：数字 = 第 N 段（0 = 行键本身）、'rest' = 未分配段 */
-const detailProcessSegment = ref<number | 'rest'>(0)
-
-/** 该行可看的计算过程段（提供者次数 > 0 的段 + 未分配段），供选项条用 */
-const detailProcessOptions = computed(() => {
-  const out: Array<{ key: number | 'rest'; label: string }> = []
-  detailProviderAllocations.value.forEach((item, index) => {
-    out.push({
-      key: index,
-      label: `${agentFullName(item.agentId) || item.agentId}×${formatAllocationCount(item.count)}`,
-    })
-  })
-  const rowCount = detailAllocationRowCount.value
-  const rest = rowCount == null ? 0 : rowCount - sumProviderAllocations(detailProviderAllocations.value)
-  if (rest > 0) out.push({ key: 'rest', label: `未分配×${formatAllocationCount(rest)}` })
-  return out
-})
-
-/** 详情「计算过程」的结算键：按选中的段取，取不到回落行键 */
-const detailProcessCalcKey = computed(() => {
-  const seg = detailProcessSegment.value
-  if (seg === 'rest') return detailAllocationHitKey(0, true) ?? detailCalcKey.value
-  return detailAllocationHitKey(seg, false) ?? detailCalcKey.value
-})
-
 const detailZoneRows = computed(() => {
   // 乘区 / 最终伤害：流程整行或组内某段；准备 / 招式库不算伤
   // 异常类：外侧汇总必暴击；详情内同时展示暴击 / 期望 / 不暴击。直伤仍为期望。
   const kind = detail.value?.kind
   if (kind !== 'flow' && kind !== 'flowMember') return []
   const skill = detailSkill.value
-  const key = detailProcessCalcKey.value
+  const key = detailCalcKey.value
   if (!skill || !key || detailSkipReason.value) return []
   const result = props.hitCalcResults?.[key]
   if (!result) return []
@@ -1515,7 +1442,7 @@ const detailResolvedMultDisplay = computed(() => {
 function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
   const current = detail.value
   if (!current) return
-  const target = detailAllocationTarget()
+  const target = detailAgentWriteTarget()
   if (!target) return
   const value = raw || null
   if (target.memberKey) {
@@ -1574,7 +1501,7 @@ function setMemberDetailAgent(
  * - 流程视图 → 写**本流程行**（`FlowEntry` / `memberOverrides[]`），只影响这一行
  * 行次数仍是总次数的唯一来源：分段合计不足回落基础提供者，超出的部分按次数截断。
  */
-type DetailAllocationTarget = {
+type DetailAgentWriteTarget = {
   /** prepared = 写准备条目（默认值）；flow = 写本流程行（行级覆盖） */
   scope: 'prepared' | 'flow'
   preparedId: string
@@ -1582,7 +1509,7 @@ type DetailAllocationTarget = {
   memberKey?: string
 }
 
-function detailAllocationTarget(): DetailAllocationTarget | null {
+function detailAgentWriteTarget(): DetailAgentWriteTarget | null {
   const current = detail.value
   const prepared = detailPrepared.value
   if (!current || !prepared) return null
@@ -1616,84 +1543,27 @@ function detailFlowEntry(): FlowEntry | null {
 }
 
 /** 该流程行是否已经**自己配了**提供者（否则视为继承准备条目） */
-const detailAllocationOverridden = computed(() => {
-  const target = detailAllocationTarget()
+const detailAgentOverridden = computed(() => {
+  const target = detailAgentWriteTarget()
   if (target?.scope !== 'flow') return false
   const entry = detailFlowEntry()
   if (!entry) return false
   const member = target.memberKey ? detailMemberForAgents.value : null
   if (member) {
     const ov = memberOverrideFor(entry, member)
-    return Boolean(
-      ov?.providerAllocations?.length || ov?.anomalyPowerAgentId || ov?.triggerAgentId,
-    )
+    return Boolean(ov?.anomalyPowerAgentId || ov?.triggerAgentId)
   }
-  return Boolean(entry.providerAllocations?.length || entry.anomalyPowerAgentId || entry.triggerAgentId)
+  return Boolean(entry.anomalyPowerAgentId || entry.triggerAgentId)
 })
-
-/** 当前生效的按提供者拆次数：行级覆盖优先，缺省继承准备条目（详情「计算过程」按段查看用） */
-const detailProviderAllocations = computed(() => {
-  const target = detailAllocationTarget()
-  const prepared = detailPrepared.value
-  if (!target || !prepared) return []
-  const entry = detailFlowEntry()
-  const member = target.memberKey ? detailMemberForAgents.value : null
-  if (member) {
-    if (target.scope === 'flow' && entry) {
-      const ov = memberOverrideFor(entry, member)
-      if (ov?.providerAllocations?.length) return listProviderAllocations(ov.providerAllocations)
-    }
-    return listProviderAllocations(memberAgentsFor(prepared, member)?.providerAllocations)
-  }
-  if (target.scope === 'flow' && entry?.providerAllocations?.length) {
-    return listProviderAllocations(entry.providerAllocations)
-  }
-  return listProviderAllocations(prepared.providerAllocations)
-})
-
-/** 本行总次数（未进流程时未知 = null）：剩余 / 超出提示与截断口径都按它算 */
-const detailAllocationRowCount = computed<number | null>(() => {
-  const current = detail.value
-  if (!current) return null
-  if (current.kind === 'flow') {
-    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
-    return entry ? Math.max(0, Number(entry.count) || 0) : null
-  }
-  if (current.kind === 'flowMember') {
-    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
-    const member = detailMemberForAgents.value
-    if (!entry || !member) return null
-    const memberCount = Math.max(0, Number(memberTuneCount(entry, member)) || 0)
-    return memberCount * Math.max(0, Number(entry.count) || 0)
-  }
-  return null
-})
-
-/** 段键（第 0 段沿用行键，其余加后缀）；未进流程时没有结算键 */
-function detailAllocationHitKey(index: number, isRest: boolean): string | null {
-  const current = detail.value
-  if (!current) return null
-  if (current.kind === 'flow') {
-    return isRest ? providerRestHitId(current.entryId) : providerSegmentHitId(current.entryId, index)
-  }
-  if (current.kind === 'flowMember') {
-    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
-    const base = groupMemberCalcKey({ skillId: current.skillId }, current.memberIndex, { entry })
-    if (!base) return null
-    return isRest ? providerRestHitId(base) : providerSegmentHitId(base, index)
-  }
-  return null
-}
 
 /** 清掉本行的行级提供者配置，回到「继承准备条目」 */
-function resetDetailAllocationOverride() {
-  const target = detailAllocationTarget()
+function resetDetailAgentOverride() {
+  const target = detailAgentWriteTarget()
   if (target?.scope !== 'flow' || !target.entryId) return
   if (target.memberKey) {
     const member = detailMemberForAgents.value
     if (!member) return
     setMemberOverride(target.entryId, member, {
-      providerAllocations: null,
       anomalyPowerAgentId: null,
       triggerAgentId: null,
     })
@@ -1701,7 +1571,6 @@ function resetDetailAllocationOverride() {
   }
   const entry = detailFlowEntry()
   if (!entry) return
-  entry.providerAllocations = null
   entry.anomalyPowerAgentId = null
   entry.triggerAgentId = null
 }
@@ -1999,13 +1868,11 @@ function addToFlow(prepared: PreparedSkill) {
   if (!ownerId) return
   const slot = getActiveSlot()
   if (!slot) return
-  // 起始次数至少 1，且满足「次数 ≥ 按提供者拆次数合计」的下限（用户口径 2026-10-06）
-  const floor = flowCountFloorFor(prepared, (member) => Math.max(0, Number(member.count) || 0))
   slot.flow.push({
     id: newLocalId('flow'),
     ownerAgentId: ownerId,
     preparedId: prepared.id,
-    count: Math.max(1, floor),
+    count: 1,
     staggerPhase: 'stagger',
     critMode: 'expected',
   })
@@ -2014,11 +1881,6 @@ function addToFlow(prepared: PreparedSkill) {
 function updateFlow(entryId: string, patch: Partial<FlowEntry>) {
   const entry = getActiveSlot()?.flow.find((item) => item.id === entryId)
   if (!entry) return
-  if (patch.count != null) {
-    // 行次数不得小于「按提供者拆次数」合计（用户口径 2026-10-06）
-    const floor = minFlowCountForEntry(entry)
-    patch = { ...patch, count: Math.max(Math.max(0, Number(patch.count) || 0), floor) }
-  }
   Object.assign(entry, patch)
 }
 
@@ -2318,11 +2180,6 @@ function syncPreparedAgentsForSkill(skillId: string, damageType: SkillDamageType
           item.triggerAgentId = null
           changed = true
         }
-        // 不再是异常类：按提供者拆的次数一并清掉，避免留脏数据
-        if (item.providerAllocations?.length) {
-          item.providerAllocations = null
-          changed = true
-        }
         continue
       }
       if (!item.anomalyPowerAgentId && !item.triggerAgentId) {
@@ -2517,79 +2374,11 @@ function memberTuneCount(
   return Math.max(0, Number(member.count) || 0)
 }
 
-/**
- * 「行次数不得小于按提供者拆次数合计」的下限（用户口径 2026-10-06）。
- *
- * 普通行 = 该条准备的分段合计；技能组行 = Σ(成员分段合计 ÷ 成员次数)（整组次数是乘数）。
- */
-function flowCountFloorFor(
-  prepared: PreparedSkill | null | undefined,
-  memberCountOf: (member: import('@/types/calculator').SkillGroupMember) => number,
-): number {
-  const groupId = prepared?.skillGroupId?.trim() || ''
-  return flowCountFloor(
-    prepared,
-    groupId ? buffStore.findSkillGroup(groupId) : null,
-    memberCountOf,
-  )
-}
-
-function preparedOfEntry(entry: FlowEntry): PreparedSkill | undefined {
-  return currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
-}
-
-/** 该流程行的最小次数（普通行 = 分段合计；组行 = Σ 成员合计 ÷ 成员次数）；行级覆盖优先 */
-function minFlowCountForEntry(entry: FlowEntry): number {
-  const prepared = preparedOfEntry(entry)
-  if (!prepared) return 0
-  const groupId = prepared.skillGroupId?.trim() || ''
-  if (!groupId) {
-    const rowAllocations = entry.providerAllocations?.length
-      ? entry.providerAllocations
-      : prepared.providerAllocations
-    return sumProviderAllocations(rowAllocations)
-  }
-  const group = buffStore.findSkillGroup(groupId)
-  if (!group) return 0
-  let floor = 0
-  for (const member of sortSkillGroupMembers(group.members)) {
-    const ov = memberOverrideFor(entry, member)
-    const ma = memberAgentsFor(prepared, member)
-    const sum = sumProviderAllocations(
-      ov?.providerAllocations?.length ? ov.providerAllocations : ma?.providerAllocations,
-    )
-    if (sum <= 0) continue
-    const memberCount = Math.max(0, Number(memberTuneCount(entry, member)) || 0)
-    if (memberCount <= 0) continue
-    floor = Math.max(floor, sum / memberCount)
-  }
-  return floor
-}
-
-/** 组内成员的最小细调次数 = 成员分段合计 ÷ 整组次数（行级成员覆盖优先） */
-function minMemberTuneCount(
-  entry: FlowEntry,
-  member: import('@/types/calculator').SkillGroupMember,
-): number {
-  const prepared = preparedOfEntry(entry)
-  if (!prepared) return 0
-  const ov = memberOverrideFor(entry, member)
-  return memberTuneCountFloor(
-    ov?.providerAllocations?.length
-      ? ov.providerAllocations
-      : memberAgentsFor(prepared, member)?.providerAllocations,
-    Number(entry.count) || 0,
-  )
-}
-
 /** 流程行生效的提供者配置（行级优先，缺省继承准备条目）——胶囊 / 提示展示用 */
 function flowRowAgents(entry: FlowEntry, prepared: PreparedSkill): Partial<PreparedSkill> {
   return {
     anomalyPowerAgentId: entry.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId || null,
     triggerAgentId: entry.triggerAgentId?.trim() || prepared.triggerAgentId || null,
-    providerAllocations: entry.providerAllocations?.length
-      ? entry.providerAllocations
-      : prepared.providerAllocations ?? null,
   }
 }
 
@@ -2604,9 +2393,6 @@ function flowMemberAgents(
   return {
     anomalyPowerAgentId: ov?.anomalyPowerAgentId?.trim() || ma?.anomalyPowerAgentId || null,
     triggerAgentId: ov?.triggerAgentId?.trim() || ma?.triggerAgentId || null,
-    providerAllocations: ov?.providerAllocations?.length
-      ? ov.providerAllocations
-      : ma?.providerAllocations ?? null,
   }
 }
 
@@ -2633,17 +2419,6 @@ function setMemberOverride(
   const list = [...(entry.memberOverrides ?? [])]
   const index = list.findIndex((item) => item.memberKey === key)
   const prev = index >= 0 ? list[index] : undefined
-  // 成员次数不得小于该成员「按提供者拆次数」合计 ÷ 整组次数（用户口径 2026-10-06）
-  const nextPatch =
-    patch.count != null
-      ? {
-          ...patch,
-          count: Math.max(
-            Math.max(0, Number(patch.count) || 0),
-            minMemberTuneCount(entry, member as import('@/types/calculator').SkillGroupMember),
-          ),
-        }
-      : patch
   const base: FlowGroupMemberOverride = {
     memberKey: key,
     skillId: member.skillId,
@@ -2653,18 +2428,15 @@ function setMemberOverride(
     critMode: null,
     anomalyPowerAgentId: prev?.anomalyPowerAgentId ?? null,
     triggerAgentId: prev?.triggerAgentId ?? null,
-    providerAllocations: prev?.providerAllocations ?? null,
-    ...nextPatch,
+    ...patch,
   }
-  if (nextPatch.count === null) base.count = null
-  if (nextPatch.staggerPhase === null) base.staggerPhase = null
-  if (nextPatch.providerAllocations === null) base.providerAllocations = null
-  if (nextPatch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
-  if (nextPatch.triggerAgentId === null) base.triggerAgentId = null
+  if (patch.count === null) base.count = null
+  if (patch.staggerPhase === null) base.staggerPhase = null
+  if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
+  if (patch.triggerAgentId === null) base.triggerAgentId = null
   const empty =
     base.count == null &&
     base.staggerPhase == null &&
-    !base.providerAllocations?.length &&
     !base.anomalyPowerAgentId &&
     !base.triggerAgentId &&
     !base.buffOverrides?.disabledBlockIds?.length &&
@@ -3976,8 +3748,6 @@ const showcaseTitle = computed(() => {
                               memberAgentsFor(detailPrepared, member)?.anomalyPowerAgentId ?? null,
                             triggerAgentId:
                               memberAgentsFor(detailPrepared, member)?.triggerAgentId ?? null,
-                            providerAllocations:
-                              memberAgentsFor(detailPrepared, member)?.providerAllocations ?? null,
                           },
                           buffStore.findSkill(member.skillId)!,
                         )
@@ -4066,10 +3836,10 @@ const showcaseTitle = computed(() => {
                   </label>
                 </div>
                 <button
-                  v-if="detailAllocationOverridden"
+                  v-if="detailAgentOverridden"
                   type="button"
                   class="mini-btn"
-                  @click="resetDetailAllocationOverride"
+                  @click="resetDetailAgentOverride"
                 >
                   恢复继承准备条目
                 </button>
@@ -4118,18 +3888,6 @@ const showcaseTitle = computed(() => {
               />
 
               <p class="detail-section-title">计算过程</p>
-              <div v-if="detailProcessOptions.length > 1" class="detail-process-picker">
-                <button
-                  v-for="opt in detailProcessOptions"
-                  :key="String(opt.key)"
-                  type="button"
-                  class="detail-process-chip"
-                  :class="{ active: detailProcessSegment === opt.key }"
-                  @click="detailProcessSegment = opt.key"
-                >
-                  {{ opt.label }}
-                </button>
-              </div>
               <div v-if="detailZoneRows.length" class="zone-display-grid">
                 <div v-for="row in detailZoneRows" :key="row.label" class="zone-display-item">
                   <span class="zone-display-label">{{ row.label }}</span>
@@ -5056,32 +4814,6 @@ const showcaseTitle = computed(() => {
 .detail-section-title {
   font-weight: 700;
 }
-/* 详情「计算过程」按段查看（按提供者拆次数后，段是独立结算单元） */
-.detail-process-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0 0 0.45rem;
-}
-.detail-process-chip {
-  border: 1px solid #3a4455;
-  border-radius: 8px;
-  background: #151a24;
-  color: #c8d0dc;
-  padding: 0.2rem 0.55rem;
-  font-size: 0.74rem;
-  cursor: pointer;
-}
-.detail-process-chip:hover {
-  border-color: #4f5d72;
-  background: #1c2432;
-}
-.detail-process-chip.active {
-  border-color: #6b8f4e;
-  background: #243018;
-  color: #e8f0dc;
-}
-
 .zone-display-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));

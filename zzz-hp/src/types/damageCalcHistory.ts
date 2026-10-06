@@ -141,19 +141,6 @@ export interface PreparedSkillExtraMods {
 }
 
 /**
- * 准备阶段里的「按提供者拆次数」：把本行的次数按异常强度提供者分段。
- *
- * 语义：分段**按顺序消耗本行次数**，不足的部分回落 `anomalyPowerAgentId`（组内回落成员 / 整行提供者），
- * 超出部分截断 —— 本行次数始终是总次数的唯一来源。留空 / 空数组 = 单一提供者（老数据不受影响）。
- */
-export interface PreparedProviderAllocation {
-  /** 异常强度提供者 agentId */
-  agentId: string
-  /** 该提供者承担的次数（可为小数，组内成员次数会乘整组次数） */
-  count: number
-}
-
-/**
  * 准备阶段技能组内某一段的双代理人（与普通准备招式同语义）。
  * memberKey = `${order}:${skillId}`，与流程细调对齐。
  */
@@ -162,8 +149,6 @@ export interface PreparedGroupMemberAgents {
   skillId: string
   anomalyPowerAgentId?: string | null
   triggerAgentId?: string | null
-  /** 组内这一段的按提供者拆次数（语义同 `PreparedSkill.providerAllocations`） */
-  providerAllocations?: PreparedProviderAllocation[] | null
 }
 
 /**
@@ -184,8 +169,6 @@ export interface PreparedSkill {
   triggerAgentId?: string | null
   /** 技能组：按段配置双代理人；缺省段在结算时回落 defaultAnomalyAgents */
   memberAgents?: PreparedGroupMemberAgents[] | null
-  /** 普通招式的按提供者拆次数（技能组看成员各自的 `providerAllocations`） */
-  providerAllocations?: PreparedProviderAllocation[] | null
   extraMods?: PreparedSkillExtraMods | null
 }
 
@@ -213,8 +196,6 @@ export interface FlowGroupMemberOverride {
   /** 本行这一段的强度提供者 / 触发者（缺省 = 继承准备条目成员配置） */
   anomalyPowerAgentId?: string | null
   triggerAgentId?: string | null
-  /** 本行这一段的按提供者拆次数（缺省 = 继承准备条目成员配置） */
-  providerAllocations?: PreparedProviderAllocation[] | null
 }
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
@@ -239,14 +220,13 @@ export interface FlowEntry {
    */
   buffOverrides?: FlowBuffOverride | null
   /**
-   * **行级**异常强度提供者 / 触发者 / 按提供者拆次数（缺省 = 继承准备条目上那一份）。
+   * **行级**异常强度提供者 / 触发者（缺省 = 继承准备条目上那一份）。
    *
    * 准备条目与流程行因此解耦：同一条准备招式被两行引用时，两行可以各配各的
    * （用户口径 2026-10-06）。技能组行逐成员仍走 `memberOverrides[]`。
    */
   anomalyPowerAgentId?: string | null
   triggerAgentId?: string | null
-  providerAllocations?: PreparedProviderAllocation[] | null
 }
 
 /**
