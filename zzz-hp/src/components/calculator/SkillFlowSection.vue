@@ -153,6 +153,35 @@ const buffOverrideModel = computed<FlowBuffOverride | null>({
   },
 })
 
+/** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
+ *  表里该行（组行含其成员行）呈 on/off 的才列；表里是 na 的不列
+ *  （na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
+const buffOverrideEffects = computed(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry) return []
+  const rows = flowBuffTableRows.value.filter((row) => row.entryId === entry.id)
+  const rowKeys = rows.length ? rows.map((row) => row.key) : [entry.id]
+  const states = flowBuffTableStates.value
+  const applicable = new Set<string>()
+  for (const rowKey of rowKeys) {
+    for (const column of flowBuffTableColumns.value) {
+      const state = states[`${rowKey}|${column.key}`]
+      if (state === 'on' || state === 'off') applicable.add(column.key)
+    }
+  }
+  return (props.buffEffects ?? []).filter((item) => applicable.has(item.effect.id))
+})
+
+/** 本行增益例外弹窗的行标题：招式 / 组名 + 次数，缺名时回落行 id */
+const buffOverrideRowLabel = computed(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry) return ''
+  const name = flowSkillName(entry)
+  if (!name) return entry.id
+  const count = Math.max(0, Number(entry.count) || 0)
+  return `${name} · ${count} 次`
+})
+
 function openBuffOverride(entryId: string) {
   buffOverrideEntryId.value = entryId
 }
@@ -3658,8 +3687,8 @@ const showcaseTitle = computed(() => {
             <SkillBuffOverrideModal
               v-model:open="buffOverrideOpen"
               v-model:override="buffOverrideModel"
-              :effects="props.buffEffects ?? []"
-              :row-label="buffOverrideEntry?.id ?? ''"
+              :effects="buffOverrideEffects"
+              :row-label="buffOverrideRowLabel"
             />
 
             <FlowBuffTableModal
@@ -4079,7 +4108,7 @@ const showcaseTitle = computed(() => {
             <div v-else-if="detailSkill" class="skill-detail-body">
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
-                <div class="agent-row agent-row--provider">
+                <div class="agent-row">
                   <div v-if="detailAllocationVisible" class="provider-split">
                     <span class="agent-col-label">
                       异常强度提供者
@@ -5154,63 +5183,12 @@ const showcaseTitle = computed(() => {
   gap: 0.12rem;
   min-width: 0;
 }
-.agent-row--provider {
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  align-items: start;
-}
 .agent-col-label {
   font-size: 0.7rem;
   color: #9aa3b0;
 }
 .provider-split > .mini-btn {
   align-self: flex-start;
-}
-:global([data-theme='light']) .provider-split-list {
-  border-color: #d5dae3;
-  background: #ffffff;
-}
-:global([data-theme='light']) .provider-split-list li {
-  border-bottom-color: #eef1f5;
-}
-:global([data-theme='light']) .provider-split-list li:hover {
-  background: #f7f9fc;
-}
-:global([data-theme='light']) .provider-split-stepper input {
-  border-color: #d5dae3;
-  background: #ffffff;
-  color: #1c212a;
-  color-scheme: light;
-}
-:global([data-theme='light']) .provider-split-stepper .step-btn {
-  color: #667085;
-}
-:global([data-theme='light']) .provider-split-stepper .step-btn:hover:not(:disabled) {
-  border-color: #c9a55c;
-  background: #fff8eb;
-  color: #1c212a;
-}
-:global([data-theme='light'] .provider-split-inherit) {
-  border-color: #cfd6e0;
-  color: #5b6573;
-}
-:global([data-theme='light'] .provider-split-inherit.is-override) {
-  border-color: #e0cfa0;
-  color: #9a6a00;
-}
-:global([data-theme='light'] .provider-split-name),
-:global([data-theme='light'] .agent-col-label) {
-  color: #1c212a;
-}
-:global([data-theme='light'] .provider-split-list li.is-zero .provider-split-name) {
-  color: #8b95a5;
-}
-:global([data-theme='light'] .provider-split-warn) {
-  border-color: #e2c4c4;
-  color: #a35050;
-}
-:global([data-theme='light'] .provider-split-damage),
-:global([data-theme='light'] .provider-split-summary) {
-  color: #5b6573;
 }
 
 .warn-hint {

@@ -1934,6 +1934,70 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
   border-bottom-color: #e4e7ec !important;
 }
 
+/*
+ * 详情「双代理人」里的异常强度提供者名单（SkillFlowSection 详情面板）。
+ * 之前写成组件内 `:global([data-theme='light']) .x` —— 后代被编译吃掉、规则等于没写，
+ * 统一挪到这里（与局内增益 / 本行增益同一处）。
+ */
+[data-theme='light'] .provider-split-list {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+
+[data-theme='light'] .provider-split-list li {
+  border-bottom-color: #eef1f5 !important;
+}
+
+[data-theme='light'] .provider-split-list li:hover {
+  background: #f7f9fc !important;
+}
+
+[data-theme='light'] .provider-split-name,
+[data-theme='light'] .agent-col-label {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .provider-split-list li.is-zero .provider-split-name {
+  color: #8b95a5 !important;
+}
+
+[data-theme='light'] .provider-split-stepper input {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .provider-split-stepper .step-btn {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .provider-split-stepper .step-btn:hover:not(:disabled) {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .provider-split-inherit {
+  border-color: #cfd6e0 !important;
+  color: #5b6573 !important;
+}
+
+[data-theme='light'] .provider-split-inherit.is-override {
+  border-color: #e0cfa0 !important;
+  color: #9a6a00 !important;
+}
+
+[data-theme='light'] .provider-split-warn {
+  border-color: #e2c4c4 !important;
+  color: #a35050 !important;
+}
+
+[data-theme='light'] .provider-split-damage,
+[data-theme='light'] .provider-split-summary {
+  color: #5b6573 !important;
+}
+
 /* 额外 Buff 弹窗（Teleport 到 body） */
 [data-theme='light'] .extra-buff-modal .extra-buff-editor .field {
   color: #667085 !important;
