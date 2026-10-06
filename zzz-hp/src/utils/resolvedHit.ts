@@ -431,10 +431,20 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           const ov = findMemberOverride(entry.memberOverrides, member)
           const ma = findMemberAgents(prepared.memberAgents, member)
           const segmentCount = Math.max(0, Number(ov?.count ?? member.count) || 0) * groupMult
-          // 组内异常段：优先成员双代理人，缺省再回落准备条目 / 当前角色默认
+          // 组内异常段：本行成员覆盖 > 准备条目成员配置 > 整行/当前角色默认
           const power =
-            ma?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
-          const trigger = ma?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
+            ov?.anomalyPowerAgentId?.trim() ||
+            ma?.anomalyPowerAgentId?.trim() ||
+            prepared.anomalyPowerAgentId?.trim() ||
+            null
+          const trigger =
+            ov?.triggerAgentId?.trim() ||
+            ma?.triggerAgentId?.trim() ||
+            prepared.triggerAgentId?.trim() ||
+            null
+          const allocations = ov?.providerAllocations?.length
+            ? ov.providerAllocations
+            : ma?.providerAllocations
           const baseHitId = `${entry.id}#${memberIndex}:${member.skillId}`
           const pushMemberHit = (hitId: string, count: number, provider?: string | null) => {
             hits.push(
@@ -450,7 +460,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
             )
           }
           const segments = skillNeedsDualAgents(skill.damageType)
-            ? resolveProviderSegments(ma?.providerAllocations, segmentCount)
+            ? resolveProviderSegments(allocations, segmentCount)
             : null
           if (segments) {
             let consumed = 0
@@ -475,8 +485,20 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
         continue
       }
       const rowCount = Math.max(0, Number(entry.count) || 0)
+      // 行级配置优先，缺省继承准备条目（准备与流程解耦）
+      const rowProvider =
+        entry.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
+      const rowTrigger =
+        entry.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
+      const rowAllocations = entry.providerAllocations?.length
+        ? entry.providerAllocations
+        : prepared.providerAllocations
+      const rowAgents = {
+        ...(rowProvider ? { anomalyPowerAgentId: rowProvider } : {}),
+        ...(rowTrigger ? { triggerAgentId: rowTrigger } : {}),
+      }
       const segments = skillNeedsDualAgents(skill.damageType)
-        ? resolveProviderSegments(prepared.providerAllocations, rowCount)
+        ? resolveProviderSegments(rowAllocations, rowCount)
         : null
       if (segments) {
         let consumed = 0
@@ -484,6 +506,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           consumed += segment.count
           hits.push(
             resolveOne(entry, prepared, skill, ownerAgentId, options, {
+              ...rowAgents,
               count: segment.count,
               hitId: providerSegmentHitId(entry.id, index),
               anomalyPowerAgentId: segment.agentId,
@@ -495,6 +518,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
         if (restCount > 0) {
           hits.push(
             resolveOne(entry, prepared, skill, ownerAgentId, options, {
+              ...rowAgents,
               count: restCount,
               hitId: providerRestHitId(entry.id),
             }),
@@ -502,7 +526,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
         }
         continue
       }
-      hits.push(resolveOne(entry, prepared, skill, ownerAgentId, options))
+      hits.push(resolveOne(entry, prepared, skill, ownerAgentId, options, rowAgents))
     }
   })
 

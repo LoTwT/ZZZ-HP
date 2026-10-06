@@ -338,5 +338,98 @@ console.log('--- 7. 行次数下限（分段合计） ---')
 }
 
 console.log('')
+console.log('--- 8. 准备 / 流程解耦：行级覆盖优先 ---')
+{
+  const prepared = makePrepared({
+    providerAllocations: [{ agentId: 'alice', count: 3 }],
+  })
+  const hits = resolveFlow(
+    makeOptions([
+      {
+        prepared: [prepared],
+        flow: [
+          makeEntry({ id: 'flowA', count: 3 }),
+          makeEntry({ id: 'flowB', count: 3, providerAllocations: [{ agentId: 'bob', count: 3 }] }),
+        ],
+      },
+    ]),
+  ).hits
+  const rowA = hits.filter((hit) => hit.id.startsWith('flowA'))
+  const rowB = hits.filter((hit) => hit.id.startsWith('flowB'))
+  check(
+    '同一准备招式两行：A 行继承准备（alice）、B 行用自己的分段（bob）',
+    rowA.length === 1 &&
+      rowA[0].anomalyPowerAgentId === 'alice' &&
+      rowB.length === 1 &&
+      rowB[0].anomalyPowerAgentId === 'bob',
+    segmentText(hits),
+  )
+
+  const overrideHits = resolveFlow(
+    makeOptions([
+      {
+        prepared: [makePrepared()],
+        flow: [makeEntry({ anomalyPowerAgentId: 'bob', triggerAgentId: 'alice' })],
+      },
+    ]),
+  ).hits
+  check(
+    '行级提供者/触发者覆盖准备条目',
+    overrideHits[0].anomalyPowerAgentId === 'bob' && overrideHits[0].triggerAgentId === 'alice',
+    segmentText(overrideHits),
+  )
+
+  const group = {
+    id: 'g1',
+    agentId: 'remiel',
+    name: 'g',
+    members: [{ skillId: 'sk-r', order: 0, count: 2, includeInFlow: true }],
+  }
+  const groupPrepared = makePrepared({
+    skillId: null,
+    skillGroupId: 'g1',
+    anomalyPowerAgentId: null,
+    memberAgents: [
+      {
+        memberKey: '0:sk-r',
+        skillId: 'sk-r',
+        anomalyPowerAgentId: 'remiel',
+        triggerAgentId: 'remiel',
+        providerAllocations: [{ agentId: 'alice', count: 1 }],
+      },
+    ],
+  })
+  const groupHits = resolveFlow(
+    makeOptions(
+      [
+        {
+          prepared: [groupPrepared],
+          flow: [
+            makeEntry({
+              count: 1,
+              memberOverrides: [
+                {
+                  memberKey: '0:sk-r',
+                  skillId: 'sk-r',
+                  providerAllocations: [{ agentId: 'bob', count: 2 }],
+                },
+              ],
+            }),
+          ],
+        },
+      ],
+      { findSkillGroup: () => group },
+    ),
+  ).hits
+  check(
+    '组内成员的行级覆盖生效（bob×2，无剩余段）',
+    groupHits.length === 1 &&
+      groupHits[0].anomalyPowerAgentId === 'bob' &&
+      groupHits[0].count === 2,
+    segmentText(groupHits),
+  )
+}
+
+console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)
 if (failed > 0) process.exit(1)

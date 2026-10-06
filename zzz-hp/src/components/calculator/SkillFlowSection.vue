@@ -1215,6 +1215,8 @@ const detailCanEditDefinition = computed(
 
 const detailCanEditAgents = computed(() => {
   if (detail.value?.kind === 'preparedMember' || detail.value?.kind === 'flowMember') return true
+  // 流程行也放行：提供者配置按行存（准备与流程解耦），不写回准备条目
+  if (detail.value?.kind === 'flow') return !detailGroup.value
   return detail.value?.kind === 'prepared' && !detailGroup.value
 })
 
@@ -1309,29 +1311,48 @@ const detailSkipReason = computed(() => {
   return null
 })
 
+/** 详情当前生效的强度提供者：行级覆盖 > 准备条目（组内成员取成员配置） */
 const detailAgentPowerId = computed(() => {
-  if (
-    (detail.value?.kind === 'preparedMember' || detail.value?.kind === 'flowMember') &&
-    detailPrepared.value &&
-    detailMemberForAgents.value
-  ) {
-    return (
-      memberAgentsFor(detailPrepared.value, detailMemberForAgents.value)?.anomalyPowerAgentId ?? ''
-    )
+  const target = detailAllocationTarget()
+  const prepared = detailPrepared.value
+  if (!target || !prepared) return ''
+  const member = target.memberKey ? detailMemberForAgents.value : null
+  if (member) {
+    const entry = detailFlowEntry()
+    if (target.scope === 'flow' && entry) {
+      const ov = memberOverrideFor(entry, member)
+      if (ov?.anomalyPowerAgentId) return ov.anomalyPowerAgentId
+    }
+    return memberAgentsFor(prepared, member)?.anomalyPowerAgentId ?? ''
   }
-  return detailPrepared.value?.anomalyPowerAgentId ?? ''
+  const entry = detailFlowEntry()
+  if (target.scope === 'flow' && entry?.anomalyPowerAgentId) return entry.anomalyPowerAgentId
+  return prepared.anomalyPowerAgentId ?? ''
 })
 
+/** 详情当前生效的异常类触发者：行级覆盖 > 准备条目（组内成员取成员配置） */
 const detailAgentTriggerId = computed(() => {
-  if (
-    (detail.value?.kind === 'preparedMember' || detail.value?.kind === 'flowMember') &&
-    detailPrepared.value &&
-    detailMemberForAgents.value
-  ) {
-    return memberAgentsFor(detailPrepared.value, detailMemberForAgents.value)?.triggerAgentId ?? ''
+  const target = detailAllocationTarget()
+  const prepared = detailPrepared.value
+  if (!target || !prepared) return ''
+  const member = target.memberKey ? detailMemberForAgents.value : null
+  if (member) {
+    const entry = detailFlowEntry()
+    if (target.scope === 'flow' && entry) {
+      const ov = memberOverrideFor(entry, member)
+      if (ov?.triggerAgentId) return ov.triggerAgentId
+    }
+    return memberAgentsFor(prepared, member)?.triggerAgentId ?? ''
   }
-  return detailPrepared.value?.triggerAgentId ?? ''
+  const entry = detailFlowEntry()
+  if (target.scope === 'flow' && entry?.triggerAgentId) return entry.triggerAgentId
+  return prepared.triggerAgentId ?? ''
 })
+
+/** 当前生效的提供者（供胶囊 / 提示用名称展示） */
+const detailEffectivePowerName = computed(
+  () => agentFullName(detailAgentPowerId.value) || '',
+)
 
 const detailZoneRows = computed(() => {
   // 乘区 / 最终伤害：流程整行或组内某段；准备 / 招式库不算伤
@@ -1381,20 +1402,33 @@ const detailResolvedMultDisplay = computed(() => {
   return null
 })
 
+/** 详情里改双代理人：流程视图写本行（行级覆盖），准备视图写准备条目（默认值） */
 function setDetailAgent(field: 'anomalyPowerAgentId' | 'triggerAgentId', raw: string) {
   const current = detail.value
   if (!current) return
-  if (current.kind === 'preparedMember' || current.kind === 'flowMember') {
-    const prepared = detailPrepared.value
+  const target = detailAllocationTarget()
+  if (!target) return
+  const value = raw || null
+  if (target.memberKey) {
     const member = detailMemberForAgents.value
-    if (!prepared || !member) return
+    if (!member) return
+    if (target.scope === 'flow' && target.entryId) {
+      setMemberOverride(target.entryId, member, { [field]: value })
+      return
+    }
     setMemberDetailAgent(member, field, raw)
     return
   }
-  if (current.kind !== 'prepared') return
+  if (target.scope === 'flow' && target.entryId) {
+    const entry = detailFlowEntry()
+    if (!entry) return
+    if (field === 'anomalyPowerAgentId') entry.anomalyPowerAgentId = value
+    else entry.triggerAgentId = value
+    return
+  }
   const prepared = detailPrepared.value
   if (!prepared || isPreparedGroup(prepared)) return
-  updatePrepared(prepared.id, { [field]: raw || null })
+  updatePrepared(prepared.id, { [field]: value })
 }
 
 function memberAgentsFor(prepared: PreparedSkill, member: import('@/types/calculator').SkillGroupMember) {
@@ -1426,44 +1460,93 @@ function setMemberDetailAgent(
 /**
  * 「按提供者拆次数」——把本行次数按异常强度提供者分段。
  *
- * 落盘位置与单一提供者一致：普通准备写条目本身，组内成员写 `memberAgents` 对应成员行。
+ * 落盘位置（用户口径 2026-10-06「准备与流程解耦」）：
+ * - 准备视图 → 写准备条目（`PreparedSkill` / 其 `memberAgents`），作为**默认值**
+ * - 流程视图 → 写**本流程行**（`FlowEntry` / `memberOverrides[]`），只影响这一行
  * 行次数仍是总次数的唯一来源：分段合计不足回落基础提供者，超出的部分按次数截断。
  */
-function detailAllocationTarget():
-  | { kind: 'prepared'; preparedId: string }
-  | { kind: 'flow'; preparedId: string; entryId: string }
-  | { kind: 'member'; preparedId: string; memberKey: string }
-  | null {
+type DetailAllocationTarget = {
+  /** prepared = 写准备条目（默认值）；flow = 写本流程行（行级覆盖） */
+  scope: 'prepared' | 'flow'
+  preparedId: string
+  entryId?: string
+  memberKey?: string
+}
+
+function detailAllocationTarget(): DetailAllocationTarget | null {
   const current = detail.value
   const prepared = detailPrepared.value
   if (!current || !prepared) return null
-  if (current.kind === 'preparedMember' || current.kind === 'flowMember') {
+  if (current.kind === 'preparedMember') {
     if (!detailMemberForAgents.value) return null
-    return { kind: 'member', preparedId: prepared.id, memberKey: current.memberKey }
+    return { scope: 'prepared', preparedId: prepared.id, memberKey: current.memberKey }
+  }
+  if (current.kind === 'flowMember') {
+    if (!detailMemberForAgents.value) return null
+    return {
+      scope: 'flow',
+      preparedId: prepared.id,
+      entryId: current.entryId,
+      memberKey: current.memberKey,
+    }
   }
   if (current.kind === 'flow') {
     if (isPreparedGroup(prepared)) return null
-    return { kind: 'flow', preparedId: prepared.id, entryId: current.entryId }
+    return { scope: 'flow', preparedId: prepared.id, entryId: current.entryId }
   }
   if (current.kind !== 'prepared') return null
   if (isPreparedGroup(prepared)) return null
-  return { kind: 'prepared', preparedId: prepared.id }
+  return { scope: 'prepared', preparedId: prepared.id }
 }
 
 const detailAllocationVisible = computed(() => detailAllocationTarget() !== null)
 
-/** 编辑器用原始列表（允许「未选 / 0 次」这类未填完的行存在） */
-const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() => {
+/** 详情所属的流程行（流程视图才有） */
+function detailFlowEntry(): FlowEntry | null {
   const current = detail.value
+  if (!current || (current.kind !== 'flow' && current.kind !== 'flowMember')) return null
+  return currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
+}
+
+/** 该流程行是否已经**自己配了**提供者（否则显示为「继承准备条目」） */
+const detailAllocationOverridden = computed(() => {
+  const target = detailAllocationTarget()
+  if (target?.scope !== 'flow') return false
+  const entry = detailFlowEntry()
+  if (!entry) return false
+  const member = target.memberKey ? detailMemberForAgents.value : null
+  if (member) {
+    const ov = memberOverrideFor(entry, member)
+    return Boolean(
+      ov?.providerAllocations?.length || ov?.anomalyPowerAgentId || ov?.triggerAgentId,
+    )
+  }
+  return Boolean(entry.providerAllocations?.length || entry.anomalyPowerAgentId || entry.triggerAgentId)
+})
+
+/** 流程行没有自己的配置 → 显示为「继承准备条目」 */
+const detailAllocationInherited = computed(
+  () => detailAllocationTarget()?.scope === 'flow' && !detailAllocationOverridden.value,
+)
+
+/** 编辑器用原始列表：行级覆盖优先，缺省继承准备条目 */
+const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() => {
+  const target = detailAllocationTarget()
   const prepared = detailPrepared.value
-  if (!current || !prepared) return []
-  if (current.kind === 'preparedMember' || current.kind === 'flowMember') {
-    const member = detailMemberForAgents.value
-    if (!member) return []
+  if (!target || !prepared) return []
+  const entry = detailFlowEntry()
+  const member = target.memberKey ? detailMemberForAgents.value : null
+  if (member) {
+    if (target.scope === 'flow' && entry) {
+      const ov = memberOverrideFor(entry, member)
+      if (ov?.providerAllocations?.length) return ov.providerAllocations.map((item) => ({ ...item }))
+    }
     const row = memberAgentsFor(prepared, member)?.providerAllocations
     return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
   }
-  if (current.kind !== 'prepared') return []
+  if (target.scope === 'flow' && entry?.providerAllocations?.length) {
+    return entry.providerAllocations.map((item) => ({ ...item }))
+  }
   const row = prepared.providerAllocations
   return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
 })
@@ -1570,39 +1653,84 @@ const detailAllocationRestText = computed(() => {
   if (rowCount == null) return ''
   const rest = rowCount - detailAllocationTotal.value
   if (rest <= 0) return ''
-  const base = agentFullName(detailAgentPowerId.value) || '未选'
+  const base = detailEffectivePowerName.value || '本行角色'
   const damage = detailAllocationDamage(detailAllocationHitKey(0, true))
-  return `剩余 ${formatAllocationCount(rest)} 次按基础提供者「${base}」${damage ? ` · ${damage}` : ''}`
+  return `未分配 ${formatAllocationCount(rest)} 次按「${base}」${damage ? ` · ${damage}` : ''}`
 })
 
+/** 把分段写回「准备条目（默认值）」还是「本流程行（行级覆盖）」由 target.scope 决定 */
 function writeDetailProviderAllocations(next: PreparedProviderAllocation[]) {
   const target = detailAllocationTarget()
   if (!target) return
   // 只存有效段（角色已选 + 次数 > 0）；全 0 = null（回归单一提供者）
-  const cleaned = next.filter((item) => item.agentId.trim() && Number(item.count) > 0)
-  const value = cleaned.length ? cleaned : null
-  if (target.kind === 'prepared' || target.kind === 'flow') {
-    updatePrepared(target.preparedId, { providerAllocations: value })
+  const value = next.filter((item) => item.agentId.trim() && Number(item.count) > 0)
+  const cleaned = value.length ? value : null
+  // 名单首项作为基础提供者：未分配次数按它算（与展开口径一致）
+  const baseProvider = value[0]?.agentId ?? null
+  if (target.memberKey) {
+    const member = detailMemberForAgents.value
+    const prepared = detailPrepared.value
+    if (!member || !prepared) return
+    if (target.scope === 'flow' && target.entryId) {
+      setMemberOverride(target.entryId, member, {
+        providerAllocations: cleaned,
+        anomalyPowerAgentId: baseProvider ?? memberAgentsFor(prepared, member)?.anomalyPowerAgentId ?? null,
+      })
+      raiseDetailRowCount()
+      return
+    }
+    if (!prepared.skillGroupId) return
+    const list = [...(prepared.memberAgents ?? [])]
+    const index = list.findIndex((item) => item.memberKey === target.memberKey)
+    const base = index >= 0
+      ? list[index]!
+      : {
+          memberKey: target.memberKey,
+          skillId: detailSkill.value?.id ?? '',
+          anomalyPowerAgentId: null,
+          triggerAgentId: null,
+        }
+    const nextRow = { ...base, providerAllocations: cleaned }
+    if (index >= 0) list[index] = nextRow
+    else list.push(nextRow)
+    updatePrepared(prepared.id, { memberAgents: list })
     raiseDetailRowCount()
     return
   }
-  const prepared = detailPrepared.value
-  if (!prepared?.skillGroupId) return
-  const list = [...(prepared.memberAgents ?? [])]
-  const index = list.findIndex((item) => item.memberKey === target.memberKey)
-  const base = index >= 0
-    ? list[index]!
-    : {
-        memberKey: target.memberKey,
-        skillId: detailSkill.value?.id ?? '',
-        anomalyPowerAgentId: null,
-        triggerAgentId: null,
-      }
-  const nextRow = { ...base, providerAllocations: value }
-  if (index >= 0) list[index] = nextRow
-  else list.push(nextRow)
-  updatePrepared(prepared.id, { memberAgents: list })
+  if (target.scope === 'flow' && target.entryId) {
+    const entry = detailFlowEntry()
+    if (!entry) return
+    entry.providerAllocations = cleaned
+    entry.anomalyPowerAgentId = baseProvider
+    raiseDetailRowCount()
+    return
+  }
+  updatePrepared(target.preparedId, {
+    providerAllocations: cleaned,
+    ...(baseProvider ? { anomalyPowerAgentId: baseProvider } : {}),
+  })
   raiseDetailRowCount()
+}
+
+/** 清掉本行的行级提供者配置，回到「继承准备条目」 */
+function resetDetailAllocationOverride() {
+  const target = detailAllocationTarget()
+  if (target?.scope !== 'flow' || !target.entryId) return
+  if (target.memberKey) {
+    const member = detailMemberForAgents.value
+    if (!member) return
+    setMemberOverride(target.entryId, member, {
+      providerAllocations: null,
+      anomalyPowerAgentId: null,
+      triggerAgentId: null,
+    })
+    return
+  }
+  const entry = detailFlowEntry()
+  if (!entry) return
+  entry.providerAllocations = null
+  entry.anomalyPowerAgentId = null
+  entry.triggerAgentId = null
 }
 
 /** 当前分段的可写映射（含不在队伍的残留段） */
@@ -2496,22 +2624,76 @@ function preparedOfEntry(entry: FlowEntry): PreparedSkill | undefined {
   return currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
 }
 
-/** 该流程行的最小次数（普通行 = 分段合计；组行 = Σ 成员合计 ÷ 成员次数） */
+/** 该流程行的最小次数（普通行 = 分段合计；组行 = Σ 成员合计 ÷ 成员次数）；行级覆盖优先 */
 function minFlowCountForEntry(entry: FlowEntry): number {
-  return flowCountFloorFor(preparedOfEntry(entry), (member) => memberTuneCount(entry, member))
+  const prepared = preparedOfEntry(entry)
+  if (!prepared) return 0
+  const groupId = prepared.skillGroupId?.trim() || ''
+  if (!groupId) {
+    const rowAllocations = entry.providerAllocations?.length
+      ? entry.providerAllocations
+      : prepared.providerAllocations
+    return sumProviderAllocations(rowAllocations)
+  }
+  const group = buffStore.findSkillGroup(groupId)
+  if (!group) return 0
+  let floor = 0
+  for (const member of sortSkillGroupMembers(group.members)) {
+    const ov = memberOverrideFor(entry, member)
+    const ma = memberAgentsFor(prepared, member)
+    const sum = sumProviderAllocations(
+      ov?.providerAllocations?.length ? ov.providerAllocations : ma?.providerAllocations,
+    )
+    if (sum <= 0) continue
+    const memberCount = Math.max(0, Number(memberTuneCount(entry, member)) || 0)
+    if (memberCount <= 0) continue
+    floor = Math.max(floor, sum / memberCount)
+  }
+  return floor
 }
 
-/** 组内成员的最小细调次数 = 成员分段合计 ÷ 整组次数 */
+/** 组内成员的最小细调次数 = 成员分段合计 ÷ 整组次数（行级成员覆盖优先） */
 function minMemberTuneCount(
   entry: FlowEntry,
   member: import('@/types/calculator').SkillGroupMember,
 ): number {
   const prepared = preparedOfEntry(entry)
   if (!prepared) return 0
+  const ov = memberOverrideFor(entry, member)
   return memberTuneCountFloor(
-    memberAgentsFor(prepared, member)?.providerAllocations,
+    ov?.providerAllocations?.length
+      ? ov.providerAllocations
+      : memberAgentsFor(prepared, member)?.providerAllocations,
     Number(entry.count) || 0,
   )
+}
+
+/** 流程行生效的提供者配置（行级优先，缺省继承准备条目）——胶囊 / 提示展示用 */
+function flowRowAgents(entry: FlowEntry, prepared: PreparedSkill): Partial<PreparedSkill> {
+  return {
+    anomalyPowerAgentId: entry.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId || null,
+    triggerAgentId: entry.triggerAgentId?.trim() || prepared.triggerAgentId || null,
+    providerAllocations: entry.providerAllocations?.length
+      ? entry.providerAllocations
+      : prepared.providerAllocations ?? null,
+  }
+}
+
+/** 组内成员在流程行里生效的提供者配置（行级成员覆盖优先） */
+function flowMemberAgents(
+  entry: FlowEntry,
+  member: import('@/types/calculator').SkillGroupMember,
+): Partial<PreparedSkill> {
+  const prepared = flowPrepared(entry)
+  const ma = prepared ? memberAgentsFor(prepared, member) : null
+  const ov = memberOverrideFor(entry, member)
+  return {
+    anomalyPowerAgentId: ov?.anomalyPowerAgentId?.trim() || ma?.anomalyPowerAgentId || null,
+    triggerAgentId: ov?.triggerAgentId?.trim() || ma?.triggerAgentId || null,
+    providerAllocations: ov?.providerAllocations?.length
+      ? ov.providerAllocations
+      : ma?.providerAllocations ?? null,
+  }
 }
 
 /** 细调展示失衡：覆盖优先，否则继承整组流程行 */
@@ -2529,7 +2711,7 @@ function memberTuneStagger(
 function setMemberOverride(
   entryId: string,
   member: { order: number; skillId: string; count: number },
-  patch: Partial<Pick<FlowGroupMemberOverride, 'count' | 'staggerPhase'>>,
+  patch: Partial<Omit<FlowGroupMemberOverride, 'memberKey' | 'skillId'>>,
 ) {
   const entry = getActiveSlot()?.flow.find((item) => item.id === entryId)
   if (!entry) return
@@ -2555,11 +2737,22 @@ function setMemberOverride(
     staggerPhase: prev?.staggerPhase ?? null,
     // 组内细调不再提供暴击覆盖
     critMode: null,
+    anomalyPowerAgentId: prev?.anomalyPowerAgentId ?? null,
+    triggerAgentId: prev?.triggerAgentId ?? null,
+    providerAllocations: prev?.providerAllocations ?? null,
     ...nextPatch,
   }
   if (nextPatch.count === null) base.count = null
   if (nextPatch.staggerPhase === null) base.staggerPhase = null
-  const empty = base.count == null && base.staggerPhase == null
+  if (nextPatch.providerAllocations === null) base.providerAllocations = null
+  if (nextPatch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
+  if (nextPatch.triggerAgentId === null) base.triggerAgentId = null
+  const empty =
+    base.count == null &&
+    base.staggerPhase == null &&
+    !base.providerAllocations?.length &&
+    !base.anomalyPowerAgentId &&
+    !base.triggerAgentId
   if (index >= 0) {
     if (empty) list.splice(index, 1)
     else list[index] = base
@@ -3377,12 +3570,18 @@ const showcaseTitle = computed(() => {
                     "
                     :agent-pair="
                       !flowIsGroup(entry) && flowSkill(entry) && flowPrepared(entry)
-                        ? agentPairText(flowPrepared(entry)!, flowSkill(entry)!)
+                        ? agentPairText(
+                            { ...flowPrepared(entry)!, ...flowRowAgents(entry, flowPrepared(entry)!) },
+                            flowSkill(entry)!,
+                          )
                         : ''
                     "
                     :agent-title="
                       !flowIsGroup(entry) && flowSkill(entry) && flowPrepared(entry)
-                        ? agentPairTitle(flowPrepared(entry)!, flowSkill(entry)!)
+                        ? agentPairTitle(
+                            { ...flowPrepared(entry)!, ...flowRowAgents(entry, flowPrepared(entry)!) },
+                            flowSkill(entry)!,
+                          )
                         : ''
                     "
                     :agents-clickable="false"
@@ -3564,15 +3763,7 @@ const showcaseTitle = computed(() => {
                     ? agentPairText(
                         {
                           ...flowPrepared(tuningFlowEntry)!,
-                          anomalyPowerAgentId:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.anomalyPowerAgentId ?? null,
-                          triggerAgentId:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.triggerAgentId ?? null,
-                          providerAllocations:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.providerAllocations ?? null,
+                          ...flowMemberAgents(tuningFlowEntry!, member),
                         },
                         buffStore.findSkill(member.skillId)!,
                       )
@@ -3585,15 +3776,7 @@ const showcaseTitle = computed(() => {
                     ? agentPairTitle(
                         {
                           ...flowPrepared(tuningFlowEntry)!,
-                          anomalyPowerAgentId:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.anomalyPowerAgentId ?? null,
-                          triggerAgentId:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.triggerAgentId ?? null,
-                          providerAllocations:
-                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
-                              ?.providerAllocations ?? null,
+                          ...flowMemberAgents(tuningFlowEntry!, member),
                         },
                         buffStore.findSkill(member.skillId)!,
                       )
@@ -3896,33 +4079,7 @@ const showcaseTitle = computed(() => {
             <div v-else-if="detailSkill" class="skill-detail-body">
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
-                <p class="detail-section-title">双代理人</p>
-                <div class="agent-row">
-                  <label>
-                    <span>异常强度提供者</span>
-                    <select
-                      v-if="detailCanEditAgents"
-                      :value="detailAgentPowerId"
-                      @change="
-                        setDetailAgent(
-                          'anomalyPowerAgentId',
-                          ($event.target as HTMLSelectElement).value,
-                        )
-                      "
-                    >
-                      <option value="">未选</option>
-                      <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                        {{ agent.name }}
-                      </option>
-                    </select>
-                    <input
-                      v-else
-                      :value="agentFullName(detailAgentPowerId) || '未选'"
-                      type="text"
-                      readonly
-                      tabindex="-1"
-                    />
-                  </label>
+                <div class="agent-row agent-row--single">
                   <label>
                     <span>异常类触发者</span>
                     <select
@@ -3950,7 +4107,15 @@ const showcaseTitle = computed(() => {
                   </label>
                 </div>
                 <div v-if="detailAllocationVisible" class="provider-split">
-                  <p class="detail-section-title">按提供者拆次数</p>
+                  <p class="detail-section-title">
+                    异常强度提供者（按次数）
+                    <span
+                      class="provider-split-inherit"
+                      :class="{ 'is-override': !detailAllocationInherited }"
+                    >
+                      {{ detailAllocationInherited ? '继承准备条目' : '本行单独配置' }}
+                    </span>
+                  </p>
                   <ul class="provider-split-list">
                     <li v-for="row in detailAllocationRows" :key="row.agentId">
                       <span class="provider-split-name" :title="row.name">
@@ -4003,6 +4168,14 @@ const showcaseTitle = computed(() => {
                   <p v-if="detailAllocationRestText" class="provider-split-summary muted">
                     {{ detailAllocationRestText }}
                   </p>
+                  <button
+                    v-if="detailAllocationOverridden"
+                    type="button"
+                    class="mini-btn"
+                    @click="resetDetailAllocationOverride"
+                  >
+                    恢复继承准备条目
+                  </button>
                 </div>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
@@ -4012,7 +4185,7 @@ const showcaseTitle = computed(() => {
                 v-else-if="detail.kind === 'library' && skillNeedsDualAgents(detailSkill.damageType)"
                 class="empty-hint"
               >
-                加入准备后，异常类可在详情里选双代理人。
+                加入准备后，异常类可在详情里按次数配异常强度提供者。
               </p>
               <p
                 v-if="
@@ -4926,8 +5099,32 @@ const showcaseTitle = computed(() => {
   font-size: 0.72rem;
   color: #9aa3b0;
 }
+.provider-split-inherit {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border: 1px solid #3d4653;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: #9fb0c6;
+}
+.provider-split-inherit.is-override {
+  border-color: #6b5a33;
+  color: #ffd479;
+}
+.agent-row--single {
+  grid-template-columns: minmax(0, 1fr);
+}
 .provider-split > .mini-btn {
   align-self: flex-start;
+}
+:global([data-theme='light'] .provider-split-inherit) {
+  border-color: #cfd6e0;
+  color: #5b6573;
+}
+:global([data-theme='light'] .provider-split-inherit.is-override) {
+  border-color: #e0cfa0;
+  color: #9a6a00;
 }
 :global([data-theme='light'] .provider-split-list li) {
   border-color: #d5dae3;

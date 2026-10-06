@@ -2,13 +2,15 @@
 /**
  * 本行增益例外（按流程行禁用增益）的编辑弹窗。
  *
- * 设计（2026-09-20）：
+ * 设计（2026-09-20；2026-10-06 起视觉对齐「局内增益」选择器 `BuffEffectPickerModal`）：
  * - **入口与存储都在流程行**：这里改的是 `FlowEntry.buffOverrides`，缺省 = 全部继承全局
  * - 只允许"禁用"（减法语义）：勾掉 = 这一行不吃该增益
  * - 列表只列**该行本来可生效**的效果（由页面传入与全局选择器同一份 `CollectedEffect[]`）
  * - 只影响本行结算：不改面板、不动层数累计、不影响其它行
+ * - 白天主题覆盖在 `assets/calculatorLight.css`（与局内增益同一处，惯例一致）
  */
 import { computed } from 'vue'
+import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import type { BuffEffect } from '@/types/calculator'
 import type { CollectedEffect } from '@/utils/panelBuffCalc'
 import { blockKeyOfCollected } from '@/utils/panelBuffCalc'
@@ -25,16 +27,36 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 const override = defineModel<FlowBuffOverride | null>('override', { default: null })
 
-type BlockGroup = { key: string; label: string; effects: BuffEffect[] }
+type BlockGroup = {
+  key: string
+  label: string
+  providerName: string
+  avatar: string | null
+  note: string
+  effects: BuffEffect[]
+}
 
 /** 按效果块分组（块键与目录一致，直接用共享实现 —— 额外 Buff 的 `extra-<id>` 也在其中） */
 const groups = computed<BlockGroup[]>(() => {
   const map = new Map<string, BlockGroup>()
   for (const item of props.effects) {
     const key = blockKeyOfCollected(item)
-    const raw = item as unknown as { blockName?: string | null; sourceLabel?: string | null }
+    const raw = item as unknown as {
+      blockName?: string | null
+      sourceLabel?: string | null
+      blockNote?: string | null
+    }
     const label = (raw.blockName ?? '').trim() || (raw.sourceLabel ?? '').trim() || '未命名效果块'
-    const group = map.get(key) ?? { key, label, effects: [] }
+    const group =
+      map.get(key) ??
+      {
+        key,
+        label,
+        providerName: (item.providerName ?? '').trim(),
+        avatar: item.providerAvatar ?? null,
+        note: (raw.blockNote ?? '').trim(),
+        effects: [],
+      }
     group.effects.push(item.effect)
     map.set(key, group)
   }
@@ -83,172 +105,259 @@ function effectLabel(effect: BuffEffect): string {
 </script>
 
 <template>
-  <div v-if="open" class="bo-mask" @click.self="open = false">
-    <div class="bo-card">
-      <header class="bo-head">
-        <span class="bo-title">本行增益例外</span>
-        <span v-if="rowLabel" class="bo-row">{{ rowLabel }}</span>
-        <span class="bo-badge">例外 {{ exceptionCount }}</span>
-        <span class="bo-spacer" />
-        <button type="button" class="mini-btn" :disabled="!exceptionCount" @click="restoreGlobal">
-          恢复全局
-        </button>
-        <button type="button" class="mini-btn" @click="open = false">关闭</button>
-      </header>
-      <p class="bo-hint">
-        勾掉 = <b>这一行不吃</b>该增益。只影响本行结算：不改面板、不影响层数累计、不影响其它行。
-      </p>
-      <div class="bo-body">
-        <div v-for="group in groups" :key="group.key" class="bo-group">
-          <!-- 分组标题只当标签（2026-09-22 定稿：没有"整组关"这个概念），每条增益一个勾 -->
-          <div class="bo-block">
-            <span class="bo-block-name">{{ group.label }}</span>
-            <span class="bo-block-count">{{ group.effects.length }} 条</span>
+  <Teleport to="body">
+    <div v-if="open" class="bo-mask" role="presentation" @click.self="open = false">
+      <div class="bo-card" role="dialog" aria-modal="true" aria-label="本行增益例外">
+        <header class="bo-head">
+          <div class="bo-title-row">
+            <h3>本行增益例外</h3>
+            <button type="button" class="bo-close" aria-label="关闭" @click="open = false">×</button>
           </div>
-          <ul class="bo-list">
-            <li v-for="effect in group.effects" :key="effect.id" class="bo-item">
-              <label class="bo-item-label">
-                <input
-                  type="checkbox"
-                  :checked="!isEffectOff(effect.id)"
-                  @change="toggleEffect(effect.id)"
-                />
-                <span class="bo-item-text">{{ effectLabel(effect) }}</span>
-              </label>
-            </li>
-          </ul>
+          <p class="bo-hint">
+            勾掉 = <b>这一行不吃</b>该增益。只影响本行结算：不改面板、不影响层数累计、不影响其它行。
+          </p>
+        </header>
+
+        <div class="bo-toolbar">
+          <span v-if="rowLabel" class="bo-row" :title="rowLabel">{{ rowLabel }}</span>
+          <span class="bo-badge">例外 {{ exceptionCount }}</span>
+          <span class="bo-spacer" />
+          <button type="button" class="bo-ghost" :disabled="!exceptionCount" @click="restoreGlobal">
+            恢复全局
+          </button>
+          <button type="button" class="bo-ghost" @click="open = false">关闭</button>
         </div>
-        <p v-if="!groups.length" class="bo-empty">这一行没有可调整的增益。</p>
+
+        <div class="bo-list">
+          <article v-for="group in groups" :key="group.key" class="bo-row-card">
+            <div class="bo-row-main">
+              <CalculatorAvatar
+                class="bo-avatar"
+                :avatar-image="group.avatar"
+                :name="group.providerName || group.label"
+              />
+              <span class="bo-copy">
+                <strong :title="`${group.providerName} | ${group.label}`">
+                  <template v-if="group.providerName">
+                    {{ group.providerName }}
+                    <span class="bo-sep">|</span>
+                  </template>
+                  {{ group.label }}
+                </strong>
+                <small v-if="group.note" :title="group.note">{{ group.note }}</small>
+              </span>
+              <span class="bo-count">{{ group.effects.length }} 条</span>
+            </div>
+            <div class="bo-effect-lines">
+              <div v-for="effect in group.effects" :key="effect.id" class="bo-effect-row">
+                <label class="bo-effect-check">
+                  <input
+                    type="checkbox"
+                    class="bo-check"
+                    :checked="!isEffectOff(effect.id)"
+                    @change="toggleEffect(effect.id)"
+                  />
+                  <span class="bo-effect-text">{{ effectLabel(effect) }}</span>
+                </label>
+              </div>
+            </div>
+          </article>
+          <p v-if="!groups.length" class="bo-empty">这一行没有可调整的增益。</p>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
+/* 视觉对齐「局内增益」选择器（BuffEffectPickerModal）：同一套卡片 / 效果行 / 工具行。
+   白天主题覆盖在 assets/calculatorLight.css（与局内增益放一处）。 */
 .bo-mask {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: rgba(6, 8, 12, 0.62);
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 1rem;
+  background: rgba(8, 12, 20, 0.72);
 }
 .bo-card {
-  box-sizing: border-box;
-  width: min(46rem, 100%);
-  max-height: min(80vh, 46rem);
+  width: min(1080px, calc(100vw - 16px));
+  max-height: min(88vh, 900px);
   display: flex;
   flex-direction: column;
-  border: 1px solid #2a3038;
-  border-radius: 8px;
-  background: #141820;
-  color: #dfe6ef;
+  border: 1px solid #4a5563;
+  border-radius: 14px;
+  background: #141922;
+  color: #e8ecf4;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
 .bo-head {
+  padding: 1rem 1.1rem 0.85rem;
+  border-bottom: 1px solid #2d3646;
+}
+.bo-title-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid #2a3038;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
-.bo-title {
-  font-weight: 600;
+.bo-title-row h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.bo-close {
+  border: none;
+  background: transparent;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #c5ccd8;
+}
+.bo-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  color: #9aa3b5;
+}
+.bo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.85rem 1.1rem 0.35rem;
 }
 .bo-row {
-  color: #9fb0c6;
-  max-width: 18rem;
+  max-width: 22rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.85rem;
+  color: #9aa3b5;
 }
 .bo-badge {
-  padding: 0 0.4rem;
-  border: 1px solid #3d4653;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid #4a5563;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: #ffd479;
 }
 .bo-spacer {
   flex: 1;
 }
-.bo-hint {
-  margin: 0;
-  padding: 0.45rem 0.75rem;
-  color: #9fb0c6;
+.bo-ghost {
+  border: 1px solid #4a5563;
+  border-radius: 8px;
+  background: #1a1f2a;
+  color: #c8d0dc;
+  padding: 0.32rem 0.7rem;
   font-size: 0.82rem;
-  border-bottom: 1px solid #222833;
+  cursor: pointer;
 }
-.bo-body {
-  overflow: auto;
-  padding: 0.5rem 0.75rem 0.75rem;
+.bo-ghost:hover:not(:disabled) {
+  border-color: #4f5d72;
+  background: #1c2432;
 }
-.bo-group + .bo-group {
-  margin-top: 0.6rem;
-}
-.bo-block {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0;
-  font-weight: 600;
-}
-.bo-block-count {
-  color: #7f8fa3;
-  font-weight: 400;
-  font-size: 0.78rem;
+.bo-ghost:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .bo-list {
-  list-style: none;
-  margin: 0.2rem 0 0;
-  padding: 0 0 0 1.1rem;
-}
-.bo-item-label {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.12rem 0;
-  font-size: 0.86rem;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.5rem 1.1rem 0.9rem;
 }
-.bo-item-text {
+.bo-row-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #3a4456;
+  border-radius: 12px;
+  background: #181e2a;
+}
+.bo-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  min-width: 0;
+}
+.bo-avatar {
+  width: 40px;
+  height: 40px;
+  margin-top: 0.1rem;
+}
+.bo-copy {
+  flex: 1;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.bo-copy strong {
+  font-size: 0.95rem;
+  color: #f2f5fb;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.bo-copy small {
+  font-size: 0.78rem;
+  color: #9aa3b5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bo-sep {
+  margin: 0 0.28rem;
+  font-weight: 600;
+  color: #9aa3b5;
+}
+.bo-count {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: #8b95a5;
+}
+.bo-effect-lines {
+  display: grid;
+  gap: 0;
+  padding-left: 3.1rem;
+}
+.bo-effect-row {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #2d3646;
+}
+.bo-effect-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.bo-effect-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-width: 0;
+  cursor: pointer;
+}
+.bo-check {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  accent-color: #2f7df6;
+}
+.bo-effect-text {
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f2f5fb;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .bo-empty {
   margin: 0.6rem 0;
-  color: #7f8fa3;
-}
-
-/*
- * 白天主题：本弹窗在流程里被 Teleport 到面板锚点，覆盖靠 html[data-theme='light']。
- * ⚠️ 后代必须**一起写进** `:global(...)` 里 —— 写成 `:global([data-theme='light']) .bo-x` 会被编译成
- * 只剩 `[data-theme='light']`（后代被吃掉），规则等于没写。同 FlowBuffTableModal.vue 里的同条注释。
- */
-:global([data-theme='light'] .bo-mask) {
-  background: rgba(15, 23, 42, 0.35);
-}
-:global([data-theme='light'] .bo-card) {
-  border-color: #d5dae3;
-  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
-  color: #1c212a;
-}
-:global([data-theme='light'] .bo-head),
-:global([data-theme='light'] .bo-hint) {
-  border-color: #e4e7ec;
-}
-:global([data-theme='light'] .bo-row),
-:global([data-theme='light'] .bo-hint) {
-  color: #5b6573;
-}
-:global([data-theme='light'] .bo-badge) {
-  border-color: #cfd6e0;
-  color: #9a6a00;
-}
-:global([data-theme='light'] .bo-block-count),
-:global([data-theme='light'] .bo-empty) {
-  color: #7f8fa3;
+  color: #8b95a5;
 }
 </style>
