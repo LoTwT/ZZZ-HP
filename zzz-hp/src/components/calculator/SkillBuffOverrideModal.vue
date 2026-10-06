@@ -221,4 +221,34 @@ function effectLabel(effect: BuffEffect): string {
   margin: 0.6rem 0;
   color: #7f8fa3;
 }
+
+/*
+ * 白天主题：本弹窗在流程里被 Teleport 到面板锚点，覆盖靠 html[data-theme='light']。
+ * ⚠️ 后代必须**一起写进** `:global(...)` 里 —— 写成 `:global([data-theme='light']) .bo-x` 会被编译成
+ * 只剩 `[data-theme='light']`（后代被吃掉），规则等于没写。同 FlowBuffTableModal.vue 里的同条注释。
+ */
+:global([data-theme='light'] .bo-mask) {
+  background: rgba(15, 23, 42, 0.35);
+}
+:global([data-theme='light'] .bo-card) {
+  border-color: #d5dae3;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
+  color: #1c212a;
+}
+:global([data-theme='light'] .bo-head),
+:global([data-theme='light'] .bo-hint) {
+  border-color: #e4e7ec;
+}
+:global([data-theme='light'] .bo-row),
+:global([data-theme='light'] .bo-hint) {
+  color: #5b6573;
+}
+:global([data-theme='light'] .bo-badge) {
+  border-color: #cfd6e0;
+  color: #9a6a00;
+}
+:global([data-theme='light'] .bo-block-count),
+:global([data-theme='light'] .bo-empty) {
+  color: #7f8fa3;
+}
 </style>

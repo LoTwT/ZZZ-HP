@@ -12,10 +12,13 @@
  */
 import {
   firstProviderAllocationAgentId,
+  flowCountFloor,
+  memberTuneCountFloor,
   resolveFlow,
   resolveProviderSegments,
   resolveSkillPreviews,
   rowKeyOfHitId,
+  sumProviderAllocations,
 } from '../src/utils/resolvedHit.ts'
 
 let passed = 0
@@ -272,6 +275,66 @@ console.log('--- 6. 行键归并与分段解析 ---')
       { agentId: 'alice', count: 1 },
     ]) === 'alice',
   )
+}
+
+console.log('')
+console.log('--- 7. 行次数下限（分段合计） ---')
+{
+  check(
+    '合计：过滤无效项后求和',
+    sumProviderAllocations([
+      { agentId: 'alice', count: 2 },
+      { agentId: '', count: 5 },
+      { agentId: 'bob', count: 1 },
+    ]) === 3,
+  )
+  check('合计：空表为 0', sumProviderAllocations(null) === 0)
+
+  const single = {
+    skillGroupId: null,
+    providerAllocations: [
+      { agentId: 'alice', count: 1 },
+      { agentId: 'bob', count: 2 },
+    ],
+    memberAgents: null,
+  }
+  check('普通行下限 = 分段合计', flowCountFloor(single, null, () => 0) === 3)
+
+  const groupPrepared = {
+    skillGroupId: 'g1',
+    providerAllocations: null,
+    memberAgents: [
+      {
+        memberKey: '0:sk-r',
+        skillId: 'sk-r',
+        providerAllocations: [
+          { agentId: 'alice', count: 1 },
+          { agentId: 'bob', count: 1 },
+        ],
+      },
+    ],
+  }
+  const group = {
+    id: 'g1',
+    agentId: 'remiel',
+    name: 'g',
+    members: [{ skillId: 'sk-r', order: 0, count: 2, includeInFlow: true }],
+  }
+  check(
+    '组行下限 = Σ(成员合计 ÷ 成员次数)',
+    flowCountFloor(groupPrepared, group, () => 2) === 1,
+  )
+  check(
+    '组行下限：成员次数变小则下限升高',
+    flowCountFloor(groupPrepared, group, () => 1) === 2,
+  )
+  check('组行下限：成员次数为 0 时跳过', flowCountFloor(groupPrepared, group, () => 0) === 0)
+  check(
+    '成员下限 = 合计 ÷ 整组次数',
+    memberTuneCountFloor([{ agentId: 'alice', count: 5 }], 2) === 2.5,
+  )
+  check('成员下限：整组次数为 0 时退回合计', memberTuneCountFloor([{ agentId: 'alice', count: 5 }], 0) === 5)
+  check('成员下限：无分段为 0', memberTuneCountFloor(null, 3) === 0)
 }
 
 console.log('')

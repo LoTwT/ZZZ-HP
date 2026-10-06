@@ -151,6 +151,53 @@ export function firstProviderAllocationAgentId(
   return listProviderAllocations(allocations)[0]?.agentId
 }
 
+/** 有效分段合计次数（行次数的下限口径：行次数不得小于它） */
+export function sumProviderAllocations(
+  allocations: PreparedProviderAllocation[] | null | undefined,
+): number {
+  return listProviderAllocations(allocations).reduce((sum, item) => sum + item.count, 0)
+}
+
+/**
+ * 「行次数不得小于按提供者拆次数合计」的下限（用户口径 2026-10-06）。
+ *
+ * 普通准备 = 该条分段合计；技能组 = Σ(成员分段合计 ÷ 成员次数)（整组次数是乘数）。
+ */
+export function flowCountFloor(
+  prepared:
+    | Pick<PreparedSkill, 'skillGroupId' | 'providerAllocations' | 'memberAgents'>
+    | null
+    | undefined,
+  group: SkillGroup | null | undefined,
+  memberCountOf: (member: SkillGroup['members'][number]) => number,
+): number {
+  if (!prepared) return 0
+  if (!prepared.skillGroupId?.trim()) return sumProviderAllocations(prepared.providerAllocations)
+  if (!group) return 0
+  let floor = 0
+  for (const member of sortSkillGroupMembers(group.members)) {
+    const sum = sumProviderAllocations(
+      findMemberAgents(prepared.memberAgents, member)?.providerAllocations,
+    )
+    if (sum <= 0) continue
+    const count = Math.max(0, Number(memberCountOf(member)) || 0)
+    if (count <= 0) continue
+    floor = Math.max(floor, sum / count)
+  }
+  return floor
+}
+
+/** 组内成员细调次数的下限 = 该成员分段合计 ÷ 整组次数 */
+export function memberTuneCountFloor(
+  allocations: PreparedProviderAllocation[] | null | undefined,
+  groupMultiplier: number,
+): number {
+  const sum = sumProviderAllocations(allocations)
+  if (sum <= 0) return 0
+  const mult = Math.max(0, Number(groupMultiplier) || 0)
+  return mult > 0 ? sum / mult : sum
+}
+
 /** 为组内异常段生成默认双代理人（加入准备时） */
 export function buildDefaultMemberAgents(
   group: SkillGroup,

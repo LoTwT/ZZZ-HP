@@ -24,13 +24,16 @@ import {
   buildDefaultMemberAgents,
   defaultAnomalyAgents,
   ensureSchemeSlots,
+  flowCountFloor,
   getHitSkipReason,
   listProviderAllocations,
+  memberTuneCountFloor,
   newLocalId,
   providerRestHitId,
   providerSegmentHitId,
   rowKeyOfHitId,
   skillNeedsDualAgents,
+  sumProviderAllocations,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
 import { isLuminousAgent } from '@/utils/remielUtils'
@@ -1428,6 +1431,7 @@ function setMemberDetailAgent(
  */
 function detailAllocationTarget():
   | { kind: 'prepared'; preparedId: string }
+  | { kind: 'flow'; preparedId: string; entryId: string }
   | { kind: 'member'; preparedId: string; memberKey: string }
   | null {
   const current = detail.value
@@ -1437,14 +1441,16 @@ function detailAllocationTarget():
     if (!detailMemberForAgents.value) return null
     return { kind: 'member', preparedId: prepared.id, memberKey: current.memberKey }
   }
+  if (current.kind === 'flow') {
+    if (isPreparedGroup(prepared)) return null
+    return { kind: 'flow', preparedId: prepared.id, entryId: current.entryId }
+  }
   if (current.kind !== 'prepared') return null
   if (isPreparedGroup(prepared)) return null
   return { kind: 'prepared', preparedId: prepared.id }
 }
 
-const detailAllocationEditable = computed(
-  () => detailCanEditAgents.value && detailAllocationTarget() !== null,
-)
+const detailAllocationVisible = computed(() => detailAllocationTarget() !== null)
 
 /** 编辑器用原始列表（允许「未选 / 0 次」这类未填完的行存在） */
 const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() => {
@@ -1485,8 +1491,47 @@ const detailAllocationRowCount = computed<number | null>(() => {
 })
 
 const detailAllocationTotal = computed(() =>
-  detailProviderAllocations.value.reduce((sum, item) => sum + item.count, 0),
+  sumProviderAllocations(detailProviderAllocationsRaw.value),
 )
+
+/**
+ * 编辑器行：**队伍全部角色**（按槽位顺序）+ 当前次数（默认 0 次）。
+ *
+ * `segmentIndex` = 该行在有效分段（次数 > 0）里的下标，0 次为 -1（没有结算键）；
+ * 不在队伍里的残留分段附在末尾，避免编辑时被静默丢掉。
+ */
+const detailAllocationRows = computed(() => {
+  const counts = new Map(
+    detailProviderAllocationsRaw.value.map((item) => [item.agentId, Math.max(0, Number(item.count) || 0)]),
+  )
+  const teamIds = new Set(teamAgentOptions.value.map((agent) => agent.id))
+  let segmentIndex = -1
+  const rows = teamAgentOptions.value.map((agent) => {
+    const count = counts.get(agent.id) ?? 0
+    if (count > 0) segmentIndex += 1
+    return {
+      agentId: agent.id,
+      name: agent.name,
+      count,
+      segmentIndex: count > 0 ? segmentIndex : -1,
+      inTeam: true,
+    }
+  })
+  for (const item of detailProviderAllocationsRaw.value) {
+    if (teamIds.has(item.agentId)) continue
+    const count = Math.max(0, Number(item.count) || 0)
+    if (count <= 0) continue
+    segmentIndex += 1
+    rows.push({
+      agentId: item.agentId,
+      name: agentFullName(item.agentId) || item.agentId,
+      count,
+      segmentIndex,
+      inTeam: false,
+    })
+  }
+  return rows
+})
 
 /** 段键（第 0 段沿用行键，其余加后缀）；未进流程时没有结算键 */
 function detailAllocationHitKey(index: number, isRest: boolean): string | null {
@@ -1533,11 +1578,12 @@ const detailAllocationRestText = computed(() => {
 function writeDetailProviderAllocations(next: PreparedProviderAllocation[]) {
   const target = detailAllocationTarget()
   if (!target) return
-  // 全空行（未选且 0 次）直接丢掉，不往存盘里塞垃圾
-  const cleaned = next.filter((item) => item.agentId.trim() || Number(item.count) > 0)
+  // 只存有效段（角色已选 + 次数 > 0）；全 0 = null（回归单一提供者）
+  const cleaned = next.filter((item) => item.agentId.trim() && Number(item.count) > 0)
   const value = cleaned.length ? cleaned : null
-  if (target.kind === 'prepared') {
+  if (target.kind === 'prepared' || target.kind === 'flow') {
     updatePrepared(target.preparedId, { providerAllocations: value })
+    raiseDetailRowCount()
     return
   }
   const prepared = detailPrepared.value
@@ -1556,35 +1602,66 @@ function writeDetailProviderAllocations(next: PreparedProviderAllocation[]) {
   if (index >= 0) list[index] = nextRow
   else list.push(nextRow)
   updatePrepared(prepared.id, { memberAgents: list })
+  raiseDetailRowCount()
 }
 
-function addDetailProviderAllocation() {
-  const fallback = detailAgentPowerId.value || teamAgentOptions.value[0]?.id || ''
-  writeDetailProviderAllocations([
-    ...detailProviderAllocationsRaw.value,
-    { agentId: fallback, count: 1 },
-  ])
-}
-
-function setDetailProviderAllocationAgent(index: number, agentId: string) {
-  writeDetailProviderAllocations(
-    detailProviderAllocationsRaw.value.map((item, i) => (i === index ? { ...item, agentId } : item)),
+/** 当前分段的可写映射（含不在队伍的残留段） */
+function detailAllocationCountMap(): Map<string, number> {
+  return new Map(
+    detailProviderAllocationsRaw.value.map((item) => [item.agentId, Math.max(0, Number(item.count) || 0)]),
   )
 }
 
-function setDetailProviderAllocationCount(index: number, raw: string) {
+/** 写回：队伍成员按槽位顺序排前，不在队伍的残留段保持在后 */
+function writeDetailAllocationCountMap(next: Map<string, number>) {
+  const teamIds = new Set(teamAgentOptions.value.map((agent) => agent.id))
+  const list: PreparedProviderAllocation[] = []
+  for (const agent of teamAgentOptions.value) {
+    const count = Math.max(0, Math.round(Number(next.get(agent.id)) || 0))
+    if (count > 0) list.push({ agentId: agent.id, count })
+  }
+  for (const item of detailProviderAllocationsRaw.value) {
+    if (teamIds.has(item.agentId)) continue
+    const count = Math.max(0, Math.round(Number(item.count) || 0))
+    if (count > 0) list.push({ agentId: item.agentId, count })
+  }
+  writeDetailProviderAllocations(list)
+}
+
+/** 次数按 1 增减（用户口径：每次按 1 删减） */
+function bumpDetailProviderAllocation(agentId: string, delta: number) {
+  const map = detailAllocationCountMap()
+  map.set(agentId, Math.max(0, Math.round((map.get(agentId) ?? 0) + delta)))
+  writeDetailAllocationCountMap(map)
+}
+
+function setDetailProviderAllocationCount(agentId: string, raw: string) {
   const value = Number(raw)
-  writeDetailProviderAllocations(
-    detailProviderAllocationsRaw.value.map((item, i) =>
-      i === index ? { ...item, count: Number.isFinite(value) ? Math.max(0, value) : 0 } : item,
-    ),
-  )
+  const map = detailAllocationCountMap()
+  map.set(agentId, Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0)
+  writeDetailAllocationCountMap(map)
 }
 
-function removeDetailProviderAllocation(index: number) {
-  writeDetailProviderAllocations(
-    detailProviderAllocationsRaw.value.filter((_, i) => i !== index),
-  )
+/** 用户口径：行次数不得小于分段合计 —— 编辑分段后把行次数抬到下限 */
+function raiseDetailRowCount() {
+  const current = detail.value
+  if (!current) return
+  if (current.kind === 'flow') {
+    const entry = getActiveSlot()?.flow.find((item) => item.id === current.entryId)
+    if (!entry) return
+    const floor = minFlowCountForEntry(entry)
+    if (floor > Math.max(0, Number(entry.count) || 0)) entry.count = floor
+    return
+  }
+  if (current.kind === 'flowMember') {
+    const entry = getActiveSlot()?.flow.find((item) => item.id === current.entryId)
+    const member = detailMemberForAgents.value
+    if (!entry || !member) return
+    const floor = minMemberTuneCount(entry, member)
+    if (floor > memberTuneCount(entry, member)) {
+      setMemberOverride(entry.id, member, { count: floor })
+    }
+  }
 }
 
 function addSkillToCustomGroup(skillId: string) {
@@ -1880,11 +1957,13 @@ function addToFlow(prepared: PreparedSkill) {
   if (!ownerId) return
   const slot = getActiveSlot()
   if (!slot) return
+  // 起始次数至少 1，且满足「次数 ≥ 按提供者拆次数合计」的下限（用户口径 2026-10-06）
+  const floor = flowCountFloorFor(prepared, (member) => Math.max(0, Number(member.count) || 0))
   slot.flow.push({
     id: newLocalId('flow'),
     ownerAgentId: ownerId,
     preparedId: prepared.id,
-    count: 1,
+    count: Math.max(1, floor),
     staggerPhase: 'stagger',
     critMode: 'expected',
   })
@@ -1893,6 +1972,11 @@ function addToFlow(prepared: PreparedSkill) {
 function updateFlow(entryId: string, patch: Partial<FlowEntry>) {
   const entry = getActiveSlot()?.flow.find((item) => item.id === entryId)
   if (!entry) return
+  if (patch.count != null) {
+    // 行次数不得小于「按提供者拆次数」合计（用户口径 2026-10-06）
+    const floor = minFlowCountForEntry(entry)
+    patch = { ...patch, count: Math.max(Math.max(0, Number(patch.count) || 0), floor) }
+  }
   Object.assign(entry, patch)
 }
 
@@ -2391,6 +2475,45 @@ function memberTuneCount(
   return Math.max(0, Number(member.count) || 0)
 }
 
+/**
+ * 「行次数不得小于按提供者拆次数合计」的下限（用户口径 2026-10-06）。
+ *
+ * 普通行 = 该条准备的分段合计；技能组行 = Σ(成员分段合计 ÷ 成员次数)（整组次数是乘数）。
+ */
+function flowCountFloorFor(
+  prepared: PreparedSkill | null | undefined,
+  memberCountOf: (member: import('@/types/calculator').SkillGroupMember) => number,
+): number {
+  const groupId = prepared?.skillGroupId?.trim() || ''
+  return flowCountFloor(
+    prepared,
+    groupId ? buffStore.findSkillGroup(groupId) : null,
+    memberCountOf,
+  )
+}
+
+function preparedOfEntry(entry: FlowEntry): PreparedSkill | undefined {
+  return currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
+}
+
+/** 该流程行的最小次数（普通行 = 分段合计；组行 = Σ 成员合计 ÷ 成员次数） */
+function minFlowCountForEntry(entry: FlowEntry): number {
+  return flowCountFloorFor(preparedOfEntry(entry), (member) => memberTuneCount(entry, member))
+}
+
+/** 组内成员的最小细调次数 = 成员分段合计 ÷ 整组次数 */
+function minMemberTuneCount(
+  entry: FlowEntry,
+  member: import('@/types/calculator').SkillGroupMember,
+): number {
+  const prepared = preparedOfEntry(entry)
+  if (!prepared) return 0
+  return memberTuneCountFloor(
+    memberAgentsFor(prepared, member)?.providerAllocations,
+    Number(entry.count) || 0,
+  )
+}
+
 /** 细调展示失衡：覆盖优先，否则继承整组流程行 */
 function memberTuneStagger(
   entry: FlowEntry,
@@ -2414,6 +2537,17 @@ function setMemberOverride(
   const list = [...(entry.memberOverrides ?? [])]
   const index = list.findIndex((item) => item.memberKey === key)
   const prev = index >= 0 ? list[index] : undefined
+  // 成员次数不得小于该成员「按提供者拆次数」合计 ÷ 整组次数（用户口径 2026-10-06）
+  const nextPatch =
+    patch.count != null
+      ? {
+          ...patch,
+          count: Math.max(
+            Math.max(0, Number(patch.count) || 0),
+            minMemberTuneCount(entry, member as import('@/types/calculator').SkillGroupMember),
+          ),
+        }
+      : patch
   const base: FlowGroupMemberOverride = {
     memberKey: key,
     skillId: member.skillId,
@@ -2421,10 +2555,10 @@ function setMemberOverride(
     staggerPhase: prev?.staggerPhase ?? null,
     // 组内细调不再提供暴击覆盖
     critMode: null,
-    ...patch,
+    ...nextPatch,
   }
-  if (patch.count === null) base.count = null
-  if (patch.staggerPhase === null) base.staggerPhase = null
+  if (nextPatch.count === null) base.count = null
+  if (nextPatch.staggerPhase === null) base.staggerPhase = null
   const empty = base.count == null && base.staggerPhase == null
   if (index >= 0) {
     if (empty) list.splice(index, 1)
@@ -3815,55 +3949,52 @@ const showcaseTitle = computed(() => {
                     />
                   </label>
                 </div>
-                <div v-if="detailAllocationEditable" class="provider-split">
-                  <p class="detail-section-title">
-                    按提供者拆次数
-                    <span class="muted">
-                      （把本行次数按强度提供者分段；留空 = 全部按上面的提供者）
-                    </span>
-                  </p>
-                  <ul v-if="detailProviderAllocationsRaw.length" class="provider-split-list">
-                    <li
-                      v-for="(item, index) in detailProviderAllocationsRaw"
-                      :key="`${index}-${item.agentId}`"
-                    >
-                      <select
-                        :value="item.agentId"
-                        @change="
-                          setDetailProviderAllocationAgent(
-                            index,
-                            ($event.target as HTMLSelectElement).value,
-                          )
-                        "
-                      >
-                        <option value="">未选</option>
-                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
-                          {{ agent.name }}
-                        </option>
-                      </select>
-                      <input
-                        :value="item.count"
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        @input="
-                          setDetailProviderAllocationCount(
-                            index,
-                            ($event.target as HTMLInputElement).value,
-                          )
-                        "
-                      />
-                      <span class="muted">次</span>
-                      <span class="provider-split-damage">
-                        {{ detailAllocationDamage(detailAllocationHitKey(index, false)) }}
+                <div v-if="detailAllocationVisible" class="provider-split">
+                  <p class="detail-section-title">按提供者拆次数</p>
+                  <ul class="provider-split-list">
+                    <li v-for="row in detailAllocationRows" :key="row.agentId">
+                      <span class="provider-split-name" :title="row.name">
+                        {{ row.name }}
+                        <span v-if="!row.inTeam" class="provider-split-warn">不在队伍</span>
                       </span>
-                      <button
-                        type="button"
-                        class="mini-btn danger"
-                        @click="removeDetailProviderAllocation(index)"
-                      >
-                        删除
-                      </button>
+                      <div class="provider-split-stepper">
+                        <button
+                          type="button"
+                          class="mini-btn"
+                          :disabled="row.count <= 0"
+                          @click="bumpDetailProviderAllocation(row.agentId, -1)"
+                        >
+                          −
+                        </button>
+                        <input
+                          :value="row.count"
+                          type="number"
+                          min="0"
+                          step="1"
+                          @input="
+                            setDetailProviderAllocationCount(
+                              row.agentId,
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
+                        />
+                        <button
+                          type="button"
+                          class="mini-btn"
+                          @click="bumpDetailProviderAllocation(row.agentId, 1)"
+                        >
+                          ＋
+                        </button>
+                      </div>
+                      <span class="provider-split-damage">
+                        {{
+                          row.segmentIndex >= 0
+                            ? detailAllocationDamage(
+                                detailAllocationHitKey(row.segmentIndex, false),
+                              )
+                            : ''
+                        }}
+                      </span>
                     </li>
                   </ul>
                   <p v-if="detailAllocationSummary" class="provider-split-summary">
@@ -3872,16 +4003,7 @@ const showcaseTitle = computed(() => {
                   <p v-if="detailAllocationRestText" class="provider-split-summary muted">
                     {{ detailAllocationRestText }}
                   </p>
-                  <button type="button" class="mini-btn" @click="addDetailProviderAllocation">
-                    ＋ 添加提供者
-                  </button>
                 </div>
-                <p
-                  v-else-if="detailProviderAllocations.length"
-                  class="provider-split-summary"
-                >
-                  按提供者拆次数：{{ providerSplitFull(detailProviderAllocations) }}
-                </p>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
                 </p>
@@ -4731,7 +4853,7 @@ const showcaseTitle = computed(() => {
   cursor: default;
 }
 
-/* 「按提供者拆次数」：一条准备条目的次数按强度提供者分段 */
+/* 「按提供者拆次数」：一条准备条目的次数按强度提供者分段（队伍全员 + 次数） */
 .provider-split {
   display: flex;
   flex-direction: column;
@@ -4743,21 +4865,55 @@ const showcaseTitle = computed(() => {
 .provider-split-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.2rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .provider-split-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) 4.5rem auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(4.5rem, auto);
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  padding: 0.18rem 0.35rem;
+  border: 1px solid #2a3038;
+  border-radius: 6px;
+  background: #171c25;
 }
-.provider-split-list select,
-.provider-split-list input {
+.provider-split-name {
   min-width: 0;
-  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: #dce4f0;
+}
+.provider-split-warn {
+  margin-left: 0.3rem;
+  padding: 0 0.3rem;
+  border: 1px solid #6b4a4a;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  color: #d08a8a;
+}
+.provider-split-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.provider-split-stepper input {
+  width: 3.6rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.provider-split-stepper .mini-btn {
+  min-width: 1.5rem;
+  padding: 0.05rem 0.3rem;
+  line-height: 1.1;
+}
+.provider-split-stepper .mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .provider-split-damage {
   font-size: 0.72rem;
@@ -4772,6 +4928,21 @@ const showcaseTitle = computed(() => {
 }
 .provider-split > .mini-btn {
   align-self: flex-start;
+}
+:global([data-theme='light'] .provider-split-list li) {
+  border-color: #d5dae3;
+  background: #f7f9fc;
+}
+:global([data-theme='light'] .provider-split-name) {
+  color: #1c212a;
+}
+:global([data-theme='light'] .provider-split-warn) {
+  border-color: #e2c4c4;
+  color: #a35050;
+}
+:global([data-theme='light'] .provider-split-damage),
+:global([data-theme='light'] .provider-split-summary) {
+  color: #5b6573;
 }
 
 .warn-hint {
