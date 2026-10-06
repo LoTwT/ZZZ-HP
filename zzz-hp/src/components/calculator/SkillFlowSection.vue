@@ -821,7 +821,7 @@ function groupMultText(
         options.entry != null
           ? flowPrepared(options.entry)
           : currentSlot.value.prepared.find((item) => item.id === options.preparedId) ?? null
-      if (prepared && cardTriggerWarnForMember(skill, prepared, member)) {
+      if (prepared && cardTriggerWarnForMember(skill, prepared, member, options.entry ?? null)) {
         return
       }
     }
@@ -847,19 +847,25 @@ function groupMemberMultText(
       options.entry != null
         ? flowPrepared(options.entry)
         : currentSlot.value.prepared.find((item) => item.id === options.preparedId) ?? null
-    if (prepared && cardTriggerWarnForMember(skill, prepared, member)) return '—'
+    if (prepared && cardTriggerWarnForMember(skill, prepared, member, options.entry ?? null)) {
+      return '—'
+    }
     return skillMultText(skill, groupMemberCalcKey(member, memberIndex, options))
   }
   return libraryMultText(skill)
 }
 
+/** 成员触发者不合规的提醒；有流程行时按**行级生效值**判（准备与流程解耦） */
 function cardTriggerWarnForMember(
   skill: Skill,
   prepared: PreparedSkill,
   member: import('@/types/calculator').SkillGroupMember,
+  entry?: FlowEntry | null,
 ): string | null {
-  const ma = memberAgentsFor(prepared, member)
-  const triggerId = ma?.triggerAgentId ?? prepared.triggerAgentId
+  const memberTrigger = entry
+    ? flowMemberAgents(entry, member).triggerAgentId
+    : memberAgentsFor(prepared, member)?.triggerAgentId
+  const triggerId = memberTrigger ?? prepared.triggerAgentId
   if (!triggerId) return null
   return anomalyTriggerMultHint(skill, triggerId)
 }
@@ -1323,16 +1329,22 @@ const detailCalcKey = computed(() => {
   return null
 })
 
+/** 详情顶部的组行警告：有流程行按行级生效值，否则按准备条目 */
+const detailGroupDualHint = computed(() => {
+  const prepared = detailPrepared.value
+  if (!prepared || !isPreparedGroup(prepared)) return null
+  const entry = detailFlowEntry()
+  return entry ? groupDualAgentHintForEntry(entry, prepared) : groupDualAgentHint(prepared)
+})
+
 const detailSkipReason = computed(() => {
   const current = detail.value
   if (!current) return null
   if (current.kind === 'flowMember') {
-    const prepared = detailPrepared.value
+    // 行级覆盖优先（准备与流程解耦后，警告必须按本行生效值判）
     const skill = detailSkill.value
-    const member = detailMemberForAgents.value
-    if (!prepared || !skill || !member) return null
-    const agents = memberAgentsFor(prepared, member)
-    return dualAgentHintForAgents(skill, agents?.anomalyPowerAgentId, agents?.triggerAgentId)
+    if (!skill) return null
+    return dualAgentHintForAgents(skill, detailAgentPowerId.value, detailAgentTriggerId.value)
   }
   if (current.kind === 'flow') {
     const entry = currentSlot.value.flow.find((item) => item.id === current.entryId)
@@ -1691,6 +1703,41 @@ function dualAgentHint(prepared: PreparedSkill, skill: Skill): string | null {
   return dualAgentHintForAgents(skill, prepared.anomalyPowerAgentId, prepared.triggerAgentId)
 }
 
+/** 详情里某个成员生效的双代理人：流程行 → 行级覆盖优先；准备 / 招式库 → 准备条目成员配置 */
+function detailMemberAgents(member: import('@/types/calculator').SkillGroupMember): {
+  anomalyPowerAgentId: string | null
+  triggerAgentId: string | null
+} {
+  const prepared = detailPrepared.value
+  const entry = detailFlowEntry()
+  if (entry) {
+    const agents = flowMemberAgents(entry, member)
+    return {
+      anomalyPowerAgentId: agents.anomalyPowerAgentId ?? null,
+      triggerAgentId: agents.triggerAgentId ?? null,
+    }
+  }
+  const agents = prepared ? memberAgentsFor(prepared, member) : null
+  return {
+    anomalyPowerAgentId: agents?.anomalyPowerAgentId ?? null,
+    triggerAgentId: agents?.triggerAgentId ?? null,
+  }
+}
+
+/** 组行警告（按**本流程行生效值**判：成员行级覆盖优先） */
+function groupDualAgentHintForEntry(entry: FlowEntry, prepared: PreparedSkill): string | null {
+  const group = preparedGroup(prepared)
+  if (!group) return '技能组已从库中删除'
+  for (const member of sortSkillGroupMembers(group.members)) {
+    const skill = buffStore.findSkill(member.skillId)
+    if (!skill || !skillNeedsDualAgents(skill.damageType)) continue
+    const agents = flowMemberAgents(entry, member)
+    const hint = dualAgentHintForAgents(skill, agents.anomalyPowerAgentId, agents.triggerAgentId)
+    if (hint) return hint
+  }
+  return null
+}
+
 function groupDualAgentHint(prepared: PreparedSkill): string | null {
   const group = preparedGroup(prepared)
   if (!group) return '技能组已从库中删除'
@@ -2000,7 +2047,7 @@ function flowSkipReason(entry: FlowEntry): string | null {
   if (!prepared) return '准备阶段里找不到这条招式'
   if (isPreparedGroup(prepared)) {
     if (!preparedGroup(prepared)) return '技能组已从库中删除'
-    return groupDualAgentHint(prepared)
+    return groupDualAgentHintForEntry(entry, prepared)
   }
   const hit = props.hits?.find((item) => item.id === entry.id)
   if (!hit) {
@@ -3391,6 +3438,7 @@ const showcaseTitle = computed(() => {
                           buffStore.findSkill(member.skillId)!,
                           flowPrepared(tuningFlowEntry)!,
                           member,
+                          tuningFlowEntry,
                         )
                       : null
                 "
@@ -3515,9 +3563,7 @@ const showcaseTitle = computed(() => {
               <p class="col-desc">
                 组内招式与普通招式相同。点「详情」查看/配置；关闭招式详情会回到本组。自建组新建招式只缓存在本机。
               </p>
-              <p v-if="detailPrepared && groupDualAgentHint(detailPrepared)" class="warn-hint">
-                {{ groupDualAgentHint(detailPrepared) }}
-              </p>
+              <p v-if="detailGroupDualHint" class="warn-hint">{{ detailGroupDualHint }}</p>
 
               <div v-if="detailGroupEditable" class="calc-member-picker">
                 <section class="calc-member-col">
@@ -3681,6 +3727,7 @@ const showcaseTitle = computed(() => {
                             buffStore.findSkill(member.skillId)!,
                             detailPrepared,
                             member,
+                            detailFlowEntry(),
                           )
                         : libraryMultWarn(buffStore.findSkill(member.skillId)!)
                       : '已删除'
@@ -3709,13 +3756,7 @@ const showcaseTitle = computed(() => {
                   :agent-pair="
                     detailPrepared && buffStore.findSkill(member.skillId)
                       ? agentPairText(
-                          {
-                            ...detailPrepared,
-                            anomalyPowerAgentId:
-                              memberAgentsFor(detailPrepared, member)?.anomalyPowerAgentId ?? null,
-                            triggerAgentId:
-                              memberAgentsFor(detailPrepared, member)?.triggerAgentId ?? null,
-                          },
+                          { ...detailPrepared, ...detailMemberAgents(member) },
                           buffStore.findSkill(member.skillId)!,
                         )
                       : ''
@@ -3726,8 +3767,8 @@ const showcaseTitle = computed(() => {
                         buffStore.findSkill(member.skillId) &&
                         dualAgentHintForAgents(
                           buffStore.findSkill(member.skillId)!,
-                          memberAgentsFor(detailPrepared, member)?.anomalyPowerAgentId,
-                          memberAgentsFor(detailPrepared, member)?.triggerAgentId,
+                          detailMemberAgents(member).anomalyPowerAgentId,
+                          detailMemberAgents(member).triggerAgentId,
                         ),
                     )
                   "
