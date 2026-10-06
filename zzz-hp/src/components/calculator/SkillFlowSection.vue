@@ -4079,9 +4079,84 @@ const showcaseTitle = computed(() => {
             <div v-else-if="detailSkill" class="skill-detail-body">
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
-                <div class="agent-row agent-row--single">
-                  <label>
-                    <span>异常类触发者</span>
+                <div class="agent-row agent-row--provider">
+                  <div v-if="detailAllocationVisible" class="provider-split">
+                    <span class="agent-col-label">
+                      异常强度提供者
+                      <span
+                        class="provider-split-inherit"
+                        :class="{ 'is-override': !detailAllocationInherited }"
+                      >
+                        {{ detailAllocationInherited ? '继承准备条目' : '本行单独配置' }}
+                      </span>
+                    </span>
+                    <ul class="provider-split-list">
+                      <li
+                        v-for="row in detailAllocationRows"
+                        :key="row.agentId"
+                        :class="{ 'is-zero': row.count <= 0 }"
+                      >
+                        <span class="provider-split-name" :title="row.name">
+                          {{ row.name }}
+                          <span v-if="!row.inTeam" class="provider-split-warn">不在队伍</span>
+                        </span>
+                        <div class="provider-split-stepper">
+                          <button
+                            type="button"
+                            class="step-btn"
+                            :disabled="row.count <= 0"
+                            @click="bumpDetailProviderAllocation(row.agentId, -1)"
+                          >
+                            −
+                          </button>
+                          <input
+                            :value="row.count"
+                            type="number"
+                            min="0"
+                            step="1"
+                            @input="
+                              setDetailProviderAllocationCount(
+                                row.agentId,
+                                ($event.target as HTMLInputElement).value,
+                              )
+                            "
+                          />
+                          <button
+                            type="button"
+                            class="step-btn"
+                            @click="bumpDetailProviderAllocation(row.agentId, 1)"
+                          >
+                            ＋
+                          </button>
+                        </div>
+                        <span class="provider-split-damage">
+                          {{
+                            row.segmentIndex >= 0
+                              ? detailAllocationDamage(
+                                  detailAllocationHitKey(row.segmentIndex, false),
+                                )
+                              : ''
+                          }}
+                        </span>
+                      </li>
+                    </ul>
+                    <p v-if="detailAllocationSummary" class="provider-split-summary">
+                      {{ detailAllocationSummary }}
+                    </p>
+                    <p v-if="detailAllocationRestText" class="provider-split-summary muted">
+                      {{ detailAllocationRestText }}
+                    </p>
+                    <button
+                      v-if="detailAllocationOverridden"
+                      type="button"
+                      class="mini-btn"
+                      @click="resetDetailAllocationOverride"
+                    >
+                      恢复继承准备条目
+                    </button>
+                  </div>
+                  <label class="agent-col">
+                    <span class="agent-col-label">异常类触发者</span>
                     <select
                       v-if="detailCanEditAgents"
                       :value="detailAgentTriggerId"
@@ -4105,77 +4180,6 @@ const showcaseTitle = computed(() => {
                       tabindex="-1"
                     />
                   </label>
-                </div>
-                <div v-if="detailAllocationVisible" class="provider-split">
-                  <p class="detail-section-title">
-                    异常强度提供者（按次数）
-                    <span
-                      class="provider-split-inherit"
-                      :class="{ 'is-override': !detailAllocationInherited }"
-                    >
-                      {{ detailAllocationInherited ? '继承准备条目' : '本行单独配置' }}
-                    </span>
-                  </p>
-                  <ul class="provider-split-list">
-                    <li v-for="row in detailAllocationRows" :key="row.agentId">
-                      <span class="provider-split-name" :title="row.name">
-                        {{ row.name }}
-                        <span v-if="!row.inTeam" class="provider-split-warn">不在队伍</span>
-                      </span>
-                      <div class="provider-split-stepper">
-                        <button
-                          type="button"
-                          class="mini-btn"
-                          :disabled="row.count <= 0"
-                          @click="bumpDetailProviderAllocation(row.agentId, -1)"
-                        >
-                          −
-                        </button>
-                        <input
-                          :value="row.count"
-                          type="number"
-                          min="0"
-                          step="1"
-                          @input="
-                            setDetailProviderAllocationCount(
-                              row.agentId,
-                              ($event.target as HTMLInputElement).value,
-                            )
-                          "
-                        />
-                        <button
-                          type="button"
-                          class="mini-btn"
-                          @click="bumpDetailProviderAllocation(row.agentId, 1)"
-                        >
-                          ＋
-                        </button>
-                      </div>
-                      <span class="provider-split-damage">
-                        {{
-                          row.segmentIndex >= 0
-                            ? detailAllocationDamage(
-                                detailAllocationHitKey(row.segmentIndex, false),
-                              )
-                            : ''
-                        }}
-                      </span>
-                    </li>
-                  </ul>
-                  <p v-if="detailAllocationSummary" class="provider-split-summary">
-                    {{ detailAllocationSummary }}
-                  </p>
-                  <p v-if="detailAllocationRestText" class="provider-split-summary muted">
-                    {{ detailAllocationRestText }}
-                  </p>
-                  <button
-                    v-if="detailAllocationOverridden"
-                    type="button"
-                    class="mini-btn"
-                    @click="resetDetailAllocationOverride"
-                  >
-                    恢复继承准备条目
-                  </button>
                 </div>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
@@ -5038,20 +5042,31 @@ const showcaseTitle = computed(() => {
 .provider-split-list {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.provider-split-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(4.5rem, auto);
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.18rem 0.35rem;
   border: 1px solid #2a3038;
   border-radius: 6px;
   background: #171c25;
+  overflow: hidden;
+}
+.provider-split-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(4.2rem, auto);
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.14rem 0.4rem;
+  border-bottom: 1px solid #222833;
+}
+.provider-split-list li:last-child {
+  border-bottom: none;
+}
+.provider-split-list li:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+.provider-split-list li.is-zero .provider-split-name {
+  color: #7d8697;
 }
 .provider-split-name {
   min-width: 0;
@@ -5072,25 +5087,46 @@ const showcaseTitle = computed(() => {
 .provider-split-stepper {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.18rem;
 }
 .provider-split-stepper input {
-  width: 3.6rem;
+  width: 2.6rem;
+  padding: 0.08rem 0.15rem;
+  border: 1px solid #333b46;
+  border-radius: 5px;
+  background: #12161e;
+  color: inherit;
   text-align: center;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
-.provider-split-stepper .mini-btn {
-  min-width: 1.5rem;
-  padding: 0.05rem 0.3rem;
-  line-height: 1.1;
+.provider-split-stepper .step-btn {
+  width: 1.3rem;
+  height: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #9aa3b0;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
 }
-.provider-split-stepper .mini-btn:disabled {
-  opacity: 0.4;
+.provider-split-stepper .step-btn:hover:not(:disabled) {
+  border-color: #3d4653;
+  background: #1c2432;
+  color: #dce4f0;
+}
+.provider-split-stepper .step-btn:disabled {
+  opacity: 0.35;
   cursor: default;
 }
 .provider-split-damage {
   font-size: 0.72rem;
-  color: #9aa3b0;
+  color: #8b95a5;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -5104,7 +5140,7 @@ const showcaseTitle = computed(() => {
   padding: 0 0.35rem;
   border: 1px solid #3d4653;
   border-radius: 999px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 400;
   color: #9fb0c6;
 }
@@ -5112,11 +5148,46 @@ const showcaseTitle = computed(() => {
   border-color: #6b5a33;
   color: #ffd479;
 }
-.agent-row--single {
-  grid-template-columns: minmax(0, 1fr);
+.agent-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.agent-row--provider {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  align-items: start;
+}
+.agent-col-label {
+  font-size: 0.7rem;
+  color: #9aa3b0;
 }
 .provider-split > .mini-btn {
   align-self: flex-start;
+}
+:global([data-theme='light']) .provider-split-list {
+  border-color: #d5dae3;
+  background: #ffffff;
+}
+:global([data-theme='light']) .provider-split-list li {
+  border-bottom-color: #eef1f5;
+}
+:global([data-theme='light']) .provider-split-list li:hover {
+  background: #f7f9fc;
+}
+:global([data-theme='light']) .provider-split-stepper input {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #1c212a;
+  color-scheme: light;
+}
+:global([data-theme='light']) .provider-split-stepper .step-btn {
+  color: #667085;
+}
+:global([data-theme='light']) .provider-split-stepper .step-btn:hover:not(:disabled) {
+  border-color: #c9a55c;
+  background: #fff8eb;
+  color: #1c212a;
 }
 :global([data-theme='light'] .provider-split-inherit) {
   border-color: #cfd6e0;
@@ -5126,12 +5197,12 @@ const showcaseTitle = computed(() => {
   border-color: #e0cfa0;
   color: #9a6a00;
 }
-:global([data-theme='light'] .provider-split-list li) {
-  border-color: #d5dae3;
-  background: #f7f9fc;
-}
-:global([data-theme='light'] .provider-split-name) {
+:global([data-theme='light'] .provider-split-name),
+:global([data-theme='light'] .agent-col-label) {
   color: #1c212a;
+}
+:global([data-theme='light'] .provider-split-list li.is-zero .provider-split-name) {
+  color: #8b95a5;
 }
 :global([data-theme='light'] .provider-split-warn) {
   border-color: #e2c4c4;
