@@ -321,10 +321,17 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           const ov = findMemberOverride(entry.memberOverrides, member)
           const ma = findMemberAgents(prepared.memberAgents, member)
           const segmentCount = Math.max(0, Number(ov?.count ?? member.count) || 0) * groupMult
-          // 组内异常段：优先成员双代理人，缺省再回落准备条目 / 当前角色默认
+          // 组内异常段：本行成员覆盖 > 准备条目成员配置 > 整行/当前角色默认
           const power =
-            ma?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
-          const trigger = ma?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
+            ov?.anomalyPowerAgentId?.trim() ||
+            ma?.anomalyPowerAgentId?.trim() ||
+            prepared.anomalyPowerAgentId?.trim() ||
+            null
+          const trigger =
+            ov?.triggerAgentId?.trim() ||
+            ma?.triggerAgentId?.trim() ||
+            prepared.triggerAgentId?.trim() ||
+            null
           hits.push(
             resolveOne(entry, prepared, skill, ownerAgentId, options, {
               count: segmentCount,
@@ -347,7 +354,16 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
         missing.add(skillId)
         continue
       }
-      hits.push(resolveOne(entry, prepared, skill, ownerAgentId, options))
+      // 行级配置优先，缺省继承准备条目（准备与流程解耦）
+      const rowProvider =
+        entry.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
+      const rowTrigger =
+        entry.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
+      const rowAgents = {
+        ...(rowProvider ? { anomalyPowerAgentId: rowProvider } : {}),
+        ...(rowTrigger ? { triggerAgentId: rowTrigger } : {}),
+      }
+      hits.push(resolveOne(entry, prepared, skill, ownerAgentId, options, rowAgents))
     }
   })
 

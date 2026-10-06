@@ -193,6 +193,9 @@ export interface FlowGroupMemberOverride {
   critMode?: DamageEventCritMode | null
   /** 该成员的 buff 例外（缺省 = 继承整行 FlowEntry.buffOverrides） */
   buffOverrides?: FlowBuffOverride | null
+  /** 本行这一段的强度提供者 / 触发者（缺省 = 继承准备条目成员配置） */
+  anomalyPowerAgentId?: string | null
+  triggerAgentId?: string | null
 }
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
@@ -216,6 +219,14 @@ export interface FlowEntry {
    * 技能组行：整组用本字段；逐成员用 memberOverrides[].buffOverrides。
    */
   buffOverrides?: FlowBuffOverride | null
+  /**
+   * **行级**异常强度提供者 / 触发者（缺省 = 继承准备条目上那一份）。
+   *
+   * 准备条目与流程行因此解耦：同一条准备招式被两行引用时，两行可以各配各的
+   * （用户口径 2026-10-06）。技能组行逐成员仍走 `memberOverrides[]`。
+   */
+  anomalyPowerAgentId?: string | null
+  triggerAgentId?: string | null
 }
 
 /**

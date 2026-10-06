@@ -1866,6 +1866,75 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
   border-top-color: #d5dae3 !important;
 }
 
+/*
+ * 本行增益例外弹窗（SkillBuffOverrideModal，同样 Teleport 到 body）。
+ * 视觉对齐上面的局内增益选择器，override 也放一处。
+ */
+[data-theme='light'] .bo-mask {
+  background: rgba(15, 23, 42, 0.35) !important;
+}
+
+[data-theme='light'] .bo-card {
+  border-color: #d5dae3 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%) !important;
+  color: #1c212a !important;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12) !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .bo-head {
+  border-bottom-color: #e4e7ec !important;
+}
+
+[data-theme='light'] .bo-title-row h3 {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .bo-close {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .bo-hint,
+[data-theme='light'] .bo-row,
+[data-theme='light'] .bo-copy small,
+[data-theme='light'] .bo-sep,
+[data-theme='light'] .bo-count,
+[data-theme='light'] .bo-empty {
+  color: #667085 !important;
+}
+
+[data-theme='light'] .bo-badge,
+[data-theme='light'] .bo-ghost {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #9a6a00 !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .bo-ghost {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .bo-ghost:hover:not(:disabled) {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+}
+
+[data-theme='light'] .bo-row-card {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+}
+
+[data-theme='light'] .bo-copy strong,
+[data-theme='light'] .bo-effect-text {
+  color: #1c212a !important;
+}
+
+[data-theme='light'] .bo-effect-row {
+  border-bottom-color: #e4e7ec !important;
+}
+
+
 /* 额外 Buff 弹窗（Teleport 到 body） */
 [data-theme='light'] .extra-buff-modal .extra-buff-editor .field {
   color: #667085 !important;

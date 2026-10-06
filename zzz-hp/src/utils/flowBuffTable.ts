@@ -414,7 +414,8 @@ export function resolveRowBeneficiarySlots(input: {
  * `na`（不可点）三种来源：
  * ① 全局未启用（行级不能单独打开）
  * ② **这一行不吃这条**：受益者对不上（2026-09-22 定稿的灰法）
- * ③ 成员行：整组已关（继承自组）
+ * ③ 成员行：整组已关且**该成员没有自己的覆盖**（继承自组）；成员有自己的覆盖时按自己的算，
+ *    与结算口径一致（`resolveOne`：成员覆盖整体替换整行覆盖）
  */
 export function buildFlowBuffTableStates(input: {
   rows: FlowBuffTableRow[]
@@ -433,6 +434,10 @@ export function buildFlowBuffTableStates(input: {
   for (const row of input.rows) {
     const entry = entryById.get(row.entryId) ?? null
     const rowOverride = effectiveRowOverride(entry, row.memberKey ?? null)
+    const memberOwnOverride =
+      row.kind === 'member' && row.memberKey
+        ? ((entry?.memberOverrides ?? []).find((item) => item.memberKey === row.memberKey) ?? null)
+        : null
     const groupOverride = row.kind === 'member' ? effectiveRowOverride(entry, null) : null
     const beneficiaries = input.beneficiarySlotsOf(row.key)
     for (const column of input.columns) {
@@ -449,9 +454,14 @@ export function buildFlowBuffTableStates(input: {
         out[cellKey] = 'na'
         continue
       }
+      // ③ 成员行「整组已关」：只有**该成员没有自己的覆盖**时才算「继承自组」（不可点）。
+      //    成员有自己的覆盖时按自己的算 —— 与结算一致：`resolveOne` 里成员覆盖整体替换整行覆盖，
+      //    此时被整行关掉的这条对这个成员是**生效**的，表里不该灰。
       const groupOff =
-        groupOverride?.disabledEffectIds?.includes(column.key) ||
-        groupOverride?.disabledBlockIds?.includes(column.blockKey)
+        row.kind === 'member' &&
+        !memberOwnOverride &&
+        (groupOverride?.disabledEffectIds?.includes(column.key) ||
+          groupOverride?.disabledBlockIds?.includes(column.blockKey))
       if (groupOff) {
         out[cellKey] = 'na'
         continue
