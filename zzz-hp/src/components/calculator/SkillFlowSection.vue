@@ -1438,31 +1438,21 @@ const detailAgentTriggerId = computed(() => {
   return prepared.triggerAgentId ?? ''
 })
 
-/** 当前生效的提供者（供胶囊 / 提示用名称展示） */
-const detailEffectivePowerName = computed(
-  () => agentFullName(detailAgentPowerId.value) || '',
-)
-
 /** 详情「计算过程」当前查看的段：数字 = 第 N 段（0 = 行键本身）、'rest' = 未分配段 */
 const detailProcessSegment = ref<number | 'rest'>(0)
 
 /** 该行可看的计算过程段（提供者次数 > 0 的段 + 未分配段），供选项条用 */
 const detailProcessOptions = computed(() => {
   const out: Array<{ key: number | 'rest'; label: string }> = []
-  for (const row of detailAllocationRows.value) {
-    if (row.segmentIndex < 0) continue
+  detailProviderAllocations.value.forEach((item, index) => {
     out.push({
-      key: row.segmentIndex,
-      label: `${row.name}×${formatAllocationCount(row.count)}`,
+      key: index,
+      label: `${agentFullName(item.agentId) || item.agentId}×${formatAllocationCount(item.count)}`,
     })
-  }
+  })
   const rowCount = detailAllocationRowCount.value
-  if (rowCount != null && rowCount - detailAllocationTotal.value > 0) {
-    out.push({
-      key: 'rest',
-      label: `未分配×${formatAllocationCount(rowCount - detailAllocationTotal.value)}`,
-    })
-  }
+  const rest = rowCount == null ? 0 : rowCount - sumProviderAllocations(detailProviderAllocations.value)
+  if (rest > 0) out.push({ key: 'rest', label: `未分配×${formatAllocationCount(rest)}` })
   return out
 })
 
@@ -1618,8 +1608,6 @@ function detailAllocationTarget(): DetailAllocationTarget | null {
   return { scope: 'prepared', preparedId: prepared.id }
 }
 
-const detailAllocationVisible = computed(() => detailAllocationTarget() !== null)
-
 /** 详情所属的流程行（流程视图才有） */
 function detailFlowEntry(): FlowEntry | null {
   const current = detail.value
@@ -1627,7 +1615,7 @@ function detailFlowEntry(): FlowEntry | null {
   return currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
 }
 
-/** 该流程行是否已经**自己配了**提供者（否则显示为「继承准备条目」） */
+/** 该流程行是否已经**自己配了**提供者（否则视为继承准备条目） */
 const detailAllocationOverridden = computed(() => {
   const target = detailAllocationTarget()
   if (target?.scope !== 'flow') return false
@@ -1643,13 +1631,8 @@ const detailAllocationOverridden = computed(() => {
   return Boolean(entry.providerAllocations?.length || entry.anomalyPowerAgentId || entry.triggerAgentId)
 })
 
-/** 流程行没有自己的配置 → 显示为「继承准备条目」 */
-const detailAllocationInherited = computed(
-  () => detailAllocationTarget()?.scope === 'flow' && !detailAllocationOverridden.value,
-)
-
-/** 编辑器用原始列表：行级覆盖优先，缺省继承准备条目 */
-const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() => {
+/** 当前生效的按提供者拆次数：行级覆盖优先，缺省继承准备条目（详情「计算过程」按段查看用） */
+const detailProviderAllocations = computed(() => {
   const target = detailAllocationTarget()
   const prepared = detailPrepared.value
   if (!target || !prepared) return []
@@ -1658,21 +1641,15 @@ const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() =
   if (member) {
     if (target.scope === 'flow' && entry) {
       const ov = memberOverrideFor(entry, member)
-      if (ov?.providerAllocations?.length) return ov.providerAllocations.map((item) => ({ ...item }))
+      if (ov?.providerAllocations?.length) return listProviderAllocations(ov.providerAllocations)
     }
-    const row = memberAgentsFor(prepared, member)?.providerAllocations
-    return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
+    return listProviderAllocations(memberAgentsFor(prepared, member)?.providerAllocations)
   }
   if (target.scope === 'flow' && entry?.providerAllocations?.length) {
-    return entry.providerAllocations.map((item) => ({ ...item }))
+    return listProviderAllocations(entry.providerAllocations)
   }
-  const row = prepared.providerAllocations
-  return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
+  return listProviderAllocations(prepared.providerAllocations)
 })
-
-const detailProviderAllocations = computed(() =>
-  listProviderAllocations(detailProviderAllocationsRaw.value),
-)
 
 /** 本行总次数（未进流程时未知 = null）：剩余 / 超出提示与截断口径都按它算 */
 const detailAllocationRowCount = computed<number | null>(() => {
@@ -1692,49 +1669,6 @@ const detailAllocationRowCount = computed<number | null>(() => {
   return null
 })
 
-const detailAllocationTotal = computed(() =>
-  sumProviderAllocations(detailProviderAllocationsRaw.value),
-)
-
-/**
- * 编辑器行：**队伍全部角色**（按槽位顺序）+ 当前次数（默认 0 次）。
- *
- * `segmentIndex` = 该行在有效分段（次数 > 0）里的下标，0 次为 -1（没有结算键）；
- * 不在队伍里的残留分段附在末尾，避免编辑时被静默丢掉。
- */
-const detailAllocationRows = computed(() => {
-  const counts = new Map(
-    detailProviderAllocationsRaw.value.map((item) => [item.agentId, Math.max(0, Number(item.count) || 0)]),
-  )
-  const teamIds = new Set(teamAgentOptions.value.map((agent) => agent.id))
-  let segmentIndex = -1
-  const rows = teamAgentOptions.value.map((agent) => {
-    const count = counts.get(agent.id) ?? 0
-    if (count > 0) segmentIndex += 1
-    return {
-      agentId: agent.id,
-      name: agent.name,
-      count,
-      segmentIndex: count > 0 ? segmentIndex : -1,
-      inTeam: true,
-    }
-  })
-  for (const item of detailProviderAllocationsRaw.value) {
-    if (teamIds.has(item.agentId)) continue
-    const count = Math.max(0, Number(item.count) || 0)
-    if (count <= 0) continue
-    segmentIndex += 1
-    rows.push({
-      agentId: item.agentId,
-      name: agentFullName(item.agentId) || item.agentId,
-      count,
-      segmentIndex,
-      inTeam: false,
-    })
-  }
-  return rows
-})
-
 /** 段键（第 0 段沿用行键，其余加后缀）；未进流程时没有结算键 */
 function detailAllocationHitKey(index: number, isRest: boolean): string | null {
   const current = detail.value
@@ -1749,86 +1683,6 @@ function detailAllocationHitKey(index: number, isRest: boolean): string | null {
     return isRest ? providerRestHitId(base) : providerSegmentHitId(base, index)
   }
   return null
-}
-
-function detailAllocationDamage(key: string | null): string {
-  if (!key) return ''
-  return formatDamage(props.hitDamages?.[key])
-}
-
-const detailAllocationSummary = computed(() => {
-  if (!detailProviderAllocations.value.length) return ''
-  const total = detailAllocationTotal.value
-  const rowCount = detailAllocationRowCount.value
-  if (rowCount == null) return `合计 ${formatAllocationCount(total)} 次（本行次数进流程后确定）`
-  if (total > rowCount) {
-    return `合计 ${formatAllocationCount(total)} 次 / 本行 ${formatAllocationCount(rowCount)} 次 → 超出的 ${formatAllocationCount(total - rowCount)} 次不计（按本行次数截断）`
-  }
-  return `合计 ${formatAllocationCount(total)} 次 / 本行 ${formatAllocationCount(rowCount)} 次`
-})
-
-const detailAllocationRestText = computed(() => {
-  const rowCount = detailAllocationRowCount.value
-  if (rowCount == null) return ''
-  const rest = rowCount - detailAllocationTotal.value
-  if (rest <= 0) return ''
-  const base = detailEffectivePowerName.value || '本行角色'
-  const damage = detailAllocationDamage(detailAllocationHitKey(0, true))
-  return `未分配 ${formatAllocationCount(rest)} 次按「${base}」${damage ? ` · ${damage}` : ''}`
-})
-
-/** 把分段写回「准备条目（默认值）」还是「本流程行（行级覆盖）」由 target.scope 决定 */
-function writeDetailProviderAllocations(next: PreparedProviderAllocation[]) {
-  const target = detailAllocationTarget()
-  if (!target) return
-  // 只存有效段（角色已选 + 次数 > 0）；全 0 = null（回归单一提供者）
-  const value = next.filter((item) => item.agentId.trim() && Number(item.count) > 0)
-  const cleaned = value.length ? value : null
-  // 名单首项作为基础提供者：未分配次数按它算（与展开口径一致）
-  const baseProvider = value[0]?.agentId ?? null
-  if (target.memberKey) {
-    const member = detailMemberForAgents.value
-    const prepared = detailPrepared.value
-    if (!member || !prepared) return
-    if (target.scope === 'flow' && target.entryId) {
-      setMemberOverride(target.entryId, member, {
-        providerAllocations: cleaned,
-        anomalyPowerAgentId: baseProvider ?? memberAgentsFor(prepared, member)?.anomalyPowerAgentId ?? null,
-      })
-      raiseDetailRowCount()
-      return
-    }
-    if (!prepared.skillGroupId) return
-    const list = [...(prepared.memberAgents ?? [])]
-    const index = list.findIndex((item) => item.memberKey === target.memberKey)
-    const base = index >= 0
-      ? list[index]!
-      : {
-          memberKey: target.memberKey,
-          skillId: detailSkill.value?.id ?? '',
-          anomalyPowerAgentId: null,
-          triggerAgentId: null,
-        }
-    const nextRow = { ...base, providerAllocations: cleaned }
-    if (index >= 0) list[index] = nextRow
-    else list.push(nextRow)
-    updatePrepared(prepared.id, { memberAgents: list })
-    raiseDetailRowCount()
-    return
-  }
-  if (target.scope === 'flow' && target.entryId) {
-    const entry = detailFlowEntry()
-    if (!entry) return
-    entry.providerAllocations = cleaned
-    entry.anomalyPowerAgentId = baseProvider
-    raiseDetailRowCount()
-    return
-  }
-  updatePrepared(target.preparedId, {
-    providerAllocations: cleaned,
-    ...(baseProvider ? { anomalyPowerAgentId: baseProvider } : {}),
-  })
-  raiseDetailRowCount()
 }
 
 /** 清掉本行的行级提供者配置，回到「继承准备条目」 */
@@ -1850,65 +1704,6 @@ function resetDetailAllocationOverride() {
   entry.providerAllocations = null
   entry.anomalyPowerAgentId = null
   entry.triggerAgentId = null
-}
-
-/** 当前分段的可写映射（含不在队伍的残留段） */
-function detailAllocationCountMap(): Map<string, number> {
-  return new Map(
-    detailProviderAllocationsRaw.value.map((item) => [item.agentId, Math.max(0, Number(item.count) || 0)]),
-  )
-}
-
-/** 写回：队伍成员按槽位顺序排前，不在队伍的残留段保持在后 */
-function writeDetailAllocationCountMap(next: Map<string, number>) {
-  const teamIds = new Set(teamAgentOptions.value.map((agent) => agent.id))
-  const list: PreparedProviderAllocation[] = []
-  for (const agent of teamAgentOptions.value) {
-    const count = Math.max(0, Math.round(Number(next.get(agent.id)) || 0))
-    if (count > 0) list.push({ agentId: agent.id, count })
-  }
-  for (const item of detailProviderAllocationsRaw.value) {
-    if (teamIds.has(item.agentId)) continue
-    const count = Math.max(0, Math.round(Number(item.count) || 0))
-    if (count > 0) list.push({ agentId: item.agentId, count })
-  }
-  writeDetailProviderAllocations(list)
-}
-
-/** 次数按 1 增减（用户口径：每次按 1 删减） */
-function bumpDetailProviderAllocation(agentId: string, delta: number) {
-  const map = detailAllocationCountMap()
-  map.set(agentId, Math.max(0, Math.round((map.get(agentId) ?? 0) + delta)))
-  writeDetailAllocationCountMap(map)
-}
-
-function setDetailProviderAllocationCount(agentId: string, raw: string) {
-  const value = Number(raw)
-  const map = detailAllocationCountMap()
-  map.set(agentId, Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0)
-  writeDetailAllocationCountMap(map)
-}
-
-/** 用户口径：行次数不得小于分段合计 —— 编辑分段后把行次数抬到下限 */
-function raiseDetailRowCount() {
-  const current = detail.value
-  if (!current) return
-  if (current.kind === 'flow') {
-    const entry = getActiveSlot()?.flow.find((item) => item.id === current.entryId)
-    if (!entry) return
-    const floor = minFlowCountForEntry(entry)
-    if (floor > Math.max(0, Number(entry.count) || 0)) entry.count = floor
-    return
-  }
-  if (current.kind === 'flowMember') {
-    const entry = getActiveSlot()?.flow.find((item) => item.id === current.entryId)
-    const member = detailMemberForAgents.value
-    if (!entry || !member) return
-    const floor = minMemberTuneCount(entry, member)
-    if (floor > memberTuneCount(entry, member)) {
-      setMemberOverride(entry.id, member, { count: floor })
-    }
-  }
 }
 
 function addSkillToCustomGroup(skillId: string) {
@@ -4217,84 +4012,35 @@ const showcaseTitle = computed(() => {
             <div v-else-if="detailSkill" class="skill-detail-body">
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
+                <p class="detail-section-title">双代理人</p>
                 <div class="agent-row">
-                  <div v-if="detailAllocationVisible" class="provider-split">
-                    <span class="agent-col-label">
-                      异常强度提供者
-                      <span
-                        class="provider-split-inherit"
-                        :class="{ 'is-override': !detailAllocationInherited }"
-                      >
-                        {{ detailAllocationInherited ? '继承准备条目' : '本行单独配置' }}
-                      </span>
-                    </span>
-                    <ul class="provider-split-list">
-                      <li
-                        v-for="row in detailAllocationRows"
-                        :key="row.agentId"
-                        :class="{ 'is-zero': row.count <= 0 }"
-                      >
-                        <span class="provider-split-name" :title="row.name">
-                          {{ row.name }}
-                          <span v-if="!row.inTeam" class="provider-split-warn">不在队伍</span>
-                        </span>
-                        <div class="provider-split-stepper">
-                          <button
-                            type="button"
-                            class="step-btn"
-                            :disabled="row.count <= 0"
-                            @click="bumpDetailProviderAllocation(row.agentId, -1)"
-                          >
-                            −
-                          </button>
-                          <input
-                            :value="row.count"
-                            type="number"
-                            min="0"
-                            step="1"
-                            @input="
-                              setDetailProviderAllocationCount(
-                                row.agentId,
-                                ($event.target as HTMLInputElement).value,
-                              )
-                            "
-                          />
-                          <button
-                            type="button"
-                            class="step-btn"
-                            @click="bumpDetailProviderAllocation(row.agentId, 1)"
-                          >
-                            ＋
-                          </button>
-                        </div>
-                        <span class="provider-split-damage">
-                          {{
-                            row.segmentIndex >= 0
-                              ? detailAllocationDamage(
-                                  detailAllocationHitKey(row.segmentIndex, false),
-                                )
-                              : ''
-                          }}
-                        </span>
-                      </li>
-                    </ul>
-                    <p v-if="detailAllocationSummary" class="provider-split-summary">
-                      {{ detailAllocationSummary }}
-                    </p>
-                    <p v-if="detailAllocationRestText" class="provider-split-summary muted">
-                      {{ detailAllocationRestText }}
-                    </p>
-                    <button
-                      v-if="detailAllocationOverridden"
-                      type="button"
-                      class="mini-btn"
-                      @click="resetDetailAllocationOverride"
+                  <label>
+                    <span>异常强度提供者</span>
+                    <select
+                      v-if="detailCanEditAgents"
+                      :value="detailAgentPowerId"
+                      @change="
+                        setDetailAgent(
+                          'anomalyPowerAgentId',
+                          ($event.target as HTMLSelectElement).value,
+                        )
+                      "
                     >
-                      恢复继承准备条目
-                    </button>
-                  </div>
-                  <label class="agent-col">
-                    <span class="agent-col-label">异常类触发者</span>
+                      <option value="">未选</option>
+                      <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                        {{ agent.name }}
+                      </option>
+                    </select>
+                    <input
+                      v-else
+                      :value="agentFullName(detailAgentPowerId) || '未选'"
+                      type="text"
+                      readonly
+                      tabindex="-1"
+                    />
+                  </label>
+                  <label>
+                    <span>异常类触发者</span>
                     <select
                       v-if="detailCanEditAgents"
                       :value="detailAgentTriggerId"
@@ -4319,6 +4065,14 @@ const showcaseTitle = computed(() => {
                     />
                   </label>
                 </div>
+                <button
+                  v-if="detailAllocationOverridden"
+                  type="button"
+                  class="mini-btn"
+                  @click="resetDetailAllocationOverride"
+                >
+                  恢复继承准备条目
+                </button>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
                 </p>
@@ -5178,138 +4932,6 @@ const showcaseTitle = computed(() => {
 }
 .agent-row input[readonly] {
   cursor: default;
-}
-
-/* 「按提供者拆次数」：一条准备条目的次数按强度提供者分段（队伍全员 + 次数） */
-.provider-split {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.provider-split .detail-section-title {
-  margin: 0;
-}
-.provider-split-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid #2a3038;
-  border-radius: 6px;
-  background: #171c25;
-  overflow: hidden;
-}
-.provider-split-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(4.2rem, auto);
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.14rem 0.4rem;
-  border-bottom: 1px solid #222833;
-}
-.provider-split-list li:last-child {
-  border-bottom: none;
-}
-.provider-split-list li:hover {
-  background: rgba(255, 255, 255, 0.045);
-}
-.provider-split-list li.is-zero .provider-split-name {
-  color: #7d8697;
-}
-.provider-split-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.78rem;
-  color: #dce4f0;
-}
-.provider-split-warn {
-  margin-left: 0.3rem;
-  padding: 0 0.3rem;
-  border: 1px solid #6b4a4a;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  color: #d08a8a;
-}
-.provider-split-stepper {
-  display: flex;
-  align-items: center;
-  gap: 0.18rem;
-}
-.provider-split-stepper input {
-  width: 2.6rem;
-  padding: 0.08rem 0.15rem;
-  border: 1px solid #333b46;
-  border-radius: 5px;
-  background: #12161e;
-  color: inherit;
-  text-align: center;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-.provider-split-stepper .step-btn {
-  width: 1.3rem;
-  height: 1.3rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: #9aa3b0;
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.provider-split-stepper .step-btn:hover:not(:disabled) {
-  border-color: #3d4653;
-  background: #1c2432;
-  color: #dce4f0;
-}
-.provider-split-stepper .step-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.provider-split-damage {
-  font-size: 0.72rem;
-  color: #8b95a5;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.provider-split-summary {
-  margin: 0;
-  font-size: 0.72rem;
-  color: #9aa3b0;
-}
-.provider-split-inherit {
-  margin-left: 0.35rem;
-  padding: 0 0.35rem;
-  border: 1px solid #3d4653;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  font-weight: 400;
-  color: #9fb0c6;
-}
-.provider-split-inherit.is-override {
-  border-color: #6b5a33;
-  color: #ffd479;
-}
-.agent-col {
-  display: flex;
-  flex-direction: column;
-  gap: 0.12rem;
-  min-width: 0;
-}
-.agent-col-label {
-  font-size: 0.7rem;
-  color: #9aa3b0;
-}
-.provider-split > .mini-btn {
-  align-self: flex-start;
 }
 
 .warn-hint {
