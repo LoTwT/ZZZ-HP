@@ -20,6 +20,7 @@ import {
   rowKeyOfHitId,
   sumProviderAllocations,
 } from '../src/utils/resolvedHit.ts'
+import { sumHitDamagesForEntry } from '../src/utils/skillGroup.ts'
 
 let passed = 0
 let failed = 0
@@ -428,6 +429,24 @@ console.log('--- 8. 准备 / 流程解耦：行级覆盖优先 ---')
       groupHits[0].count === 2,
     segmentText(groupHits),
   )
+}
+
+console.log('')
+console.log('--- 9. 行伤害合计 = 招式总伤害（行键 + 各段） ---')
+{
+  const map = { flow1: 100, 'flow1#alloc1': 200, 'flow1#rest': 50, flow2: 999 }
+  check(
+    '行键 + 各段求和，且不计其它行',
+    sumHitDamagesForEntry(map, 'flow1') === 350,
+    String(sumHitDamagesForEntry(map, 'flow1')),
+  )
+  check(
+    '组内成员段计入行合计',
+    sumHitDamagesForEntry({ 'flowG#0:skA': 10, 'flowG#1:skB': 20 }, 'flowG') === 30,
+    String(sumHitDamagesForEntry({ 'flowG#0:skA': 10, 'flowG#1:skB': 20 }, 'flowG')),
+  )
+  check('无命中返回 null', sumHitDamagesForEntry({}, 'flowX') === null)
+  check('单段行仍是自身值', sumHitDamagesForEntry({ flow1: 42 }, 'flow1') === 42)
 }
 
 console.log('')

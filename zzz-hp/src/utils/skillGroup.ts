@@ -137,20 +137,23 @@ export function removeCustomSkillGroup(id: string): SkillGroup[] {
 }
 
 /** 流程行伤害：普通招式用 entryId；技能组用 entryId#… 子段求和。无数据返回 null。 */
+/**
+ * 某流程行的伤害合计：**行键本身 + 它派生的所有段**（组内成员段 `#i:skillId`、
+ * 按提供者拆次数段 `#allocI` / `#rest`）。
+ *
+ * ⚠️ 早期实现在命中行键时直接 return，导致「按提供者拆次数」的行只显示第 0 段的伤害；
+ * 与用户口径（每行显示招式总伤害）一致后改为**一律求和**。
+ */
 export function sumHitDamagesForEntry(
   hitDamages: Record<string, number> | null | undefined,
   entryId: string,
 ): number | null {
   const map = hitDamages ?? {}
-  if (Object.prototype.hasOwnProperty.call(map, entryId)) {
-    const direct = Number(map[entryId])
-    return Number.isFinite(direct) ? direct : 0
-  }
   const prefix = `${entryId}#`
   let sum = 0
   let found = false
   for (const [id, value] of Object.entries(map)) {
-    if (!id.startsWith(prefix)) continue
+    if (id !== entryId && !id.startsWith(prefix)) continue
     found = true
     sum += Number(value) || 0
   }

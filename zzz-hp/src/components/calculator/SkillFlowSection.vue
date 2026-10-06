@@ -129,13 +129,18 @@ const emit = defineEmits<{
   'update:panelSourceMode': [mode: 'config' | 'allocation' | 'sweep']
 }>()
 
-/** 本行增益例外：正在编辑的流程行 id（null = 关闭） */
+/** 本行增益例外只在流程行有；流程行 id（null = 关闭） */
 const buffOverrideEntryId = ref<string | null>(null)
+/** 组成员细调进来的成员键（null = 整行；组行的增益例外要区分整行 / 单成员） */
+const buffOverrideMemberKey = ref<string | null>(null)
 
 const buffOverrideOpen = computed({
   get: () => buffOverrideEntryId.value != null,
   set: (value: boolean) => {
-    if (!value) buffOverrideEntryId.value = null
+    if (!value) {
+      buffOverrideEntryId.value = null
+      buffOverrideMemberKey.value = null
+    }
   },
 })
 
@@ -143,24 +148,61 @@ const buffOverrideEntry = computed(() =>
   currentSlot.value?.flow.find((item) => item.id === buffOverrideEntryId.value) ?? null,
 )
 
-/** 弹窗双向绑定：读该行覆盖，写回该行（缺省 = null = 全部继承全局） */
+/** 正在编辑的组内成员（整行编辑时为 null） */
+const buffOverrideMember = computed(() => {
+  const entry = buffOverrideEntry.value
+  const key = buffOverrideMemberKey.value
+  if (!entry || !key) return null
+  const prepared = currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
+  const groupId = prepared?.skillGroupId?.trim() || ''
+  const group = groupId ? buffStore.findSkillGroup(groupId) : null
+  if (!group) return null
+  return sortSkillGroupMembers(group.members).find((item) => skillGroupMemberKey(item) === key) ?? null
+})
+
+/** 弹窗双向绑定：整行 → `FlowEntry.buffOverrides`；组内成员 → `memberOverrides[].buffOverrides` */
 const buffOverrideModel = computed<FlowBuffOverride | null>({
-  get: () => buffOverrideEntry.value?.buffOverrides ?? null,
+  get: () => {
+    const entry = buffOverrideEntry.value
+    if (!entry) return null
+    const member = buffOverrideMember.value
+    if (member) return memberOverrideFor(entry, member)?.buffOverrides ?? null
+    return entry.buffOverrides ?? null
+  },
   set: (value) => {
     const entry = buffOverrideEntry.value
     if (!entry) return
+    const member = buffOverrideMember.value
+    if (member) {
+      setMemberOverride(entry.id, member, { buffOverrides: value })
+      return
+    }
     updateFlow(entry.id, { buffOverrides: value })
   },
 })
 
 /** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
- *  表里该行（组行含其成员行）呈 on/off 的才列；表里是 na 的不列
- *  （na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
+ *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
+ *  表里是 na 的不列（na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
 const buffOverrideEffects = computed(() => {
   const entry = buffOverrideEntry.value
   if (!entry) return []
-  const rows = flowBuffTableRows.value.filter((row) => row.entryId === entry.id)
-  const rowKeys = rows.length ? rows.map((row) => row.key) : [entry.id]
+  const member = buffOverrideMember.value
+  let rowKeys: string[]
+  if (member) {
+    const prepared = currentSlot.value.prepared.find((item) => item.id === entry.preparedId)
+    const groupId = prepared?.skillGroupId?.trim() || ''
+    const group = groupId ? buffStore.findSkillGroup(groupId) : null
+    const memberIndex = group
+      ? sortSkillGroupMembers(group.members).findIndex(
+          (item) => skillGroupMemberKey(item) === skillGroupMemberKey(member),
+        )
+      : -1
+    rowKeys = memberIndex >= 0 ? [`${entry.id}#${memberIndex}:${member.skillId}`] : []
+  } else {
+    const rows = flowBuffTableRows.value.filter((row) => row.entryId === entry.id)
+    rowKeys = rows.length ? rows.map((row) => row.key) : [entry.id]
+  }
   const states = flowBuffTableStates.value
   const applicable = new Set<string>()
   for (const rowKey of rowKeys) {
@@ -172,24 +214,34 @@ const buffOverrideEffects = computed(() => {
   return (props.buffEffects ?? []).filter((item) => applicable.has(item.effect.id))
 })
 
-/** 本行增益例外弹窗的行标题：招式 / 组名 + 次数，缺名时回落行 id */
+/** 本行增益例外弹窗的行标题：招式 / 组名（成员编辑再加段名）+ 次数 */
 const buffOverrideRowLabel = computed(() => {
   const entry = buffOverrideEntry.value
   if (!entry) return ''
-  const name = flowSkillName(entry)
+  const member = buffOverrideMember.value
+  const name = member
+    ? (buffStore.findSkill(member.skillId)?.name ?? member.skillId)
+    : flowSkillName(entry)
   if (!name) return entry.id
-  const count = Math.max(0, Number(entry.count) || 0)
+  const count = member
+    ? memberTuneCount(entry, member) * Math.max(0, Number(entry.count) || 0)
+    : Math.max(0, Number(entry.count) || 0)
   return `${name} · ${count} 次`
 })
 
-function openBuffOverride(entryId: string) {
+function openBuffOverride(entryId: string, memberKey: string | null = null) {
   buffOverrideEntryId.value = entryId
+  buffOverrideMemberKey.value = memberKey
 }
 
-/** 该行的例外条数（块级 + 单条），0 = 与全局一致 */
+/** 该行的例外条数（整行 + 组内成员的覆盖），0 = 与全局一致 */
 function buffExceptionCount(entry: FlowEntry): number {
-  const override = entry.buffOverrides
-  return (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+  const countOf = (override: FlowBuffOverride | null | undefined) =>
+    (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+  return (
+    countOf(entry.buffOverrides) +
+    (entry.memberOverrides ?? []).reduce((sum, item) => sum + countOf(item.buffOverrides), 0)
+  )
 }
 
 /* ============ 流程增益表（表格形态，2026-09-21 用户方案） ============ */
@@ -1311,6 +1363,14 @@ const detailCalcKey = computed(() => {
   return null
 })
 
+watch(
+  () => detailCalcKey.value,
+  () => {
+    // 换行/换段后「计算过程」的段选择回到整行
+    detailProcessSegment.value = 'row'
+  },
+)
+
 const detailSkipReason = computed(() => {
   const current = detail.value
   if (!current) return null
@@ -1383,13 +1443,41 @@ const detailEffectivePowerName = computed(
   () => agentFullName(detailAgentPowerId.value) || '',
 )
 
+/** 详情「计算过程」当前查看的段：'row' = 行键本身（第 0 段）、数字 = 第 N 段、'rest' = 未分配段 */
+const detailProcessSegment = ref<'row' | 'rest' | number>('row')
+
+/** 该行可看的计算过程段（提供者次数 > 0 的段 + 未分配段），供选项条用 */
+const detailProcessOptions = computed(() => {
+  const out: Array<{ key: 'row' | 'rest' | number; label: string }> = []
+  for (const row of detailAllocationRows.value) {
+    if (row.segmentIndex < 0) continue
+    out.push({
+      key: row.segmentIndex,
+      label: `${row.name}×${formatAllocationCount(row.count)}`,
+    })
+  }
+  const rowCount = detailAllocationRowCount.value
+  if (rowCount != null && rowCount - detailAllocationTotal.value > 0) {
+    out.push({ key: 'rest', label: `未分配×${formatAllocationCount(rowCount - detailAllocationTotal.value)}` })
+  }
+  return out
+})
+
+/** 详情「计算过程」的结算键：选了段就用段键，否则回落到行键 */
+const detailProcessCalcKey = computed(() => {
+  const seg = detailProcessSegment.value
+  if (seg === 'row') return detailCalcKey.value
+  const fallbackIndex = typeof seg === 'number' ? seg : 0
+  return detailAllocationHitKey(fallbackIndex, seg === 'rest') ?? detailCalcKey.value
+})
+
 const detailZoneRows = computed(() => {
   // 乘区 / 最终伤害：流程整行或组内某段；准备 / 招式库不算伤
   // 异常类：外侧汇总必暴击；详情内同时展示暴击 / 期望 / 不暴击。直伤仍为期望。
   const kind = detail.value?.kind
   if (kind !== 'flow' && kind !== 'flowMember') return []
   const skill = detailSkill.value
-  const key = detailCalcKey.value
+  const key = detailProcessCalcKey.value
   if (!skill || !key || detailSkipReason.value) return []
   const result = props.hitCalcResults?.[key]
   if (!result) return []
@@ -2781,7 +2869,9 @@ function setMemberOverride(
     base.staggerPhase == null &&
     !base.providerAllocations?.length &&
     !base.anomalyPowerAgentId &&
-    !base.triggerAgentId
+    !base.triggerAgentId &&
+    !base.buffOverrides?.disabledBlockIds?.length &&
+    !base.buffOverrides?.disabledEffectIds?.length
   if (index >= 0) {
     if (empty) list.splice(index, 1)
     else list[index] = base
@@ -3838,6 +3928,23 @@ const showcaseTitle = computed(() => {
                   <button
                     type="button"
                     class="mini-btn"
+                    @click="openBuffOverride(tuningFlowEntry!.id, skillGroupMemberKey(member))"
+                  >
+                    增益<span
+                      v-if="
+                        (memberOverrideFor(tuningFlowEntry!, member)?.buffOverrides
+                          ?.disabledEffectIds?.length ?? 0) > 0
+                      "
+                      style="margin-left: 0.25rem; color: #ffd479"
+                      >{{
+                        memberOverrideFor(tuningFlowEntry!, member)?.buffOverrides
+                          ?.disabledEffectIds?.length ?? 0
+                      }}</span
+                    >
+                  </button>
+                  <button
+                    type="button"
+                    class="mini-btn"
                     @click="clearMemberOverride(tuningFlowEntry!.id, member)"
                   >
                     重置
@@ -4255,6 +4362,26 @@ const showcaseTitle = computed(() => {
               />
 
               <p class="detail-section-title">计算过程</p>
+              <div v-if="detailProcessOptions.length > 1" class="detail-process-picker">
+                <button
+                  type="button"
+                  class="detail-process-chip"
+                  :class="{ active: detailProcessSegment === 'row' }"
+                  @click="detailProcessSegment = 'row'"
+                >
+                  全部
+                </button>
+                <button
+                  v-for="opt in detailProcessOptions"
+                  :key="String(opt.key)"
+                  type="button"
+                  class="detail-process-chip"
+                  :class="{ active: detailProcessSegment === opt.key }"
+                  @click="detailProcessSegment = opt.key"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
               <div v-if="detailZoneRows.length" class="zone-display-grid">
                 <div v-for="row in detailZoneRows" :key="row.label" class="zone-display-item">
                   <span class="zone-display-label">{{ row.label }}</span>
@@ -5313,6 +5440,32 @@ const showcaseTitle = computed(() => {
 .detail-section-title {
   font-weight: 700;
 }
+/* 详情「计算过程」按段查看（按提供者拆次数后，段是独立结算单元） */
+.detail-process-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0 0 0.45rem;
+}
+.detail-process-chip {
+  border: 1px solid #3a4455;
+  border-radius: 8px;
+  background: #151a24;
+  color: #c8d0dc;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.detail-process-chip:hover {
+  border-color: #4f5d72;
+  background: #1c2432;
+}
+.detail-process-chip.active {
+  border-color: #6b8f4e;
+  background: #243018;
+  color: #e8f0dc;
+}
+
 .zone-display-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
