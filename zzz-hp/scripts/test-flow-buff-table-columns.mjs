@@ -13,6 +13,7 @@
  */
 import {
   buildFlowBuffTableColumns,
+  buildFlowBuffTableStates,
   flowBuffColumnBulkState,
   flowBuffColumnMatchesName,
 } from '../src/utils/flowBuffTable.ts'
@@ -169,6 +170,67 @@ check(
     JSON.stringify(legacy?.beneficiarySlots) === JSON.stringify([2]),
   JSON.stringify([legacy?.beneficiaryLabel, legacy?.beneficiarySlots]),
 )
+
+console.log('')
+console.log('--- 单元格三态：成员覆盖与整行覆盖的关系 ---')
+{
+  const effect = { id: 'e1', stat: 'dmgBonus', value: 10, applyTarget: 'team' }
+  const column = { key: 'e1', blockKey: 'blk', label: '增益', beneficiarySlots: [0, 1] }
+  const rows = [
+    { key: 'f1', entryId: 'f1', label: '组', kind: 'group' },
+    { key: 'f1#0:s1', entryId: 'f1', label: '段1', kind: 'member', memberKey: '0:s1', skillId: 's1' },
+  ]
+  const base = {
+    rows,
+    columns: [column],
+    items: [
+      {
+        effect,
+        sourceKey: 'agent-0-0',
+        sourceLabel: '自身 · A',
+        providerName: 'A',
+        group: '自身',
+        blockId: 'blk',
+        blockName: '增益',
+        applicableSlots: [0, 1],
+        providerSlot: 0,
+      },
+    ],
+    selection: null,
+    beneficiarySlotsOf: () => [0, 1],
+  }
+
+  const rowOff = buildFlowBuffTableStates({
+    ...base,
+    flow: [{ id: 'f1', ownerAgentId: 'a0', preparedId: 'p1', count: 1, staggerPhase: 'normal', critMode: 'expected', buffOverrides: { disabledEffectIds: ['e1'] } }],
+  })
+  check('整行关掉：整行 on→off，成员行继承 → na（不可点）',
+    rowOff['f1|e1'] === 'off' && rowOff['f1#0:s1|e1'] === 'na',
+    JSON.stringify(rowOff))
+
+  const memberOwn = buildFlowBuffTableStates({
+    ...base,
+    flow: [{
+      id: 'f1', ownerAgentId: 'a0', preparedId: 'p1', count: 1, staggerPhase: 'normal', critMode: 'expected',
+      buffOverrides: { disabledEffectIds: ['e1'] },
+      memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: { disabledEffectIds: ['e9'] } }],
+    }],
+  })
+  check('成员有自己的覆盖：按自己的算 → on（与结算一致，成员覆盖整体替换整行覆盖）',
+    memberOwn['f1#0:s1|e1'] === 'on',
+    JSON.stringify(memberOwn))
+
+  const memberOff = buildFlowBuffTableStates({
+    ...base,
+    flow: [{
+      id: 'f1', ownerAgentId: 'a0', preparedId: 'p1', count: 1, staggerPhase: 'normal', critMode: 'expected',
+      memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: { disabledEffectIds: ['e1'] } }],
+    }],
+  })
+  check('成员自己关掉：成员行 off',
+    memberOff['f1#0:s1|e1'] === 'off',
+    JSON.stringify(memberOff))
+}
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)
