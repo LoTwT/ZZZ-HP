@@ -1542,39 +1542,6 @@ function detailFlowEntry(): FlowEntry | null {
   return currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
 }
 
-/** 该流程行是否已经**自己配了**提供者（否则视为继承准备条目） */
-const detailAgentOverridden = computed(() => {
-  const target = detailAgentWriteTarget()
-  if (target?.scope !== 'flow') return false
-  const entry = detailFlowEntry()
-  if (!entry) return false
-  const member = target.memberKey ? detailMemberForAgents.value : null
-  if (member) {
-    const ov = memberOverrideFor(entry, member)
-    return Boolean(ov?.anomalyPowerAgentId || ov?.triggerAgentId)
-  }
-  return Boolean(entry.anomalyPowerAgentId || entry.triggerAgentId)
-})
-
-/** 清掉本行的行级提供者配置，回到「继承准备条目」 */
-function resetDetailAgentOverride() {
-  const target = detailAgentWriteTarget()
-  if (target?.scope !== 'flow' || !target.entryId) return
-  if (target.memberKey) {
-    const member = detailMemberForAgents.value
-    if (!member) return
-    setMemberOverride(target.entryId, member, {
-      anomalyPowerAgentId: null,
-      triggerAgentId: null,
-    })
-    return
-  }
-  const entry = detailFlowEntry()
-  if (!entry) return
-  entry.anomalyPowerAgentId = null
-  entry.triggerAgentId = null
-}
-
 function addSkillToCustomGroup(skillId: string) {
   const group = detailGroup.value
   if (!group || !detailGroupEditable.value) return
@@ -3835,14 +3802,6 @@ const showcaseTitle = computed(() => {
                     />
                   </label>
                 </div>
-                <button
-                  v-if="detailAgentOverridden"
-                  type="button"
-                  class="mini-btn"
-                  @click="resetDetailAgentOverride"
-                >
-                  恢复继承准备条目
-                </button>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
                 </p>
