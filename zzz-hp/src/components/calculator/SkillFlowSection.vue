@@ -6,6 +6,7 @@ import type { AgentBuffDoc, Skill, SkillDamageType, SkillGroup, SkillTypeId } fr
 import type {
   FlowEntry,
   FlowGroupMemberOverride,
+  PreparedProviderAllocation,
   PreparedSkill,
   SchemeSlot,
 } from '@/types/damageCalcHistory'
@@ -24,7 +25,11 @@ import {
   defaultAnomalyAgents,
   ensureSchemeSlots,
   getHitSkipReason,
+  listProviderAllocations,
   newLocalId,
+  providerRestHitId,
+  providerSegmentHitId,
+  rowKeyOfHitId,
   skillNeedsDualAgents,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
@@ -186,10 +191,18 @@ const flowBuffTableColumns = computed(() =>
   }),
 )
 
-/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键 */
-const flowBuffRowBeneficiarySlots = computed(() =>
-  resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots }),
-)
+/** 每一行的受益者槽位（持有者 + 强度提供者 + 触发者）；键 = hit.id = 行键
+ *  「按提供者拆次数」的段（`#allocN` / `#rest`）并回所属行，避免行上只认第 0 段 */
+const flowBuffRowBeneficiarySlots = computed(() => {
+  const raw = resolveRowBeneficiarySlots({ hits: props.hits ?? [], teamSlots: props.teamSlots })
+  const merged = new Map<string, number[]>()
+  for (const [hitId, slots] of raw) {
+    const rowKey = rowKeyOfHitId(hitId)
+    const prev = merged.get(rowKey)
+    merged.set(rowKey, prev ? [...new Set([...prev, ...slots])] : [...slots])
+  }
+  return merged
+})
 
 const flowBuffTableStates = computed(() =>
   buildFlowBuffTableStates({
@@ -873,10 +886,32 @@ function agentFullName(agentId: string | null | undefined) {
   return props.agents.find((item) => item.id === agentId)?.name ?? ''
 }
 
-/** 异常类才有胶囊；未选为空；异放等预设了触发者则显示「→安」 */
+/** 拆次数里的次数展示（可为小数） */
+function formatAllocationCount(count: number): string {
+  const rounded = Math.round(Number(count) * 100) / 100
+  return String(rounded)
+}
+
+/** 「按提供者拆次数」短展示：`花×1+B×2`；无有效分段返回 '' */
+function providerSplitShort(allocations: PreparedProviderAllocation[] | null | undefined): string {
+  return listProviderAllocations(allocations)
+    .map((item) => `${agentShortName(item.agentId) || '?'}×${formatAllocationCount(item.count)}`)
+    .join('+')
+}
+
+/** 「按提供者拆次数」全名展示：`花羽 ×1 + 安比 ×2` */
+function providerSplitFull(allocations: PreparedProviderAllocation[] | null | undefined): string {
+  return listProviderAllocations(allocations)
+    .map((item) => `${agentFullName(item.agentId) || '未选'} ×${formatAllocationCount(item.count)}`)
+    .join(' + ')
+}
+
+/** 异常类才有胶囊；未选为空；异放等预设了触发者则显示「→安」
+ *  有「按提供者拆次数」时左侧显示分段（`花×1+B×2`） */
 function agentPairText(prepared: PreparedSkill, skill: Skill) {
   if (!skillNeedsDualAgents(skill.damageType)) return ''
-  const left = agentShortName(prepared.anomalyPowerAgentId)
+  const split = providerSplitShort(prepared.providerAllocations)
+  const left = split || agentShortName(prepared.anomalyPowerAgentId)
   const right = agentShortName(prepared.triggerAgentId)
   if (!left && !right) return ''
   if (left && right) return `${left}→${right}`
@@ -886,7 +921,9 @@ function agentPairText(prepared: PreparedSkill, skill: Skill) {
 
 function agentPairTitle(prepared: PreparedSkill, skill: Skill) {
   if (!skillNeedsDualAgents(skill.damageType)) return ''
-  const left = agentFullName(prepared.anomalyPowerAgentId)
+  const split = providerSplitFull(prepared.providerAllocations)
+  const base = agentFullName(prepared.anomalyPowerAgentId)
+  const left = split ? `按提供者拆次数：${split}${base ? `（剩余按 ${base}）` : ''}` : base
   const right = agentFullName(prepared.triggerAgentId)
   if (!left && !right) return ''
   return `${left || '未选'} → ${right || '未选'}`
@@ -1381,6 +1418,173 @@ function setMemberDetailAgent(
   if (index >= 0) list[index] = { ...list[index]!, ...nextRow }
   else list.push(nextRow)
   updatePrepared(prepared.id, { memberAgents: list })
+}
+
+/**
+ * 「按提供者拆次数」——把本行次数按异常强度提供者分段。
+ *
+ * 落盘位置与单一提供者一致：普通准备写条目本身，组内成员写 `memberAgents` 对应成员行。
+ * 行次数仍是总次数的唯一来源：分段合计不足回落基础提供者，超出的部分按次数截断。
+ */
+function detailAllocationTarget():
+  | { kind: 'prepared'; preparedId: string }
+  | { kind: 'member'; preparedId: string; memberKey: string }
+  | null {
+  const current = detail.value
+  const prepared = detailPrepared.value
+  if (!current || !prepared) return null
+  if (current.kind === 'preparedMember' || current.kind === 'flowMember') {
+    if (!detailMemberForAgents.value) return null
+    return { kind: 'member', preparedId: prepared.id, memberKey: current.memberKey }
+  }
+  if (current.kind !== 'prepared') return null
+  if (isPreparedGroup(prepared)) return null
+  return { kind: 'prepared', preparedId: prepared.id }
+}
+
+const detailAllocationEditable = computed(
+  () => detailCanEditAgents.value && detailAllocationTarget() !== null,
+)
+
+/** 编辑器用原始列表（允许「未选 / 0 次」这类未填完的行存在） */
+const detailProviderAllocationsRaw = computed<PreparedProviderAllocation[]>(() => {
+  const current = detail.value
+  const prepared = detailPrepared.value
+  if (!current || !prepared) return []
+  if (current.kind === 'preparedMember' || current.kind === 'flowMember') {
+    const member = detailMemberForAgents.value
+    if (!member) return []
+    const row = memberAgentsFor(prepared, member)?.providerAllocations
+    return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
+  }
+  if (current.kind !== 'prepared') return []
+  const row = prepared.providerAllocations
+  return Array.isArray(row) ? row.map((item) => ({ ...item })) : []
+})
+
+const detailProviderAllocations = computed(() =>
+  listProviderAllocations(detailProviderAllocationsRaw.value),
+)
+
+/** 本行总次数（未进流程时未知 = null）：剩余 / 超出提示与截断口径都按它算 */
+const detailAllocationRowCount = computed<number | null>(() => {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind === 'flow') {
+    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
+    return entry ? Math.max(0, Number(entry.count) || 0) : null
+  }
+  if (current.kind === 'flowMember') {
+    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
+    const member = detailMemberForAgents.value
+    if (!entry || !member) return null
+    const memberCount = Math.max(0, Number(memberTuneCount(entry, member)) || 0)
+    return memberCount * Math.max(0, Number(entry.count) || 0)
+  }
+  return null
+})
+
+const detailAllocationTotal = computed(() =>
+  detailProviderAllocations.value.reduce((sum, item) => sum + item.count, 0),
+)
+
+/** 段键（第 0 段沿用行键，其余加后缀）；未进流程时没有结算键 */
+function detailAllocationHitKey(index: number, isRest: boolean): string | null {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind === 'flow') {
+    return isRest ? providerRestHitId(current.entryId) : providerSegmentHitId(current.entryId, index)
+  }
+  if (current.kind === 'flowMember') {
+    const entry = currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
+    const base = groupMemberCalcKey({ skillId: current.skillId }, current.memberIndex, { entry })
+    if (!base) return null
+    return isRest ? providerRestHitId(base) : providerSegmentHitId(base, index)
+  }
+  return null
+}
+
+function detailAllocationDamage(key: string | null): string {
+  if (!key) return ''
+  return formatDamage(props.hitDamages?.[key])
+}
+
+const detailAllocationSummary = computed(() => {
+  if (!detailProviderAllocations.value.length) return ''
+  const total = detailAllocationTotal.value
+  const rowCount = detailAllocationRowCount.value
+  if (rowCount == null) return `合计 ${formatAllocationCount(total)} 次（本行次数进流程后确定）`
+  if (total > rowCount) {
+    return `合计 ${formatAllocationCount(total)} 次 / 本行 ${formatAllocationCount(rowCount)} 次 → 超出的 ${formatAllocationCount(total - rowCount)} 次不计（按本行次数截断）`
+  }
+  return `合计 ${formatAllocationCount(total)} 次 / 本行 ${formatAllocationCount(rowCount)} 次`
+})
+
+const detailAllocationRestText = computed(() => {
+  const rowCount = detailAllocationRowCount.value
+  if (rowCount == null) return ''
+  const rest = rowCount - detailAllocationTotal.value
+  if (rest <= 0) return ''
+  const base = agentFullName(detailAgentPowerId.value) || '未选'
+  const damage = detailAllocationDamage(detailAllocationHitKey(0, true))
+  return `剩余 ${formatAllocationCount(rest)} 次按基础提供者「${base}」${damage ? ` · ${damage}` : ''}`
+})
+
+function writeDetailProviderAllocations(next: PreparedProviderAllocation[]) {
+  const target = detailAllocationTarget()
+  if (!target) return
+  // 全空行（未选且 0 次）直接丢掉，不往存盘里塞垃圾
+  const cleaned = next.filter((item) => item.agentId.trim() || Number(item.count) > 0)
+  const value = cleaned.length ? cleaned : null
+  if (target.kind === 'prepared') {
+    updatePrepared(target.preparedId, { providerAllocations: value })
+    return
+  }
+  const prepared = detailPrepared.value
+  if (!prepared?.skillGroupId) return
+  const list = [...(prepared.memberAgents ?? [])]
+  const index = list.findIndex((item) => item.memberKey === target.memberKey)
+  const base = index >= 0
+    ? list[index]!
+    : {
+        memberKey: target.memberKey,
+        skillId: detailSkill.value?.id ?? '',
+        anomalyPowerAgentId: null,
+        triggerAgentId: null,
+      }
+  const nextRow = { ...base, providerAllocations: value }
+  if (index >= 0) list[index] = nextRow
+  else list.push(nextRow)
+  updatePrepared(prepared.id, { memberAgents: list })
+}
+
+function addDetailProviderAllocation() {
+  const fallback = detailAgentPowerId.value || teamAgentOptions.value[0]?.id || ''
+  writeDetailProviderAllocations([
+    ...detailProviderAllocationsRaw.value,
+    { agentId: fallback, count: 1 },
+  ])
+}
+
+function setDetailProviderAllocationAgent(index: number, agentId: string) {
+  writeDetailProviderAllocations(
+    detailProviderAllocationsRaw.value.map((item, i) => (i === index ? { ...item, agentId } : item)),
+  )
+}
+
+function setDetailProviderAllocationCount(index: number, raw: string) {
+  const value = Number(raw)
+  writeDetailProviderAllocations(
+    detailProviderAllocationsRaw.value.map((item, i) =>
+      i === index ? { ...item, count: Number.isFinite(value) ? Math.max(0, value) : 0 } : item,
+    ),
+  )
+}
+
+function removeDetailProviderAllocation(index: number) {
+  writeDetailProviderAllocations(
+    detailProviderAllocationsRaw.value.filter((_, i) => i !== index),
+  )
 }
 
 function addSkillToCustomGroup(skillId: string) {
@@ -1986,6 +2190,11 @@ function syncPreparedAgentsForSkill(skillId: string, damageType: SkillDamageType
         if (item.anomalyPowerAgentId || item.triggerAgentId) {
           item.anomalyPowerAgentId = null
           item.triggerAgentId = null
+          changed = true
+        }
+        // 不再是异常类：按提供者拆的次数一并清掉，避免留脏数据
+        if (item.providerAllocations?.length) {
+          item.providerAllocations = null
           changed = true
         }
         continue
@@ -3227,6 +3436,9 @@ const showcaseTitle = computed(() => {
                           triggerAgentId:
                             memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
                               ?.triggerAgentId ?? null,
+                          providerAllocations:
+                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
+                              ?.providerAllocations ?? null,
                         },
                         buffStore.findSkill(member.skillId)!,
                       )
@@ -3245,6 +3457,9 @@ const showcaseTitle = computed(() => {
                           triggerAgentId:
                             memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
                               ?.triggerAgentId ?? null,
+                          providerAllocations:
+                            memberAgentsFor(flowPrepared(tuningFlowEntry)!, member)
+                              ?.providerAllocations ?? null,
                         },
                         buffStore.findSkill(member.skillId)!,
                       )
@@ -3511,6 +3726,8 @@ const showcaseTitle = computed(() => {
                               memberAgentsFor(detailPrepared, member)?.anomalyPowerAgentId ?? null,
                             triggerAgentId:
                               memberAgentsFor(detailPrepared, member)?.triggerAgentId ?? null,
+                            providerAllocations:
+                              memberAgentsFor(detailPrepared, member)?.providerAllocations ?? null,
                           },
                           buffStore.findSkill(member.skillId)!,
                         )
@@ -3598,6 +3815,73 @@ const showcaseTitle = computed(() => {
                     />
                   </label>
                 </div>
+                <div v-if="detailAllocationEditable" class="provider-split">
+                  <p class="detail-section-title">
+                    按提供者拆次数
+                    <span class="muted">
+                      （把本行次数按强度提供者分段；留空 = 全部按上面的提供者）
+                    </span>
+                  </p>
+                  <ul v-if="detailProviderAllocationsRaw.length" class="provider-split-list">
+                    <li
+                      v-for="(item, index) in detailProviderAllocationsRaw"
+                      :key="`${index}-${item.agentId}`"
+                    >
+                      <select
+                        :value="item.agentId"
+                        @change="
+                          setDetailProviderAllocationAgent(
+                            index,
+                            ($event.target as HTMLSelectElement).value,
+                          )
+                        "
+                      >
+                        <option value="">未选</option>
+                        <option v-for="agent in teamAgentOptions" :key="agent.id" :value="agent.id">
+                          {{ agent.name }}
+                        </option>
+                      </select>
+                      <input
+                        :value="item.count"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        @input="
+                          setDetailProviderAllocationCount(
+                            index,
+                            ($event.target as HTMLInputElement).value,
+                          )
+                        "
+                      />
+                      <span class="muted">次</span>
+                      <span class="provider-split-damage">
+                        {{ detailAllocationDamage(detailAllocationHitKey(index, false)) }}
+                      </span>
+                      <button
+                        type="button"
+                        class="mini-btn danger"
+                        @click="removeDetailProviderAllocation(index)"
+                      >
+                        删除
+                      </button>
+                    </li>
+                  </ul>
+                  <p v-if="detailAllocationSummary" class="provider-split-summary">
+                    {{ detailAllocationSummary }}
+                  </p>
+                  <p v-if="detailAllocationRestText" class="provider-split-summary muted">
+                    {{ detailAllocationRestText }}
+                  </p>
+                  <button type="button" class="mini-btn" @click="addDetailProviderAllocation">
+                    ＋ 添加提供者
+                  </button>
+                </div>
+                <p
+                  v-else-if="detailProviderAllocations.length"
+                  class="provider-split-summary"
+                >
+                  按提供者拆次数：{{ providerSplitFull(detailProviderAllocations) }}
+                </p>
                 <p v-if="detailSkipReason" class="warn-hint">
                   {{ detailSkipReason }}
                 </p>
@@ -4445,6 +4729,49 @@ const showcaseTitle = computed(() => {
 }
 .agent-row input[readonly] {
   cursor: default;
+}
+
+/* 「按提供者拆次数」：一条准备条目的次数按强度提供者分段 */
+.provider-split {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.provider-split .detail-section-title {
+  margin: 0;
+}
+.provider-split-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.provider-split-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 4.5rem auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+.provider-split-list select,
+.provider-split-list input {
+  min-width: 0;
+  width: 100%;
+}
+.provider-split-damage {
+  font-size: 0.72rem;
+  color: #9aa3b0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.provider-split-summary {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #9aa3b0;
+}
+.provider-split > .mini-btn {
+  align-self: flex-start;
 }
 
 .warn-hint {

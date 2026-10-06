@@ -14,6 +14,7 @@ import type {
   FlowBuffOverride,
   FlowEntry,
   PreparedGroupMemberAgents,
+  PreparedProviderAllocation,
   PreparedSkill,
   PreparedSkillExtraMods,
   SchemeSlot,
@@ -86,6 +87,68 @@ export function defaultAnomalyAgents(
   }
   // 异常类：强度提供者与触发者均默认当前流程角色，倍率走角色原有面板/招式值
   return { anomalyPowerAgentId: ownerAgentId, triggerAgentId: ownerAgentId }
+}
+
+/** 拆分段的 id 后缀：第 i 段 `#alloc{i}`、剩余段 `#rest`（第 0 段沿用本行原 id） */
+const PROVIDER_SEGMENT_SUFFIX_RE = /#(?:alloc\d+|rest)$/
+
+/** 把「按提供者拆出的段」id 归并回所属行键（UI 的行级聚合 / 受益者槽位用） */
+export function rowKeyOfHitId(hitId: string): string {
+  return String(hitId ?? '').replace(PROVIDER_SEGMENT_SUFFIX_RE, '')
+}
+
+/** 第 index 段的 hit id：0 段沿用行 id，其余加后缀 */
+export function providerSegmentHitId(baseId: string, index: number): string {
+  return index <= 0 ? baseId : `${baseId}#alloc${index}`
+}
+
+/** 剩余次数段（提供者回落本行基础提供者）的 hit id */
+export function providerRestHitId(baseId: string): string {
+  return `${baseId}#rest`
+}
+
+/** 过滤出有效的分段项（agentId 非空、count > 0），保持原顺序 */
+export function listProviderAllocations(
+  allocations: PreparedProviderAllocation[] | null | undefined,
+): PreparedProviderAllocation[] {
+  const out: PreparedProviderAllocation[] = []
+  for (const item of allocations ?? []) {
+    const agentId = String(item?.agentId ?? '').trim()
+    const count = Number(item?.count)
+    if (!agentId || !Number.isFinite(count) || count <= 0) continue
+    out.push({ agentId, count })
+  }
+  return out
+}
+
+/**
+ * 把「按提供者拆次数」解成段列表：按顺序消耗 `totalCount`，超出截断。
+ *
+ * 行次数是总次数的唯一来源 —— 拆出的段合计可能小于 `totalCount`（剩余部分回落基础提供者），
+ * 但不会大于它。返回 null 表示不拆（空表 / 次数 ≤ 0 / 全是无效项）。
+ */
+export function resolveProviderSegments(
+  allocations: PreparedProviderAllocation[] | null | undefined,
+  totalCount: number,
+): PreparedProviderAllocation[] | null {
+  const total = Number(totalCount)
+  if (!Number.isFinite(total) || total <= 0) return null
+  let remaining = total
+  const segments: PreparedProviderAllocation[] = []
+  for (const item of listProviderAllocations(allocations)) {
+    if (remaining <= 0) break
+    const take = Math.min(item.count, remaining)
+    segments.push({ agentId: item.agentId, count: take })
+    remaining -= take
+  }
+  return segments.length > 0 ? segments : null
+}
+
+/** 取第 0 段提供者（预览 / 展示用）：无有效分段时为 undefined */
+export function firstProviderAllocationAgentId(
+  allocations: PreparedProviderAllocation[] | null | undefined,
+): string | undefined {
+  return listProviderAllocations(allocations)[0]?.agentId
 }
 
 /** 为组内异常段生成默认双代理人（加入准备时） */
@@ -325,17 +388,34 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           const power =
             ma?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
           const trigger = ma?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
-          hits.push(
-            resolveOne(entry, prepared, skill, ownerAgentId, options, {
-              count: segmentCount,
-              staggerPhase: ov?.staggerPhase ?? entry.staggerPhase,
-              critMode: entry.critMode,
-              hitId: `${entry.id}#${memberIndex}:${member.skillId}`,
-              buffOverride: ov?.buffOverrides ?? entry.buffOverrides,
-              ...(power ? { anomalyPowerAgentId: power } : {}),
-              ...(trigger ? { triggerAgentId: trigger } : {}),
-            }),
-          )
+          const baseHitId = `${entry.id}#${memberIndex}:${member.skillId}`
+          const pushMemberHit = (hitId: string, count: number, provider?: string | null) => {
+            hits.push(
+              resolveOne(entry, prepared, skill, ownerAgentId, options, {
+                count,
+                staggerPhase: ov?.staggerPhase ?? entry.staggerPhase,
+                critMode: entry.critMode,
+                hitId,
+                buffOverride: ov?.buffOverrides ?? entry.buffOverrides,
+                ...(provider ? { anomalyPowerAgentId: provider } : {}),
+                ...(trigger ? { triggerAgentId: trigger } : {}),
+              }),
+            )
+          }
+          const segments = skillNeedsDualAgents(skill.damageType)
+            ? resolveProviderSegments(ma?.providerAllocations, segmentCount)
+            : null
+          if (segments) {
+            let consumed = 0
+            segments.forEach((segment, index) => {
+              consumed += segment.count
+              pushMemberHit(providerSegmentHitId(baseHitId, index), segment.count, segment.agentId)
+            })
+            const restCount = segmentCount - consumed
+            if (restCount > 0) pushMemberHit(providerRestHitId(baseHitId), restCount, power)
+            return
+          }
+          pushMemberHit(baseHitId, segmentCount, power)
         })
         continue
       }
@@ -345,6 +425,34 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
       const skill = options.findSkill(skillId)
       if (!skill) {
         missing.add(skillId)
+        continue
+      }
+      const rowCount = Math.max(0, Number(entry.count) || 0)
+      const segments = skillNeedsDualAgents(skill.damageType)
+        ? resolveProviderSegments(prepared.providerAllocations, rowCount)
+        : null
+      if (segments) {
+        let consumed = 0
+        segments.forEach((segment, index) => {
+          consumed += segment.count
+          hits.push(
+            resolveOne(entry, prepared, skill, ownerAgentId, options, {
+              count: segment.count,
+              hitId: providerSegmentHitId(entry.id, index),
+              anomalyPowerAgentId: segment.agentId,
+            }),
+          )
+        })
+        // 剩余次数回落本行基础提供者；超出部分已被截断（行次数为准）
+        const restCount = rowCount - consumed
+        if (restCount > 0) {
+          hits.push(
+            resolveOne(entry, prepared, skill, ownerAgentId, options, {
+              count: restCount,
+              hitId: providerRestHitId(entry.id),
+            }),
+          )
+        }
         continue
       }
       hits.push(resolveOne(entry, prepared, skill, ownerAgentId, options))
@@ -387,8 +495,13 @@ export function resolveSkillPreviews(options: ResolveFlowOptions): ResolvedHit[]
           const skill = options.findSkill(member.skillId)
           if (!skill) return
           const ma = findMemberAgents(prepared.memberAgents, member)
+          // 有「按提供者拆次数」时预览取第 0 段提供者，与详情展示的段键一致
+          const firstSegmentAgentId = firstProviderAllocationAgentId(ma?.providerAllocations)
           const power =
-            ma?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || null
+            firstSegmentAgentId ||
+            ma?.anomalyPowerAgentId?.trim() ||
+            prepared.anomalyPowerAgentId?.trim() ||
+            null
           const trigger = ma?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || null
           hits.push(
             resolveOne(
@@ -412,6 +525,8 @@ export function resolveSkillPreviews(options: ResolveFlowOptions): ResolvedHit[]
       if (!skillId) continue
       const skill = options.findSkill(skillId)
       if (!skill) continue
+      // 有「按提供者拆次数」时预览取第 0 段提供者，与详情展示的段键一致
+      const previewProvider = firstProviderAllocationAgentId(prepared.providerAllocations)
       hits.push(
         resolveOne(
           previewFlowEntry(prepared.id, ownerAgentId, prepared.id),
@@ -419,6 +534,7 @@ export function resolveSkillPreviews(options: ResolveFlowOptions): ResolvedHit[]
           skill,
           ownerAgentId,
           options,
+          previewProvider ? { anomalyPowerAgentId: previewProvider } : undefined,
         ),
       )
     }
