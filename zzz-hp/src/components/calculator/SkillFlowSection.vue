@@ -2,7 +2,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { AgentBuffDoc, Skill, SkillDamageType, SkillGroup, SkillTypeId } from '@/types/calculator'
+import type {
+  AgentBuffDoc,
+  BuffEffect,
+  Skill,
+  SkillDamageType,
+  SkillGroup,
+  SkillTypeId,
+} from '@/types/calculator'
 import type {
   FlowEntry,
   FlowGroupMemberOverride,
@@ -70,6 +77,8 @@ import { AGENT_PANEL_SOURCE_LABELS, AGENT_PANEL_SOURCE_ORDER } from '@/utils/age
 import type { SkillFlowDisplayOption } from '@/utils/skillFlowPanelSource'
 import {
   resolveBuffSelectionForSlot,
+  getBuffEffectConvertInput,
+  getBuffEffectStacks,
   type CollectedEffect,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
@@ -176,8 +185,34 @@ const buffOverrideModel = computed<FlowBuffOverride | null>({
 /** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
  *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
  *  表里是 na 的不列（na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
-const buffOverrideEffects = computed(() => {
-  const entry = buffOverrideEntry.value
+/** 本行弹窗的「继承全局」读取函数：与局内增益同一份按槽合并的勾选状态（multi → 槽位合并） */
+
+function globalStacksFor(effect: BuffEffect): number {
+  const multi = props.multiBuffSelection
+  if (!multi) return effect.defaultStacks ?? 1
+  return (
+    getBuffEffectStacks(
+      multi,
+      activeSlotIndex.value,
+      effect.id,
+      effect.applyTarget,
+      effect.defaultStacks ?? 1,
+    ) || 0
+  )
+}
+
+function globalConvertInput(effect: BuffEffect): number | undefined {
+  const multi = props.multiBuffSelection
+  if (!multi) return undefined
+  return getBuffEffectConvertInput(
+    multi,
+    activeSlotIndex.value,
+    effect.id,
+    effect.applyTarget,
+  )
+}
+
+const buffOverrideEffects = computed(() => {  const entry = buffOverrideEntry.value
   if (!entry) return []
   const member = buffOverrideMember.value
   let rowKeys: string[]
@@ -3362,6 +3397,8 @@ const showcaseTitle = computed(() => {
               v-model:override="buffOverrideModel"
               :effects="buffOverrideEffects"
               :row-label="buffOverrideRowLabel"
+              :global-stacks-for="globalStacksFor"
+              :global-convert-input="globalConvertInput"
             />
 
             <FlowBuffTableModal

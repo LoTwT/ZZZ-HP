@@ -1149,14 +1149,16 @@ function resolvePackMods(
   // 技能等级转模：取「效果来源角色」的等级（self/team 效果都由来源槽位提供）
   const slotAgentId =
     slotIndex != null ? ctx.teamSlots[slotIndex]?.agentId : undefined
+  // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
+  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   return resolveEffectsToMods(effects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
     element: isMain ? skillCtx.element : slotElement,
     beneficiaryElement: resolveBeneficiaryElement(ctx),
     beneficiaryProfession,
-    stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
-    convertInputs: ctx.buffSelection?.convertInputs,
+    stacksByEffectId: rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
+    convertInputs: rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
     attrValues: ctx.attrValues,
     panelSourceValues,
     skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
@@ -2007,8 +2009,37 @@ function rowBuffOverrideKey(override: FlowBuffOverride | null | undefined): stri
   if (!override) return ''
   const blocks = [...(override.disabledBlockIds ?? [])].sort()
   const effects = [...(override.disabledEffectIds ?? [])].sort()
-  if (!blocks.length && !effects.length) return ''
-  return `${blocks.join(',')}|${effects.join(',')}`
+  const stacks = Object.entries(override.stacksByEffectId ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([id, n]) => `${id}:${n}`)
+  const converts = Object.entries(override.convertInputsByEffectId ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([id, n]) => `${id}:${n}`)
+  if (!blocks.length && !effects.length && !stacks.length && !converts.length) return ''
+  return [blocks.join(','), effects.join(','), stacks.join(','), converts.join(',')].join('|')
+}
+
+/**
+ * 行级例外携带的层数 / 转模覆盖，覆盖合并到全局勾选状态上（行级优先）。
+ * 没有任何覆盖键时返回 null —— 调用方直接沿用全局映射，零开销。
+ */
+export function rowBuffSelectionOverlay(
+  rowOverride: FlowBuffOverride | null | undefined,
+  selection: BuffSelectionState | null | undefined,
+): { stacksByEffectId?: Record<string, number>; convertInputs?: Record<string, number> } | null {
+  const stacks = rowOverride?.stacksByEffectId
+  const converts = rowOverride?.convertInputsByEffectId
+  const hasStacks = !!stacks && Object.keys(stacks).length > 0
+  const hasConverts = !!converts && Object.keys(converts).length > 0
+  if (!hasStacks && !hasConverts) return null
+  return {
+    stacksByEffectId: hasStacks
+      ? { ...(selection?.stacksByEffectId ?? {}), ...stacks }
+      : selection?.stacksByEffectId,
+    convertInputs: hasConverts
+      ? { ...(selection?.convertInputs ?? {}), ...converts }
+      : selection?.convertInputs,
+  }
 }
 
 function buildBuffCatalogKey(ctx: PanelCalcContext): string {
@@ -2486,11 +2517,13 @@ export function resolveAnomalyReleaseMultFields(
     releaseMultEffects.push(effect)
   }
 
+  const releaseRowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   const mods = resolveEffectsToMods(releaseMultEffects, {
     ctx: skillCtx,
     element: triggerElement,
-    stacksByEffectId: ctx.buffSelection?.stacksByEffectId,
-    convertInputs: ctx.buffSelection?.convertInputs,
+    stacksByEffectId:
+      releaseRowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
+    convertInputs: releaseRowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
     attrValues: ctx.attrValues,
     panelSourceValues: ctx.panelSourceValues,
     selection: ctx.buffSelection,
