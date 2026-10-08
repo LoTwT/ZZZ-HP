@@ -1169,7 +1169,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           `紊乱基础倍率 ${formatFormulaNumber(p.disorderBaseMultRatio)}`,
           `有效异常持续时间 ${formatFormulaNumber(p.effectiveAnomalyDuration)}`,
           `紊乱补偿倍率 ${formatFormulaNumber(p.disorderCompMultRatio)}`,
-          `紊乱倍率区 = 基础 + 时间 × 补偿 = ${formatFormulaNumber(p.disorderZone)}`,
+          `倍率修正 ${formatFormulaNumber(p.disorderMultFactor * 100, 2)}% → ×${formatFormulaNumber(p.disorderMultFactor)}`,
+          `紊乱倍率区 = (基础 + 时间 × 补偿) × 修正 = ${formatFormulaNumber(p.disorderZone)}`,
         ],
       },
       {
@@ -1178,7 +1179,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         items: [
           `基础 ${formatFormulaNumber(p.disorderBaseMultRatio)}`,
           `时间项 ${formatFormulaNumber(p.effectiveAnomalyDuration)} × ${formatFormulaNumber(p.disorderCompMultRatio)} = ${formatFormulaNumber(p.effectiveAnomalyDuration * p.disorderCompMultRatio)}`,
-          `${formatFormulaNumber(p.disorderBaseMultRatio)} + ${formatFormulaNumber(p.effectiveAnomalyDuration * p.disorderCompMultRatio)} = ${formatFormulaNumber(p.disorderZone)}`,
+          `(${formatFormulaNumber(p.disorderBaseMultRatio)} + ${formatFormulaNumber(p.effectiveAnomalyDuration * p.disorderCompMultRatio)}) × ${formatFormulaNumber(p.disorderMultFactor)} = ${formatFormulaNumber(p.disorderZone)}`,
         ],
       },
     ],
@@ -1242,7 +1243,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           `乱流基础倍率 ${formatFormulaNumber(p.turbulenceBaseMultRatio)}`,
           `有效异常持续时间 ${formatFormulaNumber(p.effectiveAnomalyDuration)}`,
           `乱流补偿倍率 ${formatFormulaNumber(p.turbulenceCompMultRatio)}`,
-          `乱流倍率区 = 基础 + 时间 × 补偿 = ${formatFormulaNumber(p.turbulenceZone)}`,
+          `倍率修正 ${formatFormulaNumber(p.turbulenceMultFactor * 100, 2)}% → ×${formatFormulaNumber(p.turbulenceMultFactor)}`,
+          `乱流倍率区 = (基础 + 时间 × 补偿) × 修正 = ${formatFormulaNumber(p.turbulenceZone)}`,
         ],
       },
       {
@@ -1251,7 +1253,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         items: [
           `基础 ${formatFormulaNumber(p.turbulenceBaseMultRatio)}`,
           `时间项 ${formatFormulaNumber(p.effectiveAnomalyDuration)} × ${formatFormulaNumber(p.turbulenceCompMultRatio)} = ${formatFormulaNumber(p.effectiveAnomalyDuration * p.turbulenceCompMultRatio)}`,
-          `${formatFormulaNumber(p.turbulenceBaseMultRatio)} + ${formatFormulaNumber(p.effectiveAnomalyDuration * p.turbulenceCompMultRatio)} = ${formatFormulaNumber(p.turbulenceZone)}`,
+          `(${formatFormulaNumber(p.turbulenceBaseMultRatio)} + ${formatFormulaNumber(p.effectiveAnomalyDuration * p.turbulenceCompMultRatio)}) × ${formatFormulaNumber(p.turbulenceMultFactor)} = ${formatFormulaNumber(p.turbulenceZone)}`,
         ],
       },
     ],

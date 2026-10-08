@@ -18,8 +18,10 @@ export interface ResolvedSkillMults {
   /** 决算倍率区（直伤大类下的独立伤害分量） */
   settlementDmgMultZone: number
   anomalyReleaseMultZone: number
-  /** 紊乱倍率区（不含持续时间补偿；与 disorderZone 中基础部分一致） */
-  disorderMultZone: number
+  /** 紊乱基础倍率分量（不含倍率修正、不含持续时间补偿） */
+  disorderBaseMultRatio: number
+  /** 紊乱倍率修正（小类修正 × 面板修正），直接乘在紊乱倍率区上 */
+  disorderMultFactor: number
   hasPolarDisorder: boolean
 }
 
@@ -276,13 +278,11 @@ export function resolveSkillMults(
         panelReleaseFactor
 
   const panelDisorderFactor = readFactor(panel.disorderBaseMultFactor)
-  const disorderMultZone = unsetSkillMult(sub.disorderMult)
-    ? Math.max(0, panel.disorderBaseMult / 100) *
-        sub.disorderMultFactor *
-        panelDisorderFactor
-    : Math.max(0, sub.disorderMult / 100) *
-        sub.disorderMultFactor *
-        panelDisorderFactor
+  const disorderBaseMultRatio = Math.max(
+    0,
+    (unsetSkillMult(sub.disorderMult) ? panel.disorderBaseMult : sub.disorderMult) / 100,
+  )
+  const disorderMultFactor = sub.disorderMultFactor * panelDisorderFactor
 
   const hasPolarDisorder =
     !unsetSkillMult(sub.disorderMult) ||
@@ -292,7 +292,8 @@ export function resolveSkillMults(
     directDmgMultZone,
     settlementDmgMultZone,
     anomalyReleaseMultZone,
-    disorderMultZone,
+    disorderBaseMultRatio,
+    disorderMultFactor,
     hasPolarDisorder,
   }
 }
