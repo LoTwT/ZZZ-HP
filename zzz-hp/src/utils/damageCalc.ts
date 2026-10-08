@@ -251,6 +251,8 @@ export interface DamageCalcResult {
   disorderExpected: number
   turbulenceBaseMultRatio: number
   turbulenceCompMultRatio: number
+  /** 乱流倍率修正（乘在倍率区上） */
+  turbulenceMultFactor: number
   turbulenceZone: number
   turbulenceDmgBonusZone: number
   /** 乱流增伤区 + 异常增伤区（百分点加算后乘区；不含异放） */
@@ -868,25 +870,27 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceCombinedDmgBonusZone =
     1 + (bonusPanel.turbulenceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
   const turbulenceCompMultRatio = multPanel.turbulenceCompMult / 100
+  const turbulencePanelFactor = readFactor(multPanel.turbulenceBaseMultFactor)
   let turbulenceBaseMultRatio: number
+  let turbulenceMultFactor: number
   let turbulenceZone: number
   if (input.turbulenceZoneMultOverride != null) {
-    turbulenceZone = Math.max(
-      0,
-      (input.turbulenceZoneMultOverride / 100) *
-        readFactor(input.turbulenceZoneMultFactorOverride),
-    )
+    // 招式手填「最终倍率区%」：填写值本身已含有效持续时间 × 补偿倍率，修正直接乘在倍率区上
+    const providedZoneRatio = Math.max(0, input.turbulenceZoneMultOverride / 100)
+    turbulenceMultFactor =
+      readFactor(input.turbulenceZoneMultFactorOverride) * turbulencePanelFactor
+    turbulenceZone = Math.max(0, providedZoneRatio * turbulenceMultFactor)
     turbulenceBaseMultRatio = Math.max(
       0,
-      turbulenceZone - effectiveDuration * turbulenceCompMultRatio,
+      providedZoneRatio - effectiveDuration * turbulenceCompMultRatio,
     )
   } else {
-    turbulenceBaseMultRatio =
-      Math.max(0, multPanel.turbulenceBaseMult / 100) *
-        readFactor(multPanel.turbulenceBaseMultFactor)
+    turbulenceBaseMultRatio = Math.max(0, multPanel.turbulenceBaseMult / 100)
+    turbulenceMultFactor = turbulencePanelFactor
     turbulenceZone = Math.max(
       0,
-      turbulenceBaseMultRatio + effectiveDuration * turbulenceCompMultRatio,
+      (turbulenceBaseMultRatio + effectiveDuration * turbulenceCompMultRatio) *
+        turbulenceMultFactor,
     )
   }
   // 有普通异常暴击区则乘算，否则 anomalyCritZone 本身为 1
@@ -1022,6 +1026,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     disorderExpected: round(applyMutation(disorderExpected), 0),
     turbulenceBaseMultRatio: round(turbulenceBaseMultRatio, 4),
     turbulenceCompMultRatio: round(turbulenceCompMultRatio, 4),
+    turbulenceMultFactor: round(turbulenceMultFactor, 4),
     turbulenceZone: round(turbulenceZone, 4),
     turbulenceDmgBonusZone: round(turbulenceDmgBonusZone, 4),
     turbulenceCombinedDmgBonusZone: round(turbulenceCombinedDmgBonusZone, 4),

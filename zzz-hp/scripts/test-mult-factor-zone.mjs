@@ -1,6 +1,6 @@
 /**
- * 紊乱倍率修正作用于「倍率区整体」（基础 + 时间 × 补偿），而不是只作用于基础分量。
- * 运行：npx vite-node scripts/test-disorder-mult-factor.mjs
+ * 紊乱 / 乱流的倍率修正作用于「倍率区整体」（基础 + 时间 × 补偿），而不是只作用于基础分量。
+ * 运行：npx vite-node scripts/test-mult-factor-zone.mjs
  */
 import { computeDamageResult } from '../src/utils/damageCalc.ts'
 import { resolveSkillMults } from '../src/utils/skillSubcategoryMult.ts'
@@ -53,7 +53,7 @@ function basePanel(extra = {}) {
   })
 }
 
-function runDisorder(panel, extraInput = {}) {
+function runAnomalyZone(subKind, panel, extraInput = {}) {
   return computeDamageResult({
     finalPanel: panel,
     piercePower: 0,
@@ -63,12 +63,16 @@ function runDisorder(panel, extraInput = {}) {
     ...combat,
     staggerPhase: 'stagger',
     ownerAgentLevel: 60,
-    anomalySubKind: 'disorder',
+    anomalySubKind: subKind,
     triggerFinalPanel: panel,
     triggerAgentElement: '冰',
     triggerAgentLevel: 60,
     ...extraInput,
   })
+}
+
+function runDisorder(panel, extraInput = {}) {
+  return runAnomalyZone('disorder', panel, extraInput)
 }
 
 // 面板：紊乱基础倍率 450% · 补偿 7.5%/秒 · 持续时间 9.8 → 冰 floor = 9
@@ -130,6 +134,44 @@ section('4. 招式手填最终倍率区：修正同样乘在倍率区上')
   check('修正 = 招式 1.2 × 面板 1', r.disorderMultFactor, 1.2)
   check('倍率区 = 填写值 5 × 1.2', r.disorderZone, 5 * 1.2)
   check('基础分量 = 填写值 − 时间 × 补偿', r.disorderBaseMultRatio, 5 - 9 * 0.075)
+}
+
+section('5. 乱流：同一口径（修正乘倍率区整体）')
+{
+  const turb = { turbulenceBaseMult: 1250, turbulenceCompMult: 7.5, anomalyDuration: 9.8 }
+  const plain = runAnomalyZone('turbulence', basePanel(turb))
+  check('乱流默认修正 1', plain.turbulenceMultFactor, 1)
+  check('乱流基础分量 12.5', plain.turbulenceBaseMultRatio, 12.5)
+  check('乱流倍率区 = 12.5 + 9 × 0.075', plain.turbulenceZone, 12.5 + 9 * 0.075)
+
+  const boosted = runAnomalyZone(
+    'turbulence',
+    basePanel({ ...turb, turbulenceBaseMultFactor: 200 }),
+  )
+  const comp = 9 * 0.075
+  check('乱流修正 2', boosted.turbulenceMultFactor, 2)
+  check('乱流基础分量不受修正影响', boosted.turbulenceBaseMultRatio, 12.5)
+  check('乱流倍率区 = (基础 + 时间 × 补偿) × 2', boosted.turbulenceZone, (12.5 + comp) * 2)
+  check(
+    '乱流倍率区不等于「基础 × 2 + 补偿」',
+    Math.abs(boosted.turbulenceZone - (12.5 * 2 + comp)) > 1e-6 ? 1 : 0,
+    1,
+  )
+}
+
+section('6. 乱流招式手填最终倍率区：修正同样乘在倍率区上')
+{
+  const r = runAnomalyZone('turbulence', basePanel({
+    turbulenceBaseMult: 1250,
+    turbulenceCompMult: 7.5,
+    anomalyDuration: 9.8,
+  }), {
+    turbulenceZoneMultOverride: 800,
+    turbulenceZoneMultFactorOverride: 150,
+  })
+  check('乱流修正 = 招式 1.5 × 面板 1', r.turbulenceMultFactor, 1.5)
+  check('乱流倍率区 = 填写值 8 × 1.5', r.turbulenceZone, 8 * 1.5)
+  check('乱流基础分量 = 填写值 − 时间 × 补偿', r.turbulenceBaseMultRatio, 8 - 9 * 0.075)
 }
 
 console.log(`\n${failed === 0 ? 'all passed' : `${failed} failed`}：passed=${passed} failed=${failed}`)

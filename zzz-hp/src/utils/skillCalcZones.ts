@@ -216,6 +216,9 @@ export function buildSkillCalcZoneRows(
     push(rows, '乱流基础倍率', result.turbulenceBaseMultRatio)
     push(rows, '异常持续时间', result.effectiveAnomalyDuration)
     push(rows, '乱流补偿倍率', result.turbulenceCompMultRatio)
+    if (isActiveZone(result.turbulenceMultFactor)) {
+      push(rows, '乱流倍率修正', result.turbulenceMultFactor)
+    }
     push(rows, '乱流倍率区', result.turbulenceZone)
     push(rows, '乱流综合增伤区', result.turbulenceCombinedDmgBonusZone)
     if (hasCritZone) {
