@@ -1309,13 +1309,27 @@ export function effectSummaryLabel(
   return parts.join(' · ')
 }
 
-/** 局内 Buff 卡片效果行：`[强攻][斩妄开天] [电] +40 增伤` */
+/** 作用情况标签：全局 / 失衡期 / 非失衡期（`全局` = 不限定时期） */
+export function formatApplySituationLabel(
+  effect: Pick<BuffEffect, 'applySituation'>,
+): string {
+  return APPLY_SITUATION_LABELS[effect.applySituation ?? 'global'] ?? '全局'
+}
+
+/**
+ * Buff 卡片效果行：`[强攻][斩妄开天] [电] +40 增伤`。
+ *
+ * `applySituation` 打开后标出作用情况（`[强攻][失衡期] [电] +40 增伤`）——
+ * 局内 Buff 选择器与本行增益例外弹窗共用这一份实现，两处文案不会各写一遍。
+ */
 export function formatBuffEffectResultText(
   effect: BuffEffect,
   amountText: string,
   options?: {
     statLabelFn?: (stat: BuffStatKey) => string
     skillSubcategories?: SkillSubcategory[] | null
+    /** 非全局作用情况时加 `[失衡期]` / `[非失衡期]` 前缀 */
+    applySituation?: boolean
   },
 ): string {
   const skillPrefix = formatSkillTargetsPrefix(effect, options?.skillSubcategories)
@@ -1327,7 +1341,15 @@ export function formatBuffEffectResultText(
   const mid = gate ? `${gate} ` : ''
   const el = elementLabel ? `${elementLabel} ` : ''
   // 数值顺序（2026-09-23 用户口径）：`增伤% +20.16` —— 属性名在前、数值在后
-  return `${head}${head ? ' ' : ''}${mid}${el}${label} ${amountText}`
+  const line = `${head}${head ? ' ' : ''}${mid}${el}${label} ${amountText}`
+  if (!options?.applySituation) return line
+  const situation = formatApplySituationLabel(effect)
+  if (situation === '全局') return line
+  // [强攻] 放最前，作用情况紧随其后
+  if (applyProf && line.startsWith(applyProf)) {
+    return `${applyProf}[${situation}] ${line.slice(applyProf.length).trimStart()}`
+  }
+  return `[${situation}] ${line}`
 }
 
 export { BUFF_STAT_KEYS }

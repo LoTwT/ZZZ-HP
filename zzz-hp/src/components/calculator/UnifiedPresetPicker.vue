@@ -158,8 +158,13 @@ watch(
   { deep: true },
 )
 
-/** 草稿填齐了才是完整面板；没填齐就是 null（空就是空，不进计算、也不预览） */
-const committedDraftPanel = computed(() => resolveExternalPanelDraft(draftExternalPanel))
+/**
+ * 草稿 → 完整面板。未填项回落**当前角色初始面板**（所有者口径 2026-10-08：
+ * 面板导入没填的项默认用角色初始面板），全部填了则原样采用。
+ */
+const committedDraftPanel = computed(() =>
+  resolveExternalPanelDraft(draftExternalPanel, selectedAgent.value?.basePanel ?? null),
+)
 
 /** 导入区局内：草稿局外/词条推导 + 当前增益实时结算（对齐改前内嵌面板） */
 const liveFinalPanel = computed(() => {
@@ -572,7 +577,7 @@ function confirm() {
   } else {
     const panel = committedDraftPanel.value
     if (!panel) {
-      // 空字段按「用户没给这个数」处理：不替他补 0、更不补占位面板
+      // 兜底：选不到角色文档时拿不到初始面板回落（正常操作不会走到这里）
       const missing = missingExternalPanelInputs(draftExternalPanel)
       confirmHint.value = `面板还缺 ${missing.length} 项没填：${missing
         .map((item) => item.label)

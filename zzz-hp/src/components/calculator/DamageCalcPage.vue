@@ -101,6 +101,7 @@ import {
   syncTeamProfessionAutoEnabled,
   type MultiSlotBuffSelection,
   type ConvertSlotPanels,
+  type ConvertResolveInputs,
   type BuffSelectionState,
 } from '@/utils/panelBuffCalc'
 import { computeExternalPanelFromTeamSlot } from '@/utils/affixPanelCalc'
@@ -1136,6 +1137,26 @@ const flowBuffEffectTexts = computed(() =>
     skillSubcategories: skillSubcategories.value,
   }),
 )
+
+/**
+ * 本行增益例外弹窗的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）。
+ *
+ * **按槽位现给**（弹窗打开时取一次）：转模行的数值与局内增益选择器同一套口径，
+ * 且在页面渲染期不做多余的面板取值计算。
+ */
+function buffConvertResolveInputsForSlot(slotIndex: number): ConvertResolveInputs {
+  return {
+    attrDefaults:
+      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(slotIndex) ??
+      panelCalcSectionRef.value?.convertAttrDefaults ??
+      {},
+    panelSourceValues:
+      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(slotIndex) ??
+      panelCalcSectionRef.value?.convertPanelSourceValues ??
+      undefined,
+    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+  }
+}
 
 const mainSlotBuffSelection = computed(() =>
   resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
@@ -2391,7 +2412,8 @@ defineExpose({ scrollToSection })
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
         :buff-effects="collectedEffectsForFlowTable"
-    :buff-effect-texts="flowBuffEffectTexts"
+        :buff-effect-texts="flowBuffEffectTexts"
+        :convert-resolve-inputs="buffConvertResolveInputsForSlot"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"

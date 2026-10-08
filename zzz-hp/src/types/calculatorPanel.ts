@@ -298,15 +298,30 @@ export function missingExternalPanelInputs(
 }
 
 /**
- * 草稿 → 完整面板；还有没填的就返回 null（空就是空，没填完不能进计算）。
+ * 草稿 → 完整面板。
  *
- * 可选字段留空按 **0** 落库：它们已经进了 `PanelStats`，留 `null` 会在后续加法里变 NaN。
+ * - 不带 `fallback`（旧口径 2026-09-12）：还有必填项没填就返回 null（空就是空，没填完不能进计算）。
+ * - 带 `fallback`（角色初始面板，新口径 2026-10-08）：没填的必填项回落 `fallback[key]`
+ *   （键不存在或非有限数按 0），照常返回完整面板 —— 「没填 = 用初始面板」；
+ *   **显式填 0 仍然是 0**，只有 null 才算「没填」。
+ *
+ * 可选字段留空一律按 **0** 落库：它们已经进了 `PanelStats`，留 `null` 会在后续加法里变 NaN。
  */
-export function resolveExternalPanelDraft(draft: ExternalPanelDraft): PanelStats | null {
-  if (missingExternalPanelInputs(draft).length) return null
+export function resolveExternalPanelDraft(
+  draft: ExternalPanelDraft,
+  fallback?: AgentBaseLike | null,
+): PanelStats | null {
+  const hasMissing = missingExternalPanelInputs(draft).length > 0
+  if (hasMissing && !fallback) return null
   const panel = { ...(draft as PanelStats) }
   for (const field of EXTERNAL_PANEL_INPUT_FIELDS) {
-    if (field.optional && panel[field.key] == null) panel[field.key] = 0
+    if (panel[field.key] != null) continue
+    if (!field.optional && fallback) {
+      const baseValue = (fallback as Record<string, unknown>)[field.key]
+      panel[field.key] = typeof baseValue === 'number' && Number.isFinite(baseValue) ? baseValue : 0
+    } else {
+      panel[field.key] = 0
+    }
   }
   return panel
 }

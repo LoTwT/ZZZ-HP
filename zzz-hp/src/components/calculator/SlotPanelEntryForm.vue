@@ -327,7 +327,7 @@ function formatValue(key: keyof PanelStats, value: number) {
           {{
             isAffixMode
               ? '由词条数、驱动盘与角色/音擎基础属性自动计算，只读预览。'
-              : '手填当前槽位局外面板，不含战斗增益。'
+              : '手填当前槽位局外面板，不含战斗增益；未填项按角色初始面板填充。'
           }}
           <template v-if="convertAttrs.external.size"> 实线绿框为局外转模来源。</template>
           <template v-if="convertAttrs.final.size"> 虚线绿框为局内转模对应的局外属性。</template>

@@ -2,7 +2,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { AgentBuffDoc, Skill, SkillDamageType, SkillGroup, SkillTypeId } from '@/types/calculator'
+import type {
+  AgentBuffDoc,
+  BuffEffect,
+  Skill,
+  SkillDamageType,
+  SkillGroup,
+  SkillTypeId,
+} from '@/types/calculator'
 import type {
   FlowEntry,
   FlowGroupMemberOverride,
@@ -70,7 +77,10 @@ import { AGENT_PANEL_SOURCE_LABELS, AGENT_PANEL_SOURCE_ORDER } from '@/utils/age
 import type { SkillFlowDisplayOption } from '@/utils/skillFlowPanelSource'
 import {
   resolveBuffSelectionForSlot,
+  getBuffEffectConvertInput,
+  getBuffEffectStacks,
   type CollectedEffect,
+  type ConvertResolveInputs,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -80,6 +90,8 @@ import {
   buildFlowBuffTableColumns,
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
+  flowBuffOverrideExceptionCount,
+  isFlowBuffOverrideEmpty,
   resolveRowBeneficiarySlots,
   setFlowBuffEffectDisabled,
 } from '@/utils/flowBuffTable'
@@ -115,6 +127,8 @@ const props = defineProps<{
   buffEffectTexts?: Record<string, string>
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
+  /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
+  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
 }>()
 
 const emit = defineEmits<{
@@ -176,8 +190,34 @@ const buffOverrideModel = computed<FlowBuffOverride | null>({
 /** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
  *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
  *  表里是 na 的不列（na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
-const buffOverrideEffects = computed(() => {
-  const entry = buffOverrideEntry.value
+/** 本行弹窗的「继承全局」读取函数：与局内增益同一份按槽合并的勾选状态（multi → 槽位合并） */
+
+function globalStacksFor(effect: BuffEffect): number {
+  const multi = props.multiBuffSelection
+  if (!multi) return effect.defaultStacks ?? 1
+  return (
+    getBuffEffectStacks(
+      multi,
+      activeSlotIndex.value,
+      effect.id,
+      effect.applyTarget,
+      effect.defaultStacks ?? 1,
+    ) || 0
+  )
+}
+
+function globalConvertInput(effect: BuffEffect): number | undefined {
+  const multi = props.multiBuffSelection
+  if (!multi) return undefined
+  return getBuffEffectConvertInput(
+    multi,
+    activeSlotIndex.value,
+    effect.id,
+    effect.applyTarget,
+  )
+}
+
+const buffOverrideEffects = computed(() => {  const entry = buffOverrideEntry.value
   if (!entry) return []
   const member = buffOverrideMember.value
   let rowKeys: string[]
@@ -206,7 +246,12 @@ const buffOverrideEffects = computed(() => {
   return (props.buffEffects ?? []).filter((item) => applicable.has(item.effect.id))
 })
 
-/** 本行增益例外弹窗的行标题：招式 / 组名（成员编辑再加段名）+ 次数 */
+/**
+ * 本行增益例外弹窗的行标题：招式 / 组名（成员编辑再加段名）+ 次数。
+ *
+ * 前面加「整组 / 组内」：同一个组与其中某一段各有各的例外，光看名字分不清改的是哪一层
+ * （组名与成员名还可能撞）。
+ */
 const buffOverrideRowLabel = computed(() => {
   const entry = buffOverrideEntry.value
   if (!entry) return ''
@@ -218,7 +263,21 @@ const buffOverrideRowLabel = computed(() => {
   const count = member
     ? memberTuneCount(entry, member) * Math.max(0, Number(entry.count) || 0)
     : Math.max(0, Number(entry.count) || 0)
-  return `${name} · ${count} 次`
+  const scope = member ? '组内' : flowIsGroup(entry) ? '整组' : ''
+  return `${scope ? `${scope} · ` : ''}${name} · ${count} 次`
+})
+
+/**
+ * 组成员编辑时：整组当前关着几条（合并语义下这一段同样不吃、也开不回来）。
+ * 只数禁用（块 / 单条）—— 层数、转模是数值覆盖，不会让列表少东西。
+ */
+const buffOverrideInheritedDisabledCount = computed(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry || !buffOverrideMember.value) return 0
+  const group = entry.buffOverrides
+  return (
+    (group?.disabledBlockIds?.length ?? 0) + (group?.disabledEffectIds?.length ?? 0)
+  )
 })
 
 function openBuffOverride(entryId: string, memberKey: string | null = null) {
@@ -228,11 +287,12 @@ function openBuffOverride(entryId: string, memberKey: string | null = null) {
 
 /** 该行的例外条数（整行 + 组内成员的覆盖），0 = 与全局一致 */
 function buffExceptionCount(entry: FlowEntry): number {
-  const countOf = (override: FlowBuffOverride | null | undefined) =>
-    (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
   return (
-    countOf(entry.buffOverrides) +
-    (entry.memberOverrides ?? []).reduce((sum, item) => sum + countOf(item.buffOverrides), 0)
+    flowBuffOverrideExceptionCount(entry.buffOverrides) +
+    (entry.memberOverrides ?? []).reduce(
+      (sum, item) => sum + flowBuffOverrideExceptionCount(item.buffOverrides),
+      0,
+    )
   )
 }
 
@@ -2350,6 +2410,23 @@ const tuningGroup = computed(() => {
   return entry ? flowGroup(entry) : null
 })
 
+/**
+ * 细调标题上的「第几项」：同一个技能组可以放很多次进流程，只有组名看不出调的是哪一条。
+ * 序号与流程列表左侧的编号同一套（`index + 1`）。
+ */
+const tuningFlowRowIndex = computed(() => {
+  const entry = tuningFlowEntry.value
+  if (!entry) return 0
+  return currentSlot.value.flow.findIndex((item) => item.id === entry.id) + 1
+})
+
+/** 细调里这一段自己的例外条数（层数 / 转模覆盖也算，否则改完看不出是哪一段） */
+function memberExceptionCount(entry: FlowEntry, member: { order: number; skillId: string }) {
+  return flowBuffOverrideExceptionCount(
+    memberOverrideFor(entry, member)?.buffOverrides ?? null,
+  )
+}
+
 function openFlowGroupTune(entryId: string) {
   flowGroupTuneId.value = entryId
 }
@@ -2448,13 +2525,13 @@ function setMemberOverride(
   if (patch.staggerPhase === null) base.staggerPhase = null
   if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
   if (patch.triggerAgentId === null) base.triggerAgentId = null
+  // 成员例外的空条目判据：次数 / 失衡 / 两个代理人 + 例外本身是否为空（同一份判据）
   const empty =
     base.count == null &&
     base.staggerPhase == null &&
     !base.anomalyPowerAgentId &&
     !base.triggerAgentId &&
-    !base.buffOverrides?.disabledBlockIds?.length &&
-    !base.buffOverrides?.disabledEffectIds?.length
+    isFlowBuffOverrideEmpty(base.buffOverrides)
   if (index >= 0) {
     if (empty) list.splice(index, 1)
     else list[index] = base
@@ -3362,6 +3439,14 @@ const showcaseTitle = computed(() => {
               v-model:override="buffOverrideModel"
               :effects="buffOverrideEffects"
               :row-label="buffOverrideRowLabel"
+              :global-stacks-for="globalStacksFor"
+              :global-convert-input="globalConvertInput"
+              :slot-index="activeSlotIndex"
+              :convert-resolve-inputs="convertResolveInputs"
+              :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
+              :team-slots="teamSlots"
+              :skill-subcategories="skillSubcategories"
+              :inherited-disabled-count="buffOverrideInheritedDisabledCount"
             />
 
             <FlowBuffTableModal
@@ -3394,7 +3479,12 @@ const showcaseTitle = computed(() => {
       >
         <div class="skill-detail-panel group-tune-panel" role="dialog" aria-modal="true">
           <header class="skill-detail-head">
-            <h3>组内细调 · {{ tuningGroup.name }}</h3>
+            <h3>
+              组内细调 · {{ tuningGroup.name }}
+              <span v-if="tuningFlowRowIndex" class="muted">
+                （流程第 {{ tuningFlowRowIndex }} 项）
+              </span>
+            </h3>
             <button type="button" class="close-btn" aria-label="关闭" @click="closeFlowGroupTune">
               ×
             </button>
@@ -3512,18 +3602,17 @@ const showcaseTitle = computed(() => {
                   <button
                     type="button"
                     class="mini-btn"
+                    :title="
+                      memberExceptionCount(tuningFlowEntry!, member)
+                        ? `这一段有 ${memberExceptionCount(tuningFlowEntry!, member)} 条例外`
+                        : '本段增益例外（缺省继承整组 / 全局）'
+                    "
                     @click="openBuffOverride(tuningFlowEntry!.id, skillGroupMemberKey(member))"
                   >
                     增益<span
-                      v-if="
-                        (memberOverrideFor(tuningFlowEntry!, member)?.buffOverrides
-                          ?.disabledEffectIds?.length ?? 0) > 0
-                      "
+                      v-if="memberExceptionCount(tuningFlowEntry!, member)"
                       style="margin-left: 0.25rem; color: #ffd479"
-                      >{{
-                        memberOverrideFor(tuningFlowEntry!, member)?.buffOverrides
-                          ?.disabledEffectIds?.length ?? 0
-                      }}</span
+                      >{{ memberExceptionCount(tuningFlowEntry!, member) }}</span
                     >
                   </button>
                   <button
