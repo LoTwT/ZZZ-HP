@@ -201,6 +201,9 @@ export function buildSkillCalcZoneRows(
     push(rows, '紊乱基础倍率', result.disorderBaseMultRatio)
     push(rows, '异常持续时间', result.effectiveAnomalyDuration)
     push(rows, '紊乱补偿倍率', result.disorderCompMultRatio)
+    if (isActiveZone(result.disorderMultFactor)) {
+      push(rows, '紊乱倍率修正', result.disorderMultFactor)
+    }
     push(rows, '紊乱倍率区', result.disorderZone)
     push(rows, '紊乱增伤区', result.disorderDmgBonusZone)
     push(rows, '期望伤害', result.disorderExpected, true)

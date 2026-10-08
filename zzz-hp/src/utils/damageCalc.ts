@@ -241,8 +241,11 @@ export interface DamageCalcResult {
   /** 异放伤害（暴击率=1） */
   anomalyReleaseExpectedFullCrit: number
   effectiveAnomalyDuration: number
+  /** 紊乱基础倍率分量（不含倍率修正、不含持续时间补偿） */
   disorderBaseMultRatio: number
   disorderCompMultRatio: number
+  /** 紊乱倍率修正（乘在倍率区上） */
+  disorderMultFactor: number
   disorderZone: number
   disorderDmgBonusZone: number
   disorderExpected: number
@@ -831,26 +834,31 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
 
   const disorderDmgBonusZone = 1 + bonusPanel.disorderDmgBonus / 100
   const disorderCompMultRatio = multPanel.disorderCompMult / 100
+  const disorderPanelFactor = readFactor(multPanel.disorderBaseMultFactor)
   let disorderBaseMultRatio: number
+  let disorderMultFactor: number
   let disorderZone: number
   if (input.disorderZoneMultOverride != null) {
-    disorderZone = Math.max(
-      0,
-      (input.disorderZoneMultOverride / 100) *
-        readFactor(input.disorderZoneMultFactorOverride),
-    )
+    // 招式手填「最终倍率区%」：填写值本身已含有效持续时间 × 补偿倍率，修正直接乘在倍率区上
+    const providedZoneRatio = Math.max(0, input.disorderZoneMultOverride / 100)
+    disorderMultFactor =
+      readFactor(input.disorderZoneMultFactorOverride) * disorderPanelFactor
+    disorderZone = Math.max(0, providedZoneRatio * disorderMultFactor)
     disorderBaseMultRatio = Math.max(
       0,
-      disorderZone - effectiveDuration * disorderCompMultRatio,
+      providedZoneRatio - effectiveDuration * disorderCompMultRatio,
     )
   } else {
     disorderBaseMultRatio = skillMults
-      ? skillMults.disorderMultZone
-      : Math.max(0, multPanel.disorderBaseMult / 100) *
-          readFactor(multPanel.disorderBaseMultFactor)
+      ? skillMults.disorderBaseMultRatio
+      : Math.max(0, multPanel.disorderBaseMult / 100)
+    disorderMultFactor = skillMults
+      ? skillMults.disorderMultFactor
+      : disorderPanelFactor
     disorderZone = Math.max(
       0,
-      disorderBaseMultRatio + effectiveDuration * disorderCompMultRatio,
+      (disorderBaseMultRatio + effectiveDuration * disorderCompMultRatio) *
+        disorderMultFactor,
     )
   }
   const disorderBase = triggerParts.anomalyBaseExpected
@@ -1008,6 +1016,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     effectiveAnomalyDuration: round(effectiveDuration, 4),
     disorderBaseMultRatio: round(disorderBaseMultRatio, 4),
     disorderCompMultRatio: round(disorderCompMultRatio, 4),
+    disorderMultFactor: round(disorderMultFactor, 4),
     disorderZone: round(disorderZone, 4),
     disorderDmgBonusZone: round(disorderDmgBonusZone, 4),
     disorderExpected: round(applyMutation(disorderExpected), 0),
