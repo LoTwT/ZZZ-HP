@@ -246958,6 +246958,22 @@
       "note": ""
     },
     {
+      "id": "sk-nangongyu-disorder-muz3bemh",
+      "agentId": "nangongyu",
+      "name": "紊乱",
+      "source": "preset",
+      "damageType": "disorder",
+      "skillTypes": [],
+      "buffAnchorId": null,
+      "baseMult": 0,
+      "baseMultFactor": 100,
+      "settlementMult": 0,
+      "multSource": null,
+      "element": "",
+      "ownerGroupId": null,
+      "note": ""
+    },
+    {
       "id": "sk-nekomata-nk-1021009-main",
       "agentId": "nekomata",
       "name": "冲刺攻击：你在看哪边？",
@@ -258683,7 +258699,7 @@
       "id": "sg-miyabi-muz2ok3e",
       "agentId": "miyabi",
       "name": "雅南柚4蓄1大",
-      "note": "",
+      "note": "请将组内紊乱的异常强度提供者设为南宫羽",
       "members": [
         {
           "skillId": "sk-miyabi-nk-1091009-斩击",
@@ -258728,38 +258744,50 @@
           "includeInFlow": true
         },
         {
-          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "skillId": "sk-miyabi-disorder-muz2x9qh",
           "order": 7,
           "count": 1,
           "includeInFlow": true
         },
         {
-          "skillId": "sk-miyabi-nk-1091015-main",
+          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
           "order": 8,
           "count": 1,
           "includeInFlow": true
         },
         {
-          "skillId": "sk-miyabi-nk-1091009-斩击",
+          "skillId": "sk-miyabi-nk-1091015-main",
           "order": 9,
           "count": 1,
           "includeInFlow": true
         },
         {
-          "skillId": "sk-public-anomaly-ice",
+          "skillId": "sk-miyabi-nk-1091009-斩击",
           "order": 10,
           "count": 1,
           "includeInFlow": true
         },
         {
-          "skillId": "sk-miyabi-direct-muz2i0us",
+          "skillId": "sk-public-anomaly-ice",
           "order": 11,
           "count": 1,
           "includeInFlow": true
         },
         {
-          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "skillId": "sk-miyabi-direct-muz2i0us",
           "order": 12,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-disorder-muz2x9qh",
+          "order": 13,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "order": 14,
           "count": 1,
           "includeInFlow": true
         }
@@ -258892,7 +258920,130 @@
       "agentId": "miyabi",
       "name": "雅狼苍3蓄1大",
       "note": "",
-      "members": []
+      "members": [
+        {
+          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091018-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-direct-muz2i0us",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091021-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091015-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091009-斩击",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-miyabi-nk-1091029-三段蓄力斩击",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-nangongyu-muz3g42t",
+      "agentId": "nangongyu",
+      "name": "雅南柚4蓄1大",
+      "note": "请将组内的紊乱异常强度提供者设为星见雅",
+      "members": [
+        {
+          "skillId": "sk-nangongyu-nk-1511004-一段",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-disorder-muz0ske2",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-nk-1511008-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-disorder-muz0ske2",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-disorder-muz3bemh",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-anomalyRelease-muz26xh1",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-nk-1511008-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-nk-1511011-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-nangongyu-disorder-muz3bemh",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
     },
     {
       "id": "sg-remiel-mtsw5z22",
@@ -258934,6 +259085,226 @@
           "skillId": "sk-remiel-radiance-mtsw4ckz",
           "order": 5,
           "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-soukaku-muz417tn",
+      "agentId": "soukaku",
+      "name": "雅南柚4蓄1大",
+      "note": "请将组内紊乱的异常强度提供者设为星见雅",
+      "members": [
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131016-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131006-三段",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 6,
+          "count": 2,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 7,
+          "count": 2,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131016-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131006-三段",
+          "order": 11,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 12,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 13,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 14,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 15,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131016-main",
+          "order": 16,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131006-三段",
+          "order": 17,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 18,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 19,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 20,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 21,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-soukaku-muz433fe",
+      "agentId": "soukaku",
+      "name": "雅狼苍3蓄1大",
+      "note": "请将组内紊乱的异常强度提供者设为星见雅",
+      "members": [
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131016-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131006-三段",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131011-连续攻击",
+          "order": 6,
+          "count": 2,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131010-风场",
+          "order": 7,
+          "count": 2,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-disorder-muz33lt0",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-public-anomaly-ice",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131016-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soukaku-nk-1131006-三段",
+          "order": 11,
+          "count": 1,
           "includeInFlow": true
         }
       ]
@@ -259147,7 +259518,7 @@
     {
       "id": "sg-yixuan-mtwoe56j",
       "agentId": "yixuan",
-      "name": "失衡3大",
+      "name": "仪琉卢失衡3大",
       "note": "失衡3大（无2影派生）",
       "members": [
         {
