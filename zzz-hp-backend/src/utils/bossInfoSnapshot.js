@@ -174,17 +174,17 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         continue
       }
 
+      // 名字是业务键：先按名字匹配（对齐 upsertBossInfo 语义），
+      // 避免按 id 改名时撞上 uk_boss_name（目标库已存在同名老行）
       let targetId = null
-      if (item.id != null) {
+      const [byName] = await conn.execute(
+        `SELECT id FROM boss_info WHERE boss_name = ? LIMIT 1`,
+        [item.bossName],
+      )
+      if (byName[0]?.id != null) targetId = Number(byName[0].id)
+      if (targetId == null && item.id != null) {
         const [byId] = await conn.execute(`SELECT id FROM boss_info WHERE id = ? LIMIT 1`, [item.id])
         if (byId[0]?.id != null) targetId = Number(byId[0].id)
-      }
-      if (targetId == null) {
-        const [byName] = await conn.execute(
-          `SELECT id FROM boss_info WHERE boss_name = ? LIMIT 1`,
-          [item.bossName],
-        )
-        if (byName[0]?.id != null) targetId = Number(byName[0].id)
       }
 
       if (targetId != null) {
