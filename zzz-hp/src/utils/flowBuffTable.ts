@@ -376,6 +376,24 @@ export function effectiveRowOverride(
   return entry.buffOverrides ?? null
 }
 
+/**
+ * 一份行级例外里有几条「与本行不同」的内容：禁用的块 / 单条 + 层数、转模的行级覆盖。
+ *
+ * **界面上的「例外 N」「增益 N」都用它** —— 各数各的最容易数漏，
+ * 漏了用户就看不到"这一行/这一段改过"（层数、转模这类新版覆盖尤其容易漏）。
+ */
+export function flowBuffOverrideExceptionCount(
+  override: FlowBuffOverride | null | undefined,
+): number {
+  if (!override) return 0
+  return (
+    (override.disabledBlockIds?.length ?? 0) +
+    (override.disabledEffectIds?.length ?? 0) +
+    Object.keys(override.stacksByEffectId ?? {}).length +
+    Object.keys(override.convertInputsByEffectId ?? {}).length
+  )
+}
+
 /** 行受益者计算的输入（结构性类型：传真实 hit 即可，utils 不依赖组件类型） */
 export interface RowBeneficiaryHitInput {
   id: string

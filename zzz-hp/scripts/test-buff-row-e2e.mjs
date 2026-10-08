@@ -19,6 +19,7 @@ import path from 'node:path'
 import { resolveFlow } from '../src/utils/resolvedHit.ts'
 import { buildOptimalEvalContext, evaluateOptimalEventDetail } from '../src/utils/optimalAffixAlloc.ts'
 import { blockKeyOfCollected, collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
+import { setFlowBuffEffectDisabled } from '../src/utils/flowBuffTable.ts'
 import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
 import { BUFFS_JSON, FRONTEND_ROOT } from './_paths.mjs'
 
@@ -231,6 +232,93 @@ console.log(`  无例外：${msNone.toFixed(3)} ms/次（走目录缓存）`)
 console.log(`  有例外：${msSome.toFixed(3)} ms/次（例外已并入缓存键，同一例外命中缓存）`)
 console.log(`  倍率：${(msSome / msNone).toFixed(2)}×`)
 console.log('  说明：例外进了缓存键 —— 同一例外重复求值命中缓存，不同例外各自成键；不再有"绕开缓存重算本行"的开销')
+
+console.log('=== 7. 行级层数覆盖要走到伤害数字（并且点格不会把它清掉） ===')
+
+const stackedIds = [
+  ...new Set(
+    allEffects
+      .filter(
+        (item) =>
+          (item.effect.kind === 'stacked' || item.effect.stackable) &&
+          (item.effect.valuePerStack ?? 0) !== 0,
+      )
+      .map((item) => item.effect.id),
+  ),
+]
+let stackId = null
+let stackZeroValue = null
+for (const id of stackedIds) {
+  hitA.buffOverride = { stacksByEffectId: { [id]: 0 } }
+  const value = evalPerHit(hitA)
+  if (value != null && value !== dA0) {
+    stackId = id
+    stackZeroValue = value
+    break
+  }
+}
+hitA.buffOverride = null
+console.log(`  叠层候选 ${stackedIds.length} 条；命中的：${stackId ?? '(无)'}`)
+if (stackedIds.length) {
+  check('存在「层数清零即改变伤害」的叠层增益', stackId != null)
+} else {
+  console.log('  （该 fixture 里没有叠层效果，跳过）')
+}
+if (stackId) {
+  check('层数清零后伤害不增加（层数只做加法贡献）', stackZeroValue <= dA0, `基准 ${dA0} / 清零 ${stackZeroValue}`)
+
+  // 流程增益表点一格 = 勾选写回：不得顺手把层数覆盖清掉 —— 清掉了下面这一行就会回到基准
+  const flowRow = { id: 'e2e-row', buffOverrides: { stacksByEffectId: { [stackId]: 0 } } }
+  setFlowBuffEffectDisabled({
+    entry: flowRow,
+    effectId: 'e2e-effect',
+    blockKey: 'e2e-block',
+    siblingEffectIds: [],
+    disabled: true,
+  })
+  check(
+    '流程表点格后层数覆盖仍在（写回不吞数值覆盖）',
+    flowRow.buffOverrides?.stacksByEffectId?.[stackId] === 0,
+    JSON.stringify(flowRow.buffOverrides),
+  )
+  hitA.buffOverride = flowRow.buffOverrides
+  const afterToggle = evalPerHit(hitA)
+  hitA.buffOverride = null
+  check('点格后仍按行级层数结算（覆盖确实生效）', afterToggle === stackZeroValue, `${stackZeroValue} / ${afterToggle}`)
+}
+
+console.log('=== 8. 行级自行转模输入要走到伤害数字 ===')
+
+const manualConvertIds = [
+  ...new Set(
+    allEffects
+      .filter(
+        (item) => item.effect.kind === 'convert' && item.effect.convert?.panelSource === 'manual',
+      )
+      .map((item) => item.effect.id),
+  ),
+]
+let convertId = null
+let convertValue = null
+for (const id of manualConvertIds) {
+  hitA.buffOverride = { convertInputsByEffectId: { [id]: 9999 } }
+  const value = evalPerHit(hitA)
+  if (value != null && value !== dA0) {
+    convertId = id
+    convertValue = value
+    break
+  }
+}
+hitA.buffOverride = null
+console.log(`  自行转模候选 ${manualConvertIds.length} 条；命中的：${convertId ?? '(无)'}`)
+if (manualConvertIds.length) {
+  check('存在「改自行转模输入即改变伤害」的效果', convertId != null)
+} else {
+  console.log('  （该 fixture 里没有自行设置（manual）转模效果，跳过）')
+}
+if (convertId) {
+  console.log(`  perHit = ${convertValue.toFixed(4)}（基准 ${dA0.toFixed(4)}）`)
+}
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)

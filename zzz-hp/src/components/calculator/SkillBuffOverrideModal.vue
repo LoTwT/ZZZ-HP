@@ -29,6 +29,7 @@ import {
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
+import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -126,14 +127,8 @@ const visibleGroups = computed(() =>
 )
 
 const disabledEffects = computed(() => new Set(override.value?.disabledEffectIds ?? []))
-/** 例外条数：禁用的块 / 单条 + 层数、转模的行级覆盖（后者也是「这一行与全局不同」） */
-const exceptionCount = computed(
-  () =>
-    (override.value?.disabledBlockIds?.length ?? 0) +
-    (override.value?.disabledEffectIds?.length ?? 0) +
-    Object.keys(override.value?.stacksByEffectId ?? {}).length +
-    Object.keys(override.value?.convertInputsByEffectId ?? {}).length,
-)
+/** 例外条数（禁用 + 层数 / 转模覆盖）——与流程行、细调成员用的是同一份计数 */
+const exceptionCount = computed(() => flowBuffOverrideExceptionCount(override.value))
 
 function isEffectOff(id: string): boolean {
   return disabledEffects.value.has(id)
@@ -279,7 +274,10 @@ function effectResultText(item: CollectedEffect): string {
       <div class="bo-card" role="dialog" aria-modal="true" aria-label="本行增益例外">
         <header class="bo-head">
           <div class="bo-title-row">
-            <h3>本行增益例外</h3>
+            <h3>
+              本行增益例外
+              <span v-if="rowLabel" class="bo-title-row-label" :title="rowLabel"> · {{ rowLabel }}</span>
+            </h3>
             <button type="button" class="bo-close" aria-label="关闭" @click="open = false">×</button>
           </div>
           <p class="bo-hint">
@@ -428,6 +426,12 @@ function effectResultText(item: CollectedEffect): string {
 .bo-title-row h3 {
   margin: 0;
   font-size: 1.1rem;
+}
+/* 标题里带上「改的是哪一行 / 哪一段」—— 同一技能组可能被放进流程多次，光看组名分不清 */
+.bo-title-row-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: #9aa3b5;
 }
 .bo-close {
   border: none;

@@ -9,7 +9,11 @@
  *
  * 运行：npx vite-node scripts/test-buff-row-override.mjs
  */
-import { expandBuffOverrideToEffectIds, formatBuffEffectResultText } from '../src/utils/buffEffect.ts'
+import {
+  expandBuffOverrideToEffectIds,
+  formatBuffEffectResultText,
+  resolveEffectsToMods,
+} from '../src/utils/buffEffect.ts'
 import { availableBuffGroupTabs, rowBuffSelectionOverlay } from '../src/utils/panelBuffCalc.ts'
 import { setFlowBuffEffectDisabled } from '../src/utils/flowBuffTable.ts'
 import { buildHitEvalFingerprint } from '../src/utils/hitEvalCache.ts'
@@ -296,6 +300,59 @@ check(
   '组成员行：数值覆盖原样保留',
   groupEntry.memberOverrides[0].buffOverrides?.stacksByEffectId?.s2 === 5,
   JSON.stringify(groupEntry.memberOverrides[0].buffOverrides),
+)
+
+console.log('=== 7. 行级覆盖 → 结算 mods（层数 / 转模这两跳的护栏） ===')
+
+// 叠层：`options.stacksByEffectId[effect.id]` → resolveEffectBaseValue = 每层 × 层数
+const stackedProbe = {
+  id: 'st1',
+  stat: 'dmgBonus',
+  scope: 'general',
+  applyTarget: 'self',
+  kind: 'stacked',
+  valuePerStack: 5,
+  defaultStacks: 1,
+  maxStacks: 10,
+}
+const stackedMods = (stacksByEffectId) =>
+  resolveEffectsToMods([stackedProbe], { applyTargets: ['self'], stacksByEffectId })
+
+check('层数 3 → mods 里就是 15', stackedMods({ st1: 3 }).dmgBonus === 15, String(stackedMods({ st1: 3 }).dmgBonus))
+check(
+  '行级层数叠在全局之上（全局 1、行级 3） → mods 15',
+  resolveEffectsToMods([stackedProbe], {
+    applyTargets: ['self'],
+    stacksByEffectId: rowBuffSelectionOverlay(
+      { stacksByEffectId: { st1: 3 } },
+      { stacksByEffectId: { st1: 1 } },
+    )?.stacksByEffectId,
+  }).dmgBonus === 15,
+)
+
+// 转模（自行设置）：`options.convertInputs[effect.id]` → resolveConvertValue 的 overrideBase = 输入 × 比例
+const manualConvertProbe = {
+  id: 'mc1',
+  stat: 'dmgBonus',
+  scope: 'general',
+  applyTarget: 'self',
+  kind: 'convert',
+  convert: { from: 'atk', panelSource: 'manual', ratioPercent: 5, defaultBase: 100 },
+}
+const convertMods = (convertInputs) =>
+  resolveEffectsToMods([manualConvertProbe], { applyTargets: ['self'], convertInputs })
+
+check('不给输入 → 走 defaultBase：100 × 5% = 5', convertMods(undefined).dmgBonus === 5, String(convertMods(undefined).dmgBonus))
+check('输入 2000 → 2000 × 5% = 100', convertMods({ mc1: 2000 }).dmgBonus === 100, String(convertMods({ mc1: 2000 }).dmgBonus))
+check(
+  '行级转模输入叠在全局之上（全局 2000、行级 4000） → 4000 × 5% = 200',
+  resolveEffectsToMods([manualConvertProbe], {
+    applyTargets: ['self'],
+    convertInputs: rowBuffSelectionOverlay(
+      { convertInputsByEffectId: { mc1: 4000 } },
+      { convertInputs: { mc1: 2000 } },
+    )?.convertInputs,
+  }).dmgBonus === 200,
 )
 
 console.log('')

@@ -1896,6 +1896,7 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
 
 [data-theme='light'] .bo-hint,
 [data-theme='light'] .bo-row,
+[data-theme='light'] .bo-title-row-label,
 [data-theme='light'] .bo-copy small,
 [data-theme='light'] .bo-sep,
 [data-theme='light'] .bo-count,
