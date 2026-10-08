@@ -10,7 +10,9 @@
  * - **同名标记**：同一分组内第几次出现（只在重名时给）；招式行按全表编号
  * - **灰（不可点）的判据 = 受益者**：这条增益的受益者不在"这一行的受益者集合"里 → 灰
  * - **不参与的角色，其个人增益列不出现**（由页面传入的 items 保证，见 DamageCalcPage）
- * - 行级**只做减法**：与全局一致的不写；空 = `null`（全部继承）
+ * - 行级以**减法**为主（勾选）：与全局一致的不写；叠层 / 自行转模另可按行改数值
+ *   （`stacksByEffectId` / `convertInputsByEffectId`，见 `dev-docs/row-buff-override-stacks-convert.md`）；
+ *   四个键全空 = `null`（全部继承）
  * - 技能组：组行 = `entry.buffOverrides`，成员行 = `memberOverrides[].buffOverrides`（缺省继承整组）
  */
 import type { SkillGroup } from '@/types/calculator'
@@ -505,11 +507,18 @@ export function setFlowBuffEffectDisabled(input: {
     }
   }
 
+  // 层数 / 转模的行级覆盖原样保留：这里是「勾选」那条线，不该顺手把数值覆盖清掉
   const merged: FlowBuffOverride = {
     disabledBlockIds: [...blocks],
     disabledEffectIds: [...effects],
+    stacksByEffectId: current?.stacksByEffectId ?? null,
+    convertInputsByEffectId: current?.convertInputsByEffectId ?? null,
   }
-  const empty = !merged.disabledBlockIds?.length && !merged.disabledEffectIds?.length
+  const empty =
+    !merged.disabledBlockIds?.length &&
+    !merged.disabledEffectIds?.length &&
+    !Object.keys(merged.stacksByEffectId ?? {}).length &&
+    !Object.keys(merged.convertInputsByEffectId ?? {}).length
   const value: FlowBuffOverride | null = empty ? null : merged
 
   if (memberKey) {

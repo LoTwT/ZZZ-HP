@@ -1925,6 +1925,28 @@ body:has(.calculator-page.theme-light) .history-summary-bar .loaded-clear,
   background: #ffffff !important;
 }
 
+[data-theme='light'] .bo-group-tabs {
+  background: #eef1f5 !important;
+}
+
+[data-theme='light'] .bo-group-tab {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  color-scheme: light;
+}
+
+[data-theme='light'] .bo-group-tab:hover {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+}
+
+[data-theme='light'] .bo-group-tab.active {
+  border-color: #98a2b3 !important;
+  background: #fff8eb !important;
+  color: #1c212a !important;
+}
+
 [data-theme='light'] .bo-copy strong,
 [data-theme='light'] .bo-effect-text {
   color: #1c212a !important;

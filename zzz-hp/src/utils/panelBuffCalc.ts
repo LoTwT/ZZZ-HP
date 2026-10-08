@@ -85,6 +85,50 @@ export const ENVIRONMENT_BUFF_GROUPS = new Set([
   '临界 Buff',
 ])
 
+/**
+ * 增益弹窗顶部「分类」tab 的顺序（**唯一事实来源**：局内增益选择器与本行增益例外弹窗共用）。
+ *
+ * 只列 `CollectedEffect.group` 里出现过的（`全部` 恒在）；表里没有的分组
+ * （如「额外 Buff」）不单开 tab，仍能从「全部」看到。
+ */
+export const BUFF_GROUP_TABS = [
+  '全部',
+  '自身',
+  '自身音擎',
+  '自身驱动盘',
+  '全队（含自身）',
+  '全队音擎',
+  '队友',
+  '队友音擎',
+  '队友驱动盘',
+  '邦布',
+  '危局 Buff',
+  'Boss 场地 Buff',
+  '防线 Buff',
+  '临界 Buff',
+] as const
+
+/** 当前面板/勾选里实际存在的分类 tab（`全部` 恒在，顺序照 `BUFF_GROUP_TABS`） */
+export function availableBuffGroupTabs(
+  groups: Iterable<string | null | undefined>,
+  forceGroups?: Iterable<string> | null,
+): string[] {
+  const set = new Set<string>()
+  for (const group of groups) if (group) set.add(group)
+  for (const group of forceGroups ?? []) if (group) set.add(group)
+  return BUFF_GROUP_TABS.filter((tab) => tab === '全部' || set.has(tab))
+}
+
+/**
+ * 转模解析输入：某槽位的属性默认值 + 局外/局内面板取值 + 全槽位取值表。
+ * 局内增益选择器与本行增益例外弹窗共用这一份形状（页面按槽位现给，见 `SkillBuffOverrideModal`）。
+ */
+export interface ConvertResolveInputs {
+  attrDefaults: Partial<Record<CharacterAttrKey, number>>
+  panelSourceValues?: PanelSourceValues
+  panelSourceValuesBySlot?: Record<number, PanelSourceValues>
+}
+
 export function isEnvironmentBuffGroup(group: string) {
   return ENVIRONMENT_BUFF_GROUPS.has(group)
 }

@@ -10,6 +10,7 @@ import type {
   PanelSourceValues,
 } from '@/utils/panelBuffCalc'
 import {
+  availableBuffGroupTabs,
   getBuffEffectConvertInput,
   getBuffEffectEnabled,
   getBuffEffectStacks,
@@ -22,7 +23,7 @@ import {
   setBuffEffectStacks,
   isTeamBuffApplyTarget,
 } from '@/utils/panelBuffCalc'
-import { formatBuffEffectResultText, formatApplyProfessionLabel, resolveConvertValue } from '@/utils/buffEffect'
+import { formatBuffEffectResultText, formatApplySituationLabel, resolveConvertValue } from '@/utils/buffEffect'
 import {
   isSkillConvertFromKey,
   SKILL_CONVERT_FROM_TO_TALENT_KEY,
@@ -67,23 +68,6 @@ const search = ref('')
 const activeGroup = ref('全部')
 const showConvertOverride = ref<Record<string, boolean>>({})
 
-const groupOrder = [
-  '全部',
-  '自身',
-  '自身音擎',
-  '自身驱动盘',
-  '全队（含自身）',
-  '全队音擎',
-  '队友',
-  '队友音擎',
-  '队友驱动盘',
-  '邦布',
-  '危局 Buff',
-  'Boss 场地 Buff',
-  '防线 Buff',
-  '临界 Buff',
-]
-
 interface BuffCardGroup {
   key: string
   providerName: string
@@ -94,11 +78,12 @@ interface BuffCardGroup {
   items: CollectedEffect[]
 }
 
-const availableGroups = computed(() => {
-  const set = new Set(props.effects.map((item) => item.group))
-  for (const group of props.forceGroups ?? []) set.add(group)
-  return groupOrder.filter((g) => g === '全部' || set.has(g))
-})
+const availableGroups = computed(() =>
+  availableBuffGroupTabs(
+    props.effects.map((item) => item.group),
+    props.forceGroups,
+  ),
+)
 
 watch(availableGroups, (groups) => {
   if (!groups.includes(activeGroup.value)) activeGroup.value = '全部'
@@ -297,10 +282,7 @@ function blockNameText(item: CollectedEffect) {
 }
 
 function situationLabel(item: CollectedEffect) {
-  const situation = item.effect.applySituation ?? 'global'
-  if (situation === 'stagger') return '失衡期'
-  if (situation === 'non_stagger') return '非失衡期'
-  return '全局'
+  return formatApplySituationLabel(item.effect)
 }
 
 function noteText(item: CollectedEffect) {
@@ -311,7 +293,7 @@ function formatSigned(value: number) {
   return formatCalcSigned(value)
 }
 
-/** 参考站效果行：招式前缀 + 属性名 + 数值；非全局作用情况标在行首 */
+/** 参考站效果行：招式前缀 + 属性名 + 数值（叠层按当前层数出总值、转模出解析值）；非全局作用情况紧随 [强攻] 之后 */
 function effectResultText(item: CollectedEffect) {
   let amountText = ''
   if (item.effect.kind === 'stacked' || item.effect.stackable) {
@@ -323,19 +305,11 @@ function effectResultText(item: CollectedEffect) {
   } else {
     amountText = formatSigned(Number(item.effect.value) || 0)
   }
-  const body = formatBuffEffectResultText(item.effect, amountText, {
+  return formatBuffEffectResultText(item.effect, amountText, {
     statLabelFn: (stat) => statLabel(stat),
     skillSubcategories: props.skillSubcategories,
+    applySituation: true,
   })
-  const situation = situationLabel(item)
-  if (situation === '全局') return body
-  // [强攻] 放最前，作用情况紧随其后
-  const applyProf = formatApplyProfessionLabel(item.effect)
-  if (applyProf && body.startsWith(applyProf)) {
-    const rest = body.slice(applyProf.length).trimStart()
-    return `${applyProf}[${situation}] ${rest}`
-  }
-  return `[${situation}] ${body}`
 }
 
 function cardSituationLabels(card: BuffCardGroup) {

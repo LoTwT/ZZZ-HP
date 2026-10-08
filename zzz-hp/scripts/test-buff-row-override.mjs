@@ -9,8 +9,11 @@
  *
  * 运行：npx vite-node scripts/test-buff-row-override.mjs
  */
-import { expandBuffOverrideToEffectIds } from '../src/utils/buffEffect.ts'
+import { expandBuffOverrideToEffectIds, formatBuffEffectResultText } from '../src/utils/buffEffect.ts'
+import { availableBuffGroupTabs, rowBuffSelectionOverlay } from '../src/utils/panelBuffCalc.ts'
+import { setFlowBuffEffectDisabled } from '../src/utils/flowBuffTable.ts'
 import { buildHitEvalFingerprint } from '../src/utils/hitEvalCache.ts'
+import { formatCalcSigned } from '../src/utils/calcNumberFormat.ts'
 
 let passed = 0
 let failed = 0
@@ -108,6 +111,192 @@ check('无例外 vs 有例外 → 指纹不同', fNone !== fE1)
 check('相同例外 → 指纹相同（同配置的行仍共用缓存）', fE1 === fE1Again)
 check('不同例外 → 指纹不同（两行不互串）', fE1 !== fE2)
 check('块禁用 vs 单条禁用 → 指纹不同', fBlock !== fE1)
+
+// 第一轮遗留待办：层数 / 转模覆盖也必须在指纹里，否则「同一例外、不同层数」的两行会串缓存
+const fStacks3 = buildHitEvalFingerprint({
+  ...baseHit,
+  buffOverride: { stacksByEffectId: { e1: 3 } },
+})
+const fStacks5 = buildHitEvalFingerprint({
+  ...baseHit,
+  buffOverride: { stacksByEffectId: { e1: 5 } },
+})
+const fConvert = buildHitEvalFingerprint({
+  ...baseHit,
+  buffOverride: { convertInputsByEffectId: { e1: 2000 } },
+})
+
+check('缺省层数 vs 行级层数 → 指纹不同', fNone !== fStacks3)
+check('同一条不同层数 → 指纹不同（不串缓存）', fStacks3 !== fStacks5)
+check('行级转模输入 → 指纹不同', fNone !== fConvert)
+
+console.log('=== 3. 层数 / 转模覆盖合并到全局勾选（rowBuffSelectionOverlay） ===')
+
+const globalSelection = {
+  enabledIds: { e1: true },
+  stacksByEffectId: { e1: 1, e2: 4 },
+  convertInputs: { e1: 100 },
+}
+
+check(
+  '没有覆盖键 → null（调用方零开销沿用全局）',
+  rowBuffSelectionOverlay({ disabledEffectIds: ['e2'] }, globalSelection) === null,
+)
+check('缺省 override → null', rowBuffSelectionOverlay(null, globalSelection) === null)
+
+const mergedStacks = rowBuffSelectionOverlay({ stacksByEffectId: { e1: 6 } }, globalSelection)
+check('行级层数叠加在全局之上', mergedStacks?.stacksByEffectId?.e1 === 6, JSON.stringify(mergedStacks))
+check('未覆盖的条目保持全局值', mergedStacks?.stacksByEffectId?.e2 === 4)
+check('只有层数时不动全局转模输入', mergedStacks?.convertInputs?.e1 === 100)
+
+const mergedConvert = rowBuffSelectionOverlay(
+  { convertInputsByEffectId: { e1: 2500 } },
+  globalSelection,
+)
+check('行级转模输入叠加在全局之上', mergedConvert?.convertInputs?.e1 === 2500)
+check('只有转模时保持全局层数', mergedConvert?.stacksByEffectId?.e1 === 1)
+
+console.log('=== 4. 效果行文案（与局内增益共用实现） ===')
+
+const staggerEffect = {
+  id: 'b1',
+  stat: 'dmgBonus',
+  kind: 'add',
+  value: 20,
+  applyTarget: 'team',
+  scope: 'common',
+  applySituation: 'stagger',
+  applyProfession: '强攻',
+}
+
+// 叠层总值：每层 × 当前层数（本行弹窗的层数步进器改的就是它）
+const stackedEffect = {
+  id: 's1',
+  stat: 'critDmg',
+  kind: 'stacked',
+  valuePerStack: 5,
+  maxStacks: 10,
+  applyTarget: 'self',
+  scope: 'common',
+}
+
+// 属性名走 label 表（与组件里 `statLabel` 同一份输入）
+const statLabel = (stat) => ({ dmgBonus: '增伤%', critDmg: '暴击伤害%' })[stat] ?? stat
+
+check(
+  '失衡期：作用情况紧随 [强攻] 之后',
+  formatBuffEffectResultText(staggerEffect, '+20', {
+    statLabelFn: statLabel,
+    applySituation: true,
+  }) === '[强攻][失衡期] 增伤% +20',
+  formatBuffEffectResultText(staggerEffect, '+20', {
+    statLabelFn: statLabel,
+    applySituation: true,
+  }),
+)
+check(
+  '关掉 applySituation → 老口径（不加前缀）',
+  formatBuffEffectResultText(staggerEffect, '+20', { statLabelFn: statLabel }) ===
+    '[强攻] 增伤% +20',
+  formatBuffEffectResultText(staggerEffect, '+20', { statLabelFn: statLabel }),
+)
+check(
+  '层数变 → 文案里的总值跟着变（每层 5 × 3 层 = 15）',
+  formatBuffEffectResultText(stackedEffect, formatCalcSigned(5 * 3), {
+    statLabelFn: statLabel,
+    applySituation: true,
+  }) === '暴击伤害% + 15',
+  formatBuffEffectResultText(stackedEffect, formatCalcSigned(5 * 3), {
+    statLabelFn: statLabel,
+    applySituation: true,
+  }),
+)
+
+console.log('=== 5. 分类 tab（BUFF_GROUP_TABS 唯一事实来源） ===')
+
+check(
+  '只出现实际有的分类 + 全部，顺序照表',
+  availableBuffGroupTabs(['队友', '自身', '邦布']).join(',') === '全部,自身,队友,邦布',
+  availableBuffGroupTabs(['队友', '自身', '邦布']).join(','),
+)
+check('没有任何分组 → 只剩全部', availableBuffGroupTabs([]).join(',') === '全部')
+check(
+  '表外分组（额外 Buff）不单开 tab，但不会让别的 tab 掉队',
+  availableBuffGroupTabs(['额外 Buff', '自身']).join(',') === '全部,自身',
+  availableBuffGroupTabs(['额外 Buff', '自身']).join(','),
+)
+
+console.log('=== 6. 勾选写回不得吞掉层数 / 转模覆盖（setFlowBuffEffectDisabled） ===')
+
+const overrideEntry = {
+  id: 'flow-1',
+  buffOverrides: { stacksByEffectId: { s1: 3 }, convertInputsByEffectId: { c1: 800 } },
+}
+setFlowBuffEffectDisabled({
+  entry: overrideEntry,
+  effectId: 'e9',
+  blockKey: 'src-a-b1',
+  siblingEffectIds: ['e9'],
+  disabled: true,
+})
+check(
+  '关一条：数值覆盖原样保留',
+  overrideEntry.buffOverrides?.stacksByEffectId?.s1 === 3 &&
+    overrideEntry.buffOverrides?.convertInputsByEffectId?.c1 === 800,
+  JSON.stringify(overrideEntry.buffOverrides),
+)
+check(
+  '关一条：禁用名单写进去了',
+  overrideEntry.buffOverrides?.disabledEffectIds?.join(',') === 'e9',
+)
+
+setFlowBuffEffectDisabled({
+  entry: overrideEntry,
+  effectId: 'e9',
+  blockKey: 'src-a-b1',
+  siblingEffectIds: ['e9'],
+  disabled: false,
+})
+check(
+  '开回来：数值覆盖仍在（不是整份清成 null）',
+  overrideEntry.buffOverrides?.stacksByEffectId?.s1 === 3,
+  JSON.stringify(overrideEntry.buffOverrides),
+)
+check(
+  '开回来：禁用名单清空',
+  (overrideEntry.buffOverrides?.disabledEffectIds ?? []).length === 0,
+)
+
+const plainEntry = { id: 'flow-2', buffOverrides: { disabledEffectIds: ['e1'] } }
+setFlowBuffEffectDisabled({
+  entry: plainEntry,
+  effectId: 'e1',
+  blockKey: 'src-a-b1',
+  siblingEffectIds: ['e1'],
+  disabled: false,
+})
+check('没有数值覆盖 → 清空后仍是 null（老口径不变）', plainEntry.buffOverrides === null)
+
+const groupEntry = {
+  id: 'flow-3',
+  memberOverrides: [
+    { memberKey: 'k1', skillId: 'sk', buffOverrides: { stacksByEffectId: { s2: 5 } } },
+  ],
+}
+setFlowBuffEffectDisabled({
+  entry: groupEntry,
+  effectId: 'e5',
+  blockKey: 'src-a-b1',
+  siblingEffectIds: ['e5'],
+  disabled: true,
+  memberKey: 'k1',
+  skillId: 'sk',
+})
+check(
+  '组成员行：数值覆盖原样保留',
+  groupEntry.memberOverrides[0].buffOverrides?.stacksByEffectId?.s2 === 5,
+  JSON.stringify(groupEntry.memberOverrides[0].buffOverrides),
+)
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)

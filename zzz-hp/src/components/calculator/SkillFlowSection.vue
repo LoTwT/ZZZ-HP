@@ -80,6 +80,7 @@ import {
   getBuffEffectConvertInput,
   getBuffEffectStacks,
   type CollectedEffect,
+  type ConvertResolveInputs,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -124,6 +125,8 @@ const props = defineProps<{
   buffEffectTexts?: Record<string, string>
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
+  /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
+  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
 }>()
 
 const emit = defineEmits<{
@@ -261,10 +264,13 @@ function openBuffOverride(entryId: string, memberKey: string | null = null) {
   buffOverrideMemberKey.value = memberKey
 }
 
-/** 该行的例外条数（整行 + 组内成员的覆盖），0 = 与全局一致 */
+/** 该行的例外条数（整行 + 组内成员的覆盖；禁用的块/单条 + 层数、转模的行级覆盖），0 = 与全局一致 */
 function buffExceptionCount(entry: FlowEntry): number {
   const countOf = (override: FlowBuffOverride | null | undefined) =>
-    (override?.disabledBlockIds?.length ?? 0) + (override?.disabledEffectIds?.length ?? 0)
+    (override?.disabledBlockIds?.length ?? 0) +
+    (override?.disabledEffectIds?.length ?? 0) +
+    Object.keys(override?.stacksByEffectId ?? {}).length +
+    Object.keys(override?.convertInputsByEffectId ?? {}).length
   return (
     countOf(entry.buffOverrides) +
     (entry.memberOverrides ?? []).reduce((sum, item) => sum + countOf(item.buffOverrides), 0)
@@ -2483,13 +2489,16 @@ function setMemberOverride(
   if (patch.staggerPhase === null) base.staggerPhase = null
   if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
   if (patch.triggerAgentId === null) base.triggerAgentId = null
+  // 层数 / 转模的覆盖也算"有内容"（只有它们的成员例外不是空条目）
   const empty =
     base.count == null &&
     base.staggerPhase == null &&
     !base.anomalyPowerAgentId &&
     !base.triggerAgentId &&
     !base.buffOverrides?.disabledBlockIds?.length &&
-    !base.buffOverrides?.disabledEffectIds?.length
+    !base.buffOverrides?.disabledEffectIds?.length &&
+    !Object.keys(base.buffOverrides?.stacksByEffectId ?? {}).length &&
+    !Object.keys(base.buffOverrides?.convertInputsByEffectId ?? {}).length
   if (index >= 0) {
     if (empty) list.splice(index, 1)
     else list[index] = base
@@ -3399,6 +3408,11 @@ const showcaseTitle = computed(() => {
               :row-label="buffOverrideRowLabel"
               :global-stacks-for="globalStacksFor"
               :global-convert-input="globalConvertInput"
+              :slot-index="activeSlotIndex"
+              :convert-resolve-inputs="convertResolveInputs"
+              :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
+              :team-slots="teamSlots"
+              :skill-subcategories="skillSubcategories"
             />
 
             <FlowBuffTableModal

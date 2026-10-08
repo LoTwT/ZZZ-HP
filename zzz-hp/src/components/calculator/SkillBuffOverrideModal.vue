@@ -4,18 +4,33 @@
  *
  * 设计（2026-09-20；2026-10-06 起视觉对齐「局内增益」选择器 `BuffEffectPickerModal`）：
  * - **入口与存储都在流程行**：这里改的是 `FlowEntry.buffOverrides`，缺省 = 全部继承全局
- * - 只允许"禁用"（减法语义）：勾掉 = 这一行不吃该增益
+ * - 只允许"禁用"（减法语义）：勾掉 = 这一行不吃该增益；叠层/自行转模另可按行覆盖数值
  * - 列表只列**该行本来可生效**的效果（由页面传入与全局选择器同一份 `CollectedEffect[]`）
+ * - **取值口径与局内增益完全同一套**：效果行文案随层数/转模实时变（`effectResultText`），
+ *   转模解析要的面板值由页面按当前编辑槽位传入
+ * - 顶部「分类」tab 与局内增益同一份顺序（`BUFF_GROUP_TABS`）
  * - 只影响本行结算：不改面板、不动层数累计、不影响其它行
  * - 白天主题覆盖在 `assets/calculatorLight.css`（与局内增益同一处，惯例一致）
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import NumberStepper from '@/components/common/NumberStepper.vue'
-import type { BuffEffect } from '@/types/calculator'
-import type { CollectedEffect } from '@/utils/panelBuffCalc'
-import { blockKeyOfCollected } from '@/utils/panelBuffCalc'
+import type { BuffEffect, SkillSubcategory } from '@/types/calculator'
+import type {
+  CollectedEffect,
+  ConvertResolveInputs,
+  PanelSourceValues,
+} from '@/utils/panelBuffCalc'
+import {
+  availableBuffGroupTabs,
+  blockKeyOfCollected,
+  parseSourceKeySlotIndex,
+} from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
+import { formatCalcSigned } from '@/utils/calcNumberFormat'
+import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 
 const props = defineProps<{
@@ -27,10 +42,31 @@ const props = defineProps<{
   globalStacksFor?: (effect: BuffEffect) => number
   /** 全局当前转模输入（manual 转模未做行级覆盖时的继承值） */
   globalConvertInput?: (effect: BuffEffect) => number | undefined
+  /** 流程区当前编辑槽位（转模面板取值按它取） */
+  slotIndex?: number
+  /**
+   * 该槽位的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）——**页面按槽位现给**：
+   * 每次打开弹窗取一次（弹窗开着时面板不可编辑），不在页面渲染期空转。
+   */
+  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
+  /** 技能等级转模来源：按角色 id 的五大类技能等级 */
+  skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
+  /** 队伍槽位（技能等级转模按效果所属槽位取角色） */
+  teamSlots?: Array<{ agentId?: string | null }>
+  /** 招式目标括号用（与局内增益选择器同一份） */
+  skillSubcategories?: SkillSubcategory[]
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
 const override = defineModel<FlowBuffOverride | null>('override', { default: null })
+
+/**
+ * 转模解析输入：只在**打开时**取一次（`open` 进依赖 → 每次打开重算）。
+ * 弹窗开着时面板编辑不了，所以这一次取值就是最新的；不在页面渲染期反复算面板值。
+ */
+const resolveInputs = computed<ConvertResolveInputs | null>(() =>
+  open.value ? (props.convertResolveInputs?.(props.slotIndex ?? 0) ?? null) : null,
+)
 
 type BlockGroup = {
   key: string
@@ -38,7 +74,8 @@ type BlockGroup = {
   providerName: string
   avatar: string | null
   note: string
-  effects: BuffEffect[]
+  group: string
+  items: CollectedEffect[]
 }
 
 /** 按效果块分组（块键与目录一致，直接用共享实现 —— 额外 Buff 的 `extra-<id>` 也在其中） */
@@ -46,12 +83,7 @@ const groups = computed<BlockGroup[]>(() => {
   const map = new Map<string, BlockGroup>()
   for (const item of props.effects) {
     const key = blockKeyOfCollected(item)
-    const raw = item as unknown as {
-      blockName?: string | null
-      sourceLabel?: string | null
-      blockNote?: string | null
-    }
-    const label = (raw.blockName ?? '').trim() || (raw.sourceLabel ?? '').trim() || '未命名效果块'
+    const label = (item.blockName ?? '').trim() || (item.sourceLabel ?? '').trim() || '未命名效果块'
     const group =
       map.get(key) ??
       {
@@ -59,20 +91,48 @@ const groups = computed<BlockGroup[]>(() => {
         label,
         providerName: (item.providerName ?? '').trim(),
         avatar: item.providerAvatar ?? null,
-        note: (raw.blockNote ?? '').trim(),
-        effects: [],
+        note: (item.blockNote ?? '').trim(),
+        group: item.group,
+        items: [],
       }
-    group.effects.push(item.effect)
+    group.items.push(item)
     map.set(key, group)
   }
   return [...map.values()]
 })
 
+/** 顶部「分类」tab：与局内增益选择器同一份顺序与出现规则 */
+const activeGroup = ref('全部')
+const availableGroups = computed(() =>
+  availableBuffGroupTabs(
+    props.effects.map((item) => item.group),
+    null,
+  ),
+)
+
+watch(availableGroups, (tabs) => {
+  if (!tabs.includes(activeGroup.value)) activeGroup.value = '全部'
+})
+
+// 每次打开回到「全部」：换一行看增益不该继承上一行挑的分类
+watch(open, (value) => {
+  if (value) activeGroup.value = '全部'
+})
+
+const visibleGroups = computed(() =>
+  activeGroup.value === '全部'
+    ? groups.value
+    : groups.value.filter((group) => group.group === activeGroup.value),
+)
+
 const disabledEffects = computed(() => new Set(override.value?.disabledEffectIds ?? []))
+/** 例外条数：禁用的块 / 单条 + 层数、转模的行级覆盖（后者也是「这一行与全局不同」） */
 const exceptionCount = computed(
   () =>
     (override.value?.disabledBlockIds?.length ?? 0) +
-    (override.value?.disabledEffectIds?.length ?? 0),
+    (override.value?.disabledEffectIds?.length ?? 0) +
+    Object.keys(override.value?.stacksByEffectId ?? {}).length +
+    Object.keys(override.value?.convertInputsByEffectId ?? {}).length,
 )
 
 function isEffectOff(id: string): boolean {
@@ -161,12 +221,55 @@ function restoreGlobal() {
   override.value = null
 }
 
-function effectLabel(effect: BuffEffect): string {
-  const field = BUFF_STAT_FIELDS.find((item) => item.key === effect.stat)
-  const stat = field ? buffStatFieldLabel(field) : String(effect.stat)
-  if (effect.kind === 'convert') return `${stat}（转模）`
-  const value = effect.kind === 'stacked' ? (effect.valuePerStack ?? 0) : (effect.value ?? 0)
-  return `${stat} ${value > 0 ? '+' : ''}${value}`
+function statLabel(stat: string): string {
+  const field = BUFF_STAT_FIELDS.find((item) => item.key === stat)
+  return field ? buffStatFieldLabel(field) : stat
+}
+
+/** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
+function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
+  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const inputs = resolveInputs.value
+  if (slotIndex != null && inputs?.panelSourceValuesBySlot?.[slotIndex]) {
+    return inputs.panelSourceValuesBySlot[slotIndex]
+  }
+  return inputs?.panelSourceValues
+}
+
+/** 技能等级转模的来源角色等级表（按效果所属槽位取） */
+function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLevels> | null {
+  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
+  return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
+}
+
+/** 转模解析值：自行设置走行级输入，其余按面板值算（与局内增益同一套 `resolveConvertValue`） */
+function convertResult(item: CollectedEffect): number {
+  return resolveConvertValue(
+    item.effect,
+    resolveInputs.value?.attrDefaults ?? {},
+    isManualConvert(item.effect) ? convertModel(item.effect) : null,
+    panelSourceValuesForEffect(item),
+    skillTalentLevelsForItem(item),
+  )
+}
+
+/** 效果行文案：与局内增益选择器同一个格式化函数 —— 叠层出总值、转模出解析值、非全局标作用情况 */
+function effectResultText(item: CollectedEffect): string {
+  const effect = item.effect
+  let amountText: string
+  if (isStackable(effect)) {
+    amountText = formatCalcSigned((effect.valuePerStack ?? 0) * stacksModel(effect))
+  } else if (effect.kind === 'convert') {
+    amountText = formatCalcSigned(convertResult(item))
+  } else {
+    amountText = formatCalcSigned(Number(effect.value) || 0)
+  }
+  return formatBuffEffectResultText(effect, amountText, {
+    statLabelFn: statLabel,
+    skillSubcategories: props.skillSubcategories,
+    applySituation: true,
+  })
 }
 </script>
 
@@ -180,7 +283,8 @@ function effectLabel(effect: BuffEffect): string {
             <button type="button" class="bo-close" aria-label="关闭" @click="open = false">×</button>
           </div>
           <p class="bo-hint">
-            勾掉 = <b>这一行不吃</b>该增益。只影响本行结算：不改面板、不影响层数累计、不影响其它行。
+            勾掉 = <b>这一行不吃</b>该增益；「层数 / 数值」按行改，缺省继承全局。
+            只影响本行结算：不改面板、不影响全局层数累计、不影响其它行。
           </p>
         </header>
 
@@ -194,8 +298,21 @@ function effectLabel(effect: BuffEffect): string {
           <button type="button" class="bo-ghost" @click="open = false">关闭</button>
         </div>
 
+        <div v-if="availableGroups.length > 1" class="bo-group-tabs">
+          <button
+            v-for="group in availableGroups"
+            :key="group"
+            type="button"
+            class="bo-group-tab"
+            :class="{ active: activeGroup === group }"
+            @click="activeGroup = group"
+          >
+            {{ group }}
+          </button>
+        </div>
+
         <div class="bo-list">
-          <article v-for="group in groups" :key="group.key" class="bo-row-card">
+          <article v-for="group in visibleGroups" :key="group.key" class="bo-row-card">
             <div class="bo-row-main">
               <CalculatorAvatar
                 class="bo-avatar"
@@ -210,49 +327,53 @@ function effectLabel(effect: BuffEffect): string {
                   </template>
                   {{ group.label }}
                 </strong>
-                <small v-if="group.note" :title="group.note">{{ group.note }}</small>
+                <small v-if="group.note" :title="group.note">
+                  <BuffRichText :text="group.note" />
+                </small>
               </span>
-              <span class="bo-count">{{ group.effects.length }} 条</span>
+              <span class="bo-count">{{ group.items.length }} 条</span>
             </div>
             <div class="bo-effect-lines">
-              <div v-for="effect in group.effects" :key="effect.id" class="bo-effect-row">
+              <div v-for="item in group.items" :key="item.effect.id" class="bo-effect-row">
                 <div class="bo-effect-line">
                   <label class="bo-effect-check">
                     <input
                       type="checkbox"
                       class="bo-check"
-                      :checked="!isEffectOff(effect.id)"
-                      @change="toggleEffect(effect.id)"
+                      :checked="!isEffectOff(item.effect.id)"
+                      @change="toggleEffect(item.effect.id)"
                     />
-                    <span class="bo-effect-text">{{ effectLabel(effect) }}</span>
+                    <span class="bo-effect-text">
+                      <BuffRichText :text="effectResultText(item)" />
+                    </span>
                   </label>
-                  <label v-if="isStackable(effect)" class="bo-effect-control" @click.stop>
+                  <label v-if="isStackable(item.effect)" class="bo-effect-control" @click.stop>
                     <span>层数</span>
                     <NumberStepper
-                      :model-value="stacksModel(effect)"
+                      :model-value="stacksModel(item.effect)"
                       :min="0"
-                      :max="effect.maxStacks ?? 99"
-                      :disabled="isEffectOff(effect.id)"
-                      @update:model-value="setStacks(effect, $event)"
+                      :max="item.effect.maxStacks ?? 99"
+                      :disabled="isEffectOff(item.effect.id)"
+                      @update:model-value="setStacks(item.effect, $event)"
                     />
                   </label>
-                  <label v-else-if="isManualConvert(effect)" class="bo-effect-control" @click.stop>
+                  <label v-else-if="isManualConvert(item.effect)" class="bo-effect-control" @click.stop>
                     <span>数值</span>
                     <NumberStepper
-                      :model-value="convertModel(effect)"
+                      :model-value="convertModel(item.effect)"
                       :min="0"
                       :max="999999"
                       :step="10"
-                      :disabled="isEffectOff(effect.id)"
-                      @update:model-value="setConvertInput(effect, $event)"
+                      :disabled="isEffectOff(item.effect.id)"
+                      @update:model-value="setConvertInput(item.effect, $event)"
                     />
                   </label>
                   <button
-                    v-if="hasEffectOverride(effect)"
+                    v-if="hasEffectOverride(item.effect)"
                     type="button"
                     class="bo-ghost bo-inherit"
                     title="清除本行覆盖，恢复继承全局"
-                    @click.stop="restoreEffectInherit(effect)"
+                    @click.stop="restoreEffectInherit(item.effect)"
                   >
                     ↺ 继承
                   </button>
@@ -260,7 +381,9 @@ function effectLabel(effect: BuffEffect): string {
               </div>
             </div>
           </article>
-          <p v-if="!groups.length" class="bo-empty">这一行没有可调整的增益。</p>
+          <p v-if="!visibleGroups.length" class="bo-empty">
+            {{ groups.length ? '当前筛选下没有可调整的增益。' : '这一行没有可调整的增益。' }}
+          </p>
         </div>
       </div>
     </div>
@@ -360,6 +483,33 @@ function effectLabel(effect: BuffEffect): string {
 .bo-ghost:disabled {
   opacity: 0.45;
   cursor: default;
+}
+.bo-group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.25rem 1.1rem 0.75rem;
+  padding: 0.55rem;
+  border-radius: 10px;
+  background: #1a2030;
+}
+.bo-group-tab {
+  border: 1px solid #4a5563;
+  border-radius: 8px;
+  background: #1b2230;
+  color: #e8ecf4;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.bo-group-tab:hover {
+  border-color: #4f5d72;
+  background: #1c2432;
+}
+.bo-group-tab.active {
+  border-color: #3f8cff;
+  color: #8cbcff;
+  background: rgba(63, 140, 255, 0.12);
 }
 .bo-list {
   flex: 1;
