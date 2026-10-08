@@ -216,7 +216,7 @@ const modes: ModeCard[] = [
 
 /* 浅色主题：白色剪影反转为黑色剪影（加载画面黑白对调） */
 [data-theme='light'] .hero-knightboo {
-  filter: brightness(0);
+  filter: invert(1);
 }
 
 /* ── 模式卡片：单色纪律 ───────────────────── */
