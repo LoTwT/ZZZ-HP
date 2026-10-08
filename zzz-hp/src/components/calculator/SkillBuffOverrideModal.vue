@@ -29,7 +29,7 @@ import {
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
-import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
+import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty } from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -56,6 +56,11 @@ const props = defineProps<{
   teamSlots?: Array<{ agentId?: string | null }>
   /** 招式目标括号用（与局内增益选择器同一份） */
   skillSubcategories?: SkillSubcategory[]
+  /**
+   * 整组当前关着几条（组成员编辑时用）：合并语义下这一段**同样不吃**，
+   * 也从这里开不回来 —— 不说明的话用户只会看到"列表里少了几条"。
+   */
+  inheritedDisabledCount?: number
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -196,13 +201,8 @@ function write(next: Partial<FlowBuffOverride>) {
     convertInputsByEffectId:
       next.convertInputsByEffectId ?? override.value?.convertInputsByEffectId ?? null,
   }
-  const empty =
-    !merged.disabledBlockIds?.length &&
-    !merged.disabledEffectIds?.length &&
-    !Object.keys(merged.stacksByEffectId ?? {}).length &&
-    !Object.keys(merged.convertInputsByEffectId ?? {}).length
-  // 空 = 回归"全部继承全局"，写 null（老数据同一口径）
-  override.value = empty ? null : merged
+  // 空 = 回归"全部继承"，写 null（老数据同一口径）；判据与结算那边同一份
+  override.value = isFlowBuffOverrideEmpty(merged) ? null : merged
 }
 
 function toggleEffect(id: string) {
@@ -283,6 +283,10 @@ function effectResultText(item: CollectedEffect): string {
           <p class="bo-hint">
             勾掉 = <b>这一行不吃</b>该增益；「层数 / 数值」按行改，缺省继承全局。
             只影响本行结算：不改面板、不影响全局层数累计、不影响其它行。
+          </p>
+          <p v-if="inheritedDisabledCount" class="bo-hint bo-hint-inherit">
+            整组还关着 <b>{{ inheritedDisabledCount }}</b> 条 —— 这一段<b>同样不吃</b>，
+            在组内开不回来（要放开请到整组的「增益」里改）。
           </p>
         </header>
 
@@ -445,6 +449,10 @@ function effectResultText(item: CollectedEffect): string {
   margin: 0.45rem 0 0;
   font-size: 0.82rem;
   color: #9aa3b5;
+}
+/* 组成员编辑时说明「整组关着的这一段同样不吃」（合并语义，开不回来） */
+.bo-hint-inherit {
+  color: #c9a55c;
 }
 .bo-toolbar {
   display: flex;

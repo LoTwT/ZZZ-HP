@@ -320,6 +320,89 @@ if (convertId) {
   console.log(`  perHit = ${convertValue.toFixed(4)}（基准 ${dA0.toFixed(4)}）`)
 }
 
+console.log('=== 9. 组成员：整组关掉的增益 + 这一段改层数 → 这一段同样不吃（合并语义） ===')
+
+// fixture 里没有技能组流程行 → 用真实招式现造一行（owner 与 A 行同槽，ctx 直接可用）
+const slot0 = scheme.slots[0]
+const srcEntry = (slot0.flow ?? []).find((item) => item.id === hitA.id)
+const srcPrepared = (slot0.prepared ?? []).find((item) => item.id === srcEntry?.preparedId)
+const groupMemberSkills = [...new Set(flowResult.hits.map((h) => h.skill.id))].slice(0, 2)
+const e2eGroupId = 'e2e-skill-group'
+const e2eGroupEntryId = 'e2e-group-row'
+const e2eGroupPreparedId = 'e2e-group-prepared'
+
+if (!srcPrepared || groupMemberSkills.length < 2) {
+  console.log('  （fixture 缺少可用招式，跳过）')
+} else {
+  const groupDef = {
+    id: e2eGroupId,
+    name: 'e2e 技能组',
+    members: groupMemberSkills.map((skillId, order) => ({ order, skillId, count: 1 })),
+  }
+  const groupPrepared = {
+    ...srcPrepared,
+    id: e2eGroupPreparedId,
+    skillId: '',
+    skillGroupId: e2eGroupId,
+  }
+  const groupEntry = {
+    ...srcEntry,
+    id: e2eGroupEntryId,
+    preparedId: e2eGroupPreparedId,
+    count: 1,
+    buffOverrides: { disabledBlockIds: [foundKey ?? blockKeys[0]] },
+    memberOverrides: [
+      {
+        memberKey: `0:${groupMemberSkills[0]}`,
+        skillId: groupMemberSkills[0],
+        buffOverrides: stackId ? { stacksByEffectId: { [stackId]: 0 } } : { disabledEffectIds: [] },
+      },
+    ],
+  }
+  const groupResult = resolveFlow({
+    slots: [{ prepared: [...(slot0.prepared ?? []), groupPrepared], flow: [groupEntry] }, ...scheme.slots.slice(1)],
+    teamSlots: scheme.teamSlots.map((s) => ({ agentId: s.agentId, rank: s.rank })),
+    findSkill: (id) => skillById.get(id) ?? null,
+    findSkillGroup: (id) => (id === e2eGroupId ? groupDef : null),
+    skillSubcategories: buffs.skillSubcategories,
+  })
+  const seg0 = groupResult.hits.find((h) => h.id.startsWith(`${e2eGroupEntryId}#0:`))
+  const seg1 = groupResult.hits.find((h) => h.id.startsWith(`${e2eGroupEntryId}#1:`))
+  const disabledKey = foundKey ?? blockKeys[0]
+  check('组行展开出两段命中', Boolean(seg0 && seg1), groupResult.hits.map((h) => h.id).join(' | '))
+  check(
+    '改过渡数的那一段：整组关掉的块仍在禁用名单里（没有被"整体替换"放回来）',
+    Boolean(seg0?.buffOverride?.disabledBlockIds?.includes(disabledKey)),
+    JSON.stringify(seg0?.buffOverride),
+  )
+  if (stackId) {
+    check(
+      '改过渡数的那一段：本段的层数覆盖也带上了',
+      seg0?.buffOverride?.stacksByEffectId?.[stackId] === 0,
+      JSON.stringify(seg0?.buffOverride),
+    )
+  }
+  check(
+    '没改的那一段：只继承整组（同样关着）',
+    Boolean(seg1?.buffOverride?.disabledBlockIds?.includes(disabledKey)),
+    JSON.stringify(seg1?.buffOverride),
+  )
+  if (seg0) {
+    const withDisable = evalPerHit(seg0)
+    const withoutDisable = evalPerHit({
+      ...seg0,
+      buffOverride: seg0.buffOverride?.stacksByEffectId
+        ? { stacksByEffectId: seg0.buffOverride.stacksByEffectId }
+        : null,
+    })
+    check(
+      '数字层面：这一段改过层数，整组关掉的那块依然在减伤',
+      withDisable != null && withoutDisable != null && withDisable < withoutDisable,
+      `关着 ${withDisable} / 放开 ${withoutDisable}`,
+    )
+  }
+}
+
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)
 if (failed > 0) process.exit(1)

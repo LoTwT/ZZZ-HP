@@ -15,7 +15,12 @@ import {
   resolveEffectsToMods,
 } from '../src/utils/buffEffect.ts'
 import { availableBuffGroupTabs, rowBuffSelectionOverlay } from '../src/utils/panelBuffCalc.ts'
-import { setFlowBuffEffectDisabled } from '../src/utils/flowBuffTable.ts'
+import {
+  effectiveRowOverride,
+  mergeFlowBuffOverride,
+  ownRowOverride,
+  setFlowBuffEffectDisabled,
+} from '../src/utils/flowBuffTable.ts'
 import { buildHitEvalFingerprint } from '../src/utils/hitEvalCache.ts'
 import { formatCalcSigned } from '../src/utils/calcNumberFormat.ts'
 
@@ -353,6 +358,98 @@ check(
       { convertInputs: { mc1: 2000 } },
     )?.convertInputs,
   }).dmgBonus === 200,
+)
+
+console.log('=== 8. 组成员例外 = 整组 + 本段（合并，本段只叠加） ===')
+
+const groupOverride = {
+  disabledBlockIds: ['blk-g'],
+  disabledEffectIds: ['eg'],
+  stacksByEffectId: { s1: 2 },
+  convertInputsByEffectId: { c1: 100 },
+}
+const memberOverride = {
+  disabledEffectIds: ['em'],
+  stacksByEffectId: { s2: 5 },
+  convertInputsByEffectId: { c1: 400 },
+}
+const mergedOverride = mergeFlowBuffOverride(groupOverride, memberOverride)
+
+check(
+  '关闭项取并集（整组 + 本段）',
+  mergedOverride.disabledEffectIds.join(',') === 'eg,em' &&
+    mergedOverride.disabledBlockIds.join(',') === 'blk-g',
+  JSON.stringify(mergedOverride),
+)
+check(
+  '层数逐效果覆盖：本段没写的继承整组、写了的用本段',
+  mergedOverride.stacksByEffectId.s1 === 2 && mergedOverride.stacksByEffectId.s2 === 5,
+)
+check('同一效果的转模：本段覆盖整组', mergedOverride.convertInputsByEffectId.c1 === 400)
+check(
+  '本段为空 → 原样继承整组',
+  mergeFlowBuffOverride(groupOverride, null) === groupOverride,
+)
+check(
+  '整组为空 → 用本段',
+  mergeFlowBuffOverride(null, memberOverride) === memberOverride,
+)
+check('两边都空 → null（全部继承）', mergeFlowBuffOverride(null, null) === null)
+
+// 读 / 写两个基准不能混：读用合并，写只动本段自己那份
+const mergeEntry = {
+  id: 'f1',
+  buffOverrides: groupOverride,
+  memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: memberOverride }],
+}
+check(
+  'effectiveRowOverride（读）= 合并结果',
+  effectiveRowOverride(mergeEntry, '0:s1')?.disabledEffectIds.join(',') === 'eg,em',
+  JSON.stringify(effectiveRowOverride(mergeEntry, '0:s1')),
+)
+check(
+  'ownRowOverride（写基准）= 只有本段自己那份',
+  ownRowOverride(mergeEntry, '0:s1')?.disabledEffectIds.join(',') === 'em',
+)
+check(
+  '本轮修的就是这个：整组关 eg + 本段只改层数 → eg 仍关着、层数按本段',
+  (() => {
+    const entry = {
+      id: 'f3',
+      buffOverrides: { disabledEffectIds: ['eg'] },
+      memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: { stacksByEffectId: { s1: 3 } } }],
+    }
+    const eff = effectiveRowOverride(entry, '0:s1')
+    return eff?.disabledEffectIds?.includes('eg') === true && eff.stacksByEffectId.s1 === 3
+  })(),
+)
+
+const memberWriteEntry = {
+  id: 'f2',
+  buffOverrides: { disabledEffectIds: ['eg'] },
+  memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: null }],
+}
+setFlowBuffEffectDisabled({
+  entry: memberWriteEntry,
+  effectId: 'em',
+  blockKey: 'blk-m',
+  siblingEffectIds: ['em'],
+  disabled: true,
+  memberKey: '0:s1',
+  skillId: 's1',
+})
+check(
+  '成员写回只写自己那份（不把继承的整组内容实体化进来）',
+  memberWriteEntry.memberOverrides[0].buffOverrides?.disabledEffectIds?.join(',') === 'em',
+  JSON.stringify(memberWriteEntry.memberOverrides[0].buffOverrides),
+)
+check(
+  '整组那份原样不动',
+  memberWriteEntry.buffOverrides?.disabledEffectIds?.join(',') === 'eg',
+)
+check(
+  '读出来是合并结果（整组 eg + 本段 em）',
+  effectiveRowOverride(memberWriteEntry, '0:s1')?.disabledEffectIds.sort().join(',') === 'eg,em',
 )
 
 console.log('')

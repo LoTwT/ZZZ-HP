@@ -91,6 +91,7 @@ import {
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
   flowBuffOverrideExceptionCount,
+  isFlowBuffOverrideEmpty,
   resolveRowBeneficiarySlots,
   setFlowBuffEffectDisabled,
 } from '@/utils/flowBuffTable'
@@ -264,6 +265,19 @@ const buffOverrideRowLabel = computed(() => {
     : Math.max(0, Number(entry.count) || 0)
   const scope = member ? '组内' : flowIsGroup(entry) ? '整组' : ''
   return `${scope ? `${scope} · ` : ''}${name} · ${count} 次`
+})
+
+/**
+ * 组成员编辑时：整组当前关着几条（合并语义下这一段同样不吃、也开不回来）。
+ * 只数禁用（块 / 单条）—— 层数、转模是数值覆盖，不会让列表少东西。
+ */
+const buffOverrideInheritedDisabledCount = computed(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry || !buffOverrideMember.value) return 0
+  const group = entry.buffOverrides
+  return (
+    (group?.disabledBlockIds?.length ?? 0) + (group?.disabledEffectIds?.length ?? 0)
+  )
 })
 
 function openBuffOverride(entryId: string, memberKey: string | null = null) {
@@ -2511,16 +2525,13 @@ function setMemberOverride(
   if (patch.staggerPhase === null) base.staggerPhase = null
   if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
   if (patch.triggerAgentId === null) base.triggerAgentId = null
-  // 层数 / 转模的覆盖也算"有内容"（只有它们的成员例外不是空条目）
+  // 成员例外的空条目判据：次数 / 失衡 / 两个代理人 + 例外本身是否为空（同一份判据）
   const empty =
     base.count == null &&
     base.staggerPhase == null &&
     !base.anomalyPowerAgentId &&
     !base.triggerAgentId &&
-    !base.buffOverrides?.disabledBlockIds?.length &&
-    !base.buffOverrides?.disabledEffectIds?.length &&
-    !Object.keys(base.buffOverrides?.stacksByEffectId ?? {}).length &&
-    !Object.keys(base.buffOverrides?.convertInputsByEffectId ?? {}).length
+    isFlowBuffOverrideEmpty(base.buffOverrides)
   if (index >= 0) {
     if (empty) list.splice(index, 1)
     else list[index] = base
@@ -3435,6 +3446,7 @@ const showcaseTitle = computed(() => {
               :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
               :team-slots="teamSlots"
               :skill-subcategories="skillSubcategories"
+              :inherited-disabled-count="buffOverrideInheritedDisabledCount"
             />
 
             <FlowBuffTableModal
