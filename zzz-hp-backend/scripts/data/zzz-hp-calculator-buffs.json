@@ -259608,6 +259608,576 @@
           "includeInFlow": true
         }
       ]
+    },
+    {
+      "id": "sg-banyue-muz9gq6u",
+      "agentId": "banyue",
+      "name": "般卢1怒相2连携1大（无琉）",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471010-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471009-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-banyue-muz9d9iy",
+      "agentId": "banyue",
+      "name": "般琉卢1怒相2大",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471010-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471009-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-claret-muz5p3zb",
+      "agentId": "claret",
+      "name": "失衡6毁伤1大",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-claret-nk-1611011-上挑",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611014-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611013-毁伤",
+          "order": 2,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611020-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611007-三段连续斩击",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611029-三段下砸",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611020-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611021-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611011-上挑",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611014-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611013-毁伤",
+          "order": 10,
+          "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6t31h",
+      "agentId": "s0anby",
+      "name": "1强化特殊技+3e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381011-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 1,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 2,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6n1b9",
+      "agentId": "s0anby",
+      "name": "2影安1大9e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381015-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 1,
+          "count": 9,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 2,
+          "count": 9,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 3,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 4,
+          "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6toxb",
+      "agentId": "s0anby",
+      "name": "3连e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 0,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 1,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-sbilly-muz9muhm",
+      "agentId": "sbilly",
+      "name": "比琉卢2大2星光1连携",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-sbilly-nk-1531009-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531010-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531016-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531006-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531008-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531011-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531015-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531006-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531008-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531016-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531010-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-soldier11-muz69sdh",
+      "agentId": "soldier11",
+      "name": "2连携1大4A5",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-soldier11-nk-1041016-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041016-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041017-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 11,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041011-main",
+          "order": 12,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 13,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 14,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-yidhari-muza14kx",
+      "agentId": "yidhari",
+      "name": "伊琉卢2锤2大1连携",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-yidhari-nk-1051016-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051011-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051007-三级蓄力下砸",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051015-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051016-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051011-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051024-额外能力寒冰触手",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051003-三段",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
     }
   ],
   "affixPresets": {
