@@ -13559,44 +13559,6 @@
               "note": "南宫羽发动[强化特殊技：相当沉重的爱意]、[普通攻击：可爱地雷飞天撞]或[快速支援：救场技巧]且重击命中同时处于属性异常和失衡状态下的敌人时，消耗1层[舞力全开]对满足条件的所有敌人触发特殊的[紊乱]效果[极性紊乱]，对目标造成原本[紊乱]效果25%的伤害；\n南宫羽的[普通攻击：可爱地雷飞天撞]第三段攻击或[终结技：流落星群]命中敌人时，敌人获得[踉跄]效果，失衡易伤倍率提升30%",
               "effects": [
                 {
-                  "id": "eff-ms4czd9n-9wl2hs",
-                  "origin": "",
-                  "scope": "skill",
-                  "applyTarget": "self",
-                  "applySituation": "stagger",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillCategory": "basic",
-                  "skillSubcategoryId": "nangongyu-basic-ms4dacwf",
-                  "skillTargets": [
-                    {
-                      "category": "basic",
-                      "subcategoryId": "nangongyu-basic-ms4dacwf"
-                    },
-                    {
-                      "category": "special",
-                      "subcategoryId": "all-special-ms0fcqv7"
-                    },
-                    {
-                      "category": "assist",
-                      "subcategoryId": "nangongyu-assist-ms4das4j"
-                    }
-                  ],
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "disorderBaseMultFactor",
-                  "value": -75,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
                   "id": "eff-ms4dios3-okrun1",
                   "origin": "",
                   "scope": "general",
@@ -13760,44 +13722,6 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms4czd9n-9wl2hs",
-              "origin": "",
-              "scope": "skill",
-              "applyTarget": "self",
-              "applySituation": "stagger",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillCategory": "basic",
-              "skillSubcategoryId": "nangongyu-basic-ms4dacwf",
-              "skillTargets": [
-                {
-                  "category": "basic",
-                  "subcategoryId": "nangongyu-basic-ms4dacwf"
-                },
-                {
-                  "category": "special",
-                  "subcategoryId": "all-special-ms0fcqv7"
-                },
-                {
-                  "category": "assist",
-                  "subcategoryId": "nangongyu-assist-ms4das4j"
-                }
-              ],
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "disorderBaseMultFactor",
-              "value": -75,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -14209,36 +14133,6 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                },
-                {
-                  "id": "eff-ms4dq0l7-5lfpti",
-                  "origin": "",
-                  "scope": "skill",
-                  "applyTarget": "self",
-                  "applySituation": "stagger",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillCategory": "chain",
-                  "skillSubcategoryId": null,
-                  "skillTargets": [
-                    {
-                      "category": "chain",
-                      "subcategoryId": null
-                    }
-                  ],
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "disorderBaseMultFactor",
-                  "value": -75,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -14286,36 +14180,6 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms4dq0l7-5lfpti",
-              "origin": "",
-              "scope": "skill",
-              "applyTarget": "self",
-              "applySituation": "stagger",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillCategory": "chain",
-              "skillSubcategoryId": null,
-              "skillTargets": [
-                {
-                  "category": "chain",
-                  "subcategoryId": null
-                }
-              ],
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "disorderBaseMultFactor",
-              "value": -75,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -41083,7 +40947,7 @@
                   "defaultStacks": 1,
                   "convert": {
                     "from": "atk",
-                    "panelSource": "manual",
+                    "panelSource": "external",
                     "ratioPercent": 40,
                     "cap": 1200,
                     "defaultBase": 3000,
@@ -41144,11 +41008,11 @@
                   "defaultStacks": 1,
                   "convert": {
                     "from": "anomalyControl",
-                    "panelSource": "manual",
+                    "panelSource": "final",
                     "ratioPercent": 20,
                     "cap": 40,
                     "defaultBase": 201,
-                    "initialBase": 0
+                    "initialBase": 100
                   },
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
@@ -41175,58 +41039,12 @@
                   "defaultStacks": 1,
                   "convert": {
                     "from": "anomalyControl",
-                    "panelSource": "manual",
+                    "panelSource": "external",
                     "ratioPercent": 20,
                     "cap": 40,
                     "defaultBase": 201,
-                    "initialBase": 0
+                    "initialBase": 100
                   },
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
-                  "id": "eff-ms396xt1-3qbf2a",
-                  "origin": "",
-                  "scope": "general",
-                  "applyTarget": "team",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "anomalyDmgBonus",
-                  "value": -20,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
-                  "id": "eff-ms39auzc-mtr7ac",
-                  "origin": "",
-                  "scope": "general",
-                  "applyTarget": "team",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "disorderDmgBonus",
-                  "value": -20,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 }
@@ -41256,7 +41074,7 @@
               "defaultStacks": 1,
               "convert": {
                 "from": "atk",
-                "panelSource": "manual",
+                "panelSource": "external",
                 "ratioPercent": 40,
                 "cap": 1200,
                 "defaultBase": 3000,
@@ -41309,11 +41127,11 @@
               "defaultStacks": 1,
               "convert": {
                 "from": "anomalyControl",
-                "panelSource": "manual",
+                "panelSource": "final",
                 "ratioPercent": 20,
                 "cap": 40,
                 "defaultBase": 201,
-                "initialBase": 0
+                "initialBase": 100
               },
               "appliesToAnomaly": true,
               "enabledDefault": true,
@@ -41340,58 +41158,12 @@
               "defaultStacks": 1,
               "convert": {
                 "from": "anomalyControl",
-                "panelSource": "manual",
+                "panelSource": "external",
                 "ratioPercent": 20,
                 "cap": 40,
                 "defaultBase": 201,
-                "initialBase": 0
+                "initialBase": 100
               },
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms396xt1-3qbf2a",
-              "origin": "",
-              "scope": "general",
-              "applyTarget": "team",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "anomalyDmgBonus",
-              "value": -20,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms39auzc-mtr7ac",
-              "origin": "",
-              "scope": "general",
-              "applyTarget": "team",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "disorderDmgBonus",
-              "value": -20,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -41503,7 +41275,7 @@
             "special": 0,
             "anomalyCritRate": 0,
             "anomalyCritDmg": 0,
-            "anomalyDmgBonus": -20,
+            "anomalyDmgBonus": 0,
             "anomalyReleaseDmgBonus": 0,
             "anomalyReleaseCritRate": 0,
             "anomalyReleaseCritDmg": 0,
@@ -41516,7 +41288,7 @@
             "disorderCompMult": 0,
             "turbulenceBaseMult": 0,
             "turbulenceCompMult": 0,
-            "disorderDmgBonus": -20,
+            "disorderDmgBonus": 0,
             "turbulenceDmgBonus": 0,
             "radianceMult": 0,
             "radianceDmgBonus": 0,
@@ -41586,11 +41358,11 @@
                   "defaultStacks": 1,
                   "convert": {
                     "from": "anomalyControl",
-                    "panelSource": "manual",
+                    "panelSource": "final",
                     "ratioPercent": 6,
                     "cap": 12,
                     "defaultBase": 201,
-                    "initialBase": 0
+                    "initialBase": 100
                   },
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
@@ -41617,58 +41389,12 @@
                   "defaultStacks": 1,
                   "convert": {
                     "from": "anomalyControl",
-                    "panelSource": "manual",
+                    "panelSource": "final",
                     "ratioPercent": 6,
                     "cap": 12,
                     "defaultBase": 201,
-                    "initialBase": 0
+                    "initialBase": 100
                   },
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
-                  "id": "eff-ms44eue1-n53aou",
-                  "origin": "",
-                  "scope": "general",
-                  "applyTarget": "team",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "anomalyDmgBonus",
-                  "value": -6,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
-                  "id": "eff-ms44fa80-f595zx",
-                  "origin": "",
-                  "scope": "general",
-                  "applyTarget": "team",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "disorderDmgBonus",
-                  "value": -6,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
@@ -41722,11 +41448,11 @@
               "defaultStacks": 1,
               "convert": {
                 "from": "anomalyControl",
-                "panelSource": "manual",
+                "panelSource": "final",
                 "ratioPercent": 6,
                 "cap": 12,
                 "defaultBase": 201,
-                "initialBase": 0
+                "initialBase": 100
               },
               "appliesToAnomaly": true,
               "enabledDefault": true,
@@ -41753,58 +41479,12 @@
               "defaultStacks": 1,
               "convert": {
                 "from": "anomalyControl",
-                "panelSource": "manual",
+                "panelSource": "final",
                 "ratioPercent": 6,
                 "cap": 12,
                 "defaultBase": 201,
-                "initialBase": 0
+                "initialBase": 100
               },
-              "appliesToAnomaly": true,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms44eue1-n53aou",
-              "origin": "",
-              "scope": "general",
-              "applyTarget": "team",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "anomalyDmgBonus",
-              "value": -6,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-ms44fa80-f595zx",
-              "origin": "",
-              "scope": "general",
-              "applyTarget": "team",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "disorderDmgBonus",
-              "value": -6,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
@@ -41917,7 +41597,7 @@
             "special": 0,
             "anomalyCritRate": 0,
             "anomalyCritDmg": 0,
-            "anomalyDmgBonus": -6,
+            "anomalyDmgBonus": 0,
             "anomalyReleaseDmgBonus": 0,
             "anomalyReleaseCritRate": 0,
             "anomalyReleaseCritDmg": 0,
@@ -41930,7 +41610,7 @@
             "disorderCompMult": 0,
             "turbulenceBaseMult": 0,
             "turbulenceCompMult": 0,
-            "disorderDmgBonus": -6,
+            "disorderDmgBonus": 0,
             "turbulenceDmgBonus": 0,
             "radianceMult": 0,
             "radianceDmgBonus": 0,
@@ -41953,31 +41633,9 @@
           "effectBlocks": [
             {
               "id": "blk-legacy",
-              "name": "效果块 1",
-              "note": "",
+              "name": "影画2",
+              "note": "柚叶的[强化特殊技：小心蛀牙]、[强化特殊技：小心蛀牙，就是现在！]和[终结技：不投降就捣乱]攻击命中敌人时，会使全队角色造成的伤害提升15%，属性异常积蓄效率提升15%，持续40秒，重复触发时刷新持续时间",
               "effects": [
-                {
-                  "id": "legacy-self-dmgBonus",
-                  "origin": "",
-                  "scope": "general",
-                  "applyTarget": "self",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "dmgBonus",
-                  "value": 15,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "enabledDefault": true,
-                  "note": ""
-                },
                 {
                   "id": "legacy-team-dmgBonus",
                   "origin": "",
@@ -42005,28 +41663,6 @@
             }
           ],
           "effects": [
-            {
-              "id": "legacy-self-dmgBonus",
-              "origin": "",
-              "scope": "general",
-              "applyTarget": "self",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "dmgBonus",
-              "value": 15,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "enabledDefault": true,
-              "note": ""
-            },
             {
               "id": "legacy-team-dmgBonus",
               "origin": "",
@@ -42060,7 +41696,7 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 15,
+            "dmgBonus": 0,
             "critRate": 0,
             "critDmg": 0,
             "penRate": 0,
@@ -42726,7 +42362,7 @@
                 {
                   "id": "eff-ms44lb78-gaprro",
                   "origin": "",
-                  "scope": "general",
+                  "scope": "disorder",
                   "applyTarget": "team",
                   "applySituation": "global",
                   "applyProfession": null,
@@ -42742,7 +42378,6 @@
                   "maxStacks": 3,
                   "valuePerStack": 105,
                   "defaultStacks": 3,
-                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 }
@@ -42785,7 +42420,7 @@
             {
               "id": "eff-ms44lb78-gaprro",
               "origin": "",
-              "scope": "general",
+              "scope": "disorder",
               "applyTarget": "team",
               "applySituation": "global",
               "applyProfession": null,
@@ -42801,7 +42436,6 @@
               "maxStacks": 3,
               "valuePerStack": 105,
               "defaultStacks": 3,
-              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -233747,6 +233381,20 @@
       "disorderMultFactor": 100
     },
     {
+      "id": "nangongyu-basic-mv0jkprn",
+      "agentId": "nangongyu",
+      "categoryId": "basic",
+      "name": "极性紊乱",
+      "countsAsFollowUp": false,
+      "directDmgMult": 100,
+      "settlementDmgMult": 0,
+      "anomalyReleaseMult": 0,
+      "disorderMult": 0,
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 25
+    },
+    {
       "id": "norma-special-ms49jn0d",
       "agentId": "norma",
       "categoryId": "special",
@@ -246948,7 +246596,7 @@
       "source": "preset",
       "damageType": "disorder",
       "skillTypes": [],
-      "buffAnchorId": "nangongyu-basic-ms4dacwf",
+      "buffAnchorId": "nangongyu-basic-mv0jkprn",
       "baseMult": 0,
       "baseMultFactor": 100,
       "settlementMult": 0,
@@ -253160,7 +252808,7 @@
       "multSource": "nanoka",
       "damagePercentage": 3440,
       "damagePercentageGrowth": 320,
-      "element": "火",
+      "element": "物理",
       "ownerGroupId": null,
       "note": ""
     },
@@ -253180,7 +252828,7 @@
       "multSource": "nanoka",
       "damagePercentage": 10280,
       "damagePercentageGrowth": 940,
-      "element": "火",
+      "element": "物理",
       "ownerGroupId": null,
       "note": ""
     },
@@ -253200,7 +252848,7 @@
       "multSource": "nanoka",
       "damagePercentage": 4120,
       "damagePercentageGrowth": 380,
-      "element": "火",
+      "element": "物理",
       "ownerGroupId": null,
       "note": ""
     },
@@ -253220,7 +252868,7 @@
       "multSource": "nanoka",
       "damagePercentage": 21340,
       "damagePercentageGrowth": 1940,
-      "element": "火",
+      "element": "物理",
       "ownerGroupId": null,
       "note": ""
     },
@@ -258696,10 +258344,232 @@
   ],
   "skillGroups": [
     {
+      "id": "sg-banyue-muz9gq6u",
+      "agentId": "banyue",
+      "name": "般卢1怒相2连携1大（无琉）",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471010-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471009-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-banyue-muz9d9iy",
+      "agentId": "banyue",
+      "name": "般琉卢1怒相2大",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-banyue-nk-1471020-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471013-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471017-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471021-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471010-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471009-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471015-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-banyue-nk-1471016-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-claret-muz5p3zb",
+      "agentId": "claret",
+      "name": "失衡6毁伤1大",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-claret-nk-1611011-上挑",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611014-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611013-毁伤",
+          "order": 2,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611020-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611007-三段连续斩击",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611029-三段下砸",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611020-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611021-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611011-上挑",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611014-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-claret-nk-1611013-毁伤",
+          "order": 10,
+          "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
       "id": "sg-miyabi-muz2ok3e",
       "agentId": "miyabi",
       "name": "雅南柚4蓄1大",
-      "note": "请将组内紊乱的异常强度提供者设为南宫羽",
+      "note": "非2南，请将组内紊乱的异常强度提供者设为南宫羽",
       "members": [
         {
           "skillId": "sk-miyabi-nk-1091009-斩击",
@@ -258987,7 +258857,7 @@
       "id": "sg-nangongyu-muz3g42t",
       "agentId": "nangongyu",
       "name": "雅南柚4蓄1大",
-      "note": "请将组内的紊乱异常强度提供者设为星见雅",
+      "note": "非2南，请将组内的紊乱异常强度提供者设为星见雅",
       "members": [
         {
           "skillId": "sk-nangongyu-nk-1511004-一段",
@@ -259085,6 +258955,286 @@
           "skillId": "sk-remiel-radiance-mtsw4ckz",
           "order": 5,
           "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6t31h",
+      "agentId": "s0anby",
+      "name": "1强化特殊技+3e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381011-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 1,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 2,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6n1b9",
+      "agentId": "s0anby",
+      "name": "2影安1大9e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381015-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 1,
+          "count": 9,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 2,
+          "count": 9,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 3,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 4,
+          "count": 3,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-s0anby-muz6toxb",
+      "agentId": "s0anby",
+      "name": "3连e",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-s0anby-nk-1381009-main",
+          "order": 0,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381007-白雷",
+          "order": 1,
+          "count": 3,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381008-雷殛",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-s0anby-nk-1381023-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-sbilly-muz9muhm",
+      "agentId": "sbilly",
+      "name": "比琉卢2大2星光1连携",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-sbilly-nk-1531009-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531010-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531016-main",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531006-main",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531008-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531011-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531015-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531006-main",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531008-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531016-main",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-sbilly-nk-1531010-main",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
+      "id": "sg-soldier11-muz69sdh",
+      "agentId": "soldier11",
+      "name": "2连携1大4A5",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-soldier11-nk-1041016-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041016-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041017-main",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 10,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
+          "order": 11,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041011-main",
+          "order": 12,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041008-四段",
+          "order": 13,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
+          "order": 14,
+          "count": 1,
           "includeInFlow": true
         }
       ]
@@ -259516,6 +259666,74 @@
       ]
     },
     {
+      "id": "sg-yidhari-muza14kx",
+      "agentId": "yidhari",
+      "name": "伊琉卢2锤2大1连携",
+      "note": "",
+      "members": [
+        {
+          "skillId": "sk-yidhari-nk-1051016-main",
+          "order": 0,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051011-main",
+          "order": 1,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
+          "order": 2,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051007-三级蓄力下砸",
+          "order": 3,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051015-main",
+          "order": 4,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051016-main",
+          "order": 5,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051011-main",
+          "order": 6,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
+          "order": 7,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051024-额外能力寒冰触手",
+          "order": 8,
+          "count": 1,
+          "includeInFlow": true
+        },
+        {
+          "skillId": "sk-yidhari-nk-1051003-三段",
+          "order": 9,
+          "count": 1,
+          "includeInFlow": true
+        }
+      ]
+    },
+    {
       "id": "sg-yixuan-mtwoe56j",
       "agentId": "yixuan",
       "name": "仪琉卢失衡3大",
@@ -259604,576 +259822,6 @@
         {
           "skillId": "sk-yixuan-nk-1371026-main",
           "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-banyue-muz9gq6u",
-      "agentId": "banyue",
-      "name": "般卢1怒相2连携1大（无琉）",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-banyue-nk-1471020-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471015-main",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471016-main",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471020-main",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471021-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471013-main",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471017-main",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471010-main",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471009-main",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471013-main",
-          "order": 9,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471017-main",
-          "order": 10,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-banyue-muz9d9iy",
-      "agentId": "banyue",
-      "name": "般琉卢1怒相2大",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-banyue-nk-1471020-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471013-main",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471017-main",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471021-main",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471021-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471015-main",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471016-main",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471010-main",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471009-main",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471015-main",
-          "order": 9,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-banyue-nk-1471016-main",
-          "order": 10,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-claret-muz5p3zb",
-      "agentId": "claret",
-      "name": "失衡6毁伤1大",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-claret-nk-1611011-上挑",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611014-main",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611013-毁伤",
-          "order": 2,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611020-main",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611007-三段连续斩击",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611029-三段下砸",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611020-main",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611021-main",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611011-上挑",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611014-main",
-          "order": 9,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-claret-nk-1611013-毁伤",
-          "order": 10,
-          "count": 3,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-s0anby-muz6t31h",
-      "agentId": "s0anby",
-      "name": "1强化特殊技+3e",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-s0anby-nk-1381011-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381009-main",
-          "order": 1,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381007-白雷",
-          "order": 2,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381008-雷殛",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381023-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-s0anby-muz6n1b9",
-      "agentId": "s0anby",
-      "name": "2影安1大9e",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-s0anby-nk-1381015-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381009-main",
-          "order": 1,
-          "count": 9,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381007-白雷",
-          "order": 2,
-          "count": 9,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381008-雷殛",
-          "order": 3,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381023-main",
-          "order": 4,
-          "count": 3,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-s0anby-muz6toxb",
-      "agentId": "s0anby",
-      "name": "3连e",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-s0anby-nk-1381009-main",
-          "order": 0,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381007-白雷",
-          "order": 1,
-          "count": 3,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381008-雷殛",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-s0anby-nk-1381023-main",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-sbilly-muz9muhm",
-      "agentId": "sbilly",
-      "name": "比琉卢2大2星光1连携",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-sbilly-nk-1531009-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531010-main",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531016-main",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531006-main",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531008-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531011-main",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531015-main",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531006-main",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531008-main",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531016-main",
-          "order": 9,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-sbilly-nk-1531010-main",
-          "order": 10,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-soldier11-muz69sdh",
-      "agentId": "soldier11",
-      "name": "2连携1大4A5",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-soldier11-nk-1041016-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041008-四段",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041016-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041008-四段",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041017-main",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041008-四段",
-          "order": 9,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
-          "order": 10,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041026-强化普攻第五段额外",
-          "order": 11,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041011-main",
-          "order": 12,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041008-四段",
-          "order": 13,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-soldier11-nk-1041025-强化普攻第五段",
-          "order": 14,
-          "count": 1,
-          "includeInFlow": true
-        }
-      ]
-    },
-    {
-      "id": "sg-yidhari-muza14kx",
-      "agentId": "yidhari",
-      "name": "伊琉卢2锤2大1连携",
-      "note": "",
-      "members": [
-        {
-          "skillId": "sk-yidhari-nk-1051016-main",
-          "order": 0,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051011-main",
-          "order": 1,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
-          "order": 2,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051007-三级蓄力下砸",
-          "order": 3,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051015-main",
-          "order": 4,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051016-main",
-          "order": 5,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051011-main",
-          "order": 6,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051012-强化特殊技-极寒重碾",
-          "order": 7,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051024-额外能力寒冰触手",
-          "order": 8,
-          "count": 1,
-          "includeInFlow": true
-        },
-        {
-          "skillId": "sk-yidhari-nk-1051003-三段",
-          "order": 9,
           "count": 1,
           "includeInFlow": true
         }
