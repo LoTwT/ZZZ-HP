@@ -1806,6 +1806,17 @@ function applyTeammateView(entry: CollectedEffect): CollectedEffect {
   return { ...entry, group, sourceLabel }
 }
 
+/**
+ * 队友视角改写（对外版）：`自身 → 队友`、`自身音擎 → 队友音擎`、`全队（含自身）→ 队友`…
+ *
+ * 给「把各槽位收集结果**合并**起来用」的地方（流程增益表 / 本行增益例外弹窗的候选列表）：
+ * 合并进来的条目可能来自**别人那次收集**，标签是别人的主视角 —— 直接展示会出现
+ * 「南宫的行里，属于雅自己的增益却写着『自身』」。凡 `providerSlot !== 当前槽位` 的条目都要过一次。
+ */
+export function toTeammateView(entry: CollectedEffect): CollectedEffect {
+  return applyTeammateView(entry)
+}
+
 /** 行级减法（唯一实现；目录条目与将来的额外增益共用） */
 export function isEntryDisabledByRowOverride(
   entry: CollectedEffect,

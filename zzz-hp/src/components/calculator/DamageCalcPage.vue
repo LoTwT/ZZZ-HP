@@ -99,6 +99,7 @@ import {
   setBuffEffectEnabled,
   slotHasPanelConvertEffect,
   syncTeamProfessionAutoEnabled,
+  toTeammateView,
   type MultiSlotBuffSelection,
   type ConvertSlotPanels,
   type ConvertResolveInputs,
@@ -1107,13 +1108,28 @@ const flowInvolvedSlotIndexes = computed(() => {
 const collectedEffectsForFlowTable = computed(() => {
   const involved = flowInvolvedSlotIndexes.value
   const merged = new Map<string, ReturnType<typeof collectAllBuffEffects>[number]>()
-  buffEffectsByMainSlot.value.forEach((items, slotIndex) => {
+  /**
+   * ⚠️ 合并顺序**当前编辑槽位优先**：每个条目带的 `group` 标签是"它那次收集时的主视角"写的
+   * （`buffEffectsByMainSlot[i]` 各自以 i 为主槽收集）。若按槽位号顺序合并，先到的别人视角会赢 ——
+   * 表现就是「南宫那一行的『自身』里冒出雅自己的增益」「南宫自己的团队增益被写成『队友』」。
+   */
+  const order = [
+    activeSlot.value,
+    ...teamSlots.map((_, index) => index).filter((index) => index !== activeSlot.value),
+  ]
+  for (const slotIndex of order) {
+    const items = buffEffectsByMainSlot.value[slotIndex] ?? []
     for (const item of items) {
       if (item.effect.applyTarget === 'self' && !involved.has(slotIndex)) continue
       if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
     }
-  })
-  return [...merged.values()]
+  }
+  // 非本槽位提供的条目：把标签从"它的主视角"改写成队友口径（`自身 → 队友`）
+  return [...merged.values()].map((item) =>
+    item.providerSlot != null && item.providerSlot !== activeSlot.value
+      ? toTeammateView(item)
+      : item,
+  )
 })
 
 /**
