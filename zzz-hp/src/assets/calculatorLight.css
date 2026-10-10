@@ -2996,6 +2996,10 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   color: #8a6d2e !important;
 }
 
+[data-theme='light'] .unified-modal .slot-panel-entry .field-example {
+  color: #8a6d2e !important;
+}
+
 [data-theme='light'] .unified-modal .slot-panel-entry .field > input,
 [data-theme='light'] .unified-modal .slot-panel-entry .field > select {
   border-color: #d5dae3 !important;

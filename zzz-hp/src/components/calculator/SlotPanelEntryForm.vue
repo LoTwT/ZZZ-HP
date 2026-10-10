@@ -343,7 +343,9 @@ function formatValue(key: keyof PanelStats, value: number) {
           class="field"
           :class="fieldConvertClass(field.key, 'external')"
         >
-          <span>{{ field.label }}</span>
+          <span>
+            {{ field.label }}<em v-if="field.hint" class="field-example">{{ field.hint }}</em>
+          </span>
           <input
             v-if="!isAffixMode"
             :value="externalPanel[field.key]"
@@ -445,6 +447,15 @@ function formatValue(key: keyof PanelStats, value: number) {
 
 .convert-source-hint {
   color: #b7c98a;
+}
+
+/* 录入项后面的填写示例：与灰色 label 区分开的强调色（白天主题另有一档） */
+.field-example {
+  margin-left: 0.25rem;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ffd479;
 }
 
 .grid.four {
