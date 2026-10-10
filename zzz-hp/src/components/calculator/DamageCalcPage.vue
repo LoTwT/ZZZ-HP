@@ -1571,8 +1571,10 @@ const activeFinalPanelPreview = computed(() => {
 /**
  * 「确定导入」——**唯一**的面板写盘入口（`dev-docs/affix-calc-manual.md` §1.4）。
  *
- * 写哪一份由弹窗里点确定时所在的子页决定：面板页写「面板导入」那份，
- * 词条页写「词条导入」那份（含词条数与 4/5/6 主属性）。另一份原样保留。
+ * 写哪一份由弹窗里点确定时所在的子页决定：面板页写「面板导入」那份，词条页写「词条导入」那份。另一份原样保留。
+ *
+ * 4/5/6 主属性（容器级字段 `affixDriveDiscMainStats`）**两条路都写** —— 它是「面板上的事实」，
+ * 截图识别也会给出（`panelScreenshot.ts` 的 `driveDiscMainStats`）；词条数 `affixCounts` 只跟词条导入那一路。
  */
 function applyUnifiedImport(payload: UnifiedPresetConfirmPayload) {
   const slot = teamSlots[activeSlot.value]
@@ -1597,9 +1599,15 @@ function applyUnifiedImport(payload: UnifiedPresetConfirmPayload) {
       affixDriveDiscMainStats: { ...payload.affixDriveDiscMainStats },
     })
   } else {
-    slotPanels[agentId] = writePanelSource(existing, 'imported', payload.externalPanel, {
+    const written = writePanelSource(existing, 'imported', payload.externalPanel, {
       importedAt,
       source: payload.panelSourceDetail ?? 'manual',
+    })
+    // 4/5/6 主属性是**面板上的事实**（截图识别也会给出），面板导入这一路同样要落盘 ——
+    // 此前只写了词条导入那份，导致「面板导入（含截图识别到的主属性）」点确定后主属性被丢掉。
+    // 词条数（affixCounts）仍只属于词条导入那一路：面板页没有它的输入。
+    slotPanels[agentId] = writeAffixInputsIntoSource(written, {
+      affixDriveDiscMainStats: { ...payload.affixDriveDiscMainStats },
     })
   }
   skillTalentLevelsByAgent[agentId] = fillSkillTalentLevels(
