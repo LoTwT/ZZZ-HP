@@ -230,6 +230,8 @@ export function createDefaultExternalPanel(): PanelStats {
 export const EXTERNAL_PANEL_INPUT_FIELDS: readonly {
   key: keyof PanelStats
   label: string
+  /** label 后面的示例/补充说明：只展示，不参与「填没填完」判定 */
+  hint?: string
   optional?: true
 }[] = [
   { key: 'hp', label: '生命值' },
@@ -240,10 +242,10 @@ export const EXTERNAL_PANEL_INPUT_FIELDS: readonly {
   { key: 'dmgBonus', label: '增伤%' },
   { key: 'penRate', label: '穿透率%' },
   { key: 'pen', label: '穿透值' },
-  { key: 'reduceDefense', label: '无视防御/减防%' },
+  // 无视防御/减防%：局外面板没有这一项（只有局内面板与增益侧才有），不作为录入项
   { key: 'mastery', label: '精通' },
   { key: 'anomalyControl', label: '异常掌控' },
-  { key: 'energyRegen', label: '能量回复效率%' },
+  { key: 'energyRegen', label: '能量回复效率%', hint: '（填写示例：120）' },
   /** 转模来源（青衣 / 莱特）；不填按 0 算，不影响面板是否算「填齐」 */
   { key: 'impact', label: '冲击力', optional: true },
 ]
