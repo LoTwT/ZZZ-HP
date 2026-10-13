@@ -5190,7 +5190,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 /*
  * 白天主题：统计事件小窗整体切浅色，与白天页面风格一致。
  * 用 `.ik-dialog:has(.chart-event-picker)` 限定只覆盖本弹窗（内容带组件 scoped 标记），
- * 不影响留言板等其他 ik 弹窗（项目里 calculatorLight.css 已有 :has 先例）。
+ * 不影响其他 ik 弹窗（项目里 calculatorLight.css 已有 :has 先例）。
  * 注意：Vue scoped 编译器对「连续两个 :global()」解析会丢选择器，这里整个选择器放一个 :global()。
  */
 :global(html[data-theme='light'] .ik-dialog:has(.chart-event-picker) .ik-dialog__outer) {

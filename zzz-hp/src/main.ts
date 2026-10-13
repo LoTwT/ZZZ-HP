@@ -13,7 +13,6 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { initTheme } from './stores/theme'
-import { useUserAuthStore } from './stores/userAuth'
 
 initTheme()
 
@@ -22,8 +21,5 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-
-const userAuth = useUserAuthStore(pinia)
-void userAuth.restoreSession()
 
 app.mount('#app')

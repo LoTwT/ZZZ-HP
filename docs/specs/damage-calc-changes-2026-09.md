@@ -160,7 +160,7 @@
 6. **旧数据不动**：以前某次自动写回留在盘上的占位面板仍是历史数据，导入时会被
    `isPlaceholderExternalPanel` 拦下（提示「请先填写或识别面板」）；按所有者口径
    「用户数据的问题不写代码去猜、去修」。
-7. **链路外的零引用导出保留**：`src/api/*`、`src/data/*`、`defense*`、`elementIcons`、`guestbook*`
+7. **链路外的零引用导出保留**：`src/api/*`、`src/data/*`、`defense*`、`elementIcons`
    等模块另有 25 个零引用导出，按所有者决定「吃不准的留着，只要不影响计算」，**未删**。
 
 ---

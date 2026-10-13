@@ -19,7 +19,7 @@ function readHeaderAdminToken(req) {
 
 /**
  * 读取有效的管理员会话 token。
- * 优先 X-Admin-Token（专用）；Authorization 可能是留言板用户 JWT，不能未校验就当成管理员。
+ * 优先 X-Admin-Token（专用）；Authorization 里的 Bearer 不能未校验就当成管理员。
  */
 export function readAdminToken(req) {
   const headerToken = readHeaderAdminToken(req)
