@@ -73,7 +73,7 @@ const modes: ModeCard[] = [
           <span class="hero-title-en">ZZZ-HP</span>
         </h1>
         <p class="hero-cn">
-          <span>绝区零 · 数据查询与伤害计算站</span>
+          <span>数据查询与伤害计算站</span>
           <img class="hero-knightboo" src="/zzz-assets/Bangboo.gif" alt="邦布" />
         </p>
       </header>
