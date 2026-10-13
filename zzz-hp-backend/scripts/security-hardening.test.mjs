@@ -46,15 +46,15 @@ test('failInternal 生产环境不回传内部错误详情，且服务端始终�
     process.env.NODE_ENV = 'production'
     delete process.env.EXPOSE_ERROR_DETAIL
     let res = makeRes()
-    failInternal(res, err, '获取留言失败')
+    failInternal(res, err, '获取数据失败')
     assert.equal(res.recorded.code, 500)
-    assert.equal(res.recorded.body.message, '获取留言失败')
+    assert.equal(res.recorded.body.message, '获取数据失败')
     assert.equal(res.recorded.body.data, null)
 
     // 生产 + 显式 EXPOSE_ERROR_DETAIL=1：附带详情便于排查
     process.env.EXPOSE_ERROR_DETAIL = '1'
     res = makeRes()
-    failInternal(res, err, '获取留言失败')
+    failInternal(res, err, '获取数据失败')
     assert.deepEqual(res.recorded.body.data, {
       error: 'sensitive database detail (ER_DUP_ENTRY)',
     })
@@ -63,14 +63,14 @@ test('failInternal 生产环境不回传内部错误详情，且服务端始终�
     delete process.env.NODE_ENV
     delete process.env.EXPOSE_ERROR_DETAIL
     res = makeRes()
-    failInternal(res, err, '获取留言失败')
+    failInternal(res, err, '获取数据失败')
     assert.deepEqual(res.recorded.body.data, {
       error: 'sensitive database detail (ER_DUP_ENTRY)',
     })
 
     // 服务端始终记录诊断元数据，原始错误详情不进入日志
     assert.equal(errorLogs.length, 3)
-    assert.ok(errorLogs.every((args) => args[0] === '[failInternal] 获取留言失败'))
+    assert.ok(errorLogs.every((args) => args[0] === '[failInternal] 获取数据失败'))
     for (const args of errorLogs) {
       assert.deepEqual(args[1], { name: 'Error', code: 'ER_DUP_ENTRY' })
     }

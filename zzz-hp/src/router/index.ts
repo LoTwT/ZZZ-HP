@@ -26,12 +26,6 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
-    {
-      path: '/account',
-      name: 'account',
-      component: () => import('../views/AccountView.vue'),
-      meta: { title: '账号中心' },
-    },
     ...createSidebarPanelRouteRecords({
       basePath: '/about',
       routeName: 'about',
@@ -73,12 +67,6 @@ const router = createRouter({
       path: '/admin/changelog',
       name: 'admin-changelog',
       component: () => import('../views/admin/AdminChangelogView.vue'),
-      meta: { requiresAdmin: true },
-    },
-    {
-      path: '/admin/guestbook',
-      name: 'admin-guestbook',
-      component: () => import('../views/admin/AdminGuestbookView.vue'),
       meta: { requiresAdmin: true },
     },
     {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(path.join(__dirname, '../..'))
 
-const ALLOWED_PREFIXES = ['boss_image/', 'buff_image/', 'calculator_image/', 'guestbook_image/']
+const ALLOWED_PREFIXES = ['boss_image/', 'buff_image/', 'calculator_image/']
 
 /**
  * 将库内相对路径（如 /boss_image/a.webp）解析为本地绝对路径；非法路径返回 null。

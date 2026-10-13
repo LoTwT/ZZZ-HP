@@ -163,7 +163,6 @@ $ExcludeDirs = @(
   '.cursor-search',
   'packages',
   'uploads',
-  'guestbook_image',
   '__screenshots__'
 )
 if (-not $FullPack) {
@@ -229,7 +228,6 @@ if (-not $ShipImages) {
 Invoke-RobocopySafe -Source $Back -Dest (Join-Path $StageRoot 'zzz-hp-backend') -ExtraExcludeDirs $backExtra
 
 foreach ($drop in @(
-  (Join-Path $StageRoot 'zzz-hp-backend\guestbook_image'),
   (Join-Path $StageRoot 'zzz-hp-backend\uploads'),
   (Join-Path $StageRoot 'zzz-hp\.cursor-search'),
   (Join-Path $StageRoot 'zzz-hp\.cursor')
@@ -238,10 +236,6 @@ foreach ($drop in @(
     Remove-Item -LiteralPath $drop -Recurse -Force
   }
 }
-
-$gbKeep = Join-Path $StageRoot 'zzz-hp-backend\guestbook_image'
-New-Item -ItemType Directory -Force -Path $gbKeep | Out-Null
-[System.IO.File]::WriteAllText((Join-Path $gbKeep '.gitkeep'), '', [System.Text.UTF8Encoding]::new($false))
 
 $dataStage = Join-Path $StageRoot 'zzz-hp-backend\data'
 New-Item -ItemType Directory -Force -Path $dataStage | Out-Null

@@ -16,8 +16,6 @@ import defenseRoutes from './routes/defenseRoutes.js'
 import ocrRoutes from './routes/ocrRoutes.js'
 import changelogRoutes from './routes/changelogRoutes.js'
 import siteInfoRoutes from './routes/siteInfoRoutes.js'
-import guestbookRoutes from './routes/guestbookRoutes.js'
-import authRoutes from './routes/authRoutes.js'
 import seasonDateRoutes from './routes/seasonDateRoutes.js'
 import seasonContentRoutes from './routes/seasonContentRoutes.js'
 import deductionRoutes from './routes/deductionRoutes.js'
@@ -117,7 +115,6 @@ app.use('/boss_image', express.static(path.join(__dirname, '../boss_image')))
 app.use('/buff_image', express.static(path.join(__dirname, '../buff_image')))
 app.use('/attribute_image', express.static(path.join(__dirname, '../attribute_image')))
 app.use('/calculator_image', express.static(path.join(__dirname, '../calculator_image')))
-app.use('/guestbook_image', express.static(path.join(__dirname, '../guestbook_image')))
 // 计算器实体头像（管理端上传写入这些目录；IIS 需反代到 Node，与 boss_image 相同）
 app.use('/character', express.static(path.join(__dirname, '../character')))
 app.use('/wengine', express.static(path.join(__dirname, '../wengine')))
@@ -134,23 +131,9 @@ app.get('/health', async (_req, res) => {
 })
 
 app.use('/api/admin/login', authWriteLimiter)
-app.use('/api/auth/login', authWriteLimiter)
-app.use('/api/auth/mihoyo', authWriteLimiter)
-app.use('/api/auth/phone', authWriteLimiter)
-
-const guestbookUploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.GUESTBOOK_UPLOAD_RATE_LIMIT_MAX) || 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { code: 429, message: '图片上传过于频繁，请稍后再试', data: null },
-})
-app.use('/api/upload/guestbook', guestbookUploadLimiter)
-app.use('/api/auth/me/avatar', guestbookUploadLimiter)
 
 app.use('/api/admin', adminAuthRoutes)
 app.use('/api/admin/season-content', seasonContentRoutes)
-app.use('/api/auth', authRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/ocr', ocrRoutes)
 app.use('/api/crisis-assault', crisisAssaultRoutes)
@@ -161,7 +144,6 @@ app.use('/api/buff', buffRoutes)
 app.use('/api/calculator-buffs', calculatorBuffRoutes)
 app.use('/api/changelog', changelogRoutes)
 app.use('/api/site-info', siteInfoRoutes)
-app.use('/api/guestbook', guestbookRoutes)
 app.use('/api/season-dates', seasonDateRoutes)
 app.use('/api/deduction', deductionRoutes)
 app.use('/api/admin/deduction', deductionAdminRoutes)

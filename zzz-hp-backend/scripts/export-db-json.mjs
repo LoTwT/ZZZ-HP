@@ -5,7 +5,7 @@
  *   node scripts/export-db-json.mjs                       # 全表 → json备份/zzz-hp-db-full-<时间戳>.json
  *   node scripts/export-db-json.mjs --file out.json       # 指定输出
  *   node scripts/export-db-json.mjs --tables boss,buff    # 只导指定表
- *   node scripts/export-db-json.mjs --exclude guestbook_* # 排除某些表（支持 * 通配）
+ *   node scripts/export-db-json.mjs --exclude site_*    # 排除某些表（支持 * 通配）
  *
  * 为什么要有它：库里的内容（词条预设、buff、怪物、赛季……）不进 git，
  * 换机器 / 合并分支 / 大改之前需要一份**完整可读**的快照。逐表导出的脚本
@@ -17,7 +17,7 @@
  * - 行按主键顺序取（`SELECT *` 不保证顺序，为了 diff 友好这里显式排序）；
  * - DECIMAL 保持 mysql2 默认的字符串形态（不转 number，避免精度陷阱）；
  * - BLOB/Buffer 转成 `{ "$base64": "..." }`，JSON 里不留 `{type:"Buffer"}` 这种噪声；
- * - ⚠️ 产物含账号类数据（admin / guestbook_user 的密码哈希）。**不要提交进 git**，
+ * - ⚠️ 产物含账号类数据（admin 等表的密码哈希）。**不要提交进 git**，
  *   默认输出目录 `json备份/` 里的文件默认未跟踪，但也别 `git add` 它。
  */
 import dotenv from 'dotenv'
