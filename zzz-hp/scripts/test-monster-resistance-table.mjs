@@ -5,6 +5,8 @@
  * 基础异常条表来自用户提供的真实游戏数据（按敌人类别 × 属性分组 × 已异常次数分档）；
  * 异常积蓄与失衡的 ±20% 截断属待验证知识；1.32 系数用例复现用户首发的 nanoka 截图
  * （首领 70 级样本：物理 4752 / 火组 3960 / 风 1980）。
+ * 异常条系数另有按 Boss 名的内置默认表（`ANOMALY_BAR_COEFFICIENT_BY_NAME`），
+ * 使同一组数字无需 boss_info 覆盖值、也无需跑 seed SQL 即可复现。
  *
  * 运行：npx vite-node scripts/test-monster-resistance-table.mjs
  */
@@ -16,9 +18,11 @@ import {
 } from '../src/utils/defenseCompare.ts'
 import { encodeDefenseBossId } from '../src/utils/defenseId.ts'
 import {
+  ANOMALY_BAR_COEFFICIENT_BY_NAME,
   MONSTER_RESISTANCE_TABLE_ELEMENTS,
   buildMonsterResistanceRows,
   getMonsterBaseAnomalyProgress,
+  resolveAnomalyBarCoefficient,
 } from '../src/utils/monsterResistanceTable.ts'
 
 let passed = 0
@@ -288,7 +292,7 @@ check(
   })(),
 )
 check(
-  '小怪（getDefenseMonsterCategory 恒为 null）字段缺省 ⇒ 表按首领兜底；无 ID 的 isBoss ⇒ 首领',
+  '小怪（minion ID）类别取「普通」，无 ID 的 isBoss ⇒ 首领',
   (() => {
     const minionId = encodeDefenseBossId({
       version: '3.2',
@@ -306,7 +310,8 @@ check(
       null,
     )
     const bossRecord = buildDefenseMonsterDetailRecord({ name: '霸主侵蚀体', hp: '10,000', isBoss: true }, null, null)
-    return minionRecord.monster_category === undefined &&
+    // 小怪改由 resolveDefenseMonsterCategory 解出 minion ⇒ 「普通」基础条（详见 test-defense-monster-detail）
+    return minionRecord.monster_category === 'normal' &&
       minionRecord.anomaly_bar_coefficient === null &&
       bossRecord.monster_category === 'boss'
   })(),
@@ -330,6 +335,10 @@ check(
   'record 的 monster_category / anomaly_bar_coefficient 传入抗性表',
   stats.includes('monster_category: props.record.monster_category') &&
     stats.includes('anomaly_bar_coefficient: props.record.anomaly_bar_coefficient'),
+)
+check(
+  'record 的 boss_name 一并传入抗性表（内置默认表按名生效）',
+  stats.includes('boss_name: props.record.boss_name'),
 )
 check('最大异常积蓄表头带初始条长提示', stats.includes('title="初始条长（0 次已异常）"'))
 check(
@@ -357,6 +366,132 @@ const comparePanel = readFileSync(
   'utf8',
 )
 check('单独怪物对比页不开启该表（保持两列）', !comparePanel.includes('show-resistance-table'))
+
+console.log('[9] 内置异常条系数表（按 Boss 名；本表为内置默认，boss_info 为覆盖值）')
+check(
+  '内置表收录 18 条且系数均为有限正数',
+  Object.keys(ANOMALY_BAR_COEFFICIENT_BY_NAME).length === 18 &&
+    Object.values(ANOMALY_BAR_COEFFICIENT_BY_NAME).every(
+      (coefficient) => Number.isFinite(coefficient) && coefficient > 0,
+    ),
+  `${Object.keys(ANOMALY_BAR_COEFFICIENT_BY_NAME).length} 条`,
+)
+check(
+  '「亵渎者」→ 1.32（表内带括号写法）',
+  resolveAnomalyBarCoefficient('「亵渎者」') === 1.32,
+  `${resolveAnomalyBarCoefficient('「亵渎者」')}`,
+)
+check(
+  '亵渎者 → 1.32（不带括号写法同样命中：归一化容忍括号差异）',
+  resolveAnomalyBarCoefficient('亵渎者') === 1.32,
+  `${resolveAnomalyBarCoefficient('亵渎者')}`,
+)
+check(
+  '猎血清道夫 → 1.0625（内置默认）',
+  resolveAnomalyBarCoefficient('猎血清道夫') === 1.0625,
+  `${resolveAnomalyBarCoefficient('猎血清道夫')}`,
+)
+check(
+  '内嵌括号名去括号后同值：霸主侵蚀体·庞培 → 1.1',
+  resolveAnomalyBarCoefficient('「霸主侵蚀体·庞培」') === 1.1 &&
+    resolveAnomalyBarCoefficient('霸主侵蚀体·庞培') === 1.1,
+)
+check(
+  '未收录名称 → 1 兜底',
+  resolveAnomalyBarCoefficient('不存在的怪物') === 1,
+)
+check(
+  'null / undefined / 空串 / 纯空白 → 1 兜底',
+  resolveAnomalyBarCoefficient(null) === 1 &&
+    resolveAnomalyBarCoefficient(undefined) === 1 &&
+    resolveAnomalyBarCoefficient('') === 1 &&
+    resolveAnomalyBarCoefficient('  ') === 1,
+)
+check(
+  '显式值（boss_info 覆盖）优先于内置默认表：1.5 而非 1.32',
+  resolveAnomalyBarCoefficient('「亵渎者」', 1.5) === 1.5,
+  `${resolveAnomalyBarCoefficient('「亵渎者」', 1.5)}`,
+)
+check(
+  '显式值非法（0 / -1 / NaN / Infinity）按未提供处理，回退内置默认表',
+  resolveAnomalyBarCoefficient('「亵渎者」', 0) === 1.32 &&
+    resolveAnomalyBarCoefficient('「亵渎者」', -1) === 1.32 &&
+    resolveAnomalyBarCoefficient('「亵渎者」', Number.NaN) === 1.32 &&
+    resolveAnomalyBarCoefficient('「亵渎者」', Number.POSITIVE_INFINITY) === 1.32,
+)
+check(
+  '未收录名称 + 显式值 ⇒ 用显式值（覆盖值不依赖名称）',
+  resolveAnomalyBarCoefficient('不存在的怪物', 1.25) === 1.25,
+)
+
+console.log('[10] 端到端：仅凭 boss_name 复现首发截图（不传显式系数）')
+const builtinCoefficientRows = buildMonsterResistanceRows({
+  weakness: '冰、物理、风',
+  resistance: '电',
+  resistance_high: '电',
+  boss_name: '「亵渎者」',
+  monster_category: 'boss',
+})
+const builtinByElement = byElement(builtinCoefficientRows)
+check(
+  '内置默认 1.32 三元组：物理 4752 / 火组 3960 / 风 1980',
+  builtinByElement['物理'].maxAnomalyProgress === 4752 &&
+    builtinByElement['火'].maxAnomalyProgress === 3960 &&
+    builtinByElement['电'].maxAnomalyProgress === 3960 &&
+    builtinByElement['冰'].maxAnomalyProgress === 3960 &&
+    builtinByElement['以太'].maxAnomalyProgress === 3960 &&
+    builtinByElement['风'].maxAnomalyProgress === 1980,
+  maxAnomalyList(builtinCoefficientRows),
+)
+check(
+  '与显式 1.32 用例四列完全同口径（内置默认可替代手工填值）',
+  tuples(builtinCoefficientRows) === tuples(screenshotRows),
+  tuples(builtinCoefficientRows),
+)
+check(
+  'boss_info 覆盖值优先：带 boss_name 传 1.5 ⇒ 物理 5400 / 火组 4500 / 风 2250',
+  maxAnomalyList(
+    buildMonsterResistanceRows({
+      boss_name: '「亵渎者」',
+      monster_category: 'boss',
+      anomaly_bar_coefficient: 1.5,
+    }),
+  ) === '4500 4500 4500 4500 5400 2250',
+  maxAnomalyList(
+    buildMonsterResistanceRows({
+      boss_name: '「亵渎者」',
+      monster_category: 'boss',
+      anomaly_bar_coefficient: 1.5,
+    }),
+  ),
+)
+check(
+  '非法显式值（0）不生效：带 boss_name 时回退内置 1.32',
+  tuples(
+    buildMonsterResistanceRows({
+      weakness: '冰、物理、风',
+      resistance: '电',
+      resistance_high: '电',
+      boss_name: '「亵渎者」',
+      monster_category: 'boss',
+      anomaly_bar_coefficient: 0,
+    }),
+  ) === tuples(screenshotRows),
+  maxAnomalyList(
+    buildMonsterResistanceRows({
+      weakness: '冰、物理、风',
+      resistance: '电',
+      resistance_high: '电',
+      boss_name: '「亵渎者」',
+      monster_category: 'boss',
+      anomaly_bar_coefficient: 0,
+    }),
+  ),
+)
+check(
+  '未传 boss_name 时行为不变：仍是首领 × 系数 1',
+  tuples(buildMonsterResistanceRows({ monster_category: 'boss' })) === tuples(plainRows),
+)
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

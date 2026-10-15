@@ -65,7 +65,7 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     weakness: enemy.weakness ?? null,
     resistance: enemy.resistance ?? null,
     resistance_high: enemy.resistanceHigh ?? null,
-    // 危局怪按首领敌人取基础异常条；系数来自 boss_info，未拿到时表按 1 兜底
+    // 危局怪按首领敌人取基础异常条；系数优先取 boss_info，未配置时按内置名字表，仍无则 1
     monster_category: 'boss',
     anomaly_bar_coefficient: anomalyCoefficient.value,
   }
