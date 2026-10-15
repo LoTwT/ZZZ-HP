@@ -7,9 +7,14 @@ import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import { fetchBossChart, type CrisisBossRoomType, type CrisisHpChartMode, type HpChartPoint } from '@/api/crisisAssault'
 import type { EnemySlot, ModeKey } from '@/types/history'
 import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
-import { formatHp } from '@/utils/gameData'
+import { formatHp, formatHpDelta } from '@/utils/gameData'
 import { hasElementIcons } from '@/utils/elementIcons'
-import { isFieldBuffChanged, type MonsterFieldBuffSnapshot } from '@/utils/historyMonsterDetail'
+import {
+  isFieldBuffChanged,
+  type BossHpCoeffComparison,
+  type BossHpComparison,
+  type MonsterFieldBuffSnapshot,
+} from '@/utils/historyMonsterDetail'
 import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const props = defineProps<{
@@ -23,6 +28,10 @@ const props = defineProps<{
   previousFieldBuff?: MonsterFieldBuffSnapshot | null
   /** 现场地 Buff（当期），由父组件从 phases 解析 */
   currentFieldBuff?: MonsterFieldBuffSnapshot | null
+  /** 血量与往期对比，由父组件用与怪物卡片相同的口径计算；无往期出现时为 null */
+  hpComparison?: BossHpComparison | null
+  /** 危局血量系数与往期对比；无往期出现时为 null */
+  hpCoeffComparison?: BossHpCoeffComparison | null
 }>()
 
 const emit = defineEmits<{
@@ -107,6 +116,13 @@ watch(
           <p v-if="enemy.hp" class="detail-row">
             <span class="detail-label">血量：</span>
             <span class="detail-value">{{ enemy.hp }}</span>
+            <span v-if="hpComparison?.expansion" class="detail-hp-expansion">
+              {{ hpComparison.expansion }}
+            </span>
+          </p>
+          <p v-if="hpComparison" class="detail-row">
+            <span class="detail-label detail-label--ghost" aria-hidden="true">血量：</span>
+            <span class="detail-hp-delta">{{ formatHpDelta(hpComparison.diff) }}</span>
           </p>
           <p v-if="enemy.crisisBaseHp != null" class="detail-row">
             <span class="detail-label">基础血量：</span>
@@ -115,6 +131,9 @@ watch(
           <p v-if="enemy.hpCoeffLabel" class="detail-row">
             <span class="detail-label">危局血量系数：</span>
             <span class="detail-value">{{ enemy.hpCoeffLabel }}</span>
+            <span v-if="hpCoeffComparison?.deltaLabel" class="detail-hp-expansion">
+              {{ hpCoeffComparison.deltaLabel }}
+            </span>
           </p>
           <p v-if="enemy.defense !== undefined" class="detail-row">
             <span class="detail-label">防御：</span>
@@ -283,6 +302,28 @@ watch(
 .detail-value--name {
   font-weight: 700;
   color: #e8a838;
+}
+
+.detail-label--ghost {
+  visibility: hidden;
+}
+
+/* 与怪物卡片（.enemy-hp-delta / .enemy-hp-expansion）同色的增长标识 */
+.detail-hp-delta {
+  min-width: 0;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #e85d4c;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.detail-hp-expansion {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4d9fff;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .status-text {

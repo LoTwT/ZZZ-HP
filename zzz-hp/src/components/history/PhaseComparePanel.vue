@@ -3,10 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import DualLineChartView from '@/components/history/DualLineChartView.vue'
 import PhaseDetailModal from '@/components/history/PhaseDetailModal.vue'
+import PhasePickerModal, { type PhasePickerItem } from '@/components/history/PhasePickerModal.vue'
 import {
   fetchCrisisAssaultHpChart,
   filterChartPointsByLabels,
-  formatPhaseCompactCode,
   resolvePhaseFromInput,
   type CrisisHpChartMode,
   type HpChartPoint,
@@ -19,10 +19,6 @@ import { useDefenseCompareStore } from '@/stores/defenseCompare'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type ModeKey } from '@/types/history'
 import { createRequestEpoch } from '@/utils/requestEpoch'
-
-const QUICK_ADD_ROW_LIMIT = 10
-/** 临界节点名较长：少放快捷按钮，其余（及全部）走下拉，避免被裁切 */
-const QUICK_ADD_ROW_LIMIT_DEDUCTION = 6
 
 type DefenseRemoveMode = 'direct' | 'menu'
 
@@ -43,7 +39,7 @@ const crisisCompareStore = useCrisisAssaultCompareStore()
 const defenseCompareStore = useDefenseCompareStore()
 const phaseSearchInput = ref('')
 const inputError = ref('')
-const quickAddDropdownValue = ref('')
+const showPhasePicker = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const defenseRemoveMode = ref<DefenseRemoveMode>('menu')
@@ -121,30 +117,50 @@ const isRemoveMenuOpen = computed(() => removeMenuPoint.value !== null && remove
 
 const selectedPoints = computed(() => chartPoints.value)
 
-const quickAddPoints = computed(() =>
-  allPoints.value.filter((point) => !selectedLabels.value.includes(point.label)),
+function openPhasePicker() {
+  showPhasePicker.value = true
+}
+
+function closePhasePicker() {
+  showPhasePicker.value = false
+}
+
+/** 图表点 → 选期卡片：期数对比有 version/phase 就展示「版本 第 N 期」，推演节点直接展示 label */
+function pointToPickerItem(point: HpChartPoint): PhasePickerItem {
+  if (point.version && point.phase) {
+    return {
+      id: point.label,
+      version: point.version,
+      phase: `第 ${point.phase} 期`,
+      dateRange: point.dateRange,
+    }
+  }
+  return {
+    id: point.label,
+    version: point.label,
+    phase: '',
+    dateRange: point.dateRange,
+  }
+}
+
+const pickerItems = computed(() => allPoints.value.map(pointToPickerItem))
+
+const pickerSelectedIndices = computed(() =>
+  allPoints.value.reduce<number[]>((indices, point, index) => {
+    if (selectedLabels.value.includes(point.label)) indices.push(index)
+    return indices
+  }, []),
 )
 
-const quickAddInlineLimit = computed(() =>
-  isDeductionMode.value ? QUICK_ADD_ROW_LIMIT_DEDUCTION : QUICK_ADD_ROW_LIMIT,
-)
+/** 选期弹窗（多选）：把勾选的下标集合换算回图表点 label 集合写入 store */
+function onPickerModelChange(indices: number | number[] | null | undefined) {
+  if (!Array.isArray(indices)) return
+  selectedLabels.value = indices
+    .map((index) => allPoints.value[index]?.label)
+    .filter((label): label is string => Boolean(label))
+}
 
-const quickAddInlinePoints = computed(() =>
-  quickAddPoints.value.slice(0, quickAddInlineLimit.value),
-)
-
-/** 临界：下拉列出全部未选节点（不依赖「更多」切片，避免按钮被裁切后无法选） */
-const quickAddDropdownPoints = computed(() =>
-  isDeductionMode.value
-    ? quickAddPoints.value
-    : quickAddPoints.value.slice(QUICK_ADD_ROW_LIMIT),
-)
-
-const showQuickAddDropdown = computed(
-  () =>
-    quickAddDropdownPoints.value.length > 0 &&
-    (isDeductionMode.value || quickAddPoints.value.length > QUICK_ADD_ROW_LIMIT),
-)
+const pickerTitle = computed(() => (isDeductionMode.value ? '选择对比节点' : '选择对比期数'))
 
 function formatPhaseDisplay(point: HpChartPoint) {
   if (isDeductionMode.value) return point.label
@@ -152,13 +168,6 @@ function formatPhaseDisplay(point: HpChartPoint) {
     return `${point.version} 第 ${point.phase} 期`
   }
   return point.label
-}
-
-/** 临界快捷按钮短标签：期号 + 节点名，完整文案放 title */
-function formatDeductionQuickLabel(point: HpChartPoint) {
-  const sep = point.label.indexOf('·')
-  const nodeName = sep >= 0 ? point.label.slice(sep + 1) : point.label
-  return point.version ? `${point.version} ${nodeName}` : nodeName
 }
 
 /** 推演模式（节点对比）：期数号返回该期全部战斗节点；否则按节点名模糊匹配（可多个） */
@@ -326,12 +335,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onDocumentKeydown)
 })
 
-function onQuickAddDropdownChange() {
-  if (!quickAddDropdownValue.value) return
-  addPhase(quickAddDropdownValue.value)
-  quickAddDropdownValue.value = ''
-}
-
 onMounted(loadChartData)
 
 watch(defenseRemoveMode, closeRemoveMenu)
@@ -377,46 +380,10 @@ watch(phaseSearchInput, () => {
           <p v-if="inputError" class="input-error">{{ inputError }}</p>
         </form>
 
-        <div v-if="quickAddPoints.length" class="quick-add">
-          <span class="quick-add-label">{{ isDeductionMode ? '快捷 / 下拉添加节点' : '快捷添加' }}</span>
-          <div class="quick-add-row" :class="{ 'quick-add-row--nodes': isDeductionMode }">
-            <div class="quick-add-btns">
-              <button
-                v-for="point in quickAddInlinePoints"
-                :key="point.label"
-                type="button"
-                class="quick-add-btn"
-                :class="{ 'quick-add-btn--node': isDeductionMode }"
-                :title="formatPhaseDisplay(point)"
-                @click="
-                  addPhaseFromSearch(isDeductionMode ? point.label : formatPhaseCompactCode(point))
-                "
-              >
-                {{ isDeductionMode ? formatDeductionQuickLabel(point) : formatPhaseCompactCode(point) }}
-              </button>
-            </div>
-            <select
-              v-if="showQuickAddDropdown"
-              v-model="quickAddDropdownValue"
-              class="quick-add-select"
-              :class="{ 'quick-add-select--nodes': isDeductionMode }"
-              :aria-label="isDeductionMode ? '下拉添加节点' : '更多期数'"
-              @change="onQuickAddDropdownChange"
-            >
-              <option value="">{{ isDeductionMode ? '选择节点添加…' : '更多期数' }}</option>
-              <option
-                v-for="point in quickAddDropdownPoints"
-                :key="point.label"
-                :value="point.label"
-              >
-                {{
-                  isDeductionMode
-                    ? formatPhaseDisplay(point)
-                    : `${formatPhaseCompactCode(point)} · ${formatPhaseDisplay(point)}`
-                }}
-              </option>
-            </select>
-          </div>
+        <div class="picker-entry">
+          <button type="button" class="add-btn" @click="openPhasePicker">
+            {{ isDeductionMode ? '选择节点' : '选择期数' }}
+          </button>
         </div>
 
         <div v-if="selectedPoints.length" class="selected-phases">
@@ -531,6 +498,16 @@ watch(phaseSearchInput, () => {
         :mode="mode"
         @close="closePhaseDetail"
       />
+
+      <PhasePickerModal
+        :visible="showPhasePicker"
+        :phases="pickerItems"
+        :title="pickerTitle"
+        :model-value="pickerSelectedIndices"
+        multiple
+        @update:model-value="onPickerModelChange"
+        @close="closePhasePicker"
+      />
     </template>
   </div>
 </template>
@@ -591,11 +568,20 @@ watch(phaseSearchInput, () => {
 }
 
 .selector-label,
-.quick-add-label,
 .selected-label {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-heading);
+}
+
+.picker-entry {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.picker-entry .add-btn {
+  min-width: 8rem;
 }
 
 .selector-actions {
@@ -623,8 +609,7 @@ watch(phaseSearchInput, () => {
 }
 
 .add-btn,
-.clear-btn,
-.quick-add-btn {
+.clear-btn {
   padding: 0.45rem 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -638,8 +623,7 @@ watch(phaseSearchInput, () => {
     background-color 0.2s;
 }
 
-.add-btn:hover,
-.quick-add-btn:hover {
+.add-btn:hover {
   border-color: #e8a838;
   background: var(--color-background-mute);
 }
@@ -653,87 +637,6 @@ watch(phaseSearchInput, () => {
   margin: 0;
   font-size: 0.78rem;
   color: #e85d4c;
-}
-
-.quick-add {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-}
-
-.quick-add-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: nowrap;
-  gap: 0.4rem;
-  width: 100%;
-  max-width: min(960px, 100%);
-  overflow: hidden;
-}
-
-.quick-add-row--nodes {
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: nowrap;
-  overflow: visible;
-  gap: 0.65rem;
-}
-
-.quick-add-btns {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.quick-add-row--nodes .quick-add-btns {
-  flex: 1 1 auto;
-  justify-content: flex-start;
-}
-
-.quick-add-btn {
-  flex-shrink: 0;
-  min-width: 3.2rem;
-  padding-inline: 0.55rem;
-}
-
-.quick-add-btn--node {
-  max-width: 11rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quick-add-select {
-  flex-shrink: 0;
-  min-width: 8.5rem;
-  max-width: 12rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background-soft);
-  color: var(--color-heading);
-  font-size: 0.85rem;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.quick-add-select--nodes {
-  flex: 0 0 auto;
-  margin-left: auto;
-  min-width: 14rem;
-  max-width: 22rem;
-  width: 16rem;
-}
-
-.quick-add-select:hover,
-.quick-add-select:focus {
-  border-color: var(--color-border-hover);
 }
 
 .selected-phases {
@@ -849,46 +752,6 @@ watch(phaseSearchInput, () => {
     flex: 1;
     min-width: 0;
     width: auto;
-  }
-
-  .quick-add {
-    align-items: stretch;
-  }
-
-  .quick-add-row {
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    max-width: 100%;
-    padding-bottom: 0.15rem;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-  }
-
-  .quick-add-row--nodes {
-    flex-wrap: wrap;
-    overflow: visible;
-  }
-
-  .quick-add-btns {
-    width: 100%;
-  }
-
-  .quick-add-btn {
-    min-height: 2.2rem;
-  }
-
-  .quick-add-select {
-    min-width: 7rem;
-    max-width: 9.5rem;
-  }
-
-  .quick-add-select--nodes {
-    margin-left: 0;
-    width: 100%;
-    max-width: none;
-    min-width: 0;
   }
 
   .selected-phases {

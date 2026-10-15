@@ -1,4 +1,5 @@
 import type { EnemySlot, PhaseData } from '@/types/history'
+import { formatHpExpansionPercent, parseHpString } from '@/utils/gameData'
 
 /** 场地 Buff 快照：来自某一期的怪物槽位，附该期的展示用标签 */
 export interface MonsterFieldBuffSnapshot {
@@ -83,4 +84,93 @@ export function isFieldBuffChanged(
     (previous?.name ?? '') !== (current?.name ?? '') ||
     (previous?.text ?? '') !== (current?.text ?? '')
   )
+}
+
+/** 单个怪物的血量与最近一次往期出现的对比结果 */
+export interface BossHpComparison {
+  diff: number
+  /** 相对膨胀标签（如 +23%）；往期血量为 0 时为 null */
+  expansion: string | null
+}
+
+/** 单个怪物的危局血量系数与最近一次往期出现的对比结果 */
+export interface BossHpCoeffComparison {
+  diff: number
+  /** 带符号的百分点差值标签（如 +1.5%） */
+  deltaLabel: string
+}
+
+/**
+ * 从当前期往前找该 Boss 名最近的往期出现（仅按 Boss 名匹配，不区分房间），对比血量。
+ * 无 Boss 名、当前血量不可解析、无往期出现或数值完全相同时返回 null。
+ */
+export function getBossHpComparison(
+  phases: PhaseData[],
+  currentPhaseIndex: number,
+  bossName: string | undefined,
+  hpValue: number | undefined,
+  hpText: string,
+): BossHpComparison | null {
+  if (!bossName) return null
+
+  const currentHp = hpValue ?? parseHpString(hpText)
+  if (currentHp == null) return null
+
+  for (let index = currentPhaseIndex - 1; index >= 0; index--) {
+    const phase = phases[index]
+    if (!phase) continue
+
+    for (const enemy of phase.enemies) {
+      if (enemy.bossName !== bossName) continue
+
+      const previousHp = enemy.hpValue ?? parseHpString(enemy.hp)
+      if (previousHp == null) continue
+
+      const diff = currentHp - previousHp
+      if (diff === 0) return null
+
+      return {
+        diff,
+        expansion: formatHpExpansionPercent(currentHp, previousHp),
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * 从当前期往前找该 Boss 名最近的往期出现（仅按 Boss 名匹配，不区分房间），对比危局血量系数。
+ * 无 Boss 名、当前系数无效、无往期出现或差值小于 1e-6 时返回 null。
+ */
+export function getBossHpCoeffComparison(
+  phases: PhaseData[],
+  currentPhaseIndex: number,
+  bossName: string | undefined,
+  currentCoeff: number | null | undefined,
+): BossHpCoeffComparison | null {
+  if (!bossName) return null
+  if (currentCoeff == null || !Number.isFinite(currentCoeff)) return null
+
+  for (let index = currentPhaseIndex - 1; index >= 0; index--) {
+    const phase = phases[index]
+    if (!phase) continue
+
+    for (const enemy of phase.enemies) {
+      if (enemy.bossName !== bossName) continue
+      const previousCoeff = enemy.hpCoeffPercent
+      if (previousCoeff == null || !Number.isFinite(previousCoeff)) continue
+
+      const diff = currentCoeff - previousCoeff
+      if (Math.abs(diff) < 1e-6) return null
+
+      const signed = diff >= 0 ? `+${diff.toFixed(1)}%` : `${diff.toFixed(1)}%`
+      return {
+        diff,
+        deltaLabel: signed,
+      }
+    }
+  }
+
+  return null
 }

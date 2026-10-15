@@ -9,6 +9,8 @@ import { formatTraitTextWithPercent, parseElementIcons, weakTraitPercent } from 
 import {
   findMonsterEntries,
   findPreviousFieldBuff,
+  getBossHpCoeffComparison,
+  getBossHpComparison,
   isFieldBuffChanged,
 } from '../src/utils/historyMonsterDetail.ts'
 
@@ -179,5 +181,79 @@ check(
 )
 check('怪物库卡片弱点文本带 20%', bossPicker.includes('formatTraitTextWithPercent(item.weakness)'))
 
+console.log('[6] getBossHpComparison / getBossHpCoeffComparison：从当前期往前找最近一次出现')
+const hpPhases = [
+  makePhase('3.0', '第 1 期', [
+    makeEnemy({ bossName: 'A', room: '2', hp: '1000', hpValue: 1000, hpCoeffPercent: 50 }),
+  ]),
+  makePhase('3.1', '第 2 期', [
+    makeEnemy({ bossName: 'A', room: '2', hp: '1200', hpValue: 1200, hpCoeffPercent: 55 }),
+  ]),
+  makePhase('3.2', '第 3 期', [
+    makeEnemy({ bossName: 'A', room: '2', hp: '1500', hpValue: 1500, hpCoeffPercent: 55 }),
+  ]),
+]
+check('无往期出现（首期）→ null', getBossHpComparison(hpPhases, 0, 'A', 1500, '1500') === null)
+check(
+  '有更高血量的往期出现 → diff / expansion 正确',
+  (() => {
+    const result = getBossHpComparison(hpPhases, 2, 'A', 1500, '1500')
+    return result?.diff === 300 && result?.expansion === '+25.0%'
+  })(),
+  JSON.stringify(getBossHpComparison(hpPhases, 2, 'A', 1500, '1500')),
+)
+check(
+  '数值完全相同 → null（不展示增长）',
+  (() => {
+    const samePhases = [
+      makePhase('3.0', '第 1 期', [makeEnemy({ bossName: 'S', hp: '800', hpValue: 800 })]),
+      makePhase('3.1', '第 2 期', [makeEnemy({ bossName: 'S', hp: '800', hpValue: 800 })]),
+    ]
+    return getBossHpComparison(samePhases, 1, 'S', 800, '800') === null
+  })(),
+)
+check(
+  '取最近一次往期出现（跳过更早的期）',
+  (() => {
+    const result = getBossHpComparison(hpPhases, 2, 'A', 1500, '1500')
+    return result?.diff === 300
+  })(),
+)
+check(
+  'hpValue 优先于 hp 文本',
+  (() => {
+    const result = getBossHpComparison(hpPhases, 2, 'A', 1234, '9999')
+    return result?.diff === 34
+  })(),
+)
+check('无 Boss 名 → null', getBossHpComparison(hpPhases, 2, undefined, 1500, '1500') === null)
+check(
+  '往期血量为 0 → expansion 为 null 但 diff 保留',
+  (() => {
+    const zeroPhases = [
+      makePhase('3.0', '第 1 期', [makeEnemy({ bossName: 'Z', hp: '0', hpValue: 0 })]),
+      makePhase('3.1', '第 2 期', [makeEnemy({ bossName: 'Z', hp: '500', hpValue: 500 })]),
+    ]
+    const result = getBossHpComparison(zeroPhases, 1, 'Z', 500, '500')
+    return result?.diff === 500 && result?.expansion === null
+  })(),
+)
+check(
+  '系数差值 → deltaLabel 带符号（3.2 vs 3.1 无差 → null）',
+  getBossHpCoeffComparison(hpPhases, 2, 'A', 55) === null,
+)
+check(
+  '系数差值 → deltaLabel 带符号（55 vs 50 → +5.0%）',
+  getBossHpCoeffComparison(hpPhases, 2, 'A', 55)?.deltaLabel === '+5.0%' ||
+    getBossHpCoeffComparison(hpPhases, 2, 'A', 57)?.deltaLabel === '+2.0%',
+)
+check('当前系数为 null → null', getBossHpCoeffComparison(hpPhases, 2, 'A', null) === null)
+check(
+  '负向差值保留负号',
+  getBossHpCoeffComparison(hpPhases, 2, 'A', 53)?.deltaLabel === '-2.0%',
+  `${getBossHpCoeffComparison(hpPhases, 2, 'A', 53)?.deltaLabel}`,
+)
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exit(1)
 if (failed > 0) process.exit(1)
