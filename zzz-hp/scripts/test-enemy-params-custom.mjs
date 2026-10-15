@@ -2,7 +2,7 @@
  * 敌方与环境的「来源标记」：选 Boss → boss_info/boss_record；用户手改 → manual（界面显示「参数已自定义」）
  *
  * 口径（用户 2026-09-20 确认）：选危局 Boss 按文本整表重算抗性是设计意图；但用户改过之后要显示成自定义。
- * 见 dev-docs/damage-calc-state-storage.md §五。
+ * 见 dev-docs/boss-resistance-level.md §五。
  *
  * 运行：npx vite-node scripts/test-enemy-params-custom.mjs
  */

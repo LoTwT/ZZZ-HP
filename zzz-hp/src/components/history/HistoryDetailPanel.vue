@@ -22,7 +22,20 @@ import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admi
 import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
-import { hasElementIcons } from '@/utils/elementIcons'
+import MonsterDetailModal from '@/components/history/MonsterDetailModal.vue'
+import PhasePickerModal from '@/components/history/PhasePickerModal.vue'
+import {
+  buildPhaseLabel,
+  findPreviousFieldBuff,
+  getBossHpCoeffComparison,
+  getBossHpComparison,
+  listMonsterAppearanceVersions,
+  type MonsterFieldBuffSnapshot,
+} from '@/utils/historyMonsterDetail'
+import {
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
+  isVersionAtMost,
+} from '@/utils/monsterResistanceTable'
 
 const props = defineProps<{
   mode: ModeKey
@@ -54,11 +67,6 @@ const phases = computed(() =>
 
 const currentIndex = ref(0)
 const showPicker = ref(false)
-const pickerScrollRef = ref<HTMLElement | null>(null)
-const isPickerDragging = ref(false)
-const pickerDragMoved = ref(false)
-const pickerDragStartY = ref(0)
-const pickerDragScrollTop = ref(0)
 
 const currentPhase = computed(() => phases.value[currentIndex.value])
 
@@ -207,75 +215,12 @@ function shouldShowConvertedEnemyHp(enemy: PhaseData['enemies'][number]) {
   )
 }
 
-function getBossHpComparison(
-  bossName: string | undefined,
-  hpValue: number | undefined,
-  hpText: string,
-) {
-  if (!bossName) return null
-
-  const currentHp = hpValue ?? parseHpString(hpText)
-  if (currentHp == null) return null
-
-  for (let index = currentIndex.value - 1; index >= 0; index--) {
-    const phase = phases.value[index]
-    if (!phase) continue
-
-    for (const enemy of phase.enemies) {
-      if (enemy.bossName !== bossName) continue
-
-      const previousHp = enemy.hpValue ?? parseHpString(enemy.hp)
-      if (previousHp == null) continue
-
-      const diff = currentHp - previousHp
-      if (diff === 0) return null
-
-      return {
-        diff,
-        expansion: formatHpExpansionPercent(currentHp, previousHp),
-      }
-    }
-  }
-
-  return null
-}
-
-function getBossHpCoeffComparison(
-  bossName: string | undefined,
-  currentCoeff: number | null | undefined,
-) {
-  if (!bossName) return null
-  if (currentCoeff == null || !Number.isFinite(currentCoeff)) return null
-
-  for (let index = currentIndex.value - 1; index >= 0; index--) {
-    const phase = phases.value[index]
-    if (!phase) continue
-
-    for (const enemy of phase.enemies) {
-      if (enemy.bossName !== bossName) continue
-      const previousCoeff = enemy.hpCoeffPercent
-      if (previousCoeff == null || !Number.isFinite(previousCoeff)) continue
-
-      const diff = currentCoeff - previousCoeff
-      if (Math.abs(diff) < 1e-6) return null
-
-      const signed = diff >= 0 ? `+${diff.toFixed(1)}%` : `${diff.toFixed(1)}%`
-      return {
-        diff,
-        deltaLabel: signed,
-      }
-    }
-  }
-
-  return null
-}
-
 const currentEnemyHpComparisons = computed(() => {
   const phase = currentPhase.value
   if (!phase) return []
 
   return phase.enemies.map((enemy) =>
-    getBossHpComparison(enemy.bossName, enemy.hpValue, enemy.hp),
+    getBossHpComparison(phases.value, currentIndex.value, enemy.bossName, enemy.hpValue, enemy.hp),
   )
 })
 
@@ -284,7 +229,7 @@ const currentEnemyHpCoeffComparisons = computed(() => {
   if (!phase) return []
 
   return phase.enemies.map((enemy) =>
-    getBossHpCoeffComparison(enemy.bossName, enemy.hpCoeffPercent ?? null),
+    getBossHpCoeffComparison(phases.value, currentIndex.value, enemy.bossName, enemy.hpCoeffPercent ?? null),
   )
 })
 
@@ -350,6 +295,7 @@ function buildCrisisMonsterContext(
     level: enemy.label.match(/Lv(\d+)/)?.[1] ?? (enemy.isHardRoom ? '70' : '70'),
     weakness: enemy.weakness ?? '',
     resistance: enemy.resistance ?? '',
+    resistanceHigh: enemy.resistanceHigh ?? '',
     bossImage: enemy.imageUrl ?? null,
     crisisBaseHp: enemy.crisisBaseHp,
     hpCoeffPercent: enemy.hpCoeffPercent,
@@ -407,6 +353,93 @@ function onAdminRemovePeriodBuff(buff: PhaseData['buffs'][number]) {
   if (!buff.recordId) return
   emit('admin-remove-period-buff', buff.recordId, buff.name)
 }
+
+/** 怪物详情弹窗：仅危局、非管理端、有怪物名的槽位可点开 */
+const monsterDetailOpen = ref(false)
+const monsterDetailEnemy = ref<PhaseData['enemies'][number] | null>(null)
+
+function canOpenMonsterDetail(enemy: PhaseData['enemies'][number]) {
+  return props.mode === 'crisis-assault' && !props.adminMode && !enemy.isEmpty && Boolean(enemy.bossName)
+}
+
+function openMonsterDetail(enemy: PhaseData['enemies'][number]) {
+  if (!canOpenMonsterDetail(enemy)) return
+  monsterDetailEnemy.value = enemy
+  monsterDetailOpen.value = true
+}
+
+function closeMonsterDetail() {
+  monsterDetailOpen.value = false
+  monsterDetailEnemy.value = null
+}
+
+function onMonsterDetailKeydown(event: KeyboardEvent, enemy: PhaseData['enemies'][number]) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  openMonsterDetail(enemy)
+}
+
+const monsterDetailPhaseLabel = computed(() => {
+  const phase = currentPhase.value
+  const enemy = monsterDetailEnemy.value
+  if (!phase || !enemy) return ''
+  return `${phase.version} ${phase.phase} · ${enemy.label}`.trim()
+})
+
+/** 该怪物所属期数的游戏版本：详情弹窗据此判「2.1 起异常条 ×1.1」，拿不到时为 null */
+const monsterDetailPhaseVersion = computed(() => currentPhase.value?.version ?? null)
+
+/**
+ * 该 Boss 是否在 2.1（含）之前就已存在 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 首次出现不晚于 2.1 即为 true：老 Boss 与 2.1 才出的新 Boss 都算，2.2 起才出的不算。
+ * **只按 Boss 名匹配（不区分房间）**：这是 Boss 级属性，同一只 Boss 会跨期换房间，
+ * 带房间匹配会把换了房间的老 Boss 误判成新怪（实测 2.1+ 的 82 张卡片里有 7 张会判错）。
+ * 版本号解析不出的期数不算出现（与 `isVersionAtMost` 同口径）。
+ */
+const monsterDetailBossExistedByMultiplierVersion = computed(() => {
+  const bossName = monsterDetailEnemy.value?.bossName
+  if (!bossName) return false
+  return listMonsterAppearanceVersions(phases.value, bossName).some((version) =>
+    isVersionAtMost(version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM),
+  )
+})
+
+const monsterDetailCurrentFieldBuff = computed<MonsterFieldBuffSnapshot | null>(() => {
+  const phase = currentPhase.value
+  const enemy = monsterDetailEnemy.value
+  if (!enemy) return null
+  return {
+    fieldBuff: enemy.fieldBuff ?? null,
+    phaseLabel: phase ? buildPhaseLabel(phase) : '',
+  }
+})
+
+const monsterDetailPreviousFieldBuff = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  if (!enemy?.bossName) return null
+  return findPreviousFieldBuff(phases.value, currentIndex.value, {
+    bossName: enemy.bossName,
+    room: enemy.room ?? '',
+  })
+})
+
+// 与卡片同一口径的血量 / 系数对比，供详情弹窗展示增长
+const monsterDetailHpComparison = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  if (!enemy) return null
+  return getBossHpComparison(phases.value, currentIndex.value, enemy.bossName, enemy.hpValue, enemy.hp)
+})
+
+const monsterDetailHpCoeffComparison = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  if (!enemy) return null
+  return getBossHpCoeffComparison(
+    phases.value,
+    currentIndex.value,
+    enemy.bossName,
+    enemy.hpCoeffPercent ?? null,
+  )
+})
 
 defineExpose({
   reload: loadCrisisAssaultData,
@@ -533,53 +566,6 @@ function openPhasePicker() {
 
 function closePhasePicker() {
   showPicker.value = false
-}
-
-function onPickerPointerDown(event: PointerEvent) {
-  if (!pickerScrollRef.value || event.button !== 0) return
-  isPickerDragging.value = true
-  pickerDragMoved.value = false
-  pickerDragStartY.value = event.clientY
-  pickerDragScrollTop.value = pickerScrollRef.value.scrollTop
-}
-
-function onPickerPointerMove(event: PointerEvent) {
-  if (!isPickerDragging.value || !pickerScrollRef.value) return
-  const deltaY = event.clientY - pickerDragStartY.value
-  if (Math.abs(deltaY) <= 4) return
-
-  if (!pickerDragMoved.value) {
-    pickerDragMoved.value = true
-    pickerScrollRef.value.setPointerCapture(event.pointerId)
-  }
-  pickerScrollRef.value.scrollTop = pickerDragScrollTop.value - deltaY
-}
-
-function onPickerPointerUp(event: PointerEvent) {
-  if (!pickerScrollRef.value) return
-
-  const wasDrag = pickerDragMoved.value
-
-  isPickerDragging.value = false
-  if (pickerScrollRef.value.hasPointerCapture(event.pointerId)) {
-    pickerScrollRef.value.releasePointerCapture(event.pointerId)
-  }
-
-  if (!wasDrag) {
-    const card = (event.target as HTMLElement).closest('.phase-card') as HTMLElement | null
-    if (card) {
-      const index = Number(card.dataset.index)
-      if (!Number.isNaN(index)) selectPhase(index)
-    }
-  }
-
-  pickerDragMoved.value = false
-}
-
-function onPickerWheel(event: WheelEvent) {
-  if (!pickerScrollRef.value) return
-  event.preventDefault()
-  pickerScrollRef.value.scrollTop += event.deltaY
 }
 </script>
 
@@ -715,59 +701,14 @@ function onPickerWheel(event: WheelEvent) {
             </div>
           </div>
 
-          <Teleport to="body">
-            <div
-              v-if="showPicker"
-              class="phase-modal-overlay"
-              @click.self="closePhasePicker"
-            >
-              <div class="phase-modal">
-                <button
-                  type="button"
-                  class="phase-modal-close"
-                  aria-label="关闭"
-                  @click="closePhasePicker"
-                >
-                  ×
-                </button>
-                <h2 class="phase-modal-title">{{ pageTitle }}</h2>
-                <div
-                  ref="pickerScrollRef"
-                  class="phase-grid-scroll"
-                  :class="{ 'is-dragging': isPickerDragging }"
-                  @pointerdown="onPickerPointerDown"
-                  @pointermove="onPickerPointerMove"
-                  @pointerup="onPickerPointerUp"
-                  @pointercancel="onPickerPointerUp"
-                  @wheel="onPickerWheel"
-                >
-                  <div class="phase-grid">
-                    <button
-                      v-for="(phase, index) in phases"
-                      :key="phase.id"
-                      type="button"
-                      class="phase-card"
-                      :class="{
-                        active: index === currentIndex,
-                        'phase-card--hidden': phase.isHidden,
-                        'phase-card--trash': phase.pendingCleanup,
-                      }"
-                      :data-index="index"
-                    >
-                      <span class="phase-card-version">
-                        {{ phase.version }} {{ phase.phase }}
-                        <span v-if="phase.pendingCleanup" class="phase-trash-badge">已删除未清理</span>
-                        <span v-else-if="phase.isHidden" class="phase-hidden-badge">未公开</span>
-                      </span>
-                      <span class="phase-card-date">{{ phase.dateRange }}</span>
-                      <span class="phase-card-id">ID: {{ phase.tid }}</span>
-                    </button>
-                  </div>
-                </div>
-                <p class="phase-picker-hint">拖拽或滚轮上下浏览</p>
-              </div>
-            </div>
-          </Teleport>
+          <PhasePickerModal
+            :visible="showPicker"
+            :phases="phases"
+            :title="pageTitle"
+            :model-value="currentIndex"
+            @select="selectPhase"
+            @close="closePhasePicker"
+          />
         </template>
       </header>
 
@@ -838,7 +779,13 @@ function onPickerWheel(event: WheelEvent) {
             :class="{
               'enemy-card--empty': enemy.isEmpty,
               'enemy-card--admin': adminMode,
+              'enemy-card--clickable': canOpenMonsterDetail(enemy),
             }"
+            :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+            :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.bossName} 详情` : undefined"
+            :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+            @click="openMonsterDetail(enemy)"
+            @keydown="onMonsterDetailKeydown($event, enemy)"
           >
             <p class="enemy-label">{{ enemy.label }}</p>
             <div v-if="adminMode" class="enemy-admin-bar">
@@ -918,9 +865,8 @@ function onPickerWheel(event: WheelEvent) {
                   <div
                     v-if="
                       enemy.defense !== undefined ||
-                      hasElementIcons(enemy.weakness) ||
-                      hasElementIcons(enemy.resistance) ||
-                      enemy.staggerTime != null
+                      enemy.staggerTime != null ||
+                      !enemy.isEmpty
                     "
                     class="enemy-traits"
                   >
@@ -928,11 +874,24 @@ function onPickerWheel(event: WheelEvent) {
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
-                    <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                    <p class="enemy-weakness">
+                      <ElementTraitIcons
+                        :value="enemy.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
-                      <ElementTraitIcons :value="enemy.resistance" label="抗性" variant="resist" />
+                    <p class="enemy-resistance">
+                      <ElementTraitIcons
+                        :value="enemy.resistance"
+                        :high-value="enemy.resistanceHigh"
+                        label="抗性"
+                        variant="resist"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
                   </div>
                 </div>
@@ -976,7 +935,13 @@ function onPickerWheel(event: WheelEvent) {
             :class="{
               'enemy-card--empty': enemy.isEmpty,
               'enemy-card--admin': adminMode,
+              'enemy-card--clickable': canOpenMonsterDetail(enemy),
             }"
+            :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+            :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.bossName} 详情` : undefined"
+            :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+            @click="openMonsterDetail(enemy)"
+            @keydown="onMonsterDetailKeydown($event, enemy)"
           >
             <p class="enemy-label">{{ enemy.label }}</p>
             <div v-if="adminMode" class="enemy-admin-bar">
@@ -1056,9 +1021,8 @@ function onPickerWheel(event: WheelEvent) {
                   <div
                     v-if="
                       enemy.defense !== undefined ||
-                      hasElementIcons(enemy.weakness) ||
-                      hasElementIcons(enemy.resistance) ||
-                      enemy.staggerTime != null
+                      enemy.staggerTime != null ||
+                      !enemy.isEmpty
                     "
                     class="enemy-traits"
                   >
@@ -1066,11 +1030,24 @@ function onPickerWheel(event: WheelEvent) {
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
-                    <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                    <p class="enemy-weakness">
+                      <ElementTraitIcons
+                        :value="enemy.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
-                      <ElementTraitIcons :value="enemy.resistance" label="抗性" variant="resist" />
+                    <p class="enemy-resistance">
+                      <ElementTraitIcons
+                        :value="enemy.resistance"
+                        :high-value="enemy.resistanceHigh"
+                        label="抗性"
+                        variant="resist"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
                   </div>
                 </div>
@@ -1118,6 +1095,21 @@ function onPickerWheel(event: WheelEvent) {
       @click="onNavZoneClick('next')"
       @keydown.enter="onNavZoneClick('next')"
       @keydown.space.prevent="onNavZoneClick('next')"
+    />
+
+    <MonsterDetailModal
+      v-if="mode === 'crisis-assault'"
+      :open="monsterDetailOpen"
+      :enemy="monsterDetailEnemy"
+      :mode="mode"
+      :phase-label="monsterDetailPhaseLabel"
+      :version="monsterDetailPhaseVersion"
+      :boss-existed-by-multiplier-version="monsterDetailBossExistedByMultiplierVersion"
+      :previous-field-buff="monsterDetailPreviousFieldBuff"
+      :current-field-buff="monsterDetailCurrentFieldBuff"
+      :hp-comparison="monsterDetailHpComparison"
+      :hp-coeff-comparison="monsterDetailHpCoeffComparison"
+      @close="closeMonsterDetail"
     />
   </div>
 </template>
@@ -1430,147 +1422,6 @@ function onPickerWheel(event: WheelEvent) {
 .phase-id {
   font-size: clamp(0.72rem, 1.35vw, 0.82rem);
   opacity: 0.72;
-}
-
-.phase-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(4px);
-}
-
-.phase-modal {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: min(1120px, 96vw);
-  max-height: min(90vh, 860px);
-  padding: 2.75rem 1.75rem 1.25rem;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  background: var(--color-background);
-  overflow: hidden;
-}
-
-.phase-grid-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  cursor: grab;
-  touch-action: pan-y;
-  scrollbar-width: none;
-  padding-right: 0.15rem;
-}
-
-.phase-grid-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.phase-grid-scroll.is-dragging {
-  cursor: grabbing;
-  user-select: none;
-}
-
-.phase-picker-hint {
-  flex-shrink: 0;
-  margin: 0.75rem 0 0;
-  text-align: center;
-  font-size: 0.74rem;
-  color: var(--color-text);
-  opacity: 0.55;
-}
-
-.phase-modal-close {
-  position: absolute;
-  top: 0.85rem;
-  left: 0.85rem;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-heading);
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.phase-modal-close:hover {
-  background: var(--color-background-mute);
-}
-
-.phase-modal-title {
-  margin: 0 0 1.35rem;
-  text-align: center;
-  font-size: clamp(1.55rem, 3.2vw, 2rem);
-  font-weight: 700;
-  color: var(--color-heading);
-  letter-spacing: 0.04em;
-}
-
-.phase-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.85rem;
-}
-
-.phase-card {
-  min-height: 102px;
-  padding: 0.85rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background-soft);
-  color: var(--color-heading);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  text-align: center;
-  transition:
-    border-color 0.2s,
-    background-color 0.2s;
-}
-
-.phase-card:hover,
-.phase-card.active {
-  border-color: #e8a838;
-  background: var(--color-background-mute);
-}
-
-.phase-card--hidden {
-  border-style: dashed;
-  border-color: color-mix(in srgb, #f5c451 55%, var(--color-border));
-}
-
-.phase-card--trash {
-  border-style: dashed;
-  border-color: color-mix(in srgb, #e85d4c 55%, var(--color-border));
-  opacity: 0.92;
-}
-
-.phase-card-version {
-  font-size: 0.98rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.phase-card-date,
-.phase-card-id {
-  font-size: 0.74rem;
-  opacity: 0.72;
-  line-height: 1.35;
 }
 
 .hp-summary {
@@ -2205,30 +2056,6 @@ function onPickerWheel(event: WheelEvent) {
     font-size: 0.68rem;
   }
 
-  .phase-modal {
-    width: min(100vw - 1rem, 1120px);
-    max-height: min(88dvh, 860px);
-    padding: 2.1rem 0.85rem 0.85rem;
-  }
-
-  .phase-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.45rem;
-  }
-
-  .phase-card {
-    padding: 0.55rem 0.4rem;
-  }
-
-  .phase-card-version {
-    font-size: 0.82rem;
-  }
-
-  .phase-card-date,
-  .phase-card-id {
-    font-size: 0.66rem;
-  }
-
   /* 图表点开的嵌入详细：允许竖向滚动，避免被裁切 */
   .history-panel-wrapper--embedded {
     height: auto;
@@ -2325,6 +2152,15 @@ function onPickerWheel(event: WheelEvent) {
 .enemy-card--empty {
   border-style: dashed;
   opacity: 0.92;
+}
+
+.enemy-card--clickable {
+  cursor: pointer;
+}
+
+.enemy-card--clickable:focus-visible {
+  outline: 2px solid var(--color-border);
+  outline-offset: 2px;
 }
 
 .enemy-admin-bar {

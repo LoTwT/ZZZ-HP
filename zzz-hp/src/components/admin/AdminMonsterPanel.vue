@@ -75,8 +75,12 @@ const count = ref('1')
 const previewId = ref('')
 const weakness = ref('')
 const resistance = ref('')
+/** 高抗性（40%）属性，为 resistance 的子集 */
+const resistanceHigh = ref('')
 const staggerMultiplier = ref('1.5')
 const staggerTime = ref('')
+/** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+const anomalyBarCoefficient = ref('')
 const fieldBuffSetId = ref('')
 const fieldBuffSetOptions = ref<Array<{ id: string; label: string }>>([])
 const imageFile = ref<File | null>(null)
@@ -178,10 +182,12 @@ function applyBossInfo(info: {
   level: number
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
+  anomaly_bar_coefficient?: number | null
   field_buff_sets?: Array<{
     id: string
     label?: string | null
@@ -193,6 +199,7 @@ function applyBossInfo(info: {
   level.value = String(applyReusedMonsterLevel(level.value, info.level ?? 0))
   weakness.value = info.weakness ?? ''
   resistance.value = info.resistance ?? ''
+  resistanceHigh.value = info.resistance_high ?? ''
   if (info.stagger_multiplier != null && Number.isFinite(Number(info.stagger_multiplier))) {
     staggerMultiplier.value = String(info.stagger_multiplier)
   }
@@ -200,6 +207,11 @@ function applyBossInfo(info: {
     staggerTime.value = String(info.stagger_time)
   } else {
     staggerTime.value = ''
+  }
+  if (info.anomaly_bar_coefficient != null && Number.isFinite(Number(info.anomaly_bar_coefficient))) {
+    anomalyBarCoefficient.value = String(info.anomaly_bar_coefficient)
+  } else {
+    anomalyBarCoefficient.value = ''
   }
   if (info.crisis_base_hp != null && Number.isFinite(Number(info.crisis_base_hp))) {
     crisisBaseHp.value = String(info.crisis_base_hp)
@@ -395,6 +407,7 @@ function applySlotContext(ctx: AdminMonsterSlotContext) {
   level.value = ctx.level != null && ctx.level !== '' ? String(ctx.level) : isDefense.value ? '1' : '70'
   weakness.value = ctx.weakness ?? ''
   resistance.value = ctx.resistance ?? ''
+  resistanceHigh.value = ctx.resistanceHigh ?? ''
   crisisBaseHp.value =
     ctx.crisisBaseHp != null && ctx.crisisBaseHp !== '' ? String(ctx.crisisBaseHp) : ''
   hpCoeffManual.value = Boolean(ctx.hpCoeffManual)
@@ -584,6 +597,7 @@ async function submitForm() {
         level: fieldText(level.value) ? Number(level.value) : 70,
         weakness: fieldText(weakness.value) || null,
         resistance: fieldText(resistance.value) || null,
+        resistance_high: fieldText(resistanceHigh.value) || null,
         boss_image: bossImage,
       })
       message.value =
@@ -610,8 +624,10 @@ async function submitForm() {
       resetCrisisCoeffFields()
       weakness.value = ''
       resistance.value = ''
+      resistanceHigh.value = ''
       staggerMultiplier.value = '1.5'
       staggerTime.value = ''
+      anomalyBarCoefficient.value = ''
       fieldBuffSetId.value = ''
       fieldBuffSetOptions.value = []
       imageFile.value = null
@@ -641,10 +657,14 @@ async function submitForm() {
       room: isDefense.value ? null : normalizeCrisisRoomCode(room.value),
       weakness: fieldText(weakness.value) || null,
       resistance: fieldText(resistance.value) || null,
+      resistance_high: fieldText(resistanceHigh.value) || null,
       stagger_multiplier: fieldText(staggerMultiplier.value)
         ? Number(staggerMultiplier.value)
         : 1.5,
       stagger_time: fieldText(staggerTime.value) ? Number(staggerTime.value) : null,
+      anomaly_bar_coefficient: fieldText(anomalyBarCoefficient.value)
+        ? Number(anomalyBarCoefficient.value)
+        : null,
       boss_image: bossImage,
       crisis_base_hp:
         !isDefense.value && !isDeduction.value && fieldText(crisisBaseHp.value)
@@ -689,8 +709,10 @@ async function submitForm() {
     resetCrisisCoeffFields()
     weakness.value = ''
     resistance.value = ''
+    resistanceHigh.value = ''
     staggerMultiplier.value = '1.5'
     staggerTime.value = ''
+    anomalyBarCoefficient.value = ''
     fieldBuffSetId.value = ''
     fieldBuffSetOptions.value = []
     imageFile.value = null
@@ -940,7 +962,13 @@ watch(
       </div>
 
       <div class="field">
-        <ElementTraitChips v-model="resistance" label="抗性" variant="resist" />
+        <ElementTraitChips
+          v-model="resistance"
+          v-model:high="resistanceHigh"
+          label="抗性"
+          variant="resist"
+          allow-high
+        />
       </div>
 
       <label class="field">
@@ -957,6 +985,18 @@ watch(
           step="0.1"
           class="field-input"
           placeholder="可空，回退怪物库"
+        />
+      </label>
+
+      <label class="field">
+        <span class="field-label">异常条系数</span>
+        <input
+          v-model="anomalyBarCoefficient"
+          type="number"
+          min="0"
+          step="0.0001"
+          class="field-input"
+          placeholder="1.32，可空按 1 处理"
         />
       </label>
 

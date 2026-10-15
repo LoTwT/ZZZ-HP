@@ -12,6 +12,8 @@ export interface DefenseEnemy {
   /** 失衡时间（秒） */
   staggerTime?: number | null
   resistance?: string
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistanceHigh?: string
   isBoss?: boolean
 }
 
@@ -26,6 +28,8 @@ export interface DefenseBattleRoom {
   waveCount: number
   weakness: string[]
   resistance?: string[]
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistanceHigh?: string[]
   waves: DefenseWave[]
 }
 

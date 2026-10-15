@@ -12,7 +12,11 @@ import {
   findDefenseRoomHpComparison,
   formatDefenseRoomHpTitle,
 } from '@/utils/defenseHp'
-import { findDefenseSeasonIndexFromChartPoint } from '@/utils/defenseCompare'
+import {
+  findDefenseSeasonIndexFromChartPoint,
+  hasDefenseMonsterExistedByMultiplierVersion,
+  resolveDefenseMonsterDefaultLevel,
+} from '@/utils/defenseCompare'
 import { formatHpDelta } from '@/utils/gameData'
 import { createRequestEpoch } from '@/utils/requestEpoch'
 import {
@@ -24,7 +28,7 @@ import {
 } from '@/utils/panelUrlState'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
-import { hasElementIcons } from '@/utils/elementIcons'
+import DefenseMonsterDetailModal from '@/components/defense/DefenseMonsterDetailModal.vue'
 
 const props = defineProps<{
   embedded?: boolean
@@ -201,6 +205,73 @@ function getEnemyHpComparison(enemy: DefenseEnemy) {
   return findDefenseEnemyHpComparison(seasons.value, currentIndex.value, enemy)
 }
 
+/** 怪物详情弹窗：仅非管理端可点开，且只接线怪物级卡片（房间级卡片不参与） */
+const monsterDetailOpen = ref(false)
+const monsterDetailEnemy = ref<DefenseEnemy | null>(null)
+/** 打开时记录的定位串（房间 + 波次），与当前期数拼成弹窗副标题 */
+const monsterDetailSlotLabel = ref('')
+/** 打开时记录的防线（stage）：弹窗据此在 boss_info 查无记录时补默认等级 */
+const monsterDetailFrontierStage = ref<number | null>(null)
+
+function canOpenMonsterDetail(enemy: DefenseEnemy) {
+  return !props.adminMode && Boolean(enemy.name)
+}
+
+function openMonsterDetail(
+  enemy: DefenseEnemy,
+  frontier: { id: string },
+  roomLabel: string,
+  waveLabel: string,
+) {
+  if (!canOpenMonsterDetail(enemy)) return
+  monsterDetailEnemy.value = enemy
+  monsterDetailFrontierStage.value = resolveFrontierStage(frontier)
+  monsterDetailSlotLabel.value = [roomLabel, waveLabel].filter(Boolean).join(' · ')
+  monsterDetailOpen.value = true
+}
+
+function closeMonsterDetail() {
+  monsterDetailOpen.value = false
+  monsterDetailEnemy.value = null
+  monsterDetailFrontierStage.value = null
+}
+
+function onMonsterDetailKeydown(
+  event: KeyboardEvent,
+  enemy: DefenseEnemy,
+  frontier: { id: string },
+  roomLabel: string,
+  waveLabel: string,
+) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  openMonsterDetail(enemy, frontier, roomLabel, waveLabel)
+}
+
+/** 与怪物卡片同一口径的往期血量对比，由弹窗用于血量行的膨胀与增量 */
+const monsterDetailHpComparison = computed(() =>
+  monsterDetailEnemy.value ? getEnemyHpComparison(monsterDetailEnemy.value) : null,
+)
+
+const monsterDetailPhaseLabel = computed(() => {
+  const season = currentSeason.value
+  const slot = monsterDetailSlotLabel.value
+  if (!season) return ''
+  return `${season.version} ${season.phase}${slot ? ` · ${slot}` : ''}`
+})
+
+/**
+ * 该怪物是否在 2.1（含）之前就已存在 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 首次出现不晚于 2.1 即为 true（含 2.1 才出的新怪物），2.2 起才出的为 false。
+ * 按怪物名扫全量赛季（含当前赛季；当期 < 2.1 时表本就不会乘，故不影响结果）。
+ */
+const monsterDetailBossExistedByMultiplierVersion = computed(() =>
+  hasDefenseMonsterExistedByMultiplierVersion(
+    seasons.value,
+    monsterDetailEnemy.value?.name,
+  ),
+)
+
 function prevRoomHp() {
   if (roomHpIndex.value > 0) roomHpIndex.value--
 }
@@ -281,6 +352,8 @@ function buildDefenseMonsterContext(
     monsterSubType: 1,
     count: 1,
   }
+  // `DefenseEnemy` 不带等级，槽位预填只能按防线规则推导（第五防线 70，其余防线 1）
+  const level = String(resolveDefenseMonsterDefaultLevel(slot.stage, null))
   if (!enemy?.id) return base
   try {
     const decoded = decodeDefenseBossId(enemy.id)
@@ -294,9 +367,10 @@ function buildDefenseMonsterContext(
       bossName: enemy.name,
       hp: enemy.hpValue ?? enemy.hp,
       defense: enemy.defense,
-      level: '1',
+      level,
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
+      resistanceHigh: enemy.resistanceHigh ?? '',
       bossImage: enemy.imageUrl ?? null,
     }
   } catch {
@@ -307,9 +381,10 @@ function buildDefenseMonsterContext(
       bossName: enemy.name,
       hp: enemy.hpValue ?? enemy.hp,
       defense: enemy.defense,
-      level: '1',
+      level,
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
+      resistanceHigh: enemy.resistanceHigh ?? '',
       bossImage: enemy.imageUrl ?? null,
     }
   }
@@ -347,6 +422,8 @@ function buildDefenseMonsterContextFromSlot(
     monsterCategory: 'boss',
     monsterSubType: 1,
     count: 1,
+    // 与「添加 / 编辑怪物」同一口径：等级由防线推导，避免新增防线 / 房间 / 波次时预填回 1
+    level: String(resolveDefenseMonsterDefaultLevel(slot.stage, null)),
   }
 }
 
@@ -812,24 +889,24 @@ function formatEnemyResistance(value?: string) {
                       + 添加波次
                     </button>
                   </div>
-                  <div
-                    v-if="
-                      battleRoom.weakness.length ||
-                      filterMeaningfulResistanceTraits(battleRoom.resistance ?? []).length
-                    "
-                    class="trait-row"
-                  >
-                    <p v-if="hasElementIcons(battleRoom.weakness)" class="trait-line">
-                      <ElementTraitIcons :value="battleRoom.weakness" label="弱点" variant="weak" />
+                  <div class="trait-row">
+                    <p class="trait-line">
+                      <ElementTraitIcons
+                        :value="battleRoom.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p
-                      v-if="hasElementIcons(filterMeaningfulResistanceTraits(battleRoom.resistance ?? []))"
-                      class="trait-line"
-                    >
+                    <p class="trait-line">
                       <ElementTraitIcons
                         :value="filterMeaningfulResistanceTraits(battleRoom.resistance ?? [])"
+                        :high-value="filterMeaningfulResistanceTraits(battleRoom.resistanceHigh ?? [])"
                         label="抗性"
                         variant="resist"
+                        show-percent
+                        empty-text="无"
                       />
                     </p>
                   </div>
@@ -849,7 +926,13 @@ function formatEnemyResistance(value?: string) {
                       :class="{
                         'enemy-chip--boss': enemy.isBoss,
                         'enemy-chip--admin': adminMode,
+                        'enemy-chip--clickable': canOpenMonsterDetail(enemy),
                       }"
+                      :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+                      :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.name} 详情` : undefined"
+                      :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+                      @click="openMonsterDetail(enemy, frontier, room.label, wave.label)"
+                      @keydown="onMonsterDetailKeydown($event, enemy, frontier, room.label, wave.label)"
                     >
                       <div v-if="adminMode" class="enemy-admin-bar">
                         <button
@@ -905,14 +988,23 @@ function formatEnemyResistance(value?: string) {
                         <p v-if="enemy.staggerTime != null" class="enemy-chip-trait">
                           <span class="trait-label">失衡时间</span>{{ enemy.staggerTime }} 秒
                         </p>
-                        <p v-if="hasElementIcons(enemy.weakness)" class="enemy-chip-trait">
-                          <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                        <p class="enemy-chip-trait">
+                          <ElementTraitIcons
+                            :value="enemy.weakness"
+                            label="弱点"
+                            variant="weak"
+                            show-percent
+                            empty-text="无"
+                          />
                         </p>
-                        <p v-if="hasElementIcons(formatEnemyResistance(enemy.resistance))" class="enemy-chip-trait">
+                        <p class="enemy-chip-trait">
                           <ElementTraitIcons
                             :value="formatEnemyResistance(enemy.resistance)"
+                            :high-value="enemy.resistanceHigh"
                             label="抗性"
                             variant="resist"
+                            show-percent
+                            empty-text="无"
                           />
                         </p>
                       </div>
@@ -944,6 +1036,18 @@ function formatEnemyResistance(value?: string) {
       @click="onNavZoneClick('next')"
       @keydown.enter="onNavZoneClick('next')"
       @keydown.space.prevent="onNavZoneClick('next')"
+    />
+
+    <DefenseMonsterDetailModal
+      :open="monsterDetailOpen"
+      :enemy="monsterDetailEnemy"
+      :variant="defenseVariant"
+      :phase-label="monsterDetailPhaseLabel"
+      :version="currentSeason?.version ?? null"
+      :boss-existed-by-multiplier-version="monsterDetailBossExistedByMultiplierVersion"
+      :hp-comparison="monsterDetailHpComparison"
+      :stage="monsterDetailFrontierStage"
+      @close="closeMonsterDetail"
     />
   </div>
 </template>
@@ -1602,6 +1706,15 @@ function formatEnemyResistance(value?: string) {
 .enemy-chip--boss {
   border-color: rgba(232, 168, 56, 0.45);
   background: color-mix(in srgb, #e8a838 8%, var(--color-background-soft));
+}
+
+.enemy-chip--clickable {
+  cursor: pointer;
+}
+
+.enemy-chip--clickable:focus-visible {
+  outline: 2px solid var(--color-border);
+  outline-offset: 2px;
 }
 
 .enemy-chip-image {

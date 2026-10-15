@@ -144,6 +144,7 @@ onMounted(loadChartData)
       :expansion-aria-label="`${pageTitle}${isHardMode ? '绝境' : ''}血量相对膨胀折线图`"
       :enable-hp-converted953-toggle="props.mode === 'crisis-assault' || props.mode === 'deduction'"
       :enable-point-click="props.mode !== 'deduction'"
+      :page-scroll="true"
       @point-click="openPhaseDetail"
     />
 
@@ -161,13 +162,13 @@ onMounted(loadChartData)
 .hp-chart-panel {
   width: 100%;
   max-width: none;
-  height: 100%;
-  min-height: 0;
+  height: auto;
+  min-height: 100%;
   margin: 0;
   padding: 0.35rem 0.25rem 0.5rem;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 
@@ -209,9 +210,12 @@ onMounted(loadChartData)
   opacity: 1;
 }
 
+/* `DualLineChartView` 根节点就是 `.charts-panel`：整页形态下高度必须交给内容，
+   否则 `flex: 1`/`min-height: 0` 会把图表容器压扁（与 `.charts-panel--page` 取值一致，避免层叠顺序之争） */
 .chart-view {
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  min-height: auto;
+  overflow: visible;
   display: flex;
 }
 

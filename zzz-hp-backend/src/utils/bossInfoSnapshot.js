@@ -9,7 +9,12 @@ import {
   serializeFieldBuffSets,
   mirrorFieldBuffLegacyColumns,
 } from './environmentBuffSchema.js'
-import { ensureBossStaggerSchema, normalizeStaggerMultiplier, normalizeStaggerTime } from './bossSchema.js'
+import {
+  ensureBossResistanceSchema,
+  ensureBossStaggerSchema,
+  normalizeStaggerMultiplier,
+  normalizeStaggerTime,
+} from './bossSchema.js'
 import { preferExistingImage } from './localImagePath.js'
 
 export const BOSS_INFO_SNAPSHOT_KIND = 'zzz-hp-boss-info'
@@ -49,6 +54,7 @@ function normalizeRow(item) {
     bossImage: item.bossImage ?? item.boss_image ?? null,
     weakness: item.weakness ?? null,
     resistance: item.resistance ?? null,
+    resistanceHigh: item.resistanceHigh ?? item.resistance_high ?? null,
     crisisBaseHp: normalizeCrisisBaseHp(item),
     staggerMultiplier: normalizeStaggerMultiplier(
       item.staggerMultiplier ?? item.stagger_multiplier,
@@ -64,9 +70,10 @@ function normalizeRow(item) {
 
 export async function exportBossInfoSnapshot() {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const [rows] = await pool.query(`
-    SELECT id, boss_name, defense, level, boss_image, weakness, resistance,
+    SELECT id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high,
            crisis_base_hp, stagger_multiplier, stagger_time,
            field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
     FROM boss_info
@@ -86,6 +93,7 @@ export async function exportBossInfoSnapshot() {
       bossImage: row.boss_image ?? null,
       weakness: row.weakness ?? null,
       resistance: row.resistance ?? null,
+      resistanceHigh: row.resistance_high ?? null,
       crisisBaseHp: row.crisis_base_hp == null ? null : Number(row.crisis_base_hp),
       staggerMultiplier: normalizeStaggerMultiplier(row.stagger_multiplier),
       staggerTime: normalizeStaggerTime(row.stagger_time),
@@ -104,6 +112,7 @@ export async function exportBossInfoSnapshot() {
  */
 export async function importBossInfoSnapshot(payload, options = {}) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const replaceAll = Boolean(options.replace)
   const items = Array.isArray(payload?.rows)
@@ -142,6 +151,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         item.bossImage,
         item.weakness,
         item.resistance,
+        item.resistanceHigh,
         crisisBase,
         item.staggerMultiplier,
         item.staggerTime,
@@ -156,17 +166,17 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         if (item.id != null) {
           await conn.execute(
             `INSERT INTO boss_info (
-               id, boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+               id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
                field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [item.id, ...params],
           )
         } else {
           await conn.execute(
             `INSERT INTO boss_info (
-               boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+               boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
                field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             params,
           )
         }
@@ -194,7 +204,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         const mergedImage = preferExistingImage(item.bossImage, cur[0]?.boss_image)
         await conn.execute(
           `UPDATE boss_info
-           SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?,
+           SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?,
                crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?,
                field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
                field_buff_sets = ?
@@ -206,6 +216,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
             mergedImage,
             item.weakness,
             item.resistance,
+            item.resistanceHigh,
             crisisBase,
             item.staggerMultiplier,
             item.staggerTime,
@@ -224,17 +235,17 @@ export async function importBossInfoSnapshot(payload, options = {}) {
       if (item.id != null) {
         await conn.execute(
           `INSERT INTO boss_info (
-             id, boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+             id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
              field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [item.id, ...params],
         )
       } else {
         await conn.execute(
           `INSERT INTO boss_info (
-             boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+             boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
              field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           params,
         )
       }

@@ -1,15 +1,17 @@
 /**
  * 面板导出图片 · 截图期间临时展开样式（唯一来源）。
  *
- * 面板有两种滚动形态，见 dev-docs/panel-image-export.md §3.4：
- * - `.panel-fill--page`（往期详细 / Buff 总览与对比 / 分数血量表等）：面板自身
- *   `overflow: visible`、自然高度已含全部内容，只是被宿主 `.mode-content` 裁剪；
- * - `.panel-fill`（危局与防卫的血量折线图、危局的期数对比、单独怪物对比）：
- *   面板 `flex: 1` + `overflow: hidden`，内部 DualLineChartView 的 `.charts-scroll`
- *   是「盖在大画布上的可拖拽视口」，必须单独展开。
+ * 长内容面板自 2026-10 起统一为整页滚动形态（见 dev-docs/panel-image-export.md §3.4）：
+ * 面板根节点是 `panel-fill--page`（`height:auto; min-height:100%; overflow:visible`），
+ * 自然高度已含全部内容，只是被宿主 `.mode-content` 的 `overflow-y:auto` 裁剪。
  *
- * html-to-image 会克隆节点后独立渲染，因此宿主 `.mode-content` 的 overflow 不影响成像，
- * 真正要放开的是面板自身与 `.charts-scroll` 的高度/溢出约束。
+ * html-to-image 会克隆节点后独立渲染，因此宿主 `.mode-content` 的 overflow 不影响成像。
+ * 仍要放开的是两类约束：
+ * - 面板根节点的 `min-height:100%`（下面第一条规则）—— 内容不足一屏时，
+ *   留着它会让成图多出与视口等高的空白；高度/溢出本身已经是整页形态，规则里剩余部分为幂等兜底；
+ * - 折线图面板里 `.charts-scroll` 的横向拖拽视口 —— 它平时 `overflow-x:auto` 裁剪
+ *   超出视口的图表宽度（`DualLineChartView.vue` 的 `.charts-scroll--page`），
+ *   纵向已交给页面，横向仍必须单独展开才能拍全。
  */
 
 .zzz-capture-expand {

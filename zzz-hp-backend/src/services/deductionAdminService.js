@@ -20,6 +20,7 @@ import {
 import { upsertBossInfo } from './bossInfoService.js'
 import { applyBossFallbackToPeriodNodes } from '../utils/deductionLayerFallback.js'
 import { decodeDefenseBossId, isDefenseBossId } from '../utils/defenseId.js'
+import { ensureBossResistanceSchema } from '../utils/bossSchema.js'
 
 const DEFENSE_MINIONS_TTL_MS = 10 * 60 * 1000
 let defenseMinionsCache = null
@@ -72,6 +73,8 @@ async function ensureTable() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='临界推演节点（剧情/战斗）'
   `)
   await ensureDeductionStoryOptionsColumn(pool)
+  // 怪物清单会读 boss / boss_info.resistance_high
+  await ensureBossResistanceSchema()
 }
 
 // ── 下拉数据源（全局去重，不按期数挂钩） ──────────────────
@@ -80,7 +83,7 @@ async function ensureTable() {
 export async function listPickBosses() {
   await ensureTable()
   const [infoRows] = await pool.execute(
-    `SELECT boss_name, defense, level, boss_image, weakness, resistance
+    `SELECT boss_name, defense, level, boss_image, weakness, resistance, resistance_high
      FROM boss_info
      WHERE boss_name IS NOT NULL AND boss_name <> ''
      ORDER BY boss_name`,
@@ -92,6 +95,7 @@ export async function listPickBosses() {
             MAX(level) AS level,
             MAX(weakness) AS weakness,
             MAX(resistance) AS resistance,
+            MAX(resistance_high) AS resistance_high,
             MAX(boss_image) AS boss_image
      FROM boss
      WHERE boss_name IS NOT NULL AND boss_name <> ''
@@ -106,6 +110,7 @@ export async function listPickBosses() {
       level: Number(info.level) || 0,
       weakness: info.weakness ?? null,
       resistance: info.resistance ?? null,
+      resistance_high: info.resistance_high ?? null,
       boss_image: info.boss_image ?? null,
       hp: 0,
     })
@@ -119,6 +124,7 @@ export async function listPickBosses() {
       if (!existing.level) existing.level = Number(b.level) || 0
       if (!existing.weakness) existing.weakness = b.weakness
       if (!existing.resistance) existing.resistance = b.resistance
+      if (!existing.resistance_high) existing.resistance_high = b.resistance_high
       if (!existing.boss_image) existing.boss_image = b.boss_image
     } else {
       byName.set(b.boss_name, {
@@ -127,6 +133,7 @@ export async function listPickBosses() {
         level: Number(b.level) || 0,
         weakness: b.weakness ?? null,
         resistance: b.resistance ?? null,
+        resistance_high: b.resistance_high ?? null,
         boss_image: b.boss_image ?? null,
         hp: Number(b.hp) || 0,
       })
@@ -165,7 +172,7 @@ async function attachBossImagesToMinionMap(byName) {
 async function listShiyuMinionsFromLocal() {
   const byName = new Map()
   const [infoRows] = await pool.execute(
-    `SELECT boss_name, defense, level, boss_image, weakness, resistance
+    `SELECT boss_name, defense, level, boss_image, weakness, resistance, resistance_high
      FROM boss_info
      WHERE boss_name IS NOT NULL AND TRIM(boss_name) <> ''`,
   )
@@ -177,6 +184,7 @@ async function listShiyuMinionsFromLocal() {
       level: Number(info.level) || 0,
       weakness: info.weakness ?? null,
       resistance: info.resistance ?? null,
+      resistance_high: info.resistance_high ?? null,
       boss_image: info.boss_image ?? null,
     })
   }
@@ -187,6 +195,7 @@ async function listShiyuMinionsFromLocal() {
             MAX(level) AS level,
             MAX(weakness) AS weakness,
             MAX(resistance) AS resistance,
+            MAX(resistance_high) AS resistance_high,
             MAX(boss_image) AS boss_image
      FROM boss
      WHERE boss_name IS NOT NULL AND TRIM(boss_name) <> ''
@@ -200,6 +209,7 @@ async function listShiyuMinionsFromLocal() {
       if (!existing.level) existing.level = Number(b.level) || 0
       if (!existing.weakness) existing.weakness = b.weakness
       if (!existing.resistance) existing.resistance = b.resistance
+      if (!existing.resistance_high) existing.resistance_high = b.resistance_high
       if (!existing.boss_image) existing.boss_image = b.boss_image
     } else {
       byName.set(b.boss_name, {
@@ -209,6 +219,7 @@ async function listShiyuMinionsFromLocal() {
         level: Number(b.level) || 0,
         weakness: b.weakness ?? null,
         resistance: b.resistance ?? null,
+        resistance_high: b.resistance_high ?? null,
         boss_image: b.boss_image ?? null,
       })
     }
@@ -221,7 +232,7 @@ async function listShiyuMinionsFromLocal() {
 async function listDefenseMinionsFromDb() {
   await ensureTable()
   const [rows] = await pool.execute(
-    `SELECT id, boss_name, hp, defense, level, weakness, resistance, boss_image
+    `SELECT id, boss_name, hp, defense, level, weakness, resistance, resistance_high, boss_image
      FROM boss
      WHERE mode = 'defense'`,
   )
@@ -247,6 +258,7 @@ async function listDefenseMinionsFromDb() {
       if (!existing.level) existing.level = level
       if (!existing.weakness) existing.weakness = row.weakness
       if (!existing.resistance) existing.resistance = row.resistance
+      if (!existing.resistance_high) existing.resistance_high = row.resistance_high
       if (!existing.boss_image) existing.boss_image = row.boss_image
     } else {
       byName.set(name, {
@@ -256,6 +268,7 @@ async function listDefenseMinionsFromDb() {
         level,
         weakness: row.weakness ?? null,
         resistance: row.resistance ?? null,
+        resistance_high: row.resistance_high ?? null,
         boss_image: row.boss_image ?? null,
       })
     }
@@ -371,6 +384,8 @@ async function sanitizeLayersForSave(layers) {
             level: Number(m?.level) || 0,
             weakness: m?.weakness == null ? null : String(m.weakness),
             resistance: m?.resistance == null ? null : String(m.resistance),
+            resistance_high:
+              m?.resistance_high == null ? null : String(m.resistance_high),
             boss_image: m?.boss_image == null ? null : String(m.boss_image),
           }))
           .filter((m) => m.name)
@@ -398,6 +413,7 @@ async function syncDeductionMonstersToTables(version, phase, layers) {
           level: monster.level || 1,
           weakness: monster.weakness,
           resistance: monster.resistance,
+          resistance_high: monster.resistance_high,
           boss_image: monster.boss_image,
         })
         const [existing] = await pool.execute(
@@ -416,20 +432,21 @@ async function syncDeductionMonstersToTables(version, phase, layers) {
           room,
           monster.weakness,
           monster.resistance,
+          monster.resistance_high,
           monster.boss_image,
         ]
         if (existing.length) {
           await pool.execute(
             `UPDATE boss
              SET version = ?, phase = ?, boss_name = ?, hp = ?, defense = ?, level = ?,
-                 room = ?, weakness = ?, resistance = ?, boss_image = ?, mode = 'deduction'
+                 room = ?, weakness = ?, resistance = ?, resistance_high = ?, boss_image = ?, mode = 'deduction'
              WHERE id = ?`,
             [...bossValues, existing[0].id],
           )
         } else {
           await pool.execute(
-            `INSERT INTO boss (version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'deduction')`,
+            `INSERT INTO boss (version, phase, boss_name, hp, defense, level, room, weakness, resistance, resistance_high, boss_image, mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'deduction')`,
             bossValues,
           )
         }
@@ -620,7 +637,7 @@ export async function listDeductionNodes(version) {
   }))
 
   const [bossStatRows] = await pool.execute(
-    `SELECT room, boss_name, hp, defense, level, weakness, resistance, boss_image
+    `SELECT room, boss_name, hp, defense, level, weakness, resistance, resistance_high, boss_image
      FROM boss
      WHERE mode = 'deduction' AND version = ?`,
     [versionValue],
@@ -783,6 +800,7 @@ export async function createDeductionBossInfo(payload) {
     level: Number(payload.level) || 1,
     weakness: payload.weakness ?? null,
     resistance: payload.resistance ?? null,
+    resistance_high: payload.resistance_high ?? null,
     boss_image: payload.boss_image ?? null,
   })
 }
