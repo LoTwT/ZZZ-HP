@@ -24,7 +24,7 @@
     "test:formula-align": "npx vite-node scripts/test-formula-align-compare.mjs",
     "test:sharpen-crit": "npx vite-node scripts/test-sharpen-crit.mjs",
     "test:skill-talent-levels": "npx vite-node scripts/test-skill-talent-levels.mjs",
-    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:buff-conversions test:env-buff-cache-key test:hit-eval-cache test:mult-factor-percent test:mult-factor-zone test:formula-align test:sharpen-crit test:defense-zone-clamp test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge test:boss-resistance-level test:monster-detail test:monster-compare",
+    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:buff-conversions test:env-buff-cache-key test:hit-eval-cache test:mult-factor-percent test:mult-factor-zone test:formula-align test:sharpen-crit test:defense-zone-clamp test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge test:boss-resistance-level test:monster-detail test:monster-compare test:defense-monster-detail",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
@@ -57,7 +57,8 @@
     "test:scheme-pack-merge": "npx vite-node scripts/test-scheme-pack-merge.mjs",
     "test:boss-resistance-level": "npx vite-node scripts/test-boss-resistance-level.mjs",
     "test:monster-detail": "npx vite-node scripts/test-monster-detail.mjs",
-    "test:monster-compare": "npx vite-node scripts/test-monster-compare.mjs"
+    "test:monster-compare": "npx vite-node scripts/test-monster-compare.mjs",
+    "test:defense-monster-detail": "npx vite-node scripts/test-defense-monster-detail.mjs"
   },
   "dependencies": {
     "html-to-image": "^1.11.13",

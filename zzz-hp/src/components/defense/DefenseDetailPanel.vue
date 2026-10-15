@@ -24,6 +24,7 @@ import {
 } from '@/utils/panelUrlState'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
+import DefenseMonsterDetailModal from '@/components/defense/DefenseMonsterDetailModal.vue'
 import { hasElementIcons } from '@/utils/elementIcons'
 
 const props = defineProps<{
@@ -200,6 +201,51 @@ const roomHpComparison = computed(() => {
 function getEnemyHpComparison(enemy: DefenseEnemy) {
   return findDefenseEnemyHpComparison(seasons.value, currentIndex.value, enemy)
 }
+
+/** 怪物详情弹窗：仅非管理端可点开，且只接线怪物级卡片（房间级卡片不参与） */
+const monsterDetailOpen = ref(false)
+const monsterDetailEnemy = ref<DefenseEnemy | null>(null)
+/** 打开时记录的定位串（房间 + 波次），与当前期数拼成弹窗副标题 */
+const monsterDetailSlotLabel = ref('')
+
+function canOpenMonsterDetail(enemy: DefenseEnemy) {
+  return !props.adminMode && Boolean(enemy.name)
+}
+
+function openMonsterDetail(enemy: DefenseEnemy, roomLabel: string, waveLabel: string) {
+  if (!canOpenMonsterDetail(enemy)) return
+  monsterDetailEnemy.value = enemy
+  monsterDetailSlotLabel.value = [roomLabel, waveLabel].filter(Boolean).join(' · ')
+  monsterDetailOpen.value = true
+}
+
+function closeMonsterDetail() {
+  monsterDetailOpen.value = false
+  monsterDetailEnemy.value = null
+}
+
+function onMonsterDetailKeydown(
+  event: KeyboardEvent,
+  enemy: DefenseEnemy,
+  roomLabel: string,
+  waveLabel: string,
+) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  openMonsterDetail(enemy, roomLabel, waveLabel)
+}
+
+/** 与怪物卡片同一口径的往期血量对比，由弹窗用于血量行的膨胀与增量 */
+const monsterDetailHpComparison = computed(() =>
+  monsterDetailEnemy.value ? getEnemyHpComparison(monsterDetailEnemy.value) : null,
+)
+
+const monsterDetailPhaseLabel = computed(() => {
+  const season = currentSeason.value
+  const slot = monsterDetailSlotLabel.value
+  if (!season) return ''
+  return `${season.version} ${season.phase}${slot ? ` · ${slot}` : ''}`
+})
 
 function prevRoomHp() {
   if (roomHpIndex.value > 0) roomHpIndex.value--
@@ -853,7 +899,13 @@ function formatEnemyResistance(value?: string) {
                       :class="{
                         'enemy-chip--boss': enemy.isBoss,
                         'enemy-chip--admin': adminMode,
+                        'enemy-chip--clickable': canOpenMonsterDetail(enemy),
                       }"
+                      :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+                      :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.name} 详情` : undefined"
+                      :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+                      @click="openMonsterDetail(enemy, room.label, wave.label)"
+                      @keydown="onMonsterDetailKeydown($event, enemy, room.label, wave.label)"
                     >
                       <div v-if="adminMode" class="enemy-admin-bar">
                         <button
@@ -950,6 +1002,15 @@ function formatEnemyResistance(value?: string) {
       @click="onNavZoneClick('next')"
       @keydown.enter="onNavZoneClick('next')"
       @keydown.space.prevent="onNavZoneClick('next')"
+    />
+
+    <DefenseMonsterDetailModal
+      :open="monsterDetailOpen"
+      :enemy="monsterDetailEnemy"
+      :variant="defenseVariant"
+      :phase-label="monsterDetailPhaseLabel"
+      :hp-comparison="monsterDetailHpComparison"
+      @close="closeMonsterDetail"
     />
   </div>
 </template>
@@ -1608,6 +1669,15 @@ function formatEnemyResistance(value?: string) {
 .enemy-chip--boss {
   border-color: rgba(232, 168, 56, 0.45);
   background: color-mix(in srgb, #e8a838 8%, var(--color-background-soft));
+}
+
+.enemy-chip--clickable {
+  cursor: pointer;
+}
+
+.enemy-chip--clickable:focus-visible {
+  outline: 2px solid var(--color-border);
+  outline-offset: 2px;
 }
 
 .enemy-chip-image {

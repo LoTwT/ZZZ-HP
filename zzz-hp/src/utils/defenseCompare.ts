@@ -1,4 +1,5 @@
 import type { BossOption, ChartBossPreview, ChartRoomBuffPreview, HpChartPoint } from '@/api/crisisAssault'
+import type { MonsterDetailRecord } from '@/components/history/MonsterDetailStats.vue'
 import type { DefenseEnemy, DefenseRoom, DefenseSeason } from '@/types/defense'
 import type { BuffInfo, EnemySlot, PhaseData } from '@/types/history'
 import { decodeDefenseBossId, isDefenseBossId, type DefenseMonsterCategory } from '@/utils/defenseId'
@@ -6,8 +7,9 @@ import {
   buildDefenseRoomHpOptions,
   getDefenseHpOptionKey,
   getLastDefenseFrontier,
+  type HpComparison,
 } from '@/utils/defenseHp'
-import { parseHpString } from '@/utils/gameData'
+import { formatHpDelta, parseHpString } from '@/utils/gameData'
 
 const EMPTY_ENEMY: EnemySlot = {
   label: '',
@@ -206,6 +208,39 @@ export function buildDefenseBossChart(
   }
 
   return points
+}
+
+/** boss_info 基础库为怪物详情行补的字段；`BossInfoRecord` 结构兼容，可直接传入 */
+export interface DefenseMonsterDetailBossInfo {
+  level?: number | null
+  stagger_multiplier?: number | null
+  stagger_time?: number | null
+}
+
+/**
+ * 防卫战怪物详情数据行组装（与危局弹窗同形状，共用 `MonsterDetailStats`）：
+ * 血量 / 防御 / 失衡时间 / 弱点 / 抗性取自 `DefenseEnemy`，血量对比由面板按卡片同一口径算好传入；
+ * 等级与失衡易伤 `DefenseEnemy` 不带，只能来自 boss_info 基础库（查无记录时为 null ⇒ 对应行不渲染）；
+ * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
+ */
+export function buildDefenseMonsterDetailRecord(
+  enemy: DefenseEnemy,
+  hpComparison: HpComparison | null,
+  bossInfo: DefenseMonsterDetailBossInfo | null,
+): MonsterDetailRecord {
+  return {
+    boss_name: enemy.name || null,
+    hp: enemy.hp || null,
+    hp_expansion: hpComparison?.expansion ?? null,
+    hp_delta_label: hpComparison ? formatHpDelta(hpComparison.diff) : null,
+    level: bossInfo?.level ?? null,
+    defense: enemy.defense ?? null,
+    stagger_time: enemy.staggerTime ?? bossInfo?.stagger_time ?? null,
+    stagger_multiplier: bossInfo?.stagger_multiplier ?? null,
+    weakness: enemy.weakness ?? null,
+    resistance: enemy.resistance ?? null,
+    resistance_high: enemy.resistanceHigh ?? null,
+  }
 }
 
 export function defenseSeasonsToPhaseData(seasons: DefenseSeason[]): PhaseData[] {
