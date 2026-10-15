@@ -275,10 +275,10 @@ function onImageKeydown(event: KeyboardEvent) {
   gap: clamp(0.75rem, 2vw, 1.25rem);
 }
 
-/* 布局：图片列固定占 23%，数据列吃剩余空间；与表格并排时也是 23%（同一规则） */
+/* 布局：图片列固定占 21%，数据列吃剩余空间；与表格并排时也是 21%（同一规则） */
 .monster-detail-media {
   flex-shrink: 0;
-  width: 23%;
+  width: 21%;
   min-width: 150px;
   display: flex;
   flex-direction: column;

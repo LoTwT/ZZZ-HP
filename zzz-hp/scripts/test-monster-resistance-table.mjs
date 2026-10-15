@@ -367,8 +367,8 @@ check(
     /\.detail-version-multiplier \{[\s\S]*?color: #e85d4c;/.test(stats),
 )
 check(
-  '图片列占 23%、数据列吃剩余空间',
-  /\.monster-detail-media \{[\s\S]*?flex-shrink: 0;[\s\S]*?width: 23%;/.test(stats) &&
+  '图片列占 21%、数据列吃剩余空间',
+  /\.monster-detail-media \{[\s\S]*?flex-shrink: 0;[\s\S]*?width: 21%;/.test(stats) &&
     /\.monster-detail-data \{[\s\S]*?flex: 1;/.test(stats),
 )
 check(
