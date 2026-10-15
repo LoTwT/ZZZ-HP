@@ -25,7 +25,6 @@ import {
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import DefenseMonsterDetailModal from '@/components/defense/DefenseMonsterDetailModal.vue'
-import { hasElementIcons } from '@/utils/elementIcons'
 
 const props = defineProps<{
   embedded?: boolean
@@ -860,26 +859,24 @@ function formatEnemyResistance(value?: string) {
                       + 添加波次
                     </button>
                   </div>
-                  <div
-                    v-if="
-                      battleRoom.weakness.length ||
-                      filterMeaningfulResistanceTraits(battleRoom.resistance ?? []).length
-                    "
-                    class="trait-row"
-                  >
-                    <p v-if="hasElementIcons(battleRoom.weakness)" class="trait-line">
-                      <ElementTraitIcons :value="battleRoom.weakness" label="弱点" variant="weak" show-percent />
+                  <div class="trait-row">
+                    <p class="trait-line">
+                      <ElementTraitIcons
+                        :value="battleRoom.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p
-                      v-if="hasElementIcons(filterMeaningfulResistanceTraits(battleRoom.resistance ?? []))"
-                      class="trait-line"
-                    >
+                    <p class="trait-line">
                       <ElementTraitIcons
                         :value="filterMeaningfulResistanceTraits(battleRoom.resistance ?? [])"
                         :high-value="filterMeaningfulResistanceTraits(battleRoom.resistanceHigh ?? [])"
                         label="抗性"
                         variant="resist"
                         show-percent
+                        empty-text="无"
                       />
                     </p>
                   </div>
@@ -961,16 +958,23 @@ function formatEnemyResistance(value?: string) {
                         <p v-if="enemy.staggerTime != null" class="enemy-chip-trait">
                           <span class="trait-label">失衡时间</span>{{ enemy.staggerTime }} 秒
                         </p>
-                        <p v-if="hasElementIcons(enemy.weakness)" class="enemy-chip-trait">
-                          <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
+                        <p class="enemy-chip-trait">
+                          <ElementTraitIcons
+                            :value="enemy.weakness"
+                            label="弱点"
+                            variant="weak"
+                            show-percent
+                            empty-text="无"
+                          />
                         </p>
-                        <p v-if="hasElementIcons(formatEnemyResistance(enemy.resistance))" class="enemy-chip-trait">
+                        <p class="enemy-chip-trait">
                           <ElementTraitIcons
                             :value="formatEnemyResistance(enemy.resistance)"
                             :high-value="enemy.resistanceHigh"
                             label="抗性"
                             variant="resist"
                             show-percent
+                            empty-text="无"
                           />
                         </p>
                       </div>

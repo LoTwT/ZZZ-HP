@@ -1547,21 +1547,21 @@ onMounted(() => {
                           </span>
                           <span class="dd-stat">防御 {{ formatHp(monster.defense) }}</span>
                           <ElementTraitIcons
-                            v-if="monster.weakness"
                             class="dd-stat"
                             :value="monster.weakness"
                             label="弱"
                             variant="weak"
                             show-percent
+                            empty-text="无"
                           />
                           <ElementTraitIcons
-                            v-if="monster.resistance"
                             class="dd-stat"
                             :value="monster.resistance"
                             :high-value="monster.resistance_high"
                             label="抗"
                             variant="resist"
                             show-percent
+                            empty-text="无"
                           />
                           <span
                             v-if="monster.stagger_time != null"

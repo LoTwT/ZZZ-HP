@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
-import { hasElementIcons } from '@/utils/elementIcons'
 import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
 import { formatHp } from '@/utils/gameData'
 
@@ -31,7 +30,9 @@ export interface MonsterDetailRecord {
   stagger_time?: number | null
   /** 失衡易伤乘数（1.5 = 150%）；缺省回退 DEFAULT_ENEMY_STAGGER_MULTIPLIER */
   stagger_multiplier?: number | null
+  /** 弱点行常驻，无可识别属性时显示占位「无」 */
   weakness?: string | null
+  /** 抗性行常驻，无可识别属性时显示占位「无」 */
   resistance?: string | null
   resistance_high?: string | null
 }
@@ -133,13 +134,13 @@ function onImageKeydown(event: KeyboardEvent) {
         <span class="detail-label">失衡易伤：</span>
         <span class="detail-value">{{ staggerMultiplierLabel }}</span>
       </p>
-      <p v-if="hasElementIcons(record.weakness)" class="detail-row">
+      <p class="detail-row">
         <span class="detail-label">弱点：</span>
         <span class="detail-value">
-          <ElementTraitIcons :value="record.weakness" variant="weak" show-percent />
+          <ElementTraitIcons :value="record.weakness" variant="weak" show-percent empty-text="无" />
         </span>
       </p>
-      <p v-if="hasElementIcons(record.resistance)" class="detail-row">
+      <p class="detail-row">
         <span class="detail-label">抗性：</span>
         <span class="detail-value">
           <ElementTraitIcons
@@ -147,6 +148,7 @@ function onImageKeydown(event: KeyboardEvent) {
             :high-value="record.resistance_high"
             variant="resist"
             show-percent
+            empty-text="无"
           />
         </span>
       </p>

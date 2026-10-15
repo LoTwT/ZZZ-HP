@@ -24,7 +24,6 @@ import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import MonsterDetailModal from '@/components/history/MonsterDetailModal.vue'
 import PhasePickerModal from '@/components/history/PhasePickerModal.vue'
-import { hasElementIcons } from '@/utils/elementIcons'
 import {
   buildPhaseLabel,
   findPreviousFieldBuff,
@@ -843,9 +842,8 @@ function closePhasePicker() {
                   <div
                     v-if="
                       enemy.defense !== undefined ||
-                      hasElementIcons(enemy.weakness) ||
-                      hasElementIcons(enemy.resistance) ||
-                      enemy.staggerTime != null
+                      enemy.staggerTime != null ||
+                      !enemy.isEmpty
                     "
                     class="enemy-traits"
                   >
@@ -853,16 +851,23 @@ function closePhasePicker() {
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
-                    <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
+                    <p class="enemy-weakness">
+                      <ElementTraitIcons
+                        :value="enemy.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
+                    <p class="enemy-resistance">
                       <ElementTraitIcons
                         :value="enemy.resistance"
                         :high-value="enemy.resistanceHigh"
                         label="抗性"
                         variant="resist"
                         show-percent
+                        empty-text="无"
                       />
                     </p>
                   </div>
@@ -993,9 +998,8 @@ function closePhasePicker() {
                   <div
                     v-if="
                       enemy.defense !== undefined ||
-                      hasElementIcons(enemy.weakness) ||
-                      hasElementIcons(enemy.resistance) ||
-                      enemy.staggerTime != null
+                      enemy.staggerTime != null ||
+                      !enemy.isEmpty
                     "
                     class="enemy-traits"
                   >
@@ -1003,16 +1007,23 @@ function closePhasePicker() {
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
-                    <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
+                    <p class="enemy-weakness">
+                      <ElementTraitIcons
+                        :value="enemy.weakness"
+                        label="弱点"
+                        variant="weak"
+                        show-percent
+                        empty-text="无"
+                      />
                     </p>
-                    <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
+                    <p class="enemy-resistance">
                       <ElementTraitIcons
                         :value="enemy.resistance"
                         :high-value="enemy.resistanceHigh"
                         label="抗性"
                         variant="resist"
                         show-percent
+                        empty-text="无"
                       />
                     </p>
                   </div>

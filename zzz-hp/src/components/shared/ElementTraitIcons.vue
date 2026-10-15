@@ -14,6 +14,8 @@ const props = withDefaults(
     highValue?: string | string[] | null
     /** 是否在图标旁显示百分比（如 20%冰）；缺省时保持旧渲染不变 */
     showPercent?: boolean
+    /** 没有可识别属性时显示的占位文案（如「无」）；缺省不渲染，保持旧调用方行为 */
+    emptyText?: string | null
   }>(),
   {
     value: '',
@@ -22,6 +24,7 @@ const props = withDefaults(
     showName: true,
     highValue: null,
     showPercent: false,
+    emptyText: null,
   },
 )
 
@@ -48,6 +51,14 @@ const showPercentValue = computed(() => props.showPercent && items.value.length 
       </span>
       <span v-if="showName" class="trait-icons-name">{{ elem.name }}</span>
     </span>
+  </span>
+  <span
+    v-else-if="emptyText != null"
+    class="trait-icons trait-icons--empty"
+    :class="`trait-icons--${variant}`"
+  >
+    <span v-if="label" class="trait-icons-label">{{ label }}</span>
+    <span class="trait-icons-empty">{{ emptyText }}</span>
   </span>
 </template>
 
@@ -91,5 +102,12 @@ const showPercentValue = computed(() => props.showPercent && items.value.length 
   opacity: 0.78;
   color: inherit;
   font-variant-numeric: tabular-nums;
+}
+
+/* 没有可识别属性时的占位（如「无」）：与真实属性拉开权重 */
+.trait-icons-empty {
+  font-size: 0.92em;
+  opacity: 0.55;
+  color: inherit;
 }
 </style>
