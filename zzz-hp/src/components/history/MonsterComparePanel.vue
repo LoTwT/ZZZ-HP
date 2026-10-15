@@ -95,7 +95,7 @@ const bossSelectLabel = computed(() =>
       ? `选择${categoryLabel.value}`
       : crisisRoomType.value === 'hard'
         ? '选择绝境 Boss'
-        : '选择正常 Boss',
+        : '选择 boss',
 )
 
 const pickerItems = computed(() => joinBossOptionsWithInfo(bossList.value, bossInfoRecords.value))

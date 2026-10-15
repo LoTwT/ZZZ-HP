@@ -48,7 +48,7 @@ function pick(item: BossPickerItem) {
 <template>
   <Teleport to="body">
     <div v-if="open" class="boss-picker-overlay" role="presentation" @click.self="emit('close')">
-      <div class="boss-picker-modal" role="dialog" aria-modal="true" :aria-label="title">
+      <div class="history-boss-picker" role="dialog" aria-modal="true" :aria-label="title">
         <header class="boss-picker-header">
           <div>
             <h3>{{ title }}</h3>
@@ -84,11 +84,11 @@ function pick(item: BossPickerItem) {
               <span v-if="item.defense != null" class="boss-meta">
                 防御 {{ item.defense }} · 失衡 {{ item.staggerMultiplier ?? 1.5 }}
               </span>
-              <span v-if="item.weakness" class="boss-trait weak">
-                弱 {{ formatTraitTextWithPercent(item.weakness) }}
+              <span class="boss-trait weak">
+                弱 {{ formatTraitTextWithPercent(item.weakness) || '无' }}
               </span>
-              <span v-if="item.resistance" class="boss-trait res">
-                抗 {{ formatTraitTextWithPercent(item.resistance, item.resistanceHigh) }}
+              <span class="boss-trait res">
+                抗 {{ formatTraitTextWithPercent(item.resistance, item.resistanceHigh) || '无' }}
               </span>
             </button>
           </div>
@@ -109,14 +109,18 @@ function pick(item: BossPickerItem) {
   padding: 1rem;
 }
 
-.boss-picker-modal {
+/* 根类名不能改回 .boss-picker-modal：calculatorLight.css 里有一批挂在
+   `[data-theme='light'] .boss-picker-modal …` 下的 !important 规则（计算器那个
+   同名弹窗的白天配色），一旦同名就会在白天主题下接管本弹窗（且只在访问过
+   计算器页面后才生效）。差异化的根类名把这条链切断。 */
+.history-boss-picker {
   width: min(720px, 100%);
   max-height: min(88vh, 820px);
   display: flex;
   flex-direction: column;
-  border: 1px solid #3a4455;
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  background: #0f1217;
+  background: var(--color-background);
   box-shadow: 0 20px 56px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -127,25 +131,25 @@ function pick(item: BossPickerItem) {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem 1rem 0.75rem;
-  border-bottom: 1px solid #2d323a;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .boss-picker-header h3 {
   margin: 0 0 0.25rem;
   font-size: 1rem;
-  color: #e8d4a8;
+  color: var(--color-heading);
 }
 
 .boss-picker-header p {
   margin: 0;
   font-size: 0.78rem;
-  color: #9aa3b2;
+  color: var(--color-text);
 }
 
 .close-btn {
   border: none;
   background: transparent;
-  color: #c5cdd8;
+  color: var(--color-heading);
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
@@ -170,9 +174,9 @@ function pick(item: BossPickerItem) {
   width: 100%;
   padding: 0.5rem 0.65rem;
   border-radius: 8px;
-  border: 1px solid #2d323a;
-  background: #141820;
-  color: #e8eaed;
+  border: 1px solid var(--color-border);
+  background: var(--color-background-soft);
+  color: var(--color-text);
 }
 
 .boss-grid {
@@ -187,9 +191,9 @@ function pick(item: BossPickerItem) {
   align-items: center;
   gap: 0.25rem;
   padding: 0.65rem 0.5rem;
-  border: 1px solid #2d323a;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #141820;
+  background: var(--color-background-soft);
   cursor: pointer;
   text-align: center;
   transition:
@@ -198,22 +202,23 @@ function pick(item: BossPickerItem) {
 }
 
 .boss-card:hover {
-  border-color: #c9a55c;
-  background: #181d26;
+  border-color: var(--color-border-hover);
+  background: var(--color-background-mute);
 }
 
+/* 选中态沿用站点金色强调：与主题底色混出一层薄底，浅色/深色主题都不刺眼 */
 .boss-card--selected {
   border-color: #c9a55c;
-  background: rgba(201, 165, 92, 0.12);
+  background: color-mix(in srgb, #c9a55c 14%, var(--color-background-soft));
 }
 
 .boss-thumb {
   width: 52px;
   height: 52px;
   border-radius: 8px;
-  border: 1px solid #343a44;
+  border: 1px solid var(--color-border);
   object-fit: cover;
-  background: #1f2736;
+  background: var(--color-background-mute);
 }
 
 .boss-thumb--placeholder {
@@ -221,19 +226,20 @@ function pick(item: BossPickerItem) {
   align-items: center;
   justify-content: center;
   font-size: 0.7rem;
-  color: #6f7787;
+  color: var(--color-text);
+  opacity: 0.6;
 }
 
 .boss-name {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #e8eaed;
+  color: var(--color-heading);
   line-height: 1.25;
 }
 
 .boss-meta {
   font-size: 0.72rem;
-  color: #9aa3b2;
+  color: var(--color-text);
 }
 
 .boss-trait {
@@ -246,19 +252,20 @@ function pick(item: BossPickerItem) {
   white-space: nowrap;
 }
 
+/* 弱/抗的语义色：与主题文字色混色，浅色底上偏深、深色底上偏亮，两种主题都留得住对比度 */
 .boss-trait.weak {
-  color: #8fd4ff;
-  background: rgba(143, 212, 255, 0.1);
+  color: color-mix(in srgb, #2f8fd8 60%, var(--color-heading));
+  background: color-mix(in srgb, #2f8fd8 14%, transparent);
 }
 
 .boss-trait.res {
-  color: #ffb4a2;
-  background: rgba(255, 180, 162, 0.1);
+  color: color-mix(in srgb, #d9663f 60%, var(--color-heading));
+  background: color-mix(in srgb, #d9663f 14%, transparent);
 }
 
 .status-text {
   margin: 0;
   font-size: 0.82rem;
-  color: #9aa3b2;
+  color: var(--color-text);
 }
 </style>
