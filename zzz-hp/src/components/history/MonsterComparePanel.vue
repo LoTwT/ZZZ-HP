@@ -16,7 +16,9 @@ import {
 } from '@/api/deduction'
 import { fetchBossInfoList, lookupBossInfo, type BossInfoRecord } from '@/api/bossInfo'
 import BossPickerModal from '@/components/history/BossPickerModal.vue'
-import MonsterDetailStats from '@/components/history/MonsterDetailStats.vue'
+import MonsterDetailStats, {
+  type MonsterDetailRecord,
+} from '@/components/history/MonsterDetailStats.vue'
 import { usePhaseDetailModal } from '@/composables/usePhaseDetailModal'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type ModeKey } from '@/types/history'
@@ -70,9 +72,19 @@ const panelDesc = computed(() => {
     : '选择正常模式 Boss（房间 1/2/3）后，查看其在各期出现时的血量、危局血量系数与相对变化'
 })
 
-const selectedBossInfo = computed(() =>
-  bossList.value.find((boss) => boss.boss_name === selectedBoss.value),
+const selectedBossItem = computed(() =>
+  pickerItems.value.find((item) => item.bossName === selectedBoss.value) ?? null,
 )
+
+const selectedBossImageUrl = computed(() => resolveAssetUrl(selectedBossItem.value?.bossImage))
+
+/** 名称已在数据块上方单独展示，数据行不再重复 boss_name */
+const detailRecord = computed<MonsterDetailRecord | null>(() =>
+  selectedBossDetail.value ? { ...selectedBossDetail.value, boss_name: null } : null,
+)
+
+/** 换怪入口改为点击图片后必须显式提示；空态（未选择 / 无图）同样展示，避免无从下手 */
+const monsterImageChangeHint = '点击怪物图片可更换怪物'
 
 const categoryLabel = computed(() => (selectedCategory.value === 'elite' ? '精英' : 'Boss'))
 
@@ -235,40 +247,29 @@ watch(selectedBoss, () => {
     <p v-else-if="listError" class="status-text error">{{ listError }}</p>
 
     <template v-else>
-      <div class="selector-toolbar" :class="{ 'selector-toolbar--defense': isDefenseMode }">
-        <div v-if="isDefenseMode" class="selector-field">
+      <div v-if="isDefenseMode" class="selector-toolbar selector-toolbar--defense">
+        <div class="selector-field">
           <label class="selector-label" for="category-select">怪物类型</label>
           <select id="category-select" v-model="selectedCategory" class="boss-select">
             <option value="elite">精英</option>
             <option value="boss">Boss</option>
           </select>
         </div>
-
-        <div class="selector-field">
-          <span class="selector-label">{{ bossSelectLabel }}</span>
-          <div class="selector-row">
-            <img
-              v-if="selectedBossInfo?.boss_image"
-              :src="resolveAssetUrl(selectedBossInfo.boss_image)"
-              :alt="selectedBoss"
-              class="boss-thumb"
-            />
-            <span class="boss-selected-name" :class="{ 'boss-selected-name--empty': !selectedBoss }">
-              {{ selectedBoss || '未选择' }}
-            </span>
-            <button
-              type="button"
-              class="boss-picker-btn"
-              :disabled="!pickerItems.length"
-              @click="pickerModalOpen = true"
-            >
-              {{ selectedBoss ? '更换' : '选择' }}
-            </button>
-          </div>
-        </div>
       </div>
 
-      <MonsterDetailStats class="monster-compare-stats" :record="selectedBossDetail" />
+      <p class="boss-selected-name" :class="{ 'boss-selected-name--empty': !selectedBoss }">
+        {{ selectedBoss || '未选择' }}
+      </p>
+
+      <MonsterDetailStats
+        class="monster-compare-stats"
+        :record="detailRecord"
+        :image-url="selectedBossImageUrl"
+        :image-alt="selectedBoss"
+        image-clickable
+        :image-hint="monsterImageChangeHint"
+        @image-click="pickerModalOpen = true"
+      />
 
       <p v-if="chartLoading" class="status-text">图表加载中...</p>
       <p v-else-if="chartError" class="status-text error">{{ chartError }}</p>
@@ -383,21 +384,6 @@ watch(selectedBoss, () => {
   color: var(--color-heading);
 }
 
-.selector-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.boss-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background-soft);
-}
-
 .boss-select {
   min-width: 240px;
   padding: 0.55rem 0.75rem;
@@ -411,36 +397,19 @@ watch(selectedBoss, () => {
 .boss-selected-name {
   min-width: 0;
   max-width: 320px;
+  margin: 0 auto 0.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--color-heading);
+  text-align: center;
 }
 
 .boss-selected-name--empty {
   font-weight: 500;
   opacity: 0.6;
-}
-
-.boss-picker-btn {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background-soft);
-  color: var(--color-heading);
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.boss-picker-btn:hover:not(:disabled) {
-  border-color: var(--color-heading);
-}
-
-.boss-picker-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .monster-compare-stats {
@@ -503,11 +472,6 @@ watch(selectedBoss, () => {
     width: 100%;
   }
 
-  .selector-row {
-    width: 100%;
-    justify-content: center;
-  }
-
   .boss-select {
     min-width: 0;
     flex: 1;
@@ -516,7 +480,6 @@ watch(selectedBoss, () => {
 
   .boss-selected-name {
     max-width: none;
-    flex: 1;
   }
 
   .monster-compare-stats {

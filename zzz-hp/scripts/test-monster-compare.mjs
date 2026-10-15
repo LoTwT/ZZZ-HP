@@ -101,7 +101,13 @@ const panel = readFileSync(
 check('选择器仍走各模式 fetch*BossList（模式过滤不动）', panel.includes('fetchDeductionBossList()') && panel.includes('fetchDefenseBossList(defenseVariant.value, selectedCategory.value)') && panel.includes('fetchBossList(crisisRoomType.value)'))
 check('联表结果喂给选择弹窗', panel.includes(':items="pickerItems"'))
 check('选中后用 lookupBossInfo 拉详情并有独立 epoch 守卫', panel.includes('lookupBossInfo(bossName)') && panel.includes('bossDetailLoadEpoch.isCurrent(token)'))
-check('详情数据块挂载在图表上方并接 record', panel.includes('<MonsterDetailStats class="monster-compare-stats" :record="selectedBossDetail" />'))
+check(
+  '详情数据块挂载在图表上方并接 record + 图片更换入口',
+  panel.includes('class="monster-compare-stats"') &&
+    panel.includes(':record="detailRecord"') &&
+    panel.includes('image-clickable') &&
+    panel.includes('@image-click="pickerModalOpen = true"'),
+)
 check('图表 v-model:hp-mode 仍耦合 crisisRoomType', panel.includes('v-model:hp-mode="crisisRoomType"'))
 check('防卫战怪物类型 select 保留', panel.includes('v-model="selectedCategory"'))
 check('原有 epoch 守卫保留', panel.includes('bossListLoadEpoch.isCurrent(token)') && panel.includes('bossChartLoadEpoch.isCurrent(token)'))

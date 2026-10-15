@@ -3,12 +3,12 @@ import { computed, ref, watch } from 'vue'
 import IkModalShell from '@/components/common/IkModalShell.vue'
 import DualLineChartView from '@/components/history/DualLineChartView.vue'
 import RoomBuffTransitionPanel from '@/components/history/RoomBuffTransitionPanel.vue'
-import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
+import MonsterDetailStats, {
+  type MonsterDetailRecord,
+} from '@/components/history/MonsterDetailStats.vue'
 import { fetchBossChart, type CrisisBossRoomType, type CrisisHpChartMode, type HpChartPoint } from '@/api/crisisAssault'
 import type { EnemySlot, ModeKey } from '@/types/history'
-import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
-import { formatHp, formatHpDelta } from '@/utils/gameData'
-import { hasElementIcons } from '@/utils/elementIcons'
+import { formatHpDelta } from '@/utils/gameData'
 import {
   isFieldBuffChanged,
   type BossHpCoeffComparison,
@@ -46,11 +46,26 @@ const hpMode = ref<CrisisHpChartMode>('normal')
 
 const chartRoomType = computed<CrisisBossRoomType>(() => (props.enemy?.isHardRoom ? 'hard' : 'normal'))
 
-/** 失衡易伤展示：150%（1.5）；未配置时回退默认 1.5 */
-const staggerMultiplier = computed(() => props.enemy?.staggerMultiplier ?? DEFAULT_ENEMY_STAGGER_MULTIPLIER)
-const staggerMultiplierLabel = computed(
-  () => `${Math.round(staggerMultiplier.value * 100)}%（${staggerMultiplier.value}）`,
-)
+/** 详情数据块按共享数据行形状组装（与单独怪物对比、后续防卫战详情同构） */
+const detailRecord = computed<MonsterDetailRecord | null>(() => {
+  const enemy = props.enemy
+  if (!enemy) return null
+  return {
+    boss_name: enemy.bossName ?? null,
+    hp: enemy.hp || null,
+    hp_expansion: props.hpComparison?.expansion ?? null,
+    hp_delta_label: props.hpComparison ? formatHpDelta(props.hpComparison.diff) : null,
+    crisis_base_hp: enemy.crisisBaseHp ?? null,
+    hp_coeff_label: enemy.hpCoeffLabel ?? null,
+    hp_coeff_delta_label: props.hpCoeffComparison?.deltaLabel ?? null,
+    defense: enemy.defense ?? null,
+    stagger_time: enemy.staggerTime ?? null,
+    stagger_multiplier: enemy.staggerMultiplier ?? null,
+    weakness: enemy.weakness ?? null,
+    resistance: enemy.resistance ?? null,
+    resistance_high: enemy.resistanceHigh ?? null,
+  }
+})
 
 const showRoomBuffTransition = computed(() =>
   isFieldBuffChanged(props.previousFieldBuff?.fieldBuff ?? null, props.currentFieldBuff?.fieldBuff ?? null),
@@ -103,69 +118,11 @@ watch(
     </template>
 
     <div v-if="enemy" class="monster-detail-body">
-      <section class="monster-detail-top">
-        <div class="monster-detail-image">
-          <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.bossName || enemy.label" />
-          <span v-else class="monster-detail-placeholder">怪物图片</span>
-        </div>
-        <div class="monster-detail-data">
-          <p v-if="enemy.bossName" class="detail-row">
-            <span class="detail-label">怪物：</span>
-            <span class="detail-value detail-value--name">{{ enemy.bossName }}</span>
-          </p>
-          <p v-if="enemy.hp" class="detail-row">
-            <span class="detail-label">血量：</span>
-            <span class="detail-value">{{ enemy.hp }}</span>
-            <span v-if="hpComparison?.expansion" class="detail-hp-expansion">
-              {{ hpComparison.expansion }}
-            </span>
-          </p>
-          <p v-if="hpComparison" class="detail-row">
-            <span class="detail-label detail-label--ghost" aria-hidden="true">血量：</span>
-            <span class="detail-hp-delta">{{ formatHpDelta(hpComparison.diff) }}</span>
-          </p>
-          <p v-if="enemy.crisisBaseHp != null" class="detail-row">
-            <span class="detail-label">基础血量：</span>
-            <span class="detail-value">{{ formatHp(enemy.crisisBaseHp) }}</span>
-          </p>
-          <p v-if="enemy.hpCoeffLabel" class="detail-row">
-            <span class="detail-label">危局血量系数：</span>
-            <span class="detail-value">{{ enemy.hpCoeffLabel }}</span>
-            <span v-if="hpCoeffComparison?.deltaLabel" class="detail-hp-expansion">
-              {{ hpCoeffComparison.deltaLabel }}
-            </span>
-          </p>
-          <p v-if="enemy.defense !== undefined" class="detail-row">
-            <span class="detail-label">防御：</span>
-            <span class="detail-value">{{ enemy.defense }}</span>
-          </p>
-          <p v-if="enemy.staggerTime != null" class="detail-row">
-            <span class="detail-label">失衡时间：</span>
-            <span class="detail-value">{{ enemy.staggerTime }} 秒</span>
-          </p>
-          <p class="detail-row">
-            <span class="detail-label">失衡易伤：</span>
-            <span class="detail-value">{{ staggerMultiplierLabel }}</span>
-          </p>
-          <p v-if="hasElementIcons(enemy.weakness)" class="detail-row">
-            <span class="detail-label">弱点：</span>
-            <span class="detail-value">
-              <ElementTraitIcons :value="enemy.weakness" variant="weak" show-percent />
-            </span>
-          </p>
-          <p v-if="hasElementIcons(enemy.resistance)" class="detail-row">
-            <span class="detail-label">抗性：</span>
-            <span class="detail-value">
-              <ElementTraitIcons
-                :value="enemy.resistance"
-                :high-value="enemy.resistanceHigh"
-                variant="resist"
-                show-percent
-              />
-            </span>
-          </p>
-        </div>
-      </section>
+      <MonsterDetailStats
+        :record="detailRecord"
+        :image-url="enemy.imageUrl"
+        :image-alt="enemy.bossName || enemy.label"
+      />
 
       <RoomBuffTransitionPanel
         v-if="showRoomBuffTransition"
@@ -236,96 +193,6 @@ watch(
   background: var(--color-background-soft);
 }
 
-.monster-detail-top {
-  display: flex;
-  align-items: flex-start;
-  gap: clamp(0.75rem, 2vw, 1.25rem);
-}
-
-.monster-detail-image {
-  flex-shrink: 0;
-  width: clamp(140px, 24%, 220px);
-  aspect-ratio: 3 / 4;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-background-mute);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.monster-detail-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.monster-detail-placeholder {
-  font-size: 0.85rem;
-  opacity: 0.45;
-  padding: 0.5rem;
-  text-align: center;
-}
-
-.monster-detail-data {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.detail-row {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.1rem 0.15rem;
-  font-size: clamp(0.82rem, 1.4vw, 0.92rem);
-  line-height: 1.45;
-}
-
-.detail-label {
-  flex-shrink: 0;
-  font-weight: 700;
-  color: #e85d4c;
-}
-
-.detail-value {
-  min-width: 0;
-  font-weight: 600;
-  color: var(--color-heading);
-  overflow-wrap: anywhere;
-}
-
-.detail-value--name {
-  font-weight: 700;
-  color: #e8a838;
-}
-
-.detail-label--ghost {
-  visibility: hidden;
-}
-
-/* 与怪物卡片（.enemy-hp-delta / .enemy-hp-expansion）同色的增长标识 */
-.detail-hp-delta {
-  min-width: 0;
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: #e85d4c;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.detail-hp-expansion {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #4d9fff;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
 .status-text {
   min-height: 4rem;
   display: flex;
@@ -346,20 +213,5 @@ watch(
   min-height: auto;
   overflow: visible;
   display: flex;
-}
-
-@media (max-width: 768px) {
-  .monster-detail-top {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .monster-detail-image {
-    width: min(180px, 56vw);
-  }
-
-  .monster-detail-data {
-    width: 100%;
-  }
 }
 </style>
