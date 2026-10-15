@@ -52,6 +52,21 @@ export function findMonsterEntries(
 }
 
 /**
+ * 该怪物（**只按名字**，跨房间）出现过的全部游戏版本，去重。
+ * 「是否在某个版本（含）之前就已存在」是 Boss 级属性：同一只 Boss 会跨期换房间，
+ * 按名字匹配才不会把换了房间的老 Boss 误判成新怪（见 dev-docs/monster-resistance-table.md）。
+ */
+export function listMonsterAppearanceVersions(phases: PhaseData[], bossName: string): string[] {
+  if (!bossName) return []
+  const versions = new Set<string>()
+  for (const phase of phases) {
+    if (!phase.enemies.some((enemy) => enemy.bossName === bossName)) continue
+    if (phase.version) versions.add(phase.version)
+  }
+  return [...versions]
+}
+
+/**
  * 从当前期往前找最近的、场地 Buff 非空的该怪物出现，取其场地 Buff 与期数标签。
  * 往前不存在带内容的场地 Buff 时返回 null。
  */

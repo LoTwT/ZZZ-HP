@@ -12,6 +12,7 @@ import {
   getBossHpCoeffComparison,
   getBossHpComparison,
   isFieldBuffChanged,
+  listMonsterAppearanceVersions,
 } from '../src/utils/historyMonsterDetail.ts'
 
 let passed = 0
@@ -96,6 +97,33 @@ check(
   isFieldBuffChanged({ name: '', text: '', effectBlocks: [{ note: '注' }] }, buffB) === true,
 )
 
+console.log('[3b] listMonsterAppearanceVersions：按 Boss 名（跨房间）汇总出现过的版本')
+const crossRoomPhases = [
+  makePhase('2.0', '第 1 期', [makeEnemy({ bossName: '秽息司祭', room: '1' })]),
+  makePhase('2.1', '第 1 期', [makeEnemy({ bossName: '秽息司祭', room: '2' })]),
+  makePhase('3.0', '第 3 期', [makeEnemy({ bossName: '秽息司祭', room: '3' })]),
+  makePhase('3.0', '第 3 期', [makeEnemy({ bossName: '别的怪', room: '1' })]),
+]
+check(
+  '跨房间换房也一并汇总，并按版本去重',
+  JSON.stringify(listMonsterAppearanceVersions(crossRoomPhases, '秽息司祭')) ===
+    JSON.stringify(['2.0', '2.1', '3.0']),
+  listMonsterAppearanceVersions(crossRoomPhases, '秽息司祭').join('、'),
+)
+check(
+  '换了房间的老 Boss 仍能识别出 2.1 及之前的出现（这正是版本系数的第二条件）',
+  listMonsterAppearanceVersions(crossRoomPhases, '秽息司祭').includes('2.0'),
+)
+check('未出现过的名字 ⇒ 空数组', listMonsterAppearanceVersions(crossRoomPhases, '不存在').length === 0)
+check('空名字 ⇒ 空数组', listMonsterAppearanceVersions(crossRoomPhases, '').length === 0)
+check(
+  '期数缺 version（或空串）不计入出现版本',
+  listMonsterAppearanceVersions(
+    [makePhase('', '', [makeEnemy({ bossName: '无版本怪' })]), makePhase(null, '第 1 期', [makeEnemy({ bossName: '无版本怪' })])],
+    '无版本怪',
+  ).length === 0,
+)
+
 console.log('[4] 弱点/抗性百分比口径（来自 RESISTANCE_VALUE_MAP）')
 check(
   '弱点固定为 -0.2 档的绝对值 × 100',
@@ -174,11 +202,13 @@ check(
   ),
 )
 check(
-  '面板按「Boss 名 + 房间」扫各期、用 isVersionAtMost 判 2.1（含）前已存在（复用 findMonsterEntries 口径）',
+  '面板按 Boss 名（跨房间）扫各期、用 isVersionAtMost 判 2.1（含）前已存在',
   historyPanel.includes('monsterDetailBossExistedByMultiplierVersion = computed') &&
-    historyPanel.includes('findMonsterEntries(phases.value') &&
+    historyPanel.includes('listMonsterAppearanceVersions(phases.value, bossName)') &&
     historyPanel.includes('ANOMALY_BAR_VERSION_MULTIPLIER_FROM') &&
-    historyPanel.includes('isVersionAtMost'),
+    historyPanel.includes('isVersionAtMost') &&
+    // 回归守卫：不能再退回「Boss 名 + 房间」匹配，否则换过房间的老 Boss 会被判成新怪
+    !historyPanel.includes('findMonsterEntries(phases.value, {'),
 )
 
 const defensePanel = readFileSync(
