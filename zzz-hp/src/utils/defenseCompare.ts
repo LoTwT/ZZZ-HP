@@ -10,7 +10,11 @@ import {
   type HpComparison,
 } from '@/utils/defenseHp'
 import { formatHpDelta, parseHpString } from '@/utils/gameData'
-import type { MonsterAnomalyBarCategory } from '@/utils/monsterResistanceTable'
+import {
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
+  isVersionBefore,
+  type MonsterAnomalyBarCategory,
+} from '@/utils/monsterResistanceTable'
 
 const EMPTY_ENEMY: EnemySlot = {
   label: '',
@@ -278,6 +282,37 @@ export function resolveDefenseMonsterDefaultLevel(
 }
 
 /**
+ * 该怪物是否在「版本系数起算版本」（2.1）之前的赛季出现过 —— 版本系数的第二个条件。
+ *
+ * 同一性键取怪物**名**（`DefenseEnemy.name`）：防卫战跨赛季唯一可比的键。
+ * 怪物 ID 编码了期数 / 防线 / 波次（见 `defenseId`），同一只怪物在不同赛季 ID 不同，不能用来比历史；
+ * 名字在实战数据里按槽位唯一，跨赛季同名即同一只怪物。
+ * 赛季版本解析不出（缺段 / 空串 / 非数字）时不算出现，与表里 `isVersionBefore` 同口径。
+ */
+export function hasDefenseMonsterAppearedBeforeMultiplierVersion(
+  seasons: DefenseSeason[],
+  monsterName: string | undefined,
+): boolean {
+  if (!monsterName) return false
+
+  for (const season of seasons) {
+    if (!isVersionBefore(season.version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM)) continue
+
+    for (const frontier of season.frontiers) {
+      for (const room of frontier.rooms) {
+        for (const battleRoom of room.battleRooms) {
+          for (const wave of battleRoom.waves) {
+            if (wave.enemies.some((enemy) => enemy.name === monsterName)) return true
+          }
+        }
+      }
+    }
+  }
+
+  return false
+}
+
+/**
  * 防卫战怪物详情数据行组装（与危局弹窗同形状，共用 `MonsterDetailStats`）：
  * 血量 / 防御 / 失衡时间 / 弱点 / 抗性取自 `DefenseEnemy`，血量对比由面板按卡片同一口径算好传入；
  * 失衡易伤与等级里的 `DefenseEnemy` 不带，只能来自 boss_info 基础库（查无记录时为 null）；
@@ -287,7 +322,8 @@ export function resolveDefenseMonsterDefaultLevel(
  * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info（后端读取时已解析内置默认表，
  * 目录内怪物能拿到真实系数），缺省 / 非法值由表按 1 兜底；
  * 版本取所在赛季的 `season.version`，供表判「2.1 期起异常条 ×1.1」，缺省 / null 表示拿不到版本、
- * 由表按不乘处理；
+ * 由表按不乘处理；版本系数的第二个条件（该怪物是否在 2.1 之前出现过）由
+ * `hasDefenseMonsterAppearedBeforeMultiplierVersion` 扫全量赛季算出后传入，缺省按 false；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(
@@ -298,6 +334,8 @@ export function buildDefenseMonsterDetailRecord(
   stage?: number | null,
   /** 该怪物所在赛季的游戏版本（如 3.2）；缺省 / null 表示拿不到版本，不套用版本系数 */
   version?: string | null,
+  /** 该怪物是否在 2.1 之前的赛季出现过；缺省表示未算出，按 false（不乘版本系数） */
+  bossAppearedBeforeMultiplierVersion?: boolean,
 ): MonsterDetailRecord {
   return {
     boss_name: enemy.name || null,
@@ -317,6 +355,7 @@ export function buildDefenseMonsterDetailRecord(
     monster_category: defenseMonsterCategoryToTableCategory(resolveDefenseMonsterCategory(enemy)),
     anomaly_bar_coefficient: bossInfo?.anomaly_bar_coefficient ?? null,
     version: version ?? null,
+    boss_appeared_before_multiplier_version: bossAppearedBeforeMultiplierVersion === true,
   }
 }
 

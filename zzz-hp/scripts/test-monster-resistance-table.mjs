@@ -8,7 +8,8 @@
  * 异常条系数一律由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局由 phases 随 boss 下发，
  * 按 Boss 名的内置默认表在后端读取时解析），前端只在字段缺失 / 非法时按 1 兜底，
  * 并把该行标记为估算（`maxAnomalyProgressEstimated`），不冒充真实初始异常积蓄。
- * 版本系数同为用户提供的游戏数据：2.1 第一期及以后 ×1.1，版本号解析不出时不乘。
+ * 版本系数同为用户提供的游戏数据：2.1 之前就出现过的 Boss，在 2.1 及以后的期数 ×1.1；
+ * 2.1 起才出的新 Boss 不乘，同一只旧 Boss 在 2.1 之前的期数也不乘，版本号解析不出时同样不乘。
  *
  * 运行：npx vite-node scripts/test-monster-resistance-table.mjs
  */
@@ -22,7 +23,7 @@ import {
 import { encodeDefenseBossId } from '../src/utils/defenseId.ts'
 import {
   ANOMALY_BAR_VERSION_MULTIPLIER,
-  ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION,
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
   MONSTER_RESISTANCE_TABLE_ELEMENTS,
   buildMonsterResistanceRows,
   getMonsterBaseAnomalyProgress,
@@ -346,6 +347,12 @@ check(
   stats.includes('version: props.record.version'),
 )
 check(
+  'record 的 boss_appeared_before_multiplier_version 传入抗性表（版本系数第二条件）',
+  stats.includes(
+    'boss_appeared_before_multiplier_version: props.record.boss_appeared_before_multiplier_version',
+  ) && /boss_appeared_before_multiplier_version\?: boolean/.test(stats),
+)
+check(
   '初始异常积蓄表头带公式提示（0 次已异常 × 系数 × 版本系数）',
   stats.includes('title="0 次已异常时的初始条长 × 异常条系数 × 版本系数"'),
 )
@@ -365,7 +372,9 @@ check(
 check(
   '「异常条系数」行在版本系数生效时追加 ×1.1 并用强调红标出',
   stats.includes('anomalyBarVersionMultiplierActive') &&
-    stats.includes('isAnomalyBarVersionMultiplier(props.record?.version)') &&
+    /isAnomalyBarVersionMultiplier\(\s*props\.record\?\.version,\s*props\.record\?\.boss_appeared_before_multiplier_version,?\s*\)/.test(
+      stats,
+    ) &&
     stats.includes('× {{ ANOMALY_BAR_VERSION_MULTIPLIER }}') &&
     /\.detail-version-multiplier \{[\s\S]*?color: #e85d4c;/.test(stats),
 )
@@ -568,72 +577,116 @@ check(
   enemySlotTypes.includes('anomalyBarCoefficient?: number | null'),
 )
 
-console.log(`[11] 版本系数：${ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION} 之前的怪物异常条 ×${ANOMALY_BAR_VERSION_MULTIPLIER}`)
+console.log(
+  `[11] 版本系数：${ANOMALY_BAR_VERSION_MULTIPLIER_FROM} 之前出现过的 Boss，在 ${ANOMALY_BAR_VERSION_MULTIPLIER_FROM} 及以后 ×${ANOMALY_BAR_VERSION_MULTIPLIER}`,
+)
 const coefficient132 = 1.32
 /** 期望值一律由基础条表 × 常量推导，不写死结果 */
 const bossBase = (element) => getMonsterBaseAnomalyProgress('boss', element, 0)
 const expectedWithVersion = (base) => Math.round(base * coefficient132 * ANOMALY_BAR_VERSION_MULTIPLIER)
-const rowsNoVersion = byElement(
-  buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: coefficient132 }),
-)
-const rowsVersion20 = byElement(
-  buildMonsterResistanceRows({
-    monster_category: 'boss',
-    anomaly_bar_coefficient: coefficient132,
-    version: '2.0',
-  }),
-)
-const rowsVersion32 = byElement(
-  buildMonsterResistanceRows({
-    monster_category: 'boss',
-    anomaly_bar_coefficient: coefficient132,
-    version: '3.2',
-  }),
-)
+/** 版本系数的两个条件一起给：当前期数版本 + 该 Boss 是否在 2.1 之前出现过 */
+const rowsAtVersion = (version, appearedBeforeMultiplierVersion) =>
+  byElement(
+    buildMonsterResistanceRows({
+      monster_category: 'boss',
+      anomaly_bar_coefficient: coefficient132,
+      version,
+      boss_appeared_before_multiplier_version: appearedBeforeMultiplierVersion,
+    }),
+  )
+/** 旧 Boss（2.1 之前出现过）在 2.1 及以后的期数：两个条件同时成立 ⇒ ×1.1 */
+const rowsLegacyAt32 = rowsAtVersion('3.2', true)
+/** 同一只旧 Boss 在 2.1 之前的期数：不乘 */
+const rowsLegacyAt20 = rowsAtVersion('2.0', true)
+/** 2.1 起才出的新 Boss：为假 / 缺省都不乘 */
+const rowsNewBossAt32 = rowsAtVersion('3.2', false)
+const rowsFlagAbsentAt32 = rowsAtVersion('3.2', undefined)
+/** 旧 Boss 但期数版本解析不出：不乘 */
+const rowsLegacyWithoutVersion = rowsAtVersion(undefined, true)
 
 check(
-  '版本判定：2.1 之前（1.4 / 2.0）为真，2.1 及以后（2.1 / 3.2）为假',
-  isAnomalyBarVersionMultiplier('1.4') &&
-    isAnomalyBarVersionMultiplier('2.0') &&
-    !isAnomalyBarVersionMultiplier('2.1') &&
-    !isAnomalyBarVersionMultiplier('3.2'),
-  ['1.4', '2.0', '2.1', '3.2'].map((v) => `${v}=${isAnomalyBarVersionMultiplier(v)}`).join(' '),
+  '版本判定（组合）：旧 Boss（true）× 2.1 / 3.2 为真，其余组合全为假',
+  isAnomalyBarVersionMultiplier('3.2', true) &&
+    isAnomalyBarVersionMultiplier('2.1', true) &&
+    !isAnomalyBarVersionMultiplier('2.0', true) &&
+    !isAnomalyBarVersionMultiplier('1.4', true) &&
+    !isAnomalyBarVersionMultiplier('3.2', false) &&
+    !isAnomalyBarVersionMultiplier('2.1', false) &&
+    !isAnomalyBarVersionMultiplier('3.2', undefined),
+  [
+    ['3.2', true],
+    ['2.1', true],
+    ['2.0', true],
+    ['1.4', true],
+    ['3.2', false],
+    ['2.1', false],
+    ['3.2', undefined],
+  ]
+    .map(
+      ([version, appearedBefore]) =>
+        `${version}/${appearedBefore}=${isAnomalyBarVersionMultiplier(version, appearedBefore)}`,
+    )
+    .join(' '),
 )
 check(
-  '版本缺失 / 空串 / 非数字一律不乘（保守）',
-  [null, undefined, '', '   ', 'abc', '2.x'].every((version) => !isAnomalyBarVersionMultiplier(version)),
-  [null, '', 'abc'].map((v) => `${JSON.stringify(v)}=${isAnomalyBarVersionMultiplier(v)}`).join(' '),
+  '版本缺失 / 空串 / 非数字即便旧 Boss 也不乘（保守）',
+  [null, undefined, '', '   ', 'abc', '2.x'].every(
+    (version) => !isAnomalyBarVersionMultiplier(version, true),
+  ),
+  [null, '', 'abc']
+    .map((v) => `${JSON.stringify(v)}=${isAnomalyBarVersionMultiplier(v, true)}`)
+    .join(' '),
 )
 check(
-  `阈值常量导出：${ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION} 之前 ⇒ ${ANOMALY_BAR_VERSION_MULTIPLIER}`,
-  ANOMALY_BAR_VERSION_MULTIPLIER === 1.1 &&
-    ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION === '2.1',
+  `阈值常量导出：起算版本 ${ANOMALY_BAR_VERSION_MULTIPLIER_FROM}、倍率 ${ANOMALY_BAR_VERSION_MULTIPLIER}`,
+  ANOMALY_BAR_VERSION_MULTIPLIER === 1.1 && ANOMALY_BAR_VERSION_MULTIPLIER_FROM === '2.1',
 )
 check(
-  `无版本 ⇒ 维持原值：物理 ${rowsNoVersion['物理'].maxAnomalyProgress}（基础条 ${bossBase('物理')} × ${coefficient132}）`,
-  rowsNoVersion['物理'].maxAnomalyProgress === Math.round(bossBase('物理') * coefficient132) &&
-    rowsNoVersion['物理'].maxAnomalyProgress === 4752,
-  String(rowsNoVersion['物理'].maxAnomalyProgress),
+  `旧 Boss + 无版本 ⇒ 维持原值：物理 ${rowsLegacyWithoutVersion['物理'].maxAnomalyProgress}（基础条 ${bossBase('物理')} × ${coefficient132}）`,
+  rowsLegacyWithoutVersion['物理'].maxAnomalyProgress ===
+    Math.round(bossBase('物理') * coefficient132) &&
+    rowsLegacyWithoutVersion['物理'].maxAnomalyProgress === 4752,
+  String(rowsLegacyWithoutVersion['物理'].maxAnomalyProgress),
 )
 check(
-  `版本 2.0（2.1 之前）⇒ 物理 ${rowsVersion20['物理'].maxAnomalyProgress}（${bossBase('物理')} × ${coefficient132} × ${ANOMALY_BAR_VERSION_MULTIPLIER}）`,
-  rowsVersion20['物理'].maxAnomalyProgress === expectedWithVersion(bossBase('物理')) &&
-    rowsVersion20['物理'].maxAnomalyProgress === 5227,
-  String(rowsVersion20['物理'].maxAnomalyProgress),
+  `旧 Boss + 3.2 ⇒ 物理 ${rowsLegacyAt32['物理'].maxAnomalyProgress}（${bossBase('物理')} × ${coefficient132} × ${ANOMALY_BAR_VERSION_MULTIPLIER}）`,
+  rowsLegacyAt32['物理'].maxAnomalyProgress === expectedWithVersion(bossBase('物理')) &&
+    rowsLegacyAt32['物理'].maxAnomalyProgress === 5227,
+  String(rowsLegacyAt32['物理'].maxAnomalyProgress),
 )
 check(
-  `版本 2.0 ⇒ 火组 ${rowsVersion20['火'].maxAnomalyProgress} / 风 ${rowsVersion20['风'].maxAnomalyProgress} 同步放大（分组不影响版本系数）`,
-  rowsVersion20['火'].maxAnomalyProgress === expectedWithVersion(bossBase('火')) &&
-    rowsVersion20['风'].maxAnomalyProgress === expectedWithVersion(bossBase('风')) &&
-    rowsVersion20['火'].maxAnomalyProgress === 4356 &&
-    rowsVersion20['风'].maxAnomalyProgress === 2178,
-  `火=${rowsVersion20['火'].maxAnomalyProgress} 风=${rowsVersion20['风'].maxAnomalyProgress} 电=${rowsVersion20['电'].maxAnomalyProgress}`,
+  `旧 Boss + 3.2 ⇒ 火组 ${rowsLegacyAt32['火'].maxAnomalyProgress} / 风 ${rowsLegacyAt32['风'].maxAnomalyProgress} 同步放大（分组不影响版本系数）`,
+  rowsLegacyAt32['火'].maxAnomalyProgress === expectedWithVersion(bossBase('火')) &&
+    rowsLegacyAt32['风'].maxAnomalyProgress === expectedWithVersion(bossBase('风')) &&
+    rowsLegacyAt32['火'].maxAnomalyProgress === 4356 &&
+    rowsLegacyAt32['风'].maxAnomalyProgress === 2178,
+  `火=${rowsLegacyAt32['火'].maxAnomalyProgress} 风=${rowsLegacyAt32['风'].maxAnomalyProgress} 电=${rowsLegacyAt32['电'].maxAnomalyProgress}`,
 )
 check(
-  '版本 2.1 及以后（3.2）⇒ 不再乘版本系数，仍为 4752 / 3960',
-  rowsVersion32['物理'].maxAnomalyProgress === 4752 &&
-    rowsVersion32['火'].maxAnomalyProgress === 3960,
-  `物理=${rowsVersion32['物理'].maxAnomalyProgress} 火=${rowsVersion32['火'].maxAnomalyProgress}`,
+  '旧 Boss + 3.2 ⇒ 系数已配置，六行都不标估算（版本系数与系数是否配置无关）',
+  rowsLegacyAt32['物理'].maxAnomalyProgressEstimated === false &&
+    rowsLegacyAt32['火'].maxAnomalyProgressEstimated === false &&
+    rowsLegacyAt32['风'].maxAnomalyProgressEstimated === false,
+)
+check(
+  '旧 Boss + 2.0（2.1 之前）⇒ 不乘版本系数：物理 4752 / 火组 3960 / 风 1980',
+  rowsLegacyAt20['物理'].maxAnomalyProgress === 4752 &&
+    rowsLegacyAt20['火'].maxAnomalyProgress === 3960 &&
+    rowsLegacyAt20['风'].maxAnomalyProgress === 1980,
+  `物理=${rowsLegacyAt20['物理'].maxAnomalyProgress} 火=${rowsLegacyAt20['火'].maxAnomalyProgress} 风=${rowsLegacyAt20['风'].maxAnomalyProgress}`,
+)
+check(
+  '新 Boss（2.1 起才出现，标记 false）+ 3.2 ⇒ 不乘版本系数：物理 4752 / 火组 3960 / 风 1980',
+  rowsNewBossAt32['物理'].maxAnomalyProgress === 4752 &&
+    rowsNewBossAt32['火'].maxAnomalyProgress === 3960 &&
+    rowsNewBossAt32['风'].maxAnomalyProgress === 1980,
+  `物理=${rowsNewBossAt32['物理'].maxAnomalyProgress} 火=${rowsNewBossAt32['火'].maxAnomalyProgress} 风=${rowsNewBossAt32['风'].maxAnomalyProgress}`,
+)
+check(
+  '该标记缺省（等同非旧 Boss）+ 3.2 ⇒ 不乘版本系数：物理 4752 / 火组 3960',
+  rowsFlagAbsentAt32['物理'].maxAnomalyProgress === 4752 &&
+    rowsFlagAbsentAt32['火'].maxAnomalyProgress === 3960,
+  `物理=${rowsFlagAbsentAt32['物理'].maxAnomalyProgress} 火=${rowsFlagAbsentAt32['火'].maxAnomalyProgress}`,
 )
 check(
   '版本系数与异常条系数相乘后只取整一次（1.0625 × 1.1：先取整会差 1）',
@@ -642,7 +695,8 @@ check(
       buildMonsterResistanceRows({
         monster_category: 'boss',
         anomaly_bar_coefficient: 1.0625,
-        version: '2.0',
+        version: '3.2',
+        boss_appeared_before_multiplier_version: true,
       }),
     )
     const base = bossBase('火')
@@ -653,11 +707,12 @@ check(
 )
 
 console.log('[12] maxAnomalyProgressEstimated：系数未配置时不冒充初始异常积蓄')
-const rowsWithCoefficient = (coefficient, version) =>
+const rowsWithCoefficient = (coefficient, version, appearedBeforeMultiplierVersion) =>
   buildMonsterResistanceRows({
     monster_category: 'boss',
     anomaly_bar_coefficient: coefficient,
     version,
+    boss_appeared_before_multiplier_version: appearedBeforeMultiplierVersion,
   })
 check(
   '系数缺省 / null / 0 / -1 / NaN ⇒ 六行全标估算',
@@ -691,16 +746,16 @@ check(
   maxAnomalyList(rowsWithCoefficient(undefined)),
 )
 check(
-  '系数未配置但版本 2.1 之前 ⇒ 数值仍乘版本系数并标估算（版本是独立已知事实）',
+  '系数未配置但版本系数生效（旧 Boss + 3.2）⇒ 数值仍乘版本系数并标估算（版本是独立已知事实）',
   (() => {
-    const rows = byElement(rowsWithCoefficient(undefined, '2.0'))
+    const rows = byElement(rowsWithCoefficient(undefined, '3.2', true))
     return (
       rows['物理'].maxAnomalyProgress ===
         Math.round(bossBase('物理') * ANOMALY_BAR_VERSION_MULTIPLIER) &&
       rows['物理'].maxAnomalyProgressEstimated === true
     )
   })(),
-  String(byElement(rowsWithCoefficient(undefined, '2.0'))['物理'].maxAnomalyProgress),
+  String(byElement(rowsWithCoefficient(undefined, '3.2', true))['物理'].maxAnomalyProgress),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

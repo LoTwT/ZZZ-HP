@@ -30,6 +30,11 @@ const props = defineProps<{
   stage?: number | null
   /** 该槽位所属赛季的游戏版本（如 3.2），由父面板从 currentSeason 取；判「2.1 起异常条 ×1.1」用 */
   version?: string | null
+  /**
+   * 该怪物是否在 2.1 之前的赛季出现过（版本系数的第二个条件），由父面板扫全量赛季算好传入；
+   * 与 `version ≥ 2.1` 同时成立才乘版本系数，缺省按 false
+   */
+  bossAppearedBeforeMultiplierVersion?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -61,6 +66,7 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     bossInfo.value,
     props.stage ?? null,
     props.version ?? null,
+    props.bossAppearedBeforeMultiplierVersion ?? false,
   )
 })
 

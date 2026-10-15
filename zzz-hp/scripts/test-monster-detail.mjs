@@ -161,6 +161,24 @@ check(
   '面板把本期游戏版本传给危局详情弹窗',
   historyPanel.includes(':version="monsterDetailPhaseVersion"'),
 )
+check(
+  '危局详情数据行透传「该 Boss 是否在 2.1 前出现过」（版本系数的第二个条件）',
+  crisisMonsterModal.includes(
+    'boss_appeared_before_multiplier_version: props.bossAppearedBeforeMultiplierVersion === true',
+  ) && crisisMonsterModal.includes('bossAppearedBeforeMultiplierVersion?: boolean'),
+)
+check(
+  '面板把出现历史标记传给危局详情弹窗',
+  historyPanel.includes(
+    ':boss-appeared-before-multiplier-version="monsterDetailBossAppearedBeforeMultiplierVersion"',
+  ),
+)
+check(
+  '面板按「Boss 名 + 房间」扫各期、用 isVersionBefore 判 2.1 之前出现（复用 findMonsterEntries 口径）',
+  historyPanel.includes('monsterDetailBossAppearedBeforeMultiplierVersion = computed') &&
+    historyPanel.includes('findMonsterEntries(phases.value') &&
+    historyPanel.includes('ANOMALY_BAR_VERSION_MULTIPLIER_FROM'),
+)
 
 const defensePanel = readFileSync(
   new URL('../src/components/defense/DefenseDetailPanel.vue', import.meta.url),

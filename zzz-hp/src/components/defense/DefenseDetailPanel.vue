@@ -14,6 +14,7 @@ import {
 } from '@/utils/defenseHp'
 import {
   findDefenseSeasonIndexFromChartPoint,
+  hasDefenseMonsterAppearedBeforeMultiplierVersion,
   resolveDefenseMonsterDefaultLevel,
 } from '@/utils/defenseCompare'
 import { formatHpDelta } from '@/utils/gameData'
@@ -258,6 +259,17 @@ const monsterDetailPhaseLabel = computed(() => {
   if (!season) return ''
   return `${season.version} ${season.phase}${slot ? ` · ${slot}` : ''}`
 })
+
+/**
+ * 该怪物是否在 2.1 之前的赛季出现过 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 按怪物名扫全量赛季（含当前赛季；当期 < 2.1 时表本就不会乘，故不影响结果）。
+ */
+const monsterDetailBossAppearedBeforeMultiplierVersion = computed(() =>
+  hasDefenseMonsterAppearedBeforeMultiplierVersion(
+    seasons.value,
+    monsterDetailEnemy.value?.name,
+  ),
+)
 
 function prevRoomHp() {
   if (roomHpIndex.value > 0) roomHpIndex.value--
@@ -1031,6 +1043,7 @@ function formatEnemyResistance(value?: string) {
       :variant="defenseVariant"
       :phase-label="monsterDetailPhaseLabel"
       :version="currentSeason?.version ?? null"
+      :boss-appeared-before-multiplier-version="monsterDetailBossAppearedBeforeMultiplierVersion"
       :hp-comparison="monsterDetailHpComparison"
       :stage="monsterDetailFrontierStage"
       @close="closeMonsterDetail"

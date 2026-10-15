@@ -26,11 +26,16 @@ import MonsterDetailModal from '@/components/history/MonsterDetailModal.vue'
 import PhasePickerModal from '@/components/history/PhasePickerModal.vue'
 import {
   buildPhaseLabel,
+  findMonsterEntries,
   findPreviousFieldBuff,
   getBossHpCoeffComparison,
   getBossHpComparison,
   type MonsterFieldBuffSnapshot,
 } from '@/utils/historyMonsterDetail'
+import {
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
+  isVersionBefore,
+} from '@/utils/monsterResistanceTable'
 
 const props = defineProps<{
   mode: ModeKey
@@ -383,6 +388,25 @@ const monsterDetailPhaseLabel = computed(() => {
 
 /** 该怪物所属期数的游戏版本：详情弹窗据此判「2.1 起异常条 ×1.1」，拿不到时为 null */
 const monsterDetailPhaseVersion = computed(() => currentPhase.value?.version ?? null)
+
+/**
+ * 该 Boss 是否在 2.1 之前的期数出现过 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 复用场地 Buff / 血量对比同一套「同一怪物」口径（Boss 名 + 房间码）：同名 Boss 同期可出现在多个房间，
+ * 只按名字匹配会把别的房间的历史算成本房间的。版本号解析不出的期数不算出现（与 `isVersionBefore` 同口径）。
+ */
+const monsterDetailBossAppearedBeforeMultiplierVersion = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  if (!enemy?.bossName) return false
+  return findMonsterEntries(phases.value, {
+    bossName: enemy.bossName,
+    room: enemy.room ?? '',
+  }).some((entry) =>
+    isVersionBefore(
+      phases.value[entry.phaseIndex]?.version,
+      ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
+    ),
+  )
+})
 
 const monsterDetailCurrentFieldBuff = computed<MonsterFieldBuffSnapshot | null>(() => {
   const phase = currentPhase.value
@@ -1084,6 +1108,7 @@ function closePhasePicker() {
       :mode="mode"
       :phase-label="monsterDetailPhaseLabel"
       :version="monsterDetailPhaseVersion"
+      :boss-appeared-before-multiplier-version="monsterDetailBossAppearedBeforeMultiplierVersion"
       :previous-field-buff="monsterDetailPreviousFieldBuff"
       :current-field-buff="monsterDetailCurrentFieldBuff"
       :hp-comparison="monsterDetailHpComparison"

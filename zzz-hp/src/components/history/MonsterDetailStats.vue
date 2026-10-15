@@ -46,8 +46,10 @@ export interface MonsterDetailRecord {
   monster_category?: 'normal' | 'elite' | 'boss' | null
   /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数 × 版本系数），由数据侧下发；缺省视为未配置 */
   anomaly_bar_coefficient?: number | null
-  /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于「2.1 起异常条 ×1.1」的判定，缺省不乘 */
+  /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于版本系数判定，缺省不乘 */
   version?: string | null
+  /** 该 Boss 是否在 2.1 之前出现过；与 version ≥2.1 同时成立时才乘版本系数 */
+  boss_appeared_before_multiplier_version?: boolean
 }
 
 const props = defineProps<{
@@ -81,9 +83,15 @@ const anomalyBarCoefficientLabel = computed(() => {
   return isAnomalyBarCoefficientConfigured(coefficient) ? String(coefficient) : '未配置'
 })
 
-/** 版本系数是否生效（2.1 起 ×1.1）：与表侧同一判定函数，避免两处口径分叉 */
+/**
+ * 版本系数是否生效（该 Boss 在 2.1 之前出现过，且当前期数 ≥2.1 才 ×1.1）：
+ * 与表侧同一判定函数，避免「红色 ×1.1」与数值口径分叉。
+ */
 const anomalyBarVersionMultiplierActive = computed(() =>
-  isAnomalyBarVersionMultiplier(props.record?.version),
+  isAnomalyBarVersionMultiplier(
+    props.record?.version,
+    props.record?.boss_appeared_before_multiplier_version,
+  ),
 )
 
 /** 「弱点与抗性」表数据：仅在显式开启且存在数据块（弱点/抗性来源）时生成 */
@@ -97,6 +105,7 @@ const resistanceRows = computed<MonsterResistanceRow[]>(() => {
     monster_category: props.record.monster_category,
     anomaly_bar_coefficient: props.record.anomaly_bar_coefficient,
     version: props.record.version,
+    boss_appeared_before_multiplier_version: props.record.boss_appeared_before_multiplier_version,
   })
 })
 
@@ -393,7 +402,7 @@ function onImageKeydown(event: KeyboardEvent) {
   overflow-wrap: anywhere;
 }
 
-/* 版本系数（2.1 起 ×1.1）：用强调红标出，表示最终值里额外乘了这一档 */
+/* 版本系数（旧 Boss 在 2.1 起 ×1.1）：用强调红标出，表示最终值里额外乘了这一档 */
 .detail-version-multiplier {
   font-size: 0.78rem;
   font-weight: 650;
