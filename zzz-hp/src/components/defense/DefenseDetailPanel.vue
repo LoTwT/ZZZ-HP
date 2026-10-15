@@ -1030,6 +1030,7 @@ function formatEnemyResistance(value?: string) {
       :enemy="monsterDetailEnemy"
       :variant="defenseVariant"
       :phase-label="monsterDetailPhaseLabel"
+      :version="currentSeason?.version ?? null"
       :hp-comparison="monsterDetailHpComparison"
       :stage="monsterDetailFrontierStage"
       @close="closeMonsterDetail"

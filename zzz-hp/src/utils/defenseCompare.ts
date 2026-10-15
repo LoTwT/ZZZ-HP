@@ -286,6 +286,8 @@ export function resolveDefenseMonsterDefaultLevel(
  * 基础异常条类别按防卫战怪物 ID 推导（小怪按「普通」、精英按「精英」、Boss 按「首领」，
  * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info（后端读取时已解析内置默认表，
  * 目录内怪物能拿到真实系数），缺省 / 非法值由表按 1 兜底；
+ * 版本取所在赛季的 `season.version`，供表判「2.1 期起异常条 ×1.1」，缺省 / null 表示拿不到版本、
+ * 由表按不乘处理；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(
@@ -294,6 +296,8 @@ export function buildDefenseMonsterDetailRecord(
   bossInfo: DefenseMonsterDetailBossInfo | null,
   /** 该怪物所在防线（stage）；缺省 / null 表示拿不到防线，不套用防线规则 */
   stage?: number | null,
+  /** 该怪物所在赛季的游戏版本（如 3.2）；缺省 / null 表示拿不到版本，不套用版本系数 */
+  version?: string | null,
 ): MonsterDetailRecord {
   return {
     boss_name: enemy.name || null,
@@ -312,6 +316,7 @@ export function buildDefenseMonsterDetailRecord(
     resistance_high: enemy.resistanceHigh ?? null,
     monster_category: defenseMonsterCategoryToTableCategory(resolveDefenseMonsterCategory(enemy)),
     anomaly_bar_coefficient: bossInfo?.anomaly_bar_coefficient ?? null,
+    version: version ?? null,
   }
 }
 

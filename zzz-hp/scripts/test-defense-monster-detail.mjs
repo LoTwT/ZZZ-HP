@@ -182,6 +182,23 @@ check(
   buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo({ level: 60 }), 5).level === 60,
 )
 
+console.log('[1c] 版本透传：异常条版本系数（2.1 期起 ×1.1）按赛季版本判定')
+check(
+  '传赛季版本 ⇒ 数据行带上该版本（供表判定是否乘 1.1）',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2').version === '3.2',
+  String(buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2').version),
+)
+check(
+  '2.1 之前的版本原样透传（乘不乘由表判定，数据行不预筛）',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '2.0').version === '2.0',
+)
+check(
+  '回归守卫：拿不到版本（缺省 / null / undefined）时为 null ⇒ 表保守地不乘版本系数',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5).version === null &&
+    buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, null).version === null &&
+    buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, undefined).version === null,
+)
+
 console.log('[2] getDefenseMonsterCategory：折线图类别推导')
 const bossId = encodeDefenseBossId({
   version: '3.2',
@@ -385,6 +402,11 @@ check(
 check(
   '面板把点击槽位的防线传给详情弹窗',
   panelSource.includes(':stage="monsterDetailFrontierStage"'),
+)
+check('弹窗把面板传入的赛季版本透传给数据行', modalSource.includes('props.version'))
+check(
+  '面板把当前赛季版本传给详情弹窗',
+  panelSource.includes(':version="currentSeason?.version ?? null"'),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

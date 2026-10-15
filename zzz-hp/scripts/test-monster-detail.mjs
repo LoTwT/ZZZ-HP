@@ -149,6 +149,19 @@ check('详情弹窗仅在危局模式挂载', historyPanel.includes('v-if="mode 
 check('可点击卡片由 canOpenMonsterDetail 控制（非 admin、有 bossName）', historyPanel.includes("'enemy-card--clickable': canOpenMonsterDetail(enemy)"))
 check('空槽位无 bossName 时不声明为按钮', historyPanel.includes("canOpenMonsterDetail(enemy) ? 'button' : undefined"))
 
+const crisisMonsterModal = readFileSync(
+  new URL('../src/components/history/MonsterDetailModal.vue', import.meta.url),
+  'utf8',
+)
+check(
+  '危局详情数据行透传期数版本（表据此判 2.1 期起异常条 ×1.1）',
+  crisisMonsterModal.includes('version: props.version ?? null'),
+)
+check(
+  '面板把本期游戏版本传给危局详情弹窗',
+  historyPanel.includes(':version="monsterDetailPhaseVersion"'),
+)
+
 const defensePanel = readFileSync(
   new URL('../src/components/defense/DefenseDetailPanel.vue', import.meta.url),
   'utf8',

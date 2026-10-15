@@ -381,6 +381,9 @@ const monsterDetailPhaseLabel = computed(() => {
   return `${phase.version} ${phase.phase} · ${enemy.label}`.trim()
 })
 
+/** 该怪物所属期数的游戏版本：详情弹窗据此判「2.1 起异常条 ×1.1」，拿不到时为 null */
+const monsterDetailPhaseVersion = computed(() => currentPhase.value?.version ?? null)
+
 const monsterDetailCurrentFieldBuff = computed<MonsterFieldBuffSnapshot | null>(() => {
   const phase = currentPhase.value
   const enemy = monsterDetailEnemy.value
@@ -1080,6 +1083,7 @@ function closePhasePicker() {
       :enemy="monsterDetailEnemy"
       :mode="mode"
       :phase-label="monsterDetailPhaseLabel"
+      :version="monsterDetailPhaseVersion"
       :previous-field-buff="monsterDetailPreviousFieldBuff"
       :current-field-buff="monsterDetailCurrentFieldBuff"
       :hp-comparison="monsterDetailHpComparison"

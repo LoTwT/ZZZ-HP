@@ -24,6 +24,8 @@ const props = defineProps<{
   mode: ModeKey
   /** 如「3.2 第4期 · 房间 2」 */
   phaseLabel: string
+  /** 当前期数的游戏版本（如 3.2），由父组件从 phases 取；判「2.1 起异常条 ×1.1」用 */
+  version?: string | null
   /** 原场地 Buff（较早一期），由父组件从 phases 解析 */
   previousFieldBuff?: MonsterFieldBuffSnapshot | null
   /** 现场地 Buff（当期），由父组件从 phases 解析 */
@@ -67,6 +69,7 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     // 危局怪按首领敌人取基础异常条；系数由 phases API 随 boss 下发（内置默认表后端已解析），缺失按 1
     monster_category: 'boss',
     anomaly_bar_coefficient: enemy.anomalyBarCoefficient ?? null,
+    version: props.version ?? null,
   }
 })
 

@@ -28,6 +28,8 @@ const props = defineProps<{
   hpComparison?: HpComparison | null
   /** 该槽位所在防线（第五防线 = 5）；无 boss_info 记录时按防线规则补默认等级 */
   stage?: number | null
+  /** 该槽位所属赛季的游戏版本（如 3.2），由父面板从 currentSeason 取；判「2.1 起异常条 ×1.1」用 */
+  version?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +60,7 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     props.hpComparison ?? null,
     bossInfo.value,
     props.stage ?? null,
+    props.version ?? null,
   )
 })
 
