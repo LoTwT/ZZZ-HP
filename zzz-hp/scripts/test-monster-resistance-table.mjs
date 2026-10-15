@@ -372,8 +372,8 @@ check(
     /\.monster-detail-data \{[\s\S]*?flex: 1;/.test(stats),
 )
 check(
-  '弱点与抗性表占 50%',
-  /\.monster-resistance-table \{[\s\S]*?width: 50%;/.test(stats),
+  '弱点与抗性表占 53%',
+  /\.monster-resistance-table \{[\s\S]*?width: 53%;/.test(stats),
 )
 check(
   '图片本身设宽度上限，避免竖图在宽屏过高',
