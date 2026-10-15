@@ -3,6 +3,10 @@ import { computed } from 'vue'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
 import { formatHp } from '@/utils/gameData'
+import {
+  buildMonsterResistanceRows,
+  type MonsterResistanceRow,
+} from '@/utils/monsterResistanceTable'
 
 /**
  * 数据行取值：基础字段沿用 boss_info（`BossInfoRecord`）的 snake_case 命名，
@@ -48,6 +52,8 @@ const props = defineProps<{
   imageClickable?: boolean
   /** 图片列下方常驻提示，如「点击怪物图片可更换怪物」；缺省不渲染（可点击时也用作无障碍名称） */
   imageHint?: string | null
+  /** 是否在数据块右侧渲染「弱点与抗性」表（六属性 × 伤害/异常积蓄/失衡/最大异常积蓄） */
+  showResistanceTable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +65,27 @@ const staggerMultiplierLabel = computed(() => {
   const multiplier = props.record?.stagger_multiplier ?? DEFAULT_ENEMY_STAGGER_MULTIPLIER
   return `${Math.round(multiplier * 100)}%（${multiplier}）`
 })
+
+/** 「弱点与抗性」表数据：仅在显式开启且存在数据块（弱点/抗性来源）时生成 */
+const resistanceRows = computed<MonsterResistanceRow[]>(() => {
+  if (!props.showResistanceTable || !props.record) return []
+  return buildMonsterResistanceRows({
+    weakness: props.record.weakness,
+    resistance: props.record.resistance,
+    resistance_high: props.record.resistance_high,
+    level: props.record.level,
+  })
+})
+
+/** 百分比展示：负值保留 -，正值与 0 不加 +（对齐怪物页口径） */
+function formatPercent(percent: number): string {
+  return `${percent}%`
+}
+
+/** 最大异常积蓄按千分位展示，如 3,960 */
+function formatMaxAnomalyProgress(value: number): string {
+  return value.toLocaleString('en-US')
+}
 
 function onImageClick() {
   if (!props.imageClickable) return
@@ -74,7 +101,10 @@ function onImageKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="monster-detail-stats">
+  <div
+    class="monster-detail-stats"
+    :class="{ 'monster-detail-stats--with-resistance-table': resistanceRows.length > 0 }"
+  >
     <div class="monster-detail-media">
       <div
         class="monster-detail-image"
@@ -152,6 +182,44 @@ function onImageKeydown(event: KeyboardEvent) {
           />
         </span>
       </p>
+    </div>
+
+    <div v-if="resistanceRows.length" class="monster-resistance-table">
+      <table class="monster-resistance-grid">
+        <caption class="monster-resistance-caption">
+          弱点与抗性
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">类型</th>
+            <th scope="col">伤害</th>
+            <th scope="col">异常积蓄</th>
+            <th scope="col">失衡</th>
+            <th scope="col">最大异常积蓄</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in resistanceRows" :key="row.element">
+            <th scope="row" class="monster-resistance-element-cell">
+              <span class="monster-resistance-element">
+                <img
+                  v-if="row.icon"
+                  class="monster-resistance-icon"
+                  :src="row.icon"
+                  :alt="row.element"
+                  :title="row.element"
+                  loading="lazy"
+                />
+                <span class="monster-resistance-element-name">{{ row.element }}</span>
+              </span>
+            </th>
+            <td>{{ formatPercent(row.damagePercent) }}</td>
+            <td>{{ formatPercent(row.anomalyPercent) }}</td>
+            <td>{{ formatPercent(row.staggerPercent) }}</td>
+            <td>{{ formatMaxAnomalyProgress(row.maxAnomalyProgress) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
@@ -278,6 +346,71 @@ function onImageKeydown(event: KeyboardEvent) {
   overflow-wrap: anywhere;
 }
 
+/* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄） */
+.monster-resistance-table {
+  flex: 0 0 auto;
+  width: clamp(250px, 33%, 380px);
+  min-width: 0;
+  /* 极端窄屏下表格内部滚动，避免撑出整页横向滚动条 */
+  overflow-x: auto;
+}
+
+.monster-resistance-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: clamp(0.76rem, 1.3vw, 0.86rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.monster-resistance-caption {
+  caption-side: top;
+  padding: 0 0 0.3rem;
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.monster-resistance-grid th,
+.monster-resistance-grid td {
+  padding: 0.24rem 0.34rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: center;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-heading);
+}
+
+.monster-resistance-grid thead th {
+  background: var(--color-background-mute);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* 类型列按内容收窄，其余数值列均分剩余宽度（选择器需压过 .monster-resistance-grid th） */
+.monster-resistance-grid .monster-resistance-element-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.monster-resistance-element {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.monster-resistance-icon {
+  width: 1.05em;
+  height: 1.05em;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.monster-resistance-element-name {
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .monster-detail-stats {
     flex-direction: column;
@@ -289,6 +422,23 @@ function onImageKeydown(event: KeyboardEvent) {
   }
 
   .monster-detail-data {
+    width: 100%;
+  }
+
+  /* 已竖排：表跟随数据块占满整行，避免 33% 宽显得过窄 */
+  .monster-resistance-table {
+    width: 100%;
+  }
+}
+
+/* 中等宽度（769–900px）三列并排会明显挤压数据行：让表整行落到数据块下方 */
+@media (min-width: 769px) and (max-width: 900px) {
+  .monster-detail-stats--with-resistance-table {
+    flex-wrap: wrap;
+  }
+
+  .monster-detail-stats--with-resistance-table .monster-resistance-table {
+    flex: 1 1 100%;
     width: 100%;
   }
 }

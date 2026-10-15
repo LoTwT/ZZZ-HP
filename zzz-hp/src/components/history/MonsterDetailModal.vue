@@ -122,6 +122,7 @@ watch(
         :record="detailRecord"
         :image-url="enemy.imageUrl"
         :image-alt="enemy.bossName || enemy.label"
+        :show-resistance-table="true"
       />
 
       <RoomBuffTransitionPanel
