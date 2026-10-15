@@ -24,6 +24,8 @@ interface BossInfoDraft {
   level: number
   stagger_multiplier: number
   stagger_time: number | ''
+  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  anomaly_bar_coefficient: number | ''
   weakness: string
   resistance: string
   /** 高抗性（40%）属性，为 resistance 的子集 */
@@ -76,6 +78,7 @@ function createEmptyDraft(): BossInfoDraft {
     level: 1,
     stagger_multiplier: 1.5,
     stagger_time: '',
+    anomaly_bar_coefficient: '',
     weakness: '',
     resistance: '',
     resistance_high: '',
@@ -150,6 +153,10 @@ function toDraft(row: BossInfoRecord): BossInfoDraft {
     stagger_time:
       row.stagger_time != null && Number.isFinite(Number(row.stagger_time))
         ? Number(row.stagger_time)
+        : '',
+    anomaly_bar_coefficient:
+      row.anomaly_bar_coefficient != null && Number.isFinite(Number(row.anomaly_bar_coefficient))
+        ? Number(row.anomaly_bar_coefficient)
         : '',
     weakness: row.weakness ?? '',
     resistance: row.resistance ?? '',
@@ -268,6 +275,10 @@ async function saveEdit() {
         draft.value.stagger_time === '' || draft.value.stagger_time == null
           ? null
           : Number(draft.value.stagger_time),
+      anomaly_bar_coefficient:
+        draft.value.anomaly_bar_coefficient === '' || draft.value.anomaly_bar_coefficient == null
+          ? null
+          : Number(draft.value.anomaly_bar_coefficient),
       field_buff_sets: sets,
     })
     message.value = '已保存'
@@ -493,6 +504,16 @@ onMounted(() => {
           <span>失衡时间（秒）</span>
           <input v-model="draft.stagger_time" type="number" min="0" step="0.1" />
         </label>
+        <label class="field">
+          <span>异常条系数</span>
+          <input
+            v-model="draft.anomaly_bar_coefficient"
+            type="number"
+            min="0"
+            step="0.0001"
+            placeholder="1.32"
+          />
+        </label>
         <div class="field">
           <ElementTraitChips v-model="draft.weakness" label="弱点" variant="weak" />
         </div>
@@ -582,6 +603,7 @@ onMounted(() => {
             <th>等级</th>
             <th>失衡易伤</th>
             <th>失衡时间</th>
+            <th>异常条系数</th>
             <th>弱点</th>
             <th>抗性</th>
             <th>危局基础血量</th>
@@ -597,6 +619,7 @@ onMounted(() => {
             <td>{{ row.level }}</td>
             <td>{{ row.stagger_multiplier ?? 1.5 }}</td>
             <td>{{ row.stagger_time ?? '—' }}</td>
+            <td>{{ row.anomaly_bar_coefficient ?? 1 }}</td>
             <td>{{ row.weakness || '—' }}</td>
             <td>{{ row.resistance || '—' }}</td>
             <td>{{ row.crisis_base_hp ?? '—' }}</td>

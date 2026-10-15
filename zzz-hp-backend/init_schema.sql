@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS boss_info (
   crisis_base_hp DOUBLE NULL COMMENT '怪物危局基础血量',
   stagger_multiplier DECIMAL(5,3) NOT NULL DEFAULT 1.500 COMMENT '失衡易伤区基础乘数（1.5=150%）',
   stagger_time DECIMAL(8,2) NULL COMMENT '失衡时间（秒）',
+  anomaly_bar_coefficient DECIMAL(6,4) NULL COMMENT '异常条系数；最大异常积蓄 = 基础异常条 × 系数；空按 1 处理',
   field_buff_name VARCHAR(100) NULL COMMENT 'Boss 场地 Buff 名称',
   field_buff_text TEXT NULL COMMENT 'Boss 场地 Buff 文本说明',
   field_buff_image VARCHAR(500) NULL COMMENT 'Boss 场地 Buff 图片',

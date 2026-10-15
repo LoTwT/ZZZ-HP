@@ -73,6 +73,22 @@ export async function ensureBossResistanceSchema() {
   resistanceSchemaEnsured = true
 }
 
+let anomalySchemaEnsured = false
+
+/** boss_info：异常条系数（怪物库属性，boss 表不按期数存列） */
+export async function ensureBossAnomalySchema() {
+  if (anomalySchemaEnsured) return
+
+  if (!(await columnExists('boss_info', 'anomaly_bar_coefficient'))) {
+    await pool.query(
+      `ALTER TABLE boss_info
+       ADD COLUMN anomaly_bar_coefficient DECIMAL(6,4) NULL COMMENT '异常条系数；最大异常积蓄 = 基础异常条 × 系数；空按 1 处理'`,
+    )
+  }
+
+  anomalySchemaEnsured = true
+}
+
 export const DEFAULT_BOSS_STAGGER_MULTIPLIER = 1.5
 
 export function normalizeStaggerMultiplier(value, fallback = DEFAULT_BOSS_STAGGER_MULTIPLIER) {
@@ -87,4 +103,12 @@ export function normalizeStaggerTime(value) {
   const num = Number(value)
   if (!Number.isFinite(num) || num < 0) return null
   return Math.round(num * 100) / 100
+}
+
+/** 异常条系数；最大异常积蓄 = 基础异常条 × 系数；空 / 非法 / ≤0 → null（展示按 1 处理） */
+export function normalizeAnomalyBarCoefficient(value) {
+  if (value == null || value === '') return null
+  const num = Number(value)
+  if (!Number.isFinite(num) || num <= 0) return null
+  return Math.round(num * 10000) / 10000
 }

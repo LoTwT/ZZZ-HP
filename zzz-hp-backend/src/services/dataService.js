@@ -5,6 +5,7 @@ import {
   DEFAULT_BOSS_STAGGER_MULTIPLIER,
   ensureBossResistanceSchema,
   ensureBossStaggerSchema,
+  normalizeAnomalyBarCoefficient,
   normalizeStaggerMultiplier,
   normalizeStaggerTime,
 } from '../utils/bossSchema.js'
@@ -102,6 +103,7 @@ export async function createBoss(payload) {
     hp_coeff_manual = false,
     stagger_multiplier = null,
     stagger_time = null,
+    anomaly_bar_coefficient = null,
     mode = null,
     field_buff_set_id = null,
   } = payload
@@ -180,6 +182,7 @@ export async function createBoss(payload) {
         ? normalizeStaggerMultiplier(stagger_multiplier)
         : DEFAULT_BOSS_STAGGER_MULTIPLIER,
     stagger_time: staggerTimeValue,
+    anomaly_bar_coefficient: normalizeAnomalyBarCoefficient(anomaly_bar_coefficient),
   })
 
   const staggerValue =
