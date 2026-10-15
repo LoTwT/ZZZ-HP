@@ -36,7 +36,7 @@ export interface EnemySlot {
   resistanceHigh?: string
   /** 敌方失衡易伤区基础乘数（1.5 = 150%），来自 boss / boss_info */
   staggerMultiplier?: number | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），来自 boss_info；缺失时前端按 1 兜底 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），来自 boss_info；缺失时前端按 1 兜底 */
   anomalyBarCoefficient?: number | null
   footer?: string
   /** 怪物危局基础血量 */

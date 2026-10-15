@@ -1,5 +1,5 @@
 /**
- * 异常条系数（最大异常积蓄 = 基础异常条长度 × 系数）——后端单一事实来源。
+ * 异常条系数（初始异常积蓄 = 基础异常条长度 × 系数）——后端单一事实来源。
  *
  * 单一事实来源与覆盖关系：
  * - 本模块的 `ANOMALY_BAR_COEFFICIENT_BY_NAME` 是**内置默认值**：不接数据库、不跑任何脚本即可开箱生效；
@@ -55,7 +55,7 @@ const ANOMALY_BAR_COEFFICIENT_BY_NORMALIZED_NAME = new Map(
 /**
  * 异常条系数：显式值（boss_info 覆盖）> 内置默认表 > null。
  * 显式值须为有限正数；0 / 负数 / NaN / Infinity / 空一律视为「未提供」，
- * 避免脏数据把最大异常积蓄算成 0 或负数。
+ * 避免脏数据把初始异常积蓄算成 0 或负数。
  * 两处都没有时返回 **null**（而非 1）：是否按 1 兜底由调用方 / 展示层决定。
  */
 export function resolveAnomalyBarCoefficient(bossName, explicitValue) {

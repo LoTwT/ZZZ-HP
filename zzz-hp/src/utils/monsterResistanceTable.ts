@@ -6,7 +6,7 @@ import {
 import { elementIconPath, splitTraitElements } from '@/utils/elementIcons'
 
 /**
- * 怪物详情弹窗的「弱点与抗性」表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄），
+ * 怪物详情弹窗的「弱点与抗性」表（六属性 × 伤害 / 异常积蓄 / 失衡 / 初始异常积蓄），
  * 展示口径对齐 nanoka 怪物页（用户提供截图）。
  *
  * 知识来源与可信度：
@@ -14,11 +14,11 @@ import { elementIconPath, splitTraitElements } from '@/utils/elementIcons'
  *   此处不写任何百分比字面量，全部由该表 × 100 推导。
  * - 异常积蓄 / 失衡列：**推断**——截图中 40% 抗性属性的这两列显示为 20%，
  *   故按「伤害值截断到 ±20% 档（`RESISTANCE_VALUE_MAP.weak` / `.res20`）」实现，待验证。
- * - 最大异常积蓄列：**用户提供的真实游戏数据**——最大异常积蓄 = 基础异常条长度 × 异常条系数 × 版本系数，
+ * - 初始异常积蓄列：**用户提供的真实游戏数据**——初始异常积蓄 = 基础异常条长度 × 异常条系数 × 版本系数，
  *   基础值按敌人类别（普通 / 精英 / 首领）与属性分列；展示口径为初始条长（0 次已异常）。
  *   异常条系数由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局按 phases 里 boss 的同名字段下发），
  *   内置默认表在后端读取时解析，前端不持有副本，字段缺失 / 非法时只按 1 兜底，
- *   并置 `maxAnomalyProgressEstimated`，避免把基础条冒充成真实最大异常积蓄（见下）。
+ *   并置 `maxAnomalyProgressEstimated`，避免把基础条冒充成真实初始异常积蓄（见下）。
  *   版本系数同为**用户提供的游戏数据**：2.1 第一期及以后异常条整体 ×1.1，版本号解析不出时按 1（不乘）。
  *   `zzz-hp-backend/insert_boss_anomaly_coefficients.sql` 只在需要把默认值落库时执行。
  */
@@ -93,7 +93,7 @@ const ANOMALY_STAGGER_UPPER_BOUND_PERCENT = RESISTANCE_VALUE_MAP.res20 * 100
 
 /**
  * 数据侧下发的异常条系数是否为「已配置」：须为有限正数。
- * 0 / 负数 / NaN / Infinity 一律视为未配置，避免脏数据把最大异常积蓄算成 0 或负数；
+ * 0 / 负数 / NaN / Infinity 一律视为未配置，避免脏数据把初始异常积蓄算成 0 或负数；
  * 内置默认表由后端解析，前端不参与，前端也不持有按 Boss 名的副本。
  */
 export function isAnomalyBarCoefficientConfigured(
@@ -108,11 +108,12 @@ function resolveAnomalyBarCoefficient(explicitValue: number | null | undefined):
 }
 
 /**
- * 版本系数：2.1 第一期及以后异常条整体 ×1.1（用户提供的游戏数据）。
+ * 版本系数：**2.1 之前**出现的怪物异常条 ×1.1（用户提供的游戏数据）；
+ * 2.1 及以后出现的怪物不再乘（那批数据本身已含这一档）。
  * 版本号只比较「主.次」两段；缺段 / 空串 / 非数字一律保守返回 false（不乘）。
  */
 export const ANOMALY_BAR_VERSION_MULTIPLIER = 1.1
-export const ANOMALY_BAR_VERSION_MULTIPLIER_FROM = '2.1'
+export const ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION = '2.1'
 
 function parseMajorMinorVersion(version: string | null | undefined): [number, number] | null {
   if (typeof version !== 'string') return null
@@ -121,11 +122,12 @@ function parseMajorMinorVersion(version: string | null | undefined): [number, nu
   return [Number(match[1]), Number(match[2])]
 }
 
+/** 版本早于 2.1（不含 2.1）时乘版本系数；2.1 及以后、版本未知一律不乘 */
 export function isAnomalyBarVersionMultiplier(version: string | null | undefined): boolean {
   const target = parseMajorMinorVersion(version)
-  const from = parseMajorMinorVersion(ANOMALY_BAR_VERSION_MULTIPLIER_FROM)
-  if (target === null || from === null) return false
-  return target[0] > from[0] || (target[0] === from[0] && target[1] >= from[1])
+  const before = parseMajorMinorVersion(ANOMALY_BAR_VERSION_MULTIPLIER_BEFORE_VERSION)
+  if (target === null || before === null) return false
+  return target[0] < before[0] || (target[0] === before[0] && target[1] < before[1])
 }
 
 export interface MonsterResistanceTableInput {
@@ -136,7 +138,7 @@ export interface MonsterResistanceTableInput {
   /** 高抗性（40%）属性，为 resistance 的子集 */
   resistance_high?: string | string[] | null
   /**
-   * 怪物等级。最大异常积蓄是否随等级变化未经验证（见模块注释），
+   * 怪物等级。初始异常积蓄是否随等级变化未经验证（见模块注释），
    * 当前不参与计算，仅作调用方显式声明用。
    */
   level?: number | null
@@ -162,10 +164,10 @@ export interface MonsterResistanceRow {
   anomalyPercent: number
   /** 失衡百分比（同异常积蓄截断规则） */
   staggerPercent: number
-  /** 最大异常积蓄 = 基础异常条（初始条长）× 异常条系数 × 版本系数，四舍五入取整；千分位由展示层格式化 */
+  /** 初始异常积蓄 = 基础异常条（初始条长）× 异常条系数 × 版本系数，四舍五入取整；千分位由展示层格式化 */
   maxAnomalyProgress: number
   /**
-   * 上面的最大异常积蓄是否为估算值：异常条系数未由数据侧配置时为 true
+   * 上面的初始异常积蓄是否为估算值：异常条系数未由数据侧配置时为 true
    * （此时只按 1 参与计算，值退化为基础条 × 版本系数），展示层据此加 `*` 标注。
    */
   maxAnomalyProgressEstimated: boolean

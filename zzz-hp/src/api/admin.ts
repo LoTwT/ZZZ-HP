@@ -35,7 +35,7 @@ export interface CreateBossPayload {
   hp_coeff_manual?: boolean
   stagger_multiplier?: number | null
   stagger_time?: number | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
   anomaly_bar_coefficient?: number | null
   /** 危局当期绑定的场地 Buff 套 id */
   field_buff_set_id?: string | null
@@ -88,7 +88,7 @@ export interface BossInfoRecord {
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
   anomaly_bar_coefficient?: number | null
   field_buff_sets?: Array<{
     id: string

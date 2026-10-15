@@ -245,7 +245,7 @@ export interface DefenseMonsterDetailBossInfo {
   level?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数）；缺省 / null 由表按 1 处理 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数）；缺省 / null 由表按 1 处理 */
   anomaly_bar_coefficient?: number | null
 }
 

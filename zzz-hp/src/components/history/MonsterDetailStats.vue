@@ -44,7 +44,7 @@ export interface MonsterDetailRecord {
   resistance_high?: string | null
   /** 敌人类别（决定基础异常条）：普通 / 精英 / 首领；缺省按「首领」 */
   monster_category?: 'normal' | 'elite' | 'boss' | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数 × 版本系数），由数据侧下发；缺省视为未配置 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数 × 版本系数），由数据侧下发；缺省视为未配置 */
   anomaly_bar_coefficient?: number | null
   /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于「2.1 起异常条 ×1.1」的判定，缺省不乘 */
   version?: string | null
@@ -61,7 +61,7 @@ const props = defineProps<{
   imageClickable?: boolean
   /** 图片列下方常驻提示，如「点击怪物图片可更换怪物」；缺省不渲染（可点击时也用作无障碍名称） */
   imageHint?: string | null
-  /** 是否在数据块右侧渲染「弱点与抗性」表（六属性 × 伤害/异常积蓄/失衡/最大异常积蓄） */
+  /** 是否在数据块右侧渲染「弱点与抗性」表（六属性 × 伤害/异常积蓄/失衡/初始异常积蓄） */
   showResistanceTable?: boolean
 }>()
 
@@ -110,7 +110,7 @@ function formatPercent(percent: number): string {
   return `${percent}%`
 }
 
-/** 最大异常积蓄按千分位展示，如 3,960 */
+/** 初始异常积蓄按千分位展示，如 3,960 */
 function formatMaxAnomalyProgress(value: number): string {
   return value.toLocaleString('en-US')
 }
@@ -230,7 +230,7 @@ function onImageKeydown(event: KeyboardEvent) {
             <th scope="col">伤害</th>
             <th scope="col">异常积蓄</th>
             <th scope="col">失衡</th>
-            <th scope="col" title="初始条长（0 次已异常）">最大异常积蓄</th>
+            <th scope="col" title="0 次已异常时的初始条长 × 异常条系数 × 版本系数">初始异常积蓄</th>
           </tr>
         </thead>
         <tbody>
@@ -401,7 +401,7 @@ function onImageKeydown(event: KeyboardEvent) {
   font-variant-numeric: tabular-nums;
 }
 
-/* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄） */
+/* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 初始异常积蓄） */
 .monster-resistance-table {
   flex: 0 0 auto;
   /* 与图片 / 数据三列并排时表格占 53% */
@@ -467,7 +467,7 @@ function onImageKeydown(event: KeyboardEvent) {
   font-weight: 600;
 }
 
-/* 未配置异常条系数时的估算标注：保留数值但压低对比度，避免被读成精确的最大异常积蓄 */
+/* 未配置异常条系数时的估算标注：保留数值但压低对比度，避免被读成精确的初始异常积蓄 */
 .monster-resistance-estimated {
   opacity: 0.6;
 }

@@ -21,7 +21,7 @@ export interface BossInfoRecord {
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），缺省按 1 处理 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），缺省按 1 处理 */
   anomaly_bar_coefficient?: number | null
   field_buff_name?: string | null
   field_buff_text?: string | null

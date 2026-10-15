@@ -24,7 +24,7 @@ interface BossInfoDraft {
   level: number
   stagger_multiplier: number
   stagger_time: number | ''
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
   anomaly_bar_coefficient: number | ''
   weakness: string
   resistance: string
