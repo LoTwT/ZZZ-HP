@@ -1552,13 +1552,16 @@ onMounted(() => {
                             :value="monster.weakness"
                             label="弱"
                             variant="weak"
+                            show-percent
                           />
                           <ElementTraitIcons
                             v-if="monster.resistance"
                             class="dd-stat"
                             :value="monster.resistance"
+                            :high-value="monster.resistance_high"
                             label="抗"
                             variant="resist"
+                            show-percent
                           />
                           <span
                             v-if="monster.stagger_time != null"

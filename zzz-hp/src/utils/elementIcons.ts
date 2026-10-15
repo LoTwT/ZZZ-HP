@@ -75,6 +75,25 @@ export function parseElementIcons(
   return items
 }
 
+/** 弱点展示口径：游戏内弱点固定 -0.2 档，页面按绝对值显示为 20% */
+export function weakTraitPercent(): number {
+  return Math.abs(RESISTANCE_VALUE_MAP.weak) * 100
+}
+
+/**
+ * 文本形态的弱点/抗性带百分比：如「20%冰、40%火」。
+ * 未收录图标属性的条目原样保留，不强行加百分比。
+ */
+export function formatTraitTextWithPercent(
+  value: string | string[] | null | undefined,
+  highValue?: string | string[] | null,
+): string {
+  const percentByName = new Map(parseElementIcons(value, highValue).map((item) => [item.name, item.percent]))
+  return splitTraitElements(value)
+    .map((name) => (percentByName.has(name) ? `${percentByName.get(name)}%${name}` : name))
+    .join('、')
+}
+
 export function elementIconPath(name: string): string | null {
   return ELEMENT_ICON_MAP[name] ?? null
 }

@@ -822,7 +822,7 @@ function formatEnemyResistance(value?: string) {
                     class="trait-row"
                   >
                     <p v-if="hasElementIcons(battleRoom.weakness)" class="trait-line">
-                      <ElementTraitIcons :value="battleRoom.weakness" label="弱点" variant="weak" />
+                      <ElementTraitIcons :value="battleRoom.weakness" label="弱点" variant="weak" show-percent />
                     </p>
                     <p
                       v-if="hasElementIcons(filterMeaningfulResistanceTraits(battleRoom.resistance ?? []))"
@@ -830,8 +830,10 @@ function formatEnemyResistance(value?: string) {
                     >
                       <ElementTraitIcons
                         :value="filterMeaningfulResistanceTraits(battleRoom.resistance ?? [])"
+                        :high-value="filterMeaningfulResistanceTraits(battleRoom.resistanceHigh ?? [])"
                         label="抗性"
                         variant="resist"
+                        show-percent
                       />
                     </p>
                   </div>
@@ -908,13 +910,15 @@ function formatEnemyResistance(value?: string) {
                           <span class="trait-label">失衡时间</span>{{ enemy.staggerTime }} 秒
                         </p>
                         <p v-if="hasElementIcons(enemy.weakness)" class="enemy-chip-trait">
-                          <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                          <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
                         </p>
                         <p v-if="hasElementIcons(formatEnemyResistance(enemy.resistance))" class="enemy-chip-trait">
                           <ElementTraitIcons
                             :value="formatEnemyResistance(enemy.resistance)"
+                            :high-value="enemy.resistanceHigh"
                             label="抗性"
                             variant="resist"
+                            show-percent
                           />
                         </p>
                       </div>
