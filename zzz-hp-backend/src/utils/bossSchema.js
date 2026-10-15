@@ -50,6 +50,29 @@ export async function ensureBossStaggerSchema() {
   staggerSchemaEnsured = true
 }
 
+let resistanceSchemaEnsured = false
+
+/** boss / boss_info：高抗性属性（40%） */
+export async function ensureBossResistanceSchema() {
+  if (resistanceSchemaEnsured) return
+
+  if (!(await columnExists('boss_info', 'resistance_high'))) {
+    await pool.query(
+      `ALTER TABLE boss_info
+       ADD COLUMN resistance_high VARCHAR(255) NULL COMMENT '高抗性属性（40%）；为 resistance 的子集'`,
+    )
+  }
+
+  if (!(await columnExists('boss', 'resistance_high'))) {
+    await pool.query(
+      `ALTER TABLE boss
+       ADD COLUMN resistance_high VARCHAR(255) NULL COMMENT '高抗性属性（40%）；为 resistance 的子集；空则回退 boss_info'`,
+    )
+  }
+
+  resistanceSchemaEnsured = true
+}
+
 export const DEFAULT_BOSS_STAGGER_MULTIPLIER = 1.5
 
 export function normalizeStaggerMultiplier(value, fallback = DEFAULT_BOSS_STAGGER_MULTIPLIER) {

@@ -32,6 +32,10 @@ export interface EnemySlot {
   /** 失衡时间（秒） */
   staggerTime?: number | null
   resistance?: string
+  /** 高抗性（40%）属性，为 resistance 的子集。见 dev-docs/boss-resistance-level.md */
+  resistanceHigh?: string
+  /** 敌方失衡易伤区基础乘数（1.5 = 150%），来自 boss / boss_info */
+  staggerMultiplier?: number | null
   footer?: string
   /** 怪物危局基础血量 */
   crisisBaseHp?: number | null

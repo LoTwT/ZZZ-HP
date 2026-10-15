@@ -10,7 +10,7 @@ import {
 } from '../utils/bossFieldBuff.js'
 import { ensureDeductionStoryOptionsColumn } from './deductionSchemaService.js'
 import { applyBossFallbackToPeriodNodes } from '../utils/deductionLayerFallback.js'
-import { ensureBossStaggerSchema, normalizeStaggerTime } from '../utils/bossSchema.js'
+import { ensureBossResistanceSchema, ensureBossStaggerSchema, normalizeStaggerTime } from '../utils/bossSchema.js'
 
 let schemaEnsured = false
 
@@ -90,6 +90,7 @@ function putImageAlias(map, key, value) {
 export async function getDeductionPhases() {
   await ensureDeductionSchema()
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   const [rows] = await pool.execute(
     `SELECT version, phase, node_id, node_name, node_type, prev_node, story_text, story_options_json, layers_json, buffs_json, period_name
      FROM deduction_node
@@ -152,7 +153,7 @@ export async function getDeductionPhases() {
 
   // layers_json 损坏/为空时，从 boss 表按 room 回退重建（与 nanoka 导入的平铺 boss 行一致）
   const [bossStatRows] = await pool.execute(
-    `SELECT version, room, boss_name, hp, defense, level, weakness, resistance, boss_image, stagger_time
+    `SELECT version, room, boss_name, hp, defense, level, weakness, resistance, resistance_high, boss_image, stagger_time
      FROM boss
      WHERE mode = 'deduction'`,
   )

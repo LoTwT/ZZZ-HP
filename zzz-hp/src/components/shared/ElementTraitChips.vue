@@ -8,27 +8,45 @@ import {
 } from '@/utils/elementIcons'
 
 const model = defineModel<string>({ default: '' })
+/** 高抗性（40%）子集；仅 allowHigh 时使用，必须始终是 model 的子集 */
+const highModel = defineModel<string>('high', { default: '' })
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     label?: string
     variant?: 'weak' | 'resist'
     disabled?: boolean
     /** stack：标签在上；inline：标签与芯片横排（临界编辑用） */
     layout?: 'stack' | 'inline'
+    /** 是否提供「高抗性（40%）」二级选择（默认关闭，保持既有调用方行为） */
+    allowHigh?: boolean
   }>(),
   {
     label: '',
     variant: 'weak',
     disabled: false,
     layout: 'stack',
+    allowHigh: false,
   },
 )
 
 const selected = computed(() => splitTraitElements(model.value))
+// 只认 value 里的元素，保证 high ⊆ value（历史数据里若有越权项，一次点击即可自然剔除）
+const highSelected = computed(() =>
+  splitTraitElements(highModel.value).filter((el) => selected.value.includes(el)),
+)
 
 function onToggle(el: string) {
-  model.value = joinTraitElements(toggleTraitElement(selected.value, el))
+  const next = toggleTraitElement(selected.value, el)
+  model.value = joinTraitElements(next)
+  // 取消主行选中即同时退出高抗性，保证 high ⊆ value
+  if (props.allowHigh && !next.includes(el)) {
+    highModel.value = joinTraitElements(highSelected.value.filter((item) => item !== el))
+  }
+}
+
+function onToggleHigh(el: string) {
+  highModel.value = joinTraitElements(toggleTraitElement(highSelected.value, el))
 }
 </script>
 
@@ -56,6 +74,25 @@ function onToggle(el: string) {
       >
         {{ el }}
       </button>
+    </div>
+    <div v-if="allowHigh && selected.length" class="trait-chips-high">
+      <span class="trait-chips-label trait-chips-label--sub">高抗性（40%）</span>
+      <div class="trait-chips-list">
+        <button
+          v-for="el in selected"
+          :key="`high-${el}`"
+          type="button"
+          class="trait-chip"
+          :class="{
+            'trait-chip--on': highSelected.includes(el),
+            'trait-chip--resist': variant === 'resist',
+          }"
+          :disabled="disabled"
+          @click="onToggleHigh(el)"
+        >
+          {{ el }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -86,6 +123,17 @@ function onToggle(el: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 0.28rem;
+}
+
+.trait-chips-high {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.trait-chips-label--sub {
+  font-size: 0.72rem;
+  opacity: 0.7;
 }
 
 .trait-chip {

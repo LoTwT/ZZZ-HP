@@ -13,6 +13,8 @@ export interface BossInfoLike {
   level?: number | null
   weakness?: string | null
   resistance?: string | null
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistance_high?: string | null
   stagger_multiplier?: number | null
   boss_image?: string | null
 }
@@ -54,7 +56,11 @@ export function mapBossInfoToDamageEnemyInput(
   return {
     ...base,
     defense: Number(info.defense) || base.defense,
-    elementResistance: parseBossTraitToElementResistance(info.weakness, info.resistance),
+    elementResistance: parseBossTraitToElementResistance(
+      info.weakness,
+      info.resistance,
+      info.resistance_high,
+    ),
     staggerMultiplier: resolveBossStaggerMultiplier(
       undefined,
       info.stagger_multiplier,
@@ -76,6 +82,7 @@ export function mapBossRecordToDamageEnemyInput(
   const base = normalizeDamageEnemyInput(current)
   const weakness = record.weakness ?? info?.weakness ?? null
   const resistance = record.resistance ?? info?.resistance ?? null
+  const resistanceHigh = record.resistance_high ?? info?.resistance_high ?? null
   const version = record.version?.trim()
   const phase = record.phase?.trim()
   const room = record.room?.trim()
@@ -88,7 +95,7 @@ export function mapBossRecordToDamageEnemyInput(
   return {
     ...base,
     defense: Number(record.defense) || Number(info?.defense) || base.defense,
-    elementResistance: parseBossTraitToElementResistance(weakness, resistance),
+    elementResistance: parseBossTraitToElementResistance(weakness, resistance, resistanceHigh),
     staggerMultiplier: resolveBossStaggerMultiplier(
       record.stagger_multiplier,
       info?.stagger_multiplier,

@@ -26,6 +26,8 @@ interface BossInfoDraft {
   stagger_time: number | ''
   weakness: string
   resistance: string
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistance_high: string
   crisis_base_hp: number | ''
   boss_image: string
 }
@@ -76,6 +78,7 @@ function createEmptyDraft(): BossInfoDraft {
     stagger_time: '',
     weakness: '',
     resistance: '',
+    resistance_high: '',
     crisis_base_hp: '',
     boss_image: '',
   }
@@ -150,6 +153,7 @@ function toDraft(row: BossInfoRecord): BossInfoDraft {
         : '',
     weakness: row.weakness ?? '',
     resistance: row.resistance ?? '',
+    resistance_high: row.resistance_high ?? '',
     crisis_base_hp:
       row.crisis_base_hp != null && Number.isFinite(Number(row.crisis_base_hp))
         ? Number(row.crisis_base_hp)
@@ -253,6 +257,7 @@ async function saveEdit() {
       level: Number(draft.value.level) || 1,
       weakness: draft.value.weakness.trim() || null,
       resistance: draft.value.resistance.trim() || null,
+      resistance_high: draft.value.resistance_high.trim() || null,
       boss_image: draft.value.boss_image.trim() || null,
       crisis_base_hp:
         draft.value.crisis_base_hp === '' || draft.value.crisis_base_hp == null
@@ -492,7 +497,13 @@ onMounted(() => {
           <ElementTraitChips v-model="draft.weakness" label="弱点" variant="weak" />
         </div>
         <div class="field">
-          <ElementTraitChips v-model="draft.resistance" label="抗性" variant="resist" />
+          <ElementTraitChips
+            v-model="draft.resistance"
+            v-model:high="draft.resistance_high"
+            label="抗性"
+            variant="resist"
+            allow-high
+          />
         </div>
         <label class="field">
           <span>危局基础血量</span>

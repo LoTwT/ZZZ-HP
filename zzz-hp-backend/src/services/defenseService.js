@@ -18,7 +18,11 @@ import {
   seasonTrashKey,
 } from './seasonContentTrashService.js'
 import { ensureContentModeColumns } from './contentModeService.js'
-import { ensureBossStaggerSchema, normalizeStaggerTime } from '../utils/bossSchema.js'
+import {
+  ensureBossResistanceSchema,
+  ensureBossStaggerSchema,
+  normalizeStaggerTime,
+} from '../utils/bossSchema.js'
 
 const CHINESE_STAGE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
@@ -183,6 +187,7 @@ function ensureBattleRoom(room, stage, roomInStage) {
       waveCount: 0,
       weakness: [],
       resistance: [],
+      resistanceHigh: [],
       waves: new Map(),
     })
   }
@@ -217,6 +222,7 @@ function finalizeBattleRoom(battleRoom) {
     waveCount: waves.length,
     weakness: [...new Set(battleRoom.weakness)],
     resistance: [...new Set(battleRoom.resistance)].filter(isMeaningfulResistanceTrait),
+    resistanceHigh: [...new Set(battleRoom.resistanceHigh)].filter(isMeaningfulResistanceTrait),
     waves,
   }
 }
@@ -312,8 +318,9 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
   await ensureEnvironmentBuffSchema()
   await ensureContentModeColumns(pool)
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   const [bossRows] = await pool.execute(
-    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, stagger_time
+    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_time
      FROM boss
      WHERE mode = 'defense'
      ORDER BY version, CAST(phase AS UNSIGNED), id`,
@@ -421,6 +428,9 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
       splitTraitText(boss.resistance)
         .filter(isMeaningfulResistanceTrait)
         .forEach((item) => battleRoom.resistance.push(item))
+      splitTraitText(boss.resistance_high)
+        .filter(isMeaningfulResistanceTrait)
+        .forEach((item) => battleRoom.resistanceHigh.push(item))
     }
 
     const wave = ensureWave(battleRoom, decoded.wave)
@@ -436,6 +446,7 @@ export async function getDefenseSeasons(variant = 'new', { includeHidden = false
       staggerTime:
         normalizeStaggerTime(boss.stagger_time) ?? staggerTimeByName.get(boss.boss_name) ?? null,
       resistance: normalizeResistanceText(boss.resistance),
+      resistanceHigh: normalizeResistanceText(boss.resistance_high),
       isBoss: decoded.monsterCategory === 'boss',
     })
   }

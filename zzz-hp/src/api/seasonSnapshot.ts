@@ -58,6 +58,7 @@ export interface SeasonSnapshotBoss {
   room: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   stagger_multiplier: number | null
   stagger_time: number | null
@@ -87,6 +88,7 @@ export interface SeasonSnapshotBossInfo {
   level: number
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   crisis_base_hp: number | null
   stagger_multiplier: number | null

@@ -2,7 +2,7 @@ import pool from '../config/db.js'
 import { listBossInfoByNames, upsertBossInfo } from './bossInfoService.js'
 import { createBoss, createBuff } from './dataService.js'
 import { upsertSeasonDate } from './seasonDateService.js'
-import { ensureBossStaggerSchema } from '../utils/bossSchema.js'
+import { ensureBossResistanceSchema, ensureBossStaggerSchema } from '../utils/bossSchema.js'
 import { ensureContentModeColumns } from './contentModeService.js'
 import {
   decodeDefenseBossId,
@@ -96,6 +96,7 @@ function mapBossRow(row) {
     room: row.room ?? null,
     weakness: row.weakness ?? null,
     resistance: row.resistance ?? null,
+    resistance_high: row.resistance_high ?? null,
     boss_image: row.boss_image ?? null,
     stagger_multiplier:
       row.stagger_multiplier == null || row.stagger_multiplier === ''
@@ -160,6 +161,7 @@ function mapBossInfoExport(row) {
     level: Number(row.level) || 1,
     weakness: row.weakness ?? null,
     resistance: row.resistance ?? null,
+    resistance_high: row.resistance_high ?? null,
     boss_image: row.boss_image ?? null,
     crisis_base_hp: row.crisis_base_hp == null ? null : Number(row.crisis_base_hp),
     stagger_multiplier: row.stagger_multiplier == null ? null : Number(row.stagger_multiplier),
@@ -230,12 +232,13 @@ export async function exportSeasonSnapshot(scheme, variant = null) {
   const variantValue = normalizeVariant(mode, variant)
 
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   await ensureContentModeColumns(pool)
 
   const [bossRows] = await pool.query(
     `SELECT id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room,
-            weakness, resistance, boss_image, stagger_multiplier, stagger_time, mode
+            weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, mode
      FROM boss
      WHERE ${bossScopeSql(mode)}
      ORDER BY CAST(REPLACE(version, '.', '') AS UNSIGNED) DESC,
@@ -383,6 +386,7 @@ function bossImportPayload(row) {
     room: row.room ?? null,
     weakness: row.weakness ?? null,
     resistance: row.resistance ?? null,
+    resistance_high: row.resistance_high ?? null,
     boss_image: row.boss_image ?? null,
     stagger_multiplier: row.stagger_multiplier ?? null,
     stagger_time: row.stagger_time ?? null,

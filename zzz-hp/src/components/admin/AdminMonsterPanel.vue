@@ -75,6 +75,8 @@ const count = ref('1')
 const previewId = ref('')
 const weakness = ref('')
 const resistance = ref('')
+/** 高抗性（40%）属性，为 resistance 的子集 */
+const resistanceHigh = ref('')
 const staggerMultiplier = ref('1.5')
 const staggerTime = ref('')
 const fieldBuffSetId = ref('')
@@ -178,6 +180,7 @@ function applyBossInfo(info: {
   level: number
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
@@ -193,6 +196,7 @@ function applyBossInfo(info: {
   level.value = String(applyReusedMonsterLevel(level.value, info.level ?? 0))
   weakness.value = info.weakness ?? ''
   resistance.value = info.resistance ?? ''
+  resistanceHigh.value = info.resistance_high ?? ''
   if (info.stagger_multiplier != null && Number.isFinite(Number(info.stagger_multiplier))) {
     staggerMultiplier.value = String(info.stagger_multiplier)
   }
@@ -395,6 +399,7 @@ function applySlotContext(ctx: AdminMonsterSlotContext) {
   level.value = ctx.level != null && ctx.level !== '' ? String(ctx.level) : isDefense.value ? '1' : '70'
   weakness.value = ctx.weakness ?? ''
   resistance.value = ctx.resistance ?? ''
+  resistanceHigh.value = ctx.resistanceHigh ?? ''
   crisisBaseHp.value =
     ctx.crisisBaseHp != null && ctx.crisisBaseHp !== '' ? String(ctx.crisisBaseHp) : ''
   hpCoeffManual.value = Boolean(ctx.hpCoeffManual)
@@ -584,6 +589,7 @@ async function submitForm() {
         level: fieldText(level.value) ? Number(level.value) : 70,
         weakness: fieldText(weakness.value) || null,
         resistance: fieldText(resistance.value) || null,
+        resistance_high: fieldText(resistanceHigh.value) || null,
         boss_image: bossImage,
       })
       message.value =
@@ -610,6 +616,7 @@ async function submitForm() {
       resetCrisisCoeffFields()
       weakness.value = ''
       resistance.value = ''
+      resistanceHigh.value = ''
       staggerMultiplier.value = '1.5'
       staggerTime.value = ''
       fieldBuffSetId.value = ''
@@ -641,6 +648,7 @@ async function submitForm() {
       room: isDefense.value ? null : normalizeCrisisRoomCode(room.value),
       weakness: fieldText(weakness.value) || null,
       resistance: fieldText(resistance.value) || null,
+      resistance_high: fieldText(resistanceHigh.value) || null,
       stagger_multiplier: fieldText(staggerMultiplier.value)
         ? Number(staggerMultiplier.value)
         : 1.5,
@@ -689,6 +697,7 @@ async function submitForm() {
     resetCrisisCoeffFields()
     weakness.value = ''
     resistance.value = ''
+    resistanceHigh.value = ''
     staggerMultiplier.value = '1.5'
     staggerTime.value = ''
     fieldBuffSetId.value = ''
@@ -940,7 +949,13 @@ watch(
       </div>
 
       <div class="field">
-        <ElementTraitChips v-model="resistance" label="抗性" variant="resist" />
+        <ElementTraitChips
+          v-model="resistance"
+          v-model:high="resistanceHigh"
+          label="抗性"
+          variant="resist"
+          allow-high
+        />
       </div>
 
       <label class="field">

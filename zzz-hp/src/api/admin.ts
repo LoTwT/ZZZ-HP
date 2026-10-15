@@ -21,6 +21,8 @@ export interface CreateBossPayload {
   room?: string | null
   weakness?: string | null
   resistance?: string | null
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistance_high?: string | null
   boss_image?: string | null
   stage?: number
   roomInStage?: number
@@ -80,6 +82,7 @@ export interface BossInfoRecord {
   boss_image: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
@@ -103,6 +106,7 @@ export interface BossInfoSyncResult {
   boss_image: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
 }
 
 export interface CreateBossResult {
@@ -122,6 +126,7 @@ export interface BossRecord {
   room: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   stagger_multiplier?: number | null
   stagger_time?: number | null

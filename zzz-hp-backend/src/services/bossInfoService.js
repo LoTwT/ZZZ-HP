@@ -2,6 +2,7 @@ import pool from '../config/db.js'
 import { getCrisisBaseHpByName } from '../utils/crisisHpCoeff.js'
 import {
   DEFAULT_BOSS_STAGGER_MULTIPLIER,
+  ensureBossResistanceSchema,
   ensureBossStaggerSchema,
   normalizeStaggerMultiplier,
   normalizeStaggerTime,
@@ -19,7 +20,7 @@ import {
 
 const BOSS_INFO_CATALOGS = new Set(['crisis', 'defense', 'deduction'])
 
-const BOSS_INFO_COLUMNS = `id, boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+const BOSS_INFO_COLUMNS = `id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
   field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets`
 
 function resolveIncomingFieldBuffSets(payload) {
@@ -75,6 +76,7 @@ function normalizeBossInfo(payload) {
     level: Number(payload.level ?? 1),
     weakness: asText(payload.weakness),
     resistance: asText(payload.resistance),
+    resistance_high: asText(payload.resistance_high),
     boss_image: asText(payload.boss_image),
     crisis_base_hp,
     stagger_multiplier: normalizeStaggerMultiplier(
@@ -101,6 +103,7 @@ function bossInfoDiffers(existing, incoming) {
     Number(existing.level) !== incoming.level ||
     (existing.weakness ?? '') !== (incoming.weakness ?? '') ||
     (existing.resistance ?? '') !== (incoming.resistance ?? '') ||
+    (existing.resistance_high ?? '') !== (incoming.resistance_high ?? '') ||
     (existing.boss_image ?? '') !== (incoming.boss_image ?? '') ||
     existingBase !== incomingBase ||
     normalizeStaggerMultiplier(existing.stagger_multiplier) !==
@@ -163,6 +166,7 @@ function mapBossInfoWriteResult(info) {
 
 export async function findBossInfoByName(bossName) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const name = String(bossName ?? '').trim()
   if (!name) return null
@@ -180,6 +184,7 @@ export async function findBossInfoByName(bossName) {
 
 export async function listBossInfoByNames(names) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const unique = [...new Set((names || []).map((name) => String(name ?? '').trim()).filter(Boolean))]
   if (!unique.length) return []
@@ -201,6 +206,7 @@ export async function listBossInfoByNames(names) {
 
 export async function searchBossInfoNames(keyword, limit = 20) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   const query = String(keyword ?? '').trim()
   if (!query) return []
 
@@ -225,6 +231,7 @@ export async function listBossInfoRecords({
   catalog = 'all',
 } = {}) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   await ensureContentModeColumns(pool)
 
@@ -276,6 +283,7 @@ export async function listBossInfoRecords({
 
 export async function updateBossInfoById(id, payload) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const bossId = Number(id)
   if (!Number.isInteger(bossId) || bossId <= 0) {
@@ -333,7 +341,7 @@ export async function updateBossInfoById(id, payload) {
 
   await pool.execute(
     `UPDATE boss_info
-     SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?,
+     SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?,
          crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?,
          field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
          field_buff_sets = ?
@@ -345,6 +353,7 @@ export async function updateBossInfoById(id, payload) {
       info.boss_image,
       info.weakness,
       info.resistance,
+      info.resistance_high,
       info.crisis_base_hp,
       info.stagger_multiplier,
       info.stagger_time,
@@ -366,6 +375,7 @@ export async function updateBossInfoById(id, payload) {
 
 export async function upsertBossInfo(payload) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const info = normalizeBossInfo(payload)
   if (!info.boss_name) {
@@ -377,10 +387,10 @@ export async function upsertBossInfo(payload) {
   if (!existing) {
     const [result] = await pool.execute(
       `INSERT INTO boss_info (
-         boss_name, defense, level, boss_image, weakness, resistance, crisis_base_hp, stagger_multiplier, stagger_time,
+         boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
          field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         info.boss_name,
         info.defense,
@@ -388,6 +398,7 @@ export async function upsertBossInfo(payload) {
         info.boss_image,
         info.weakness,
         info.resistance,
+        info.resistance_high,
         info.crisis_base_hp,
         info.stagger_multiplier,
         info.stagger_time,
@@ -450,7 +461,7 @@ export async function upsertBossInfo(payload) {
 
   await pool.execute(
     `UPDATE boss_info
-     SET defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?,
+     SET defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?, crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?,
          field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
          field_buff_sets = ?
      WHERE id = ?`,
@@ -460,6 +471,7 @@ export async function upsertBossInfo(payload) {
       info.boss_image,
       info.weakness,
       info.resistance,
+      info.resistance_high,
       info.crisis_base_hp,
       info.stagger_multiplier,
       info.stagger_time,
@@ -481,6 +493,7 @@ export async function upsertBossInfo(payload) {
 
 export async function deleteBossInfoById(id) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   const bossId = Number(id)
   if (!Number.isInteger(bossId) || bossId <= 0) {
@@ -522,6 +535,7 @@ export async function deleteBossInfoById(id) {
  */
 export async function syncBossInfoFromBoss({ mode = null } = {}) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureEnvironmentBuffSchema()
   await ensureContentModeColumns(pool)
 
@@ -537,6 +551,7 @@ export async function syncBossInfoFromBoss({ mode = null } = {}) {
            MAX(level) AS level,
            MAX(weakness) AS weakness,
            MAX(resistance) AS resistance,
+           MAX(resistance_high) AS resistance_high,
            GROUP_CONCAT(DISTINCT NULLIF(TRIM(boss_image), '') ORDER BY boss_image SEPARATOR '\\n') AS images
     FROM boss
     WHERE boss_name IS NOT NULL AND TRIM(boss_name) <> ''
@@ -570,6 +585,7 @@ export async function syncBossInfoFromBoss({ mode = null } = {}) {
         level: Number(row.level) || 1,
         weakness: row.weakness ?? null,
         resistance: row.resistance ?? null,
+        resistance_high: row.resistance_high ?? null,
         boss_image: bestImage,
       })
       created += 1

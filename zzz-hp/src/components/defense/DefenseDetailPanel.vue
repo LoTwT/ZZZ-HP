@@ -297,6 +297,7 @@ function buildDefenseMonsterContext(
       level: '1',
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
+      resistanceHigh: enemy.resistanceHigh ?? '',
       bossImage: enemy.imageUrl ?? null,
     }
   } catch {
@@ -310,6 +311,7 @@ function buildDefenseMonsterContext(
       level: '1',
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
+      resistanceHigh: enemy.resistanceHigh ?? '',
       bossImage: enemy.imageUrl ?? null,
     }
   }

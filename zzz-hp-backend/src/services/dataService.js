@@ -3,6 +3,7 @@ import { findBossInfoByName, upsertBossInfo } from './bossInfoService.js'
 import { ensureContentModeColumns } from './contentModeService.js'
 import {
   DEFAULT_BOSS_STAGGER_MULTIPLIER,
+  ensureBossResistanceSchema,
   ensureBossStaggerSchema,
   normalizeStaggerMultiplier,
   normalizeStaggerTime,
@@ -73,6 +74,7 @@ function normalizeManualCoeff(raw) {
 
 export async function createBoss(payload) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureContentModeSchema()
   await ensureEnvironmentBuffSchema()
   const {
@@ -87,6 +89,7 @@ export async function createBoss(payload) {
     room = null,
     weakness = null,
     resistance = null,
+    resistance_high = null,
     boss_image = null,
     stage = null,
     roomInStage = null,
@@ -169,6 +172,7 @@ export async function createBoss(payload) {
     level,
     weakness,
     resistance,
+    resistance_high,
     boss_image: resolvedBossImage,
     crisis_base_hp,
     stagger_multiplier:
@@ -200,6 +204,7 @@ export async function createBoss(payload) {
     roomValue,
     weakness,
     resistance,
+    resistance_high,
     resolvedBossImage,
     staggerValue,
     staggerTimeValue,
@@ -212,7 +217,7 @@ export async function createBoss(payload) {
       await pool.execute(
         `UPDATE boss
          SET version = ?, phase = ?, boss_name = ?, hp = ?, hp_coeff_percent = ?, defense = ?, level = ?,
-             room = ?, weakness = ?, resistance = ?, boss_image = ?, stagger_multiplier = ?, stagger_time = ?,
+             room = ?, weakness = ?, resistance = ?, resistance_high = ?, boss_image = ?, stagger_multiplier = ?, stagger_time = ?,
              field_buff_set_id = ?, mode = ?
          WHERE id = ?`,
         [...bossValues, modeValue, bossId],
@@ -231,6 +236,7 @@ export async function createBoss(payload) {
         room: roomValue,
         weakness,
         resistance,
+        resistance_high,
         boss_image: resolvedBossImage,
         stagger_multiplier: staggerValue,
         stagger_time: staggerTimeValue,
@@ -241,8 +247,8 @@ export async function createBoss(payload) {
     }
 
     await pool.execute(
-      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [bossId, ...bossValues, modeValue],
     )
     return {
@@ -259,6 +265,7 @@ export async function createBoss(payload) {
       room: roomValue,
       weakness,
       resistance,
+      resistance_high,
       boss_image: resolvedBossImage,
       stagger_multiplier: staggerValue,
       stagger_time: staggerTimeValue,
@@ -269,8 +276,8 @@ export async function createBoss(payload) {
   }
 
   const [result] = await pool.execute(
-    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...bossValues, modeValue],
   )
 
@@ -288,6 +295,7 @@ export async function createBoss(payload) {
     room: roomValue,
     weakness,
     resistance,
+    resistance_high,
     boss_image: resolvedBossImage,
     stagger_multiplier: staggerValue,
     stagger_time: staggerTimeValue,
@@ -532,6 +540,7 @@ export async function createBuff(payload) {
 
 export async function upsertBoss(payload) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureContentModeSchema()
   const {
     id,
@@ -544,6 +553,7 @@ export async function upsertBoss(payload) {
     room = null,
     weakness = null,
     resistance = null,
+    resistance_high = null,
     boss_image = null,
     stagger_multiplier = null,
     stagger_time = null,
@@ -572,6 +582,7 @@ export async function upsertBoss(payload) {
     level,
     weakness,
     resistance,
+    resistance_high,
     boss_image: resolvedBossImage,
     stagger_multiplier,
     stagger_time: staggerTimeValue,
@@ -586,7 +597,7 @@ export async function upsertBoss(payload) {
     await pool.execute(
       `UPDATE boss
        SET version = ?, phase = ?, boss_name = ?, hp = ?, defense = ?, level = ?,
-           room = ?, weakness = ?, resistance = ?, boss_image = ?, stagger_multiplier = ?, stagger_time = ?, mode = ?
+           room = ?, weakness = ?, resistance = ?, resistance_high = ?, boss_image = ?, stagger_multiplier = ?, stagger_time = ?, mode = ?
        WHERE id = ?`,
       [
         version,
@@ -598,6 +609,7 @@ export async function upsertBoss(payload) {
         room,
         weakness,
         resistance,
+        resistance_high,
         resolvedBossImage,
         staggerValue,
         staggerTimeValue,
@@ -609,8 +621,8 @@ export async function upsertBoss(payload) {
   }
 
   await pool.execute(
-    `INSERT INTO boss (id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, stagger_multiplier, stagger_time, mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO boss (id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       version,
@@ -622,6 +634,7 @@ export async function upsertBoss(payload) {
       room,
       weakness,
       resistance,
+      resistance_high,
       resolvedBossImage,
       staggerValue,
       staggerTimeValue,
@@ -766,6 +779,7 @@ function matchesBuffRecordScheme(row, recordScheme) {
 
 export async function searchBossRecords(filters = {}) {
   await ensureBossStaggerSchema()
+  await ensureBossResistanceSchema()
   await ensureContentModeSchema()
   const { version, phase, keyword, limit = 50, recordScheme = null } = filters
   const conditions = []
@@ -792,7 +806,7 @@ export async function searchBossRecords(filters = {}) {
   const safeLimit = clampLimit(limit)
 
   const [rows] = await pool.execute(
-    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, boss_image, stagger_multiplier, stagger_time, mode
+    `SELECT id, version, phase, boss_name, hp, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, mode
      FROM boss
      ${where}
      ORDER BY version DESC, phase DESC, id DESC

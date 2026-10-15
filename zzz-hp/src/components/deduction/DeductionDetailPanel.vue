@@ -150,6 +150,7 @@ const monsterDraft = ref<DeductionMonster>({
   level: 1,
   weakness: null,
   resistance: null,
+  resistance_high: null,
   boss_image: null,
 })
 
@@ -310,6 +311,7 @@ function onAddMonster(layer: number) {
     level: 1,
     weakness: null,
     resistance: null,
+    resistance_high: null,
     boss_image: null,
   })
   resetMonsterImagePicker()
@@ -320,6 +322,7 @@ function onAddMonster(layer: number) {
     level: 1,
     weakness: null,
     resistance: null,
+    resistance_high: null,
     boss_image: null,
   }
   editing.value = { kind: 'monster', layer, index }
@@ -724,6 +727,8 @@ function onPickMonster(option: { name: string; [key: string]: unknown }) {
     option.weakness == null ? null : String(option.weakness)
   monsterDraft.value.resistance =
     option.resistance == null ? null : String(option.resistance)
+  monsterDraft.value.resistance_high =
+    option.resistance_high == null ? null : String(option.resistance_high)
   if (option.boss_image) monsterDraft.value.boss_image = String(option.boss_image)
 }
 
@@ -1485,8 +1490,11 @@ onMounted(() => {
                         layout="inline"
                         label="抗性"
                         variant="resist"
+                        allow-high
                         :model-value="monsterDraft.resistance ?? ''"
                         @update:model-value="monsterDraft.resistance = $event || null"
+                        :high="monsterDraft.resistance_high ?? ''"
+                        @update:high="monsterDraft.resistance_high = $event || null"
                       />
                       <div class="dd-inline-media">
                         <span class="dd-mini-label">图片</span>
