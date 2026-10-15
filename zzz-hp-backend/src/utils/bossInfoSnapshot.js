@@ -10,8 +10,10 @@ import {
   mirrorFieldBuffLegacyColumns,
 } from './environmentBuffSchema.js'
 import {
+  ensureBossAnomalySchema,
   ensureBossResistanceSchema,
   ensureBossStaggerSchema,
+  normalizeAnomalyBarCoefficient,
   normalizeStaggerMultiplier,
   normalizeStaggerTime,
 } from './bossSchema.js'
@@ -60,6 +62,9 @@ function normalizeRow(item) {
       item.staggerMultiplier ?? item.stagger_multiplier,
     ),
     staggerTime: normalizeStaggerTime(item.staggerTime ?? item.stagger_time),
+    anomalyBarCoefficient: normalizeAnomalyBarCoefficient(
+      item.anomalyBarCoefficient ?? item.anomaly_bar_coefficient,
+    ),
     fieldBuffSets: serializeFieldBuffSets(sets),
     fieldBuffName: legacy.field_buff_name,
     fieldBuffText: legacy.field_buff_text,
@@ -71,10 +76,11 @@ function normalizeRow(item) {
 export async function exportBossInfoSnapshot() {
   await ensureBossStaggerSchema()
   await ensureBossResistanceSchema()
+  await ensureBossAnomalySchema()
   await ensureEnvironmentBuffSchema()
   const [rows] = await pool.query(`
     SELECT id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high,
-           crisis_base_hp, stagger_multiplier, stagger_time,
+           crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
            field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
     FROM boss_info
     ORDER BY boss_name, id
@@ -97,6 +103,7 @@ export async function exportBossInfoSnapshot() {
       crisisBaseHp: row.crisis_base_hp == null ? null : Number(row.crisis_base_hp),
       staggerMultiplier: normalizeStaggerMultiplier(row.stagger_multiplier),
       staggerTime: normalizeStaggerTime(row.stagger_time),
+      anomalyBarCoefficient: normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient),
       fieldBuffSets: parseFieldBuffSetsJson(row.field_buff_sets),
       fieldBuffName: row.field_buff_name ?? null,
       fieldBuffText: row.field_buff_text ?? null,
@@ -113,6 +120,7 @@ export async function exportBossInfoSnapshot() {
 export async function importBossInfoSnapshot(payload, options = {}) {
   await ensureBossStaggerSchema()
   await ensureBossResistanceSchema()
+  await ensureBossAnomalySchema()
   await ensureEnvironmentBuffSchema()
   const replaceAll = Boolean(options.replace)
   const items = Array.isArray(payload?.rows)
@@ -155,6 +163,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         crisisBase,
         item.staggerMultiplier,
         item.staggerTime,
+        item.anomalyBarCoefficient,
         item.fieldBuffName,
         item.fieldBuffText,
         item.fieldBuffImage,
@@ -166,17 +175,17 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         if (item.id != null) {
           await conn.execute(
             `INSERT INTO boss_info (
-               id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
+               id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
                field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [item.id, ...params],
           )
         } else {
           await conn.execute(
             `INSERT INTO boss_info (
-               boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
+               boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
                field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             params,
           )
         }
@@ -205,7 +214,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
         await conn.execute(
           `UPDATE boss_info
            SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?,
-               crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?,
+               crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?, anomaly_bar_coefficient = ?,
                field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
                field_buff_sets = ?
            WHERE id = ?`,
@@ -220,6 +229,7 @@ export async function importBossInfoSnapshot(payload, options = {}) {
             crisisBase,
             item.staggerMultiplier,
             item.staggerTime,
+            item.anomalyBarCoefficient,
             item.fieldBuffName,
             item.fieldBuffText,
             item.fieldBuffImage,
@@ -235,17 +245,17 @@ export async function importBossInfoSnapshot(payload, options = {}) {
       if (item.id != null) {
         await conn.execute(
           `INSERT INTO boss_info (
-             id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
+             id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
              field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [item.id, ...params],
         )
       } else {
         await conn.execute(
           `INSERT INTO boss_info (
-             boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time,
+             boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
              field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           params,
         )
       }
