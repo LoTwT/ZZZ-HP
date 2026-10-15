@@ -11,6 +11,7 @@ import {
   DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
   getDefenseMonsterCategory,
   isDefenseEliteOrBoss,
+  resolveDefenseMonsterCategory,
   resolveDefenseMonsterDefaultLevel,
 } from '../src/utils/defenseCompare.ts'
 
@@ -231,6 +232,60 @@ check(
   'isDefenseEliteOrBoss 与类别推导一致',
   isDefenseEliteOrBoss(makeEnemy({ id: bossId })) === true &&
     isDefenseEliteOrBoss({ name: '小怪布', hp: '1' }) === false,
+)
+check(
+  '回归守卫：getDefenseMonsterCategory 对 minion 仍返回 null（折线图列表只认精英/Boss）',
+  getDefenseMonsterCategory(makeEnemy({ id: minionId, isBoss: false })) === null,
+)
+
+console.log('[2b] resolveDefenseMonsterCategory：详情弹窗完整类别解析（小怪也算）')
+function tableCategoryOf(enemy) {
+  return buildDefenseMonsterDetailRecord(enemy, null, null).monster_category
+}
+
+check(
+  'minion ID ⇒ 解出 minion，数据行类别取「普通敌人」',
+  resolveDefenseMonsterCategory(makeEnemy({ id: minionId, isBoss: false })) === 'minion' &&
+    tableCategoryOf(makeEnemy({ id: minionId, isBoss: false })) === 'normal',
+  String(tableCategoryOf(makeEnemy({ id: minionId, isBoss: false }))),
+)
+check(
+  'elite ID ⇒ 解出 elite，数据行类别取「精英」',
+  resolveDefenseMonsterCategory(makeEnemy({ id: eliteId, isBoss: false })) === 'elite' &&
+    tableCategoryOf(makeEnemy({ id: eliteId, isBoss: false })) === 'elite',
+  String(tableCategoryOf(makeEnemy({ id: eliteId, isBoss: false }))),
+)
+check(
+  'boss ID ⇒ 解出 boss，数据行类别取「首领」',
+  resolveDefenseMonsterCategory(makeEnemy({ id: bossId, isBoss: false })) === 'boss' &&
+    tableCategoryOf(makeEnemy({ id: bossId, isBoss: false })) === 'boss',
+  String(tableCategoryOf(makeEnemy({ id: bossId, isBoss: false }))),
+)
+check(
+  '无 ID 且 isBoss 为真 ⇒ 回落 boss（旧数据口径不变）',
+  resolveDefenseMonsterCategory(makeEnemy({ id: undefined, isBoss: true })) === 'boss' &&
+    tableCategoryOf(makeEnemy({ id: undefined, isBoss: true })) === 'boss',
+)
+check(
+  '无 ID 且 isBoss 为假 ⇒ null，数据行类别 undefined（缺省由表按「首领」兜底）',
+  resolveDefenseMonsterCategory({ name: '小怪布', hp: '1' }) === null &&
+    resolveDefenseMonsterCategory(makeEnemy({ id: undefined, isBoss: false })) === null &&
+    tableCategoryOf({ name: '小怪布', hp: '1' }) === undefined,
+)
+check(
+  'ID 解不出（9 位但类型码非法）不抛错：isBoss 为真 ⇒ boss',
+  resolveDefenseMonsterCategory(makeEnemy({ id: 999999999, isBoss: true })) === 'boss' &&
+    tableCategoryOf(makeEnemy({ id: 999999999, isBoss: true })) === 'boss',
+)
+check(
+  'ID 解不出且 isBoss 为假 ⇒ null ⇒ 数据行类别 undefined',
+  resolveDefenseMonsterCategory(makeEnemy({ id: 999999999, isBoss: false })) === null &&
+    tableCategoryOf(makeEnemy({ id: 999999999, isBoss: false })) === undefined,
+)
+check(
+  '非 ID（位数不符）同样回落 isBoss 口径',
+  resolveDefenseMonsterCategory(makeEnemy({ id: '小怪-1', isBoss: true })) === 'boss' &&
+    resolveDefenseMonsterCategory(makeEnemy({ id: '小怪-1', isBoss: false })) === null,
 )
 
 console.log('[3] buildDefenseBossChart：按类别 + 名称取各期血量点')

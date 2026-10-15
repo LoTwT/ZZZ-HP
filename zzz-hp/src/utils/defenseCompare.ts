@@ -43,6 +43,22 @@ export function isDefenseEliteOrBoss(enemy: DefenseEnemy): boolean {
 }
 
 /**
+ * 详情弹窗用的完整类别解析：小怪也算（getDefenseMonsterCategory 只认精英/Boss）。
+ * ID 可解 ⇒ 解码出的 minion | elite | boss；否则回落 isBoss ? 'boss' : null。
+ */
+export function resolveDefenseMonsterCategory(enemy: DefenseEnemy): DefenseMonsterCategory | null {
+  if (enemy.id != null && isDefenseBossId(enemy.id)) {
+    try {
+      return decodeDefenseBossId(enemy.id).monsterCategory
+    } catch {
+      return enemy.isBoss ? 'boss' : null
+    }
+  }
+
+  return enemy.isBoss ? 'boss' : null
+}
+
+/**
  * 防卫战怪物类别 → 基础异常条类别：小怪（minion）按「普通」取基础值。
  * 推不出类别（null / 未知）时返回 undefined，字段缺省由「弱点与抗性」表按「首领」兜底。
  */
@@ -268,7 +284,8 @@ export function resolveDefenseMonsterDefaultLevel(
  * 等级额外按防线规则补默认值（第五防线 70、其余防线 1）；传 `stage` 表示拿得到防线，
  * 为 null / 缺省表示拿不到，此时保持旧口径「只有 boss_info 有记录才渲染等级行」；
  * 基础异常条类别按防卫战怪物 ID 推导（小怪按「普通」、精英按「精英」、Boss 按「首领」，
- * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info（未填时由表按 1 处理）；
+ * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info，未配置时用内置名字表兜底
+ * （见 utils/monsterResistanceTable.ts 的 resolveAnomalyBarCoefficient）；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(
@@ -293,7 +310,7 @@ export function buildDefenseMonsterDetailRecord(
     weakness: enemy.weakness ?? null,
     resistance: enemy.resistance ?? null,
     resistance_high: enemy.resistanceHigh ?? null,
-    monster_category: defenseMonsterCategoryToTableCategory(getDefenseMonsterCategory(enemy)),
+    monster_category: defenseMonsterCategoryToTableCategory(resolveDefenseMonsterCategory(enemy)),
     anomaly_bar_coefficient: bossInfo?.anomaly_bar_coefficient ?? null,
   }
 }
