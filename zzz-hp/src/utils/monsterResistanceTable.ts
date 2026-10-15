@@ -14,10 +14,12 @@ import { elementIconPath, splitTraitElements } from '@/utils/elementIcons'
  *   此处不写任何百分比字面量，全部由该表 × 100 推导。
  * - 异常积蓄 / 失衡列：**推断**——截图中 40% 抗性属性的这两列显示为 20%，
  *   故按「伤害值截断到 ±20% 档（`RESISTANCE_VALUE_MAP.weak` / `.res20`）」实现，待验证。
- * - 最大异常积蓄列：**用户提供的真实游戏数据**——最大异常积蓄 = 基础异常条长度 × 异常条系数，
+ * - 最大异常积蓄列：**用户提供的真实游戏数据**——最大异常积蓄 = 基础异常条长度 × 异常条系数 × 版本系数，
  *   基础值按敌人类别（普通 / 精英 / 首领）与属性分列；展示口径为初始条长（0 次已异常）。
  *   异常条系数由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局按 phases 里 boss 的同名字段下发），
- *   内置默认表在后端读取时解析，前端不持有副本，字段缺失 / 非法时只按 1 兜底。
+ *   内置默认表在后端读取时解析，前端不持有副本，字段缺失 / 非法时只按 1 兜底，
+ *   并置 `maxAnomalyProgressEstimated`，避免把基础条冒充成真实最大异常积蓄（见下）。
+ *   版本系数同为**用户提供的游戏数据**：2.1 第一期及以后异常条整体 ×1.1，版本号解析不出时按 1（不乘）。
  *   `zzz-hp-backend/insert_boss_anomaly_coefficients.sql` 只在需要把默认值落库时执行。
  */
 
@@ -90,15 +92,40 @@ const ANOMALY_STAGGER_LOWER_BOUND_PERCENT = RESISTANCE_VALUE_MAP.weak * 100
 const ANOMALY_STAGGER_UPPER_BOUND_PERCENT = RESISTANCE_VALUE_MAP.res20 * 100
 
 /**
- * 异常条系数：数据侧下发的显式值（`boss_info.anomaly_bar_coefficient`）> 1。
- * 显式值须为有限正数；0 / 负数 / NaN / Infinity 一律视为「未提供」，
- * 避免脏数据把最大异常积蓄算成 0 或负数；内置默认表由后端解析，前端不参与。
+ * 数据侧下发的异常条系数是否为「已配置」：须为有限正数。
+ * 0 / 负数 / NaN / Infinity 一律视为未配置，避免脏数据把最大异常积蓄算成 0 或负数；
+ * 内置默认表由后端解析，前端不参与，前端也不持有按 Boss 名的副本。
  */
-function resolveAnomalyBarCoefficient(explicitValue: number | null | undefined): number {
-  if (typeof explicitValue === 'number' && Number.isFinite(explicitValue) && explicitValue > 0) {
-    return explicitValue
-  }
-  return 1
+export function isAnomalyBarCoefficientConfigured(
+  explicitValue: number | null | undefined,
+): explicitValue is number {
+  return typeof explicitValue === 'number' && Number.isFinite(explicitValue) && explicitValue > 0
+}
+
+/** 已配置的系数原样使用；未配置返回 null（调用方按 1 参与计算，但须标记该值为估算） */
+function resolveAnomalyBarCoefficient(explicitValue: number | null | undefined): number | null {
+  return isAnomalyBarCoefficientConfigured(explicitValue) ? explicitValue : null
+}
+
+/**
+ * 版本系数：2.1 第一期及以后异常条整体 ×1.1（用户提供的游戏数据）。
+ * 版本号只比较「主.次」两段；缺段 / 空串 / 非数字一律保守返回 false（不乘）。
+ */
+export const ANOMALY_BAR_VERSION_MULTIPLIER = 1.1
+export const ANOMALY_BAR_VERSION_MULTIPLIER_FROM = '2.1'
+
+function parseMajorMinorVersion(version: string | null | undefined): [number, number] | null {
+  if (typeof version !== 'string') return null
+  const match = /^(\d+)\.(\d+)$/.exec(version.trim())
+  if (!match) return null
+  return [Number(match[1]), Number(match[2])]
+}
+
+export function isAnomalyBarVersionMultiplier(version: string | null | undefined): boolean {
+  const target = parseMajorMinorVersion(version)
+  const from = parseMajorMinorVersion(ANOMALY_BAR_VERSION_MULTIPLIER_FROM)
+  if (target === null || from === null) return false
+  return target[0] > from[0] || (target[0] === from[0] && target[1] >= from[1])
 }
 
 export interface MonsterResistanceTableInput {
@@ -117,9 +144,11 @@ export interface MonsterResistanceTableInput {
   monster_category?: MonsterAnomalyBarCategory | null
   /**
    * 异常条系数，由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局为 phases 里 boss 的同名字段）；
-   * 内置默认表已由后端解析，前端只在缺省 / 非有限正数时按 1 兜底。
+   * 内置默认表已由后端解析，前端只在缺省 / 非有限正数时按 1 兜底（并置 `maxAnomalyProgressEstimated`）。
    */
   anomaly_bar_coefficient?: number | null
+  /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于「2.1 起 ×1.1」的版本系数判定，缺省不乘 */
+  version?: string | null
 }
 
 export interface MonsterResistanceRow {
@@ -133,8 +162,13 @@ export interface MonsterResistanceRow {
   anomalyPercent: number
   /** 失衡百分比（同异常积蓄截断规则） */
   staggerPercent: number
-  /** 最大异常积蓄 = 基础异常条（初始条长）× 异常条系数，四舍五入取整；千分位由展示层格式化 */
+  /** 最大异常积蓄 = 基础异常条（初始条长）× 异常条系数 × 版本系数，四舍五入取整；千分位由展示层格式化 */
   maxAnomalyProgress: number
+  /**
+   * 上面的最大异常积蓄是否为估算值：异常条系数未由数据侧配置时为 true
+   * （此时只按 1 参与计算，值退化为基础条 × 版本系数），展示层据此加 `*` 标注。
+   */
+  maxAnomalyProgressEstimated: boolean
 }
 
 function resolveResistanceType(
@@ -167,17 +201,23 @@ export function buildMonsterResistanceRows(
   const highResistElements = new Set(splitTraitElements(input.resistance_high))
   const category = input.monster_category ?? 'boss'
   const coefficient = resolveAnomalyBarCoefficient(input.anomaly_bar_coefficient)
+  const versionMultiplier = isAnomalyBarVersionMultiplier(input.version)
+    ? ANOMALY_BAR_VERSION_MULTIPLIER
+    : 1
 
   return MONSTER_RESISTANCE_TABLE_ELEMENTS.map((element) => {
     const type = resolveResistanceType(element, weakElements, resistElements, highResistElements)
     const damagePercent = Math.round(RESISTANCE_VALUE_MAP[type] * 100)
+    const baseAnomalyProgress = getMonsterBaseAnomalyProgress(category, element, 0)
     return {
       element,
       icon: elementIconPath(element),
       damagePercent,
       anomalyPercent: clampPercent(damagePercent),
       staggerPercent: clampPercent(damagePercent),
-      maxAnomalyProgress: Math.round(getMonsterBaseAnomalyProgress(category, element, 0) * coefficient),
+      // 系数未配置时按 1 参与计算（版本系数与系数是否配置无关），三因子只在此处取整一次
+      maxAnomalyProgress: Math.round(baseAnomalyProgress * (coefficient ?? 1) * versionMultiplier),
+      maxAnomalyProgressEstimated: coefficient === null,
     }
   })
 }

@@ -1,12 +1,14 @@
 /**
  * 怪物详情「弱点与抗性」表：行序 / 百分比推导（锚定 RESISTANCE_VALUE_MAP）/ 截断口径 /
- * 最大异常积蓄 = 基础异常条 × 异常条系数 / 防卫战类别映射 / 展示层接线守卫
+ * 最大异常积蓄 = 基础异常条 × 异常条系数 × 版本系数 / 防卫战类别映射 / 展示层接线守卫
  *
  * 基础异常条表来自用户提供的真实游戏数据（按敌人类别 × 属性分组 × 已异常次数分档）；
  * 异常积蓄与失衡的 ±20% 截断属待验证知识；1.32 系数用例复现用户首发的 nanoka 截图
  * （首领 70 级样本：物理 4752 / 火组 3960 / 风 1980）。
  * 异常条系数一律由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局由 phases 随 boss 下发，
- * 按 Boss 名的内置默认表在后端读取时解析），前端只在字段缺失 / 非法时按 1 兜底。
+ * 按 Boss 名的内置默认表在后端读取时解析），前端只在字段缺失 / 非法时按 1 兜底，
+ * 并把该行标记为估算（`maxAnomalyProgressEstimated`），不冒充真实最大异常积蓄。
+ * 版本系数同为用户提供的游戏数据：2.1 第一期及以后 ×1.1，版本号解析不出时不乘。
  *
  * 运行：npx vite-node scripts/test-monster-resistance-table.mjs
  */
@@ -19,9 +21,13 @@ import {
 } from '../src/utils/defenseCompare.ts'
 import { encodeDefenseBossId } from '../src/utils/defenseId.ts'
 import {
+  ANOMALY_BAR_VERSION_MULTIPLIER,
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
   MONSTER_RESISTANCE_TABLE_ELEMENTS,
   buildMonsterResistanceRows,
   getMonsterBaseAnomalyProgress,
+  isAnomalyBarCoefficientConfigured,
+  isAnomalyBarVersionMultiplier,
 } from '../src/utils/monsterResistanceTable.ts'
 
 let passed = 0
@@ -335,7 +341,24 @@ check(
   stats.includes('monster_category: props.record.monster_category') &&
     stats.includes('anomaly_bar_coefficient: props.record.anomaly_bar_coefficient'),
 )
+check(
+  'record 的 version 传入抗性表（版本系数判定依据）',
+  stats.includes('version: props.record.version'),
+)
 check('最大异常积蓄表头带初始条长提示', stats.includes('title="初始条长（0 次已异常）"'))
+check(
+  '详情数据块渲染「异常条系数」行，未配置显示「未配置」（不拿 1 冒充）',
+  stats.includes('异常条系数：') &&
+    stats.includes('anomalyBarCoefficientLabel') &&
+    stats.includes('isAnomalyBarCoefficientConfigured') &&
+    stats.includes("'未配置'"),
+)
+check(
+  '系数未配置的最大异常积蓄加 * 标注并在表下加脚注',
+  stats.includes('row.maxAnomalyProgressEstimated') &&
+    stats.includes('monster-resistance-estimated') &&
+    stats.includes('* 未配置异常条系数，数值为估算值'),
+)
 check(
   '窄屏（≤768px）表宽跟随数据块占满整行',
   /@media \(max-width: 768px\)[\s\S]*\.monster-resistance-table \{\s*width: 100%;/.test(stats),
@@ -515,6 +538,137 @@ check(
 check(
   'EnemySlot 声明 anomalyBarCoefficient',
   enemySlotTypes.includes('anomalyBarCoefficient?: number | null'),
+)
+
+console.log(`[11] 版本系数：${ANOMALY_BAR_VERSION_MULTIPLIER_FROM} 第一期及以后异常条 ×${ANOMALY_BAR_VERSION_MULTIPLIER}`)
+const coefficient132 = 1.32
+/** 期望值一律由基础条表 × 常量推导，不写死结果 */
+const bossBase = (element) => getMonsterBaseAnomalyProgress('boss', element, 0)
+const expectedWithVersion = (base) => Math.round(base * coefficient132 * ANOMALY_BAR_VERSION_MULTIPLIER)
+const rowsNoVersion = byElement(
+  buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: coefficient132 }),
+)
+const rowsVersion32 = byElement(
+  buildMonsterResistanceRows({
+    monster_category: 'boss',
+    anomaly_bar_coefficient: coefficient132,
+    version: '3.2',
+  }),
+)
+
+check(
+  '版本判定：2.1 / 3.2 为真，2.0 / 1.4 为假',
+  isAnomalyBarVersionMultiplier('2.1') &&
+    isAnomalyBarVersionMultiplier('3.2') &&
+    !isAnomalyBarVersionMultiplier('2.0') &&
+    !isAnomalyBarVersionMultiplier('1.4'),
+  ['2.1', '3.2', '2.0', '1.4'].map((v) => `${v}=${isAnomalyBarVersionMultiplier(v)}`).join(' '),
+)
+check(
+  '版本缺失 / 空串 / 非数字一律不乘（保守）',
+  [null, undefined, '', '   ', 'abc', '2.x'].every((version) => !isAnomalyBarVersionMultiplier(version)),
+  [null, '', 'abc'].map((v) => `${JSON.stringify(v)}=${isAnomalyBarVersionMultiplier(v)}`).join(' '),
+)
+check(
+  `阈值常量导出：${ANOMALY_BAR_VERSION_MULTIPLIER_FROM} ⇒ ${ANOMALY_BAR_VERSION_MULTIPLIER}`,
+  ANOMALY_BAR_VERSION_MULTIPLIER === 1.1 && ANOMALY_BAR_VERSION_MULTIPLIER_FROM === '2.1',
+)
+check(
+  `无版本 ⇒ 维持原值：物理 ${rowsNoVersion['物理'].maxAnomalyProgress}（基础条 ${bossBase('物理')} × ${coefficient132}）`,
+  rowsNoVersion['物理'].maxAnomalyProgress === Math.round(bossBase('物理') * coefficient132) &&
+    rowsNoVersion['物理'].maxAnomalyProgress === 4752,
+  String(rowsNoVersion['物理'].maxAnomalyProgress),
+)
+check(
+  `版本 3.2 ⇒ 物理 ${rowsVersion32['物理'].maxAnomalyProgress}（${bossBase('物理')} × ${coefficient132} × ${ANOMALY_BAR_VERSION_MULTIPLIER}）`,
+  rowsVersion32['物理'].maxAnomalyProgress === expectedWithVersion(bossBase('物理')) &&
+    rowsVersion32['物理'].maxAnomalyProgress === 5227,
+  String(rowsVersion32['物理'].maxAnomalyProgress),
+)
+check(
+  `版本 3.2 ⇒ 火组 ${rowsVersion32['火'].maxAnomalyProgress} / 风 ${rowsVersion32['风'].maxAnomalyProgress} 同步放大（分组不影响版本系数）`,
+  rowsVersion32['火'].maxAnomalyProgress === expectedWithVersion(bossBase('火')) &&
+    rowsVersion32['风'].maxAnomalyProgress === expectedWithVersion(bossBase('风')) &&
+    rowsVersion32['火'].maxAnomalyProgress === 4356 &&
+    rowsVersion32['风'].maxAnomalyProgress === 2178,
+  `火=${rowsVersion32['火'].maxAnomalyProgress} 风=${rowsVersion32['风'].maxAnomalyProgress} 电=${rowsVersion32['电'].maxAnomalyProgress}`,
+)
+check(
+  '版本 2.0（未跨 2.1）⇒ 不乘版本系数，仍为 4752',
+  byElement(
+    buildMonsterResistanceRows({
+      monster_category: 'boss',
+      anomaly_bar_coefficient: coefficient132,
+      version: '2.0',
+    }),
+  )['物理'].maxAnomalyProgress === 4752,
+)
+check(
+  '版本系数与异常条系数相乘后只取整一次（1.0625 × 1.1：先取整会差 1）',
+  (() => {
+    const rows = byElement(
+      buildMonsterResistanceRows({
+        monster_category: 'boss',
+        anomaly_bar_coefficient: 1.0625,
+        version: '3.2',
+      }),
+    )
+    const base = bossBase('火')
+    const roundedOnce = Math.round(base * 1.0625 * ANOMALY_BAR_VERSION_MULTIPLIER)
+    const roundedTwice = Math.round(Math.round(base * 1.0625) * ANOMALY_BAR_VERSION_MULTIPLIER)
+    return rows['火'].maxAnomalyProgress === roundedOnce && roundedOnce !== roundedTwice
+  })(),
+)
+
+console.log('[12] maxAnomalyProgressEstimated：系数未配置时不冒充最大异常积蓄')
+const rowsWithCoefficient = (coefficient, version) =>
+  buildMonsterResistanceRows({
+    monster_category: 'boss',
+    anomaly_bar_coefficient: coefficient,
+    version,
+  })
+check(
+  '系数缺省 / null / 0 / -1 / NaN ⇒ 六行全标估算',
+  [undefined, null, 0, -1, Number.NaN].every((coefficient) =>
+    rowsWithCoefficient(coefficient).every((row) => row.maxAnomalyProgressEstimated === true),
+  ),
+)
+check(
+  '有效系数（1 / 1.32 / 1.0625 / 2）⇒ 不标估算',
+  [1, 1.32, 1.0625, 2].every((coefficient) =>
+    rowsWithCoefficient(coefficient).every((row) => row.maxAnomalyProgressEstimated === false),
+  ),
+)
+check(
+  'Infinity ⇒ 同样按未配置处理（脏数据不当作已配置）',
+  rowsWithCoefficient(Number.POSITIVE_INFINITY).every(
+    (row) => row.maxAnomalyProgressEstimated === true,
+  ),
+)
+check(
+  '估算标记与 isAnomalyBarCoefficientConfigured 同规则（单一事实来源）',
+  [undefined, null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, 0.5, 1, 1.32].every((coefficient) =>
+    rowsWithCoefficient(coefficient).every(
+      (row) => row.maxAnomalyProgressEstimated === !isAnomalyBarCoefficientConfigured(coefficient),
+    ),
+  ),
+)
+check(
+  '估算行数值仍保留（首领 3600 / 火组 3000 / 风 1500），不因标记而清零',
+  maxAnomalyList(rowsWithCoefficient(undefined)) === '3000 3000 3000 3000 3600 1500',
+  maxAnomalyList(rowsWithCoefficient(undefined)),
+)
+check(
+  '系数未配置但版本 ≥2.1 ⇒ 数值仍乘版本系数并标估算（版本是独立已知事实）',
+  (() => {
+    const rows = byElement(rowsWithCoefficient(undefined, '3.2'))
+    return (
+      rows['物理'].maxAnomalyProgress ===
+        Math.round(bossBase('物理') * ANOMALY_BAR_VERSION_MULTIPLIER) &&
+      rows['物理'].maxAnomalyProgressEstimated === true
+    )
+  })(),
+  String(byElement(rowsWithCoefficient(undefined, '3.2'))['物理'].maxAnomalyProgress),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

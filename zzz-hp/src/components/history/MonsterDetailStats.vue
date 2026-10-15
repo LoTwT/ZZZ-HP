@@ -5,6 +5,7 @@ import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
 import { formatHp } from '@/utils/gameData'
 import {
   buildMonsterResistanceRows,
+  isAnomalyBarCoefficientConfigured,
   type MonsterResistanceRow,
 } from '@/utils/monsterResistanceTable'
 
@@ -41,8 +42,10 @@ export interface MonsterDetailRecord {
   resistance_high?: string | null
   /** 敌人类别（决定基础异常条）：普通 / 精英 / 首领；缺省按「首领」 */
   monster_category?: 'normal' | 'elite' | 'boss' | null
-  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），由数据侧下发；缺省时按 1 兜底 */
+  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数 × 版本系数），由数据侧下发；缺省视为未配置 */
   anomaly_bar_coefficient?: number | null
+  /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于「2.1 起异常条 ×1.1」的判定，缺省不乘 */
+  version?: string | null
 }
 
 const props = defineProps<{
@@ -70,6 +73,12 @@ const staggerMultiplierLabel = computed(() => {
   return `${Math.round(multiplier * 100)}%（${multiplier}）`
 })
 
+/** 异常条系数展示：数据侧未配置时显示「未配置」，不拿 1 冒充已配置 */
+const anomalyBarCoefficientLabel = computed(() => {
+  const coefficient = props.record?.anomaly_bar_coefficient
+  return isAnomalyBarCoefficientConfigured(coefficient) ? String(coefficient) : '未配置'
+})
+
 /** 「弱点与抗性」表数据：仅在显式开启且存在数据块（弱点/抗性来源）时生成 */
 const resistanceRows = computed<MonsterResistanceRow[]>(() => {
   if (!props.showResistanceTable || !props.record) return []
@@ -80,8 +89,14 @@ const resistanceRows = computed<MonsterResistanceRow[]>(() => {
     level: props.record.level,
     monster_category: props.record.monster_category,
     anomaly_bar_coefficient: props.record.anomaly_bar_coefficient,
+    version: props.record.version,
   })
 })
+
+/** 存在估算行（异常条系数未配置）时才渲染脚注，避免无谓的底部说明 */
+const hasEstimatedMaxAnomalyProgress = computed(() =>
+  resistanceRows.value.some((row) => row.maxAnomalyProgressEstimated),
+)
 
 /** 百分比展示：负值保留 -，正值与 0 不加 +（对齐怪物页口径） */
 function formatPercent(percent: number): string {
@@ -171,6 +186,10 @@ function onImageKeydown(event: KeyboardEvent) {
         <span class="detail-value">{{ staggerMultiplierLabel }}</span>
       </p>
       <p class="detail-row">
+        <span class="detail-label">异常条系数：</span>
+        <span class="detail-value">{{ anomalyBarCoefficientLabel }}</span>
+      </p>
+      <p class="detail-row">
         <span class="detail-label">弱点：</span>
         <span class="detail-value">
           <ElementTraitIcons :value="record.weakness" variant="weak" show-percent empty-text="无" />
@@ -222,10 +241,18 @@ function onImageKeydown(event: KeyboardEvent) {
             <td>{{ formatPercent(row.damagePercent) }}</td>
             <td>{{ formatPercent(row.anomalyPercent) }}</td>
             <td>{{ formatPercent(row.staggerPercent) }}</td>
-            <td>{{ formatMaxAnomalyProgress(row.maxAnomalyProgress) }}</td>
+            <td>
+              <span>{{ formatMaxAnomalyProgress(row.maxAnomalyProgress) }}</span>
+              <span v-if="row.maxAnomalyProgressEstimated" class="monster-resistance-estimated">
+                *
+              </span>
+            </td>
           </tr>
         </tbody>
       </table>
+      <p v-if="hasEstimatedMaxAnomalyProgress" class="monster-resistance-footnote">
+        * 未配置异常条系数，数值为估算值
+      </p>
     </div>
   </div>
 </template>
@@ -424,6 +451,19 @@ function onImageKeydown(event: KeyboardEvent) {
 
 .monster-resistance-element-name {
   font-weight: 600;
+}
+
+/* 未配置异常条系数时的估算标注：保留数值但压低对比度，避免被读成精确的最大异常积蓄 */
+.monster-resistance-estimated {
+  opacity: 0.6;
+}
+
+.monster-resistance-footnote {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-text);
+  opacity: 0.6;
 }
 
 @media (max-width: 768px) {
