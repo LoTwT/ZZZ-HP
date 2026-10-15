@@ -26,11 +26,14 @@ import {
 } from '../utils/sameNameBuffEffects.js'
 import { ensureContentModeColumns } from './contentModeService.js'
 import {
+  ensureBossAnomalySchema,
   ensureBossResistanceSchema,
   ensureBossStaggerSchema,
+  normalizeAnomalyBarCoefficient,
   normalizeStaggerMultiplier,
   normalizeStaggerTime,
 } from '../utils/bossSchema.js'
+import { resolveAnomalyBarCoefficient } from '../utils/anomalyBarCoefficient.js'
 import { crisisPhaseNumericId, resolveCrisisTidMap } from './crisisTidService.js'
 
 let schemaEnsured = false
@@ -105,6 +108,7 @@ function enrichBoss(boss, context = {}) {
     staggerTimeByName = new Map(),
     staggerMultiplierByName = new Map(),
     resistanceHighByName = new Map(),
+    anomalyBarCoefficientByName = new Map(),
   } = context
   const baseHp =
     baseHpByName.get(boss.boss_name) ??
@@ -136,6 +140,11 @@ function enrichBoss(boss, context = {}) {
   )
   const resistance_high =
     boss.resistance_high ?? resistanceHighByName.get(boss.boss_name) ?? null
+  // 异常条系数只在读路径物化：boss_info 覆盖值 > 内置默认表（文案见 utils/anomalyBarCoefficient.js）
+  const anomaly_bar_coefficient = resolveAnomalyBarCoefficient(
+    boss.boss_name,
+    anomalyBarCoefficientByName.get(boss.boss_name),
+  )
   return {
     id: boss.id,
     boss_name: boss.boss_name,
@@ -147,6 +156,7 @@ function enrichBoss(boss, context = {}) {
     weakness: boss.weakness,
     resistance: boss.resistance,
     resistance_high,
+    anomaly_bar_coefficient,
     stagger_time,
     stagger_multiplier,
     boss_image: boss.boss_image,
@@ -209,6 +219,23 @@ async function loadBossStaggerMultiplierMap() {
     }
   } catch (err) {
     console.warn('[crisis] loadBossStaggerMultiplierMap fallback:', err.message)
+  }
+  return map
+}
+
+async function loadBossAnomalyCoefficientMap() {
+  await ensureBossAnomalySchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      'SELECT boss_name, anomaly_bar_coefficient FROM boss_info WHERE anomaly_bar_coefficient IS NOT NULL',
+    )
+    for (const row of rows) {
+      // DECIMAL 列经 mysql2 返回字符串：先归一化成数字，供 resolveAnomalyBarCoefficient 当显式值用
+      map.set(row.boss_name, normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient))
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossAnomalyCoefficientMap fallback:', err.message)
   }
   return map
 }
@@ -295,6 +322,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   const staggerTimeByName = await loadBossStaggerTimeMap()
   const staggerMultiplierByName = await loadBossStaggerMultiplierMap()
   const resistanceHighByName = await loadBossResistanceHighMap()
+  const anomalyBarCoefficientByName = await loadBossAnomalyCoefficientMap()
   const globalBuffEffectMap = await loadGlobalBuffEffectMap()
 
   const phaseMap = new Map()
@@ -350,6 +378,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
           staggerTimeByName,
           staggerMultiplierByName,
           resistanceHighByName,
+          anomalyBarCoefficientByName,
         }),
       )
       const normalBosses = bosses.filter((boss) => !boss.is_hard_room)

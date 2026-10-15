@@ -1,5 +1,6 @@
 import pool from '../config/db.js'
 import { getCrisisBaseHpByName } from '../utils/crisisHpCoeff.js'
+import { resolveAnomalyBarCoefficient } from '../utils/anomalyBarCoefficient.js'
 import {
   DEFAULT_BOSS_STAGGER_MULTIPLIER,
   ensureBossAnomalySchema,
@@ -119,7 +120,11 @@ function bossInfoDiffers(existing, incoming) {
   )
 }
 
-function mapBossInfoRow(row) {
+/**
+ * 读路径映射：异常条系数按「boss_info 覆盖值 > 内置默认表」物化（见 utils/anomalyBarCoefficient.js）。
+ * 写路径回读原行时传 `resolveAnomalyBarDefault: false`：库里存什么就是什么，不把默认值写进库。
+ */
+function mapBossInfoRow(row, { resolveAnomalyBarDefault = true } = {}) {
   if (!row) return null
   let sets = parseFieldBuffSetsJson(row.field_buff_sets)
   if (!sets.length) {
@@ -140,7 +145,13 @@ function mapBossInfoRow(row) {
     ...row,
     stagger_multiplier: normalizeStaggerMultiplier(row.stagger_multiplier),
     stagger_time: normalizeStaggerTime(row.stagger_time),
-    anomaly_bar_coefficient: normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient),
+    anomaly_bar_coefficient: resolveAnomalyBarDefault
+      ? resolveAnomalyBarCoefficient(
+          row.boss_name,
+          // DECIMAL 列经 mysql2 返回字符串，先归一化成数字再作为「显式覆盖值」传入
+          normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient),
+        )
+      : normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient),
     crisis_base_hp:
       row.crisis_base_hp == null ? getCrisisBaseHpByName(row.boss_name) : Number(row.crisis_base_hp),
     field_buff_sets: sets,
@@ -170,7 +181,12 @@ function mapBossInfoWriteResult(info) {
   }
 }
 
-export async function findBossInfoByName(bossName) {
+/**
+ * 按名称取单个基础库记录。
+ * @param {string} bossName
+ * @param {{ resolveAnomalyBarDefault?: boolean }} [options] 写路径回读原值用 false（见 mapBossInfoRow）
+ */
+export async function findBossInfoByName(bossName, { resolveAnomalyBarDefault = true } = {}) {
   await ensureBossStaggerSchema()
   await ensureBossAnomalySchema()
   await ensureBossResistanceSchema()
@@ -186,7 +202,7 @@ export async function findBossInfoByName(bossName) {
     [name],
   )
 
-  return mapBossInfoRow(rows[0])
+  return mapBossInfoRow(rows[0], { resolveAnomalyBarDefault })
 }
 
 export async function listBossInfoByNames(names) {
@@ -311,7 +327,8 @@ export async function updateBossInfoById(id, payload) {
      FROM boss_info WHERE id = ? LIMIT 1`,
     [bossId],
   )
-  const existing = mapBossInfoRow(existingRows[0])
+  // 写路径回读：异常条系数取库中原值，不物化内置默认（否则「未填」会被写成默认值落库）
+  const existing = mapBossInfoRow(existingRows[0], { resolveAnomalyBarDefault: false })
   if (!existing) {
     throw new Error('boss_info 不存在')
   }
@@ -398,7 +415,8 @@ export async function upsertBossInfo(payload) {
     throw new Error('boss_name 不能为空')
   }
 
-  const existing = await findBossInfoByName(info.boss_name)
+  // 写路径回读：异常条系数取库中原值，不物化内置默认（同步类 upsert 只做「原值保留」）
+  const existing = await findBossInfoByName(info.boss_name, { resolveAnomalyBarDefault: false })
 
   if (!existing) {
     const [result] = await pool.execute(
