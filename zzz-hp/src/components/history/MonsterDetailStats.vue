@@ -48,8 +48,8 @@ export interface MonsterDetailRecord {
   anomaly_bar_coefficient?: number | null
   /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于版本系数判定，缺省不乘 */
   version?: string | null
-  /** 该 Boss 是否在 2.1 之前出现过；与 version ≥2.1 同时成立时才乘版本系数 */
-  boss_appeared_before_multiplier_version?: boolean
+  /** 该 Boss 是否在起算版本 2.1（含）时就已存在；与 version ≥2.1 同时成立时才乘版本系数 */
+  boss_existed_by_multiplier_version?: boolean
 }
 
 const props = defineProps<{
@@ -84,13 +84,13 @@ const anomalyBarCoefficientLabel = computed(() => {
 })
 
 /**
- * 版本系数是否生效（该 Boss 在 2.1 之前出现过，且当前期数 ≥2.1 才 ×1.1）：
+ * 版本系数是否生效（该 Boss 在 2.1（含）时就已存在，且当前期数 ≥2.1 才 ×1.1）：
  * 与表侧同一判定函数，避免「红色 ×1.1」与数值口径分叉。
  */
 const anomalyBarVersionMultiplierActive = computed(() =>
   isAnomalyBarVersionMultiplier(
     props.record?.version,
-    props.record?.boss_appeared_before_multiplier_version,
+    props.record?.boss_existed_by_multiplier_version,
   ),
 )
 
@@ -105,7 +105,7 @@ const resistanceRows = computed<MonsterResistanceRow[]>(() => {
     monster_category: props.record.monster_category,
     anomaly_bar_coefficient: props.record.anomaly_bar_coefficient,
     version: props.record.version,
-    boss_appeared_before_multiplier_version: props.record.boss_appeared_before_multiplier_version,
+    boss_existed_by_multiplier_version: props.record.boss_existed_by_multiplier_version,
   })
 })
 

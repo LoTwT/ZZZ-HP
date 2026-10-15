@@ -34,7 +34,7 @@ import {
 } from '@/utils/historyMonsterDetail'
 import {
   ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
-  isVersionBefore,
+  isVersionAtMost,
 } from '@/utils/monsterResistanceTable'
 
 const props = defineProps<{
@@ -390,18 +390,19 @@ const monsterDetailPhaseLabel = computed(() => {
 const monsterDetailPhaseVersion = computed(() => currentPhase.value?.version ?? null)
 
 /**
- * 该 Boss 是否在 2.1 之前的期数出现过 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 该 Boss 是否在 2.1（含）之前就已存在 —— 版本系数的第二个条件（与「当期 ≥ 2.1」同时成立才乘）。
+ * 首次出现不晚于 2.1 即为 true：老 Boss 与 2.1 才出的新 Boss 都算，2.2 起才出的不算。
  * 复用场地 Buff / 血量对比同一套「同一怪物」口径（Boss 名 + 房间码）：同名 Boss 同期可出现在多个房间，
- * 只按名字匹配会把别的房间的历史算成本房间的。版本号解析不出的期数不算出现（与 `isVersionBefore` 同口径）。
+ * 只按名字匹配会把别的房间的历史算成本房间的。版本号解析不出的期数不算出现（与 `isVersionAtMost` 同口径）。
  */
-const monsterDetailBossAppearedBeforeMultiplierVersion = computed(() => {
+const monsterDetailBossExistedByMultiplierVersion = computed(() => {
   const enemy = monsterDetailEnemy.value
   if (!enemy?.bossName) return false
   return findMonsterEntries(phases.value, {
     bossName: enemy.bossName,
     room: enemy.room ?? '',
   }).some((entry) =>
-    isVersionBefore(
+    isVersionAtMost(
       phases.value[entry.phaseIndex]?.version,
       ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
     ),
@@ -1108,7 +1109,7 @@ function closePhasePicker() {
       :mode="mode"
       :phase-label="monsterDetailPhaseLabel"
       :version="monsterDetailPhaseVersion"
-      :boss-appeared-before-multiplier-version="monsterDetailBossAppearedBeforeMultiplierVersion"
+      :boss-existed-by-multiplier-version="monsterDetailBossExistedByMultiplierVersion"
       :previous-field-buff="monsterDetailPreviousFieldBuff"
       :current-field-buff="monsterDetailCurrentFieldBuff"
       :hp-comparison="monsterDetailHpComparison"

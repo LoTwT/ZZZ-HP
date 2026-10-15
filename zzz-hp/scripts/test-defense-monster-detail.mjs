@@ -10,7 +10,7 @@ import {
   buildDefenseMonsterDetailRecord,
   DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
   getDefenseMonsterCategory,
-  hasDefenseMonsterAppearedBeforeMultiplierVersion,
+  hasDefenseMonsterExistedByMultiplierVersion,
   isDefenseEliteOrBoss,
   resolveDefenseMonsterCategory,
   resolveDefenseMonsterDefaultLevel,
@@ -200,31 +200,31 @@ check(
     buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, undefined).version === null,
 )
 
-console.log('[1d] 版本透传：出现历史标记（该怪物是否在 2.1 之前出现过）')
+console.log('[1d] 版本透传：存在历史标记（该怪物是否在 2.1（含）之前就已存在）')
 check(
-  '传 true ⇒ 数据行标记该怪物 2.1 前出现过（表在 ≥2.1 期才据此乘 1.1）',
+  '传 true ⇒ 数据行标记该怪物 2.1（含）前就已存在（表在 ≥2.1 期才据此乘 1.1）',
   buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2', true)
-    .boss_appeared_before_multiplier_version === true,
+    .boss_existed_by_multiplier_version === true,
 )
 check(
   '回归守卫：拿不到该标记（缺省 / null / undefined）时显式 false ⇒ 表保守地不乘版本系数',
   buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2')
-    .boss_appeared_before_multiplier_version === false &&
+    .boss_existed_by_multiplier_version === false &&
     buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2', null)
-      .boss_appeared_before_multiplier_version === false &&
+      .boss_existed_by_multiplier_version === false &&
     buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2', undefined)
-      .boss_appeared_before_multiplier_version === false,
+      .boss_existed_by_multiplier_version === false,
 )
 check(
-  '新怪（2.1 起才出）明确传 false ⇒ 数据行保留 false，不因 ≥2.1 版本误乘',
+  '2.2 起才出的新怪明确传 false ⇒ 数据行保留 false，不因 ≥2.1 版本误乘',
   buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '3.2', false)
-    .boss_appeared_before_multiplier_version === false,
+    .boss_existed_by_multiplier_version === false,
 )
 check(
   '旧 Boss 在 2.1 之前的期数：版本与标记都原样透传（两个条件由表判，数据行不预筛）',
   (() => {
     const record = buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo(), 5, '2.0', true)
-    return record.version === '2.0' && record.boss_appeared_before_multiplier_version === true
+    return record.version === '2.0' && record.boss_existed_by_multiplier_version === true
   })(),
 )
 
@@ -394,34 +394,42 @@ check(
   buildDefenseBossChart(chartSeasons, '不存在怪物', 'boss').length === 0,
 )
 
-console.log('[3b] hasDefenseMonsterAppearedBeforeMultiplierVersion：扫全量赛季判定出现历史')
+console.log('[3b] hasDefenseMonsterExistedByMultiplierVersion：扫全量赛季判定出现历史')
 const historySeasons = [
   makeDefenseSeason('2.0', '第 1 期', [{ name: '霸主侵蚀体', hp: '1,000,000' }]),
   makeDefenseSeason('2.1', '第 1 期', [{ name: '新怪', hp: '1,000,000' }]),
-  makeDefenseSeason('3.2', '第 2 期', [{ name: '新怪', hp: '1,100,000' }]),
-  makeDefenseSeason('3.2', '第 3 期', [{ name: '霸主侵蚀体', hp: '1,200,000' }]),
+  makeDefenseSeason('2.2', '第 1 期', [{ name: '后出的新怪', hp: '1,000,000' }]),
+  makeDefenseSeason('3.2', '第 3 期', [
+    { name: '霸主侵蚀体', hp: '1,200,000' },
+    { name: '新怪', hp: '1,100,000' },
+    { name: '后出的新怪', hp: '1,150,000' },
+  ]),
 ]
 check(
   '2.1 之前的赛季出现过 ⇒ true（旧 Boss 在 ≥2.1 期继续 ×1.1）',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, '霸主侵蚀体') === true,
+  hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '霸主侵蚀体') === true,
 )
 check(
-  '只在 2.1 及以后的赛季出现 ⇒ false（2.1 起的新 Boss 不乘）',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, '新怪') === false,
+  '首次出现在 2.1 的赛季 ⇒ true（2.1 才出的新怪也乘：条件是「首次出现不晚于 2.1」）',
+  hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '新怪') === true,
+)
+check(
+  '首次出现在 2.2 的赛季 ⇒ false（2.2 起才出的新怪不乘）',
+  hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '后出的新怪') === false,
 )
 check(
   '从未出现过 ⇒ false',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, '不存在怪物') === false,
+  hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '不存在怪物') === false,
 )
 check(
   '怪物名为空 / 缺省 ⇒ false（不被空名误判为出现过）',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, '') === false &&
-    hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, undefined) === false,
+  hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '') === false &&
+    hasDefenseMonsterExistedByMultiplierVersion(historySeasons, undefined) === false,
 )
-check('空赛季列表 ⇒ false', hasDefenseMonsterAppearedBeforeMultiplierVersion([], '霸主侵蚀体') === false)
+check('空赛季列表 ⇒ false', hasDefenseMonsterExistedByMultiplierVersion([], '霸主侵蚀体') === false)
 check(
   '赛季版本缺失 / 解析不出（空串、缺次段）⇒ 该赛季不算出现，不给假阳性',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(
+  hasDefenseMonsterExistedByMultiplierVersion(
     [
       makeDefenseSeason('', '第 1 期', [{ name: '霸主侵蚀体', hp: '1,000,000' }]),
       makeDefenseSeason('2', '第 2 期', [{ name: '另一怪物', hp: '1,000,000' }]),
@@ -431,21 +439,21 @@ check(
 )
 check(
   '命中出现在深层（防线 → 房间 → 战斗房间 → 波次）也被扫到',
-  hasDefenseMonsterAppearedBeforeMultiplierVersion(
+  hasDefenseMonsterExistedByMultiplierVersion(
     [makeDefenseSeason('1.4', '第 3 期', [{ name: '深藏怪物', hp: '999' }])],
     '深藏怪物',
   ) === true,
 )
 check(
-  '回归守卫：当前赛季自身 ≥2.1 且更早无该怪物 ⇒ false（两个条件缺一不可，由表统一判定）',
+  '回归守卫：当前赛季自身 ≥2.1 且该怪物 2.2 起才出 ⇒ false（两个条件缺一不可，由表统一判定）',
   buildDefenseMonsterDetailRecord(
     makeEnemy(),
     null,
     makeBossInfo(),
     5,
     '3.2',
-    hasDefenseMonsterAppearedBeforeMultiplierVersion(historySeasons, '新怪'),
-  ).boss_appeared_before_multiplier_version === false,
+    hasDefenseMonsterExistedByMultiplierVersion(historySeasons, '后出的新怪'),
+  ).boss_existed_by_multiplier_version === false,
 )
 
 console.log('[4] 源码守卫：弹窗与面板接线')
@@ -492,18 +500,18 @@ check(
   panelSource.includes(':version="currentSeason?.version ?? null"'),
 )
 check(
-  '弹窗把面板传入的出现历史标记透传给数据行（与赛季版本一起判 1.1）',
-  modalSource.includes('props.bossAppearedBeforeMultiplierVersion ?? false'),
+  '弹窗把面板传入的存在历史标记透传给数据行（与赛季版本一起判 1.1）',
+  modalSource.includes('props.bossExistedByMultiplierVersion ?? false'),
 )
 check(
-  '面板扫全量赛季算出「2.1 之前是否出现过」并按怪物名匹配',
-  panelSource.includes('hasDefenseMonsterAppearedBeforeMultiplierVersion') &&
+  '面板扫全量赛季算出「2.1（含）前是否已存在」并按怪物名匹配',
+  panelSource.includes('hasDefenseMonsterExistedByMultiplierVersion') &&
     panelSource.includes('monsterDetailEnemy.value?.name'),
 )
 check(
-  '面板把出现历史标记传给详情弹窗',
+  '面板把存在历史标记传给详情弹窗',
   panelSource.includes(
-    ':boss-appeared-before-multiplier-version="monsterDetailBossAppearedBeforeMultiplierVersion"',
+    ':boss-existed-by-multiplier-version="monsterDetailBossExistedByMultiplierVersion"',
   ),
 )
 

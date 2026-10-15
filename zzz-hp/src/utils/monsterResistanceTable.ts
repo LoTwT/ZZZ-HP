@@ -108,13 +108,14 @@ function resolveAnomalyBarCoefficient(explicitValue: number | null | undefined):
 }
 
 /**
- * 版本系数：**2.1 之前就出现过的 Boss**，在 2.1 及以后的期数继续 ×1.1（用户提供的游戏数据）。
- * - 2.1 之前从未出现的 Boss（即 2.1 起新出的那批）不乘 —— 它们的基础数据本身已含这一档；
- * - 同一只旧 Boss 在 2.1 **之前**的期数同样不乘（该补偿从 2.1 才开始生效）。
+ * 版本系数：**在 2.1（含）之前就已存在的 Boss**，在 2.1 及以后的期数 ×1.1（用户提供的游戏数据）。
+ * - 「在 2.1 之前出现过的老 Boss」与「2.1 才出的新 Boss」都算（即首次出现不晚于 2.1）；
+ * - 2.1 **之后**才出的 Boss 不乘（它们的基础数据本身已含这一档）；
+ * - 上述 Boss 在 2.1 **之前**的期数同样不乘（该补偿从 2.1 才开始生效）。
  * 版本号只比较「主.次」两段；缺段 / 空串 / 非数字一律保守返回 false（不乘）。
  */
 export const ANOMALY_BAR_VERSION_MULTIPLIER = 1.1
-/** 版本系数的起算版本：当前期数 ≥ 它，且该 Boss 在它之前出现过，两个条件同时成立才乘 */
+/** 版本系数的起算版本：当前期数 ≥ 它，且该 Boss 在它（含）之前就已存在，两个条件同时成立才乘 */
 export const ANOMALY_BAR_VERSION_MULTIPLIER_FROM = '2.1'
 
 function parseMajorMinorVersion(version: string | null | undefined): [number, number] | null {
@@ -124,12 +125,12 @@ function parseMajorMinorVersion(version: string | null | undefined): [number, nu
   return [Number(match[1]), Number(match[2])]
 }
 
-/** 版本可解析且严格早于 target；缺失 / 非法 / 不可比一律 false */
-export function isVersionBefore(version: string | null | undefined, target: string): boolean {
+/** 版本可解析且不晚于 target（≤）；缺失 / 非法 / 不可比一律 false */
+export function isVersionAtMost(version: string | null | undefined, target: string): boolean {
   const value = parseMajorMinorVersion(version)
   const bound = parseMajorMinorVersion(target)
   if (value === null || bound === null) return false
-  return value[0] < bound[0] || (value[0] === bound[0] && value[1] < bound[1])
+  return value[0] < bound[0] || (value[0] === bound[0] && value[1] <= bound[1])
 }
 
 /** 版本可解析且不早于 target（≥）；缺失 / 非法 / 不可比一律 false */
@@ -142,15 +143,16 @@ export function isVersionAtLeast(version: string | null | undefined, target: str
 
 /**
  * 版本系数是否生效：**两个条件同时成立** ——
- * ① 该 Boss 在 2.1 之前出现过（`bossAppearedBeforeMultiplierVersion`，由调用方按其出现历史计算）；
+ * ① 该 Boss 在起算版本 2.1（含）时就已存在（`bossExistedByMultiplierVersion`，
+ *    由调用方按其出现历史计算：首次出现不晚于 2.1，含 2.1 才出的新 Boss）；
  * ② 当前期数 / 赛季版本 ≥ 2.1。
  * 其余组合（含版本未知）一律不乘。
  */
 export function isAnomalyBarVersionMultiplier(
   version: string | null | undefined,
-  bossAppearedBeforeMultiplierVersion?: boolean,
+  bossExistedByMultiplierVersion?: boolean,
 ): boolean {
-  if (bossAppearedBeforeMultiplierVersion !== true) return false
+  if (bossExistedByMultiplierVersion !== true) return false
   return isVersionAtLeast(version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM)
 }
 
@@ -176,10 +178,11 @@ export interface MonsterResistanceTableInput {
   /** 该怪物所在期数 / 赛季的游戏版本（如 3.2）；用于版本系数判定，缺省不乘 */
   version?: string | null
   /**
-   * 该 Boss 是否在 2.1 之前出现过（由调用方按其出现历史计算）。
+   * 该 Boss 是否在起算版本 2.1（含）时就已存在（由调用方按其出现历史计算：
+   * 首次出现不晚于 2.1，含 2.1 才出的新 Boss）。
    * 与 `version ≥ 2.1` 同时成立时才乘版本系数；缺省按 false 处理。
    */
-  boss_appeared_before_multiplier_version?: boolean
+  boss_existed_by_multiplier_version?: boolean
 }
 
 export interface MonsterResistanceRow {
@@ -234,7 +237,7 @@ export function buildMonsterResistanceRows(
   const coefficient = resolveAnomalyBarCoefficient(input.anomaly_bar_coefficient)
   const versionMultiplier = isAnomalyBarVersionMultiplier(
     input.version,
-    input.boss_appeared_before_multiplier_version,
+    input.boss_existed_by_multiplier_version,
   )
     ? ANOMALY_BAR_VERSION_MULTIPLIER
     : 1

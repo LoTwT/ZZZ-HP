@@ -27,10 +27,10 @@ const props = defineProps<{
   /** 当前期数的游戏版本（如 3.2），由父组件从 phases 取；判「2.1 起异常条 ×1.1」用 */
   version?: string | null
   /**
-   * 该 Boss 是否在 2.1 之前的期数出现过，由父组件按其出现历史计算；
-   * 与 `version ≥ 2.1` 同时成立才乘版本系数，缺省按 false
+   * 该 Boss 是否在 2.1（含）之前就已存在（首次出现不晚于 2.1，含 2.1 才出的新 Boss），
+   * 由父组件按其出现历史计算；与 `version ≥ 2.1` 同时成立才乘版本系数，缺省按 false
    */
-  bossAppearedBeforeMultiplierVersion?: boolean
+  bossExistedByMultiplierVersion?: boolean
   /** 原场地 Buff（较早一期），由父组件从 phases 解析 */
   previousFieldBuff?: MonsterFieldBuffSnapshot | null
   /** 现场地 Buff（当期），由父组件从 phases 解析 */
@@ -75,7 +75,7 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     monster_category: 'boss',
     anomaly_bar_coefficient: enemy.anomalyBarCoefficient ?? null,
     version: props.version ?? null,
-    boss_appeared_before_multiplier_version: props.bossAppearedBeforeMultiplierVersion === true,
+    boss_existed_by_multiplier_version: props.bossExistedByMultiplierVersion === true,
   }
 })
 
