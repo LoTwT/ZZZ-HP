@@ -367,10 +367,9 @@ check(
     /\.detail-version-multiplier \{[\s\S]*?color: #e85d4c;/.test(stats),
 )
 check(
-  '图片列固定宽度、数据列吃剩余空间（表格出现时图片再放大一档）',
-  /\.monster-detail-media \{[\s\S]*?flex-shrink: 0;[\s\S]*?width: clamp\(180px, 28%, 280px\);/.test(stats) &&
-    /\.monster-detail-data \{[\s\S]*?flex: 1;/.test(stats) &&
-    /@media \(min-width: 901px\) \{[\s\S]*?\.monster-detail-stats--with-resistance-table \.monster-detail-media \{\s*width: clamp\(200px, 26%, 340px\);/.test(stats),
+  '图片列占 23%、数据列吃剩余空间',
+  /\.monster-detail-media \{[\s\S]*?flex-shrink: 0;[\s\S]*?width: 23%;/.test(stats) &&
+    /\.monster-detail-data \{[\s\S]*?flex: 1;/.test(stats),
 )
 check(
   '弱点与抗性表占 50%',
@@ -379,6 +378,10 @@ check(
 check(
   '图片本身设宽度上限，避免竖图在宽屏过高',
   stats.includes('width: min(100%, 360px)'),
+)
+check(
+  '图片列宽度只有一处规则（不再有按表格分档的覆盖）',
+  !stats.includes('--with-resistance-table .monster-detail-media'),
 )
 check('三列档位不再单独把图片列压到 11% 宽', !stats.includes('clamp(96px, 11%, 150px)'))
 check(

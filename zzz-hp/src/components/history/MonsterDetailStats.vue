@@ -275,26 +275,18 @@ function onImageKeydown(event: KeyboardEvent) {
   gap: clamp(0.75rem, 2vw, 1.25rem);
 }
 
-/* 布局：图片列固定（不参与伸缩），数据列吃剩余空间 —— 与表格并排时由
-   下面的 --with-resistance-table 规则把图片再放大一档 */
+/* 布局：图片列固定占 23%，数据列吃剩余空间；与表格并排时也是 23%（同一规则） */
 .monster-detail-media {
   flex-shrink: 0;
-  width: clamp(180px, 28%, 280px);
+  width: 23%;
+  min-width: 150px;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
-/* 与弱点抗性表并排（表格 50%）：图片再放大一档。只在桌面生效，
-   避免盖掉 ≤768px 竖排时的图片宽度 */
-@media (min-width: 901px) {
-  .monster-detail-stats--with-resistance-table .monster-detail-media {
-    width: clamp(200px, 26%, 340px);
-  }
-}
-
 .monster-detail-image {
-  /* 图片列变宽后给图片本身设上限并居中，避免 3:4 竖图在宽屏下过高 */
+  /* 图片列定宽后给图片本身设上限并居中，避免 3:4 竖图在宽屏下过高 */
   width: min(100%, 360px);
   margin-inline: auto;
   aspect-ratio: 3 / 4;
