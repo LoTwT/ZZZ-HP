@@ -360,6 +360,22 @@ check(
     stats.includes('* 未配置异常条系数，数值为估算值'),
 )
 check(
+  '「异常条系数」行在版本系数生效时追加 ×1.1 并用强调红标出',
+  stats.includes('anomalyBarVersionMultiplierActive') &&
+    stats.includes('isAnomalyBarVersionMultiplier(props.record?.version)') &&
+    stats.includes('× {{ ANOMALY_BAR_VERSION_MULTIPLIER }}') &&
+    /\.detail-version-multiplier \{[\s\S]*?color: #e85d4c;/.test(stats),
+)
+check(
+  '图片列与数据列在桌面端等分宽度（图片放大 / 列表减半）',
+  /@media \(min-width: 769px\) \{[\s\S]*?\.monster-detail-media,\s*\.monster-detail-data \{\s*flex: 1 1 0;/.test(stats),
+)
+check(
+  '图片本身设宽度上限，避免半宽列下 3:4 竖图过高',
+  stats.includes('width: min(100%, 320px)'),
+)
+check('三列档位不再单独把图片列压到 11% 宽', !stats.includes('clamp(96px, 11%, 150px)'))
+check(
   '窄屏（≤768px）表宽跟随数据块占满整行',
   /@media \(max-width: 768px\)[\s\S]*\.monster-resistance-table \{\s*width: 100%;/.test(stats),
 )

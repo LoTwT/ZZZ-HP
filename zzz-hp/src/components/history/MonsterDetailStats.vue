@@ -4,8 +4,10 @@ import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
 import { formatHp } from '@/utils/gameData'
 import {
+  ANOMALY_BAR_VERSION_MULTIPLIER,
   buildMonsterResistanceRows,
   isAnomalyBarCoefficientConfigured,
+  isAnomalyBarVersionMultiplier,
   type MonsterResistanceRow,
 } from '@/utils/monsterResistanceTable'
 
@@ -78,6 +80,11 @@ const anomalyBarCoefficientLabel = computed(() => {
   const coefficient = props.record?.anomaly_bar_coefficient
   return isAnomalyBarCoefficientConfigured(coefficient) ? String(coefficient) : '未配置'
 })
+
+/** 版本系数是否生效（2.1 起 ×1.1）：与表侧同一判定函数，避免两处口径分叉 */
+const anomalyBarVersionMultiplierActive = computed(() =>
+  isAnomalyBarVersionMultiplier(props.record?.version),
+)
 
 /** 「弱点与抗性」表数据：仅在显式开启且存在数据块（弱点/抗性来源）时生成 */
 const resistanceRows = computed<MonsterResistanceRow[]>(() => {
@@ -188,6 +195,9 @@ function onImageKeydown(event: KeyboardEvent) {
       <p class="detail-row">
         <span class="detail-label">异常条系数：</span>
         <span class="detail-value">{{ anomalyBarCoefficientLabel }}</span>
+        <span v-if="anomalyBarVersionMultiplierActive" class="detail-version-multiplier">
+          × {{ ANOMALY_BAR_VERSION_MULTIPLIER }}
+        </span>
       </p>
       <p class="detail-row">
         <span class="detail-label">弱点：</span>
@@ -265,6 +275,15 @@ function onImageKeydown(event: KeyboardEvent) {
   gap: clamp(0.75rem, 2vw, 1.25rem);
 }
 
+/* 图片列与数据列各占一半（竖排时由 ≤768px 的规则接管宽度），图片放大但设上限避免过高 */
+@media (min-width: 769px) {
+  .monster-detail-media,
+  .monster-detail-data {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
 .monster-detail-media {
   flex-shrink: 0;
   width: clamp(140px, 24%, 220px);
@@ -274,7 +293,9 @@ function onImageKeydown(event: KeyboardEvent) {
 }
 
 .monster-detail-image {
-  width: 100%;
+  /* 图片列放大到半宽后，图片本身设上限并居中，避免 3:4 竖图在宽屏下过高 */
+  width: min(100%, 320px);
+  margin-inline: auto;
   aspect-ratio: 3 / 4;
   border-radius: 10px;
   border: 1px solid var(--color-border);
@@ -379,23 +400,26 @@ function onImageKeydown(event: KeyboardEvent) {
   overflow-wrap: anywhere;
 }
 
+/* 版本系数（2.1 起 ×1.1）：用强调红标出，表示最终值里额外乘了这一档 */
+.detail-version-multiplier {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #e85d4c;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄） */
 .monster-resistance-table {
   flex: 0 0 auto;
-  /* 与图片 / 数据三列并排时表格占 65%，图片列相应收窄（见下） */
+  /* 三列并排时表格占 65%，图片与数据列各分剩余空间的一半（见顶部 769px+ 规则） */
   width: 65%;
   min-width: 0;
   /* 极端窄屏下表格内部滚动，避免撑出整页横向滚动条 */
   overflow-x: auto;
 }
 
-/* 表格出现时图片列让位：65% 归表格后，图片列必须收窄，数据列吃剩余空间。
-   只在三列并排的宽度生效，避免与 ≤768px 的竖排图片宽度打架 */
-@media (min-width: 901px) {
-  .monster-detail-stats--with-resistance-table .monster-detail-media {
-    width: clamp(96px, 11%, 150px);
-  }
-}
+/* 表格出现时图片列让位：图片与数据列各吃剩余空间的一半（见顶部 769px+ 的 flex 规则）。
+   原先这里把图片列压到 11% 宽，现已由「图片与数据列等分」取代，故不再需要单独收窄。 */
 
 .monster-resistance-grid {
   width: 100%;
