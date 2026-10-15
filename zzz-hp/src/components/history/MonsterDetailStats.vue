@@ -349,10 +349,19 @@ function onImageKeydown(event: KeyboardEvent) {
 /* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄） */
 .monster-resistance-table {
   flex: 0 0 auto;
-  width: clamp(250px, 33%, 380px);
+  /* 与图片 / 数据三列并排时表格占 65%，图片列相应收窄（见下） */
+  width: 65%;
   min-width: 0;
   /* 极端窄屏下表格内部滚动，避免撑出整页横向滚动条 */
   overflow-x: auto;
+}
+
+/* 表格出现时图片列让位：65% 归表格后，图片列必须收窄，数据列吃剩余空间。
+   只在三列并排的宽度生效，避免与 ≤768px 的竖排图片宽度打架 */
+@media (min-width: 901px) {
+  .monster-detail-stats--with-resistance-table .monster-detail-media {
+    width: clamp(96px, 11%, 150px);
+  }
 }
 
 .monster-resistance-grid {
