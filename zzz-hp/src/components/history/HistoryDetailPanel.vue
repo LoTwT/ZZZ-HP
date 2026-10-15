@@ -22,7 +22,13 @@ import type { AdminBuffSlotContext, AdminMonsterSlotContext } from '@/types/admi
 import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
+import MonsterDetailModal from '@/components/history/MonsterDetailModal.vue'
 import { hasElementIcons } from '@/utils/elementIcons'
+import {
+  buildPhaseLabel,
+  findPreviousFieldBuff,
+  type MonsterFieldBuffSnapshot,
+} from '@/utils/historyMonsterDetail'
 
 const props = defineProps<{
   mode: ModeKey
@@ -408,6 +414,57 @@ function onAdminRemovePeriodBuff(buff: PhaseData['buffs'][number]) {
   if (!buff.recordId) return
   emit('admin-remove-period-buff', buff.recordId, buff.name)
 }
+
+/** 怪物详情弹窗：仅危局、非管理端、有怪物名的槽位可点开 */
+const monsterDetailOpen = ref(false)
+const monsterDetailEnemy = ref<PhaseData['enemies'][number] | null>(null)
+
+function canOpenMonsterDetail(enemy: PhaseData['enemies'][number]) {
+  return props.mode === 'crisis-assault' && !props.adminMode && !enemy.isEmpty && Boolean(enemy.bossName)
+}
+
+function openMonsterDetail(enemy: PhaseData['enemies'][number]) {
+  if (!canOpenMonsterDetail(enemy)) return
+  monsterDetailEnemy.value = enemy
+  monsterDetailOpen.value = true
+}
+
+function closeMonsterDetail() {
+  monsterDetailOpen.value = false
+  monsterDetailEnemy.value = null
+}
+
+function onMonsterDetailKeydown(event: KeyboardEvent, enemy: PhaseData['enemies'][number]) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  openMonsterDetail(enemy)
+}
+
+const monsterDetailPhaseLabel = computed(() => {
+  const phase = currentPhase.value
+  const enemy = monsterDetailEnemy.value
+  if (!phase || !enemy) return ''
+  return `${phase.version} ${phase.phase} · ${enemy.label}`.trim()
+})
+
+const monsterDetailCurrentFieldBuff = computed<MonsterFieldBuffSnapshot | null>(() => {
+  const phase = currentPhase.value
+  const enemy = monsterDetailEnemy.value
+  if (!enemy) return null
+  return {
+    fieldBuff: enemy.fieldBuff ?? null,
+    phaseLabel: phase ? buildPhaseLabel(phase) : '',
+  }
+})
+
+const monsterDetailPreviousFieldBuff = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  if (!enemy?.bossName) return null
+  return findPreviousFieldBuff(phases.value, currentIndex.value, {
+    bossName: enemy.bossName,
+    room: enemy.room ?? '',
+  })
+})
 
 defineExpose({
   reload: loadCrisisAssaultData,
@@ -839,7 +896,13 @@ function onPickerWheel(event: WheelEvent) {
             :class="{
               'enemy-card--empty': enemy.isEmpty,
               'enemy-card--admin': adminMode,
+              'enemy-card--clickable': canOpenMonsterDetail(enemy),
             }"
+            :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+            :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.bossName} 详情` : undefined"
+            :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+            @click="openMonsterDetail(enemy)"
+            @keydown="onMonsterDetailKeydown($event, enemy)"
           >
             <p class="enemy-label">{{ enemy.label }}</p>
             <div v-if="adminMode" class="enemy-admin-bar">
@@ -930,10 +993,16 @@ function onPickerWheel(event: WheelEvent) {
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
                     <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
                     </p>
                     <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
-                      <ElementTraitIcons :value="enemy.resistance" label="抗性" variant="resist" />
+                      <ElementTraitIcons
+                        :value="enemy.resistance"
+                        :high-value="enemy.resistanceHigh"
+                        label="抗性"
+                        variant="resist"
+                        show-percent
+                      />
                     </p>
                   </div>
                 </div>
@@ -977,7 +1046,13 @@ function onPickerWheel(event: WheelEvent) {
             :class="{
               'enemy-card--empty': enemy.isEmpty,
               'enemy-card--admin': adminMode,
+              'enemy-card--clickable': canOpenMonsterDetail(enemy),
             }"
+            :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
+            :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.bossName} 详情` : undefined"
+            :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
+            @click="openMonsterDetail(enemy)"
+            @keydown="onMonsterDetailKeydown($event, enemy)"
           >
             <p class="enemy-label">{{ enemy.label }}</p>
             <div v-if="adminMode" class="enemy-admin-bar">
@@ -1068,10 +1143,16 @@ function onPickerWheel(event: WheelEvent) {
                       失衡时间：{{ enemy.staggerTime }} 秒
                     </p>
                     <p v-if="hasElementIcons(enemy.weakness)" class="enemy-weakness">
-                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" />
+                      <ElementTraitIcons :value="enemy.weakness" label="弱点" variant="weak" show-percent />
                     </p>
                     <p v-if="hasElementIcons(enemy.resistance)" class="enemy-resistance">
-                      <ElementTraitIcons :value="enemy.resistance" label="抗性" variant="resist" />
+                      <ElementTraitIcons
+                        :value="enemy.resistance"
+                        :high-value="enemy.resistanceHigh"
+                        label="抗性"
+                        variant="resist"
+                        show-percent
+                      />
                     </p>
                   </div>
                 </div>
@@ -1119,6 +1200,17 @@ function onPickerWheel(event: WheelEvent) {
       @click="onNavZoneClick('next')"
       @keydown.enter="onNavZoneClick('next')"
       @keydown.space.prevent="onNavZoneClick('next')"
+    />
+
+    <MonsterDetailModal
+      v-if="mode === 'crisis-assault'"
+      :open="monsterDetailOpen"
+      :enemy="monsterDetailEnemy"
+      :mode="mode"
+      :phase-label="monsterDetailPhaseLabel"
+      :previous-field-buff="monsterDetailPreviousFieldBuff"
+      :current-field-buff="monsterDetailCurrentFieldBuff"
+      @close="closeMonsterDetail"
     />
   </div>
 </template>
@@ -2326,6 +2418,15 @@ function onPickerWheel(event: WheelEvent) {
 .enemy-card--empty {
   border-style: dashed;
   opacity: 0.92;
+}
+
+.enemy-card--clickable {
+  cursor: pointer;
+}
+
+.enemy-card--clickable:focus-visible {
+  outline: 2px solid var(--color-border);
+  outline-offset: 2px;
 }
 
 .enemy-admin-bar {
