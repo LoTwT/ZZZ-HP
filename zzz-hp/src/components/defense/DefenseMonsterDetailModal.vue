@@ -26,6 +26,8 @@ const props = defineProps<{
   phaseLabel: string
   /** 血量与往期对比，由父面板按怪物卡片同一口径计算；无往期出现时为 null */
   hpComparison?: HpComparison | null
+  /** 该槽位所在防线（第五防线 = 5）；无 boss_info 记录时按防线规则补默认等级 */
+  stage?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -51,10 +53,18 @@ const hpMode = ref<CrisisHpChartMode>('normal')
 const detailRecord = computed<MonsterDetailRecord | null>(() => {
   const enemy = props.enemy
   if (!enemy) return null
-  return buildDefenseMonsterDetailRecord(enemy, props.hpComparison ?? null, bossInfo.value)
+  return buildDefenseMonsterDetailRecord(
+    enemy,
+    props.hpComparison ?? null,
+    bossInfo.value,
+    props.stage ?? null,
+  )
 })
 
-/** 等级 / 失衡易伤只能来自 boss_info；查无记录或请求失败时整行隐藏，不阻断折线图 */
+/**
+ * 等级 / 失衡易伤只能来自 boss_info；查无记录或请求失败时不阻断折线图。
+ * 等级行仍在第五防线上按防线规则补 70（见 `buildDefenseMonsterDetailRecord`）。
+ */
 async function loadBossInfoRecord() {
   const bossName = props.enemy?.name
   if (!bossName) {
@@ -126,6 +136,7 @@ watch(
         :record="detailRecord"
         :image-url="enemy.imageUrl"
         :image-alt="enemy.name"
+        :show-resistance-table="true"
       />
 
       <section v-if="chartCategory" class="monster-detail-chart">

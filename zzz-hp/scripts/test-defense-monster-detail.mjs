@@ -8,8 +8,10 @@ import { encodeDefenseBossId } from '../src/utils/defenseId.ts'
 import {
   buildDefenseBossChart,
   buildDefenseMonsterDetailRecord,
+  DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
   getDefenseMonsterCategory,
   isDefenseEliteOrBoss,
+  resolveDefenseMonsterDefaultLevel,
 } from '../src/utils/defenseCompare.ts'
 
 let passed = 0
@@ -127,6 +129,56 @@ check(
     sparse.stagger_multiplier === null &&
     sparse.stagger_time === null,
   JSON.stringify(sparse),
+)
+
+console.log('[1b] resolveDefenseMonsterDefaultLevel：防线默认等级规则（唯一出处）')
+check(
+  '第五防线（stage 5）查无 boss_info 记录 ⇒ 70',
+  resolveDefenseMonsterDefaultLevel(5, null) === DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
+  `stage 5 → ${resolveDefenseMonsterDefaultLevel(5, null)}`,
+)
+check(
+  '第一 ~ 第四防线查无记录 ⇒ 1',
+  [1, 2, 3, 4].every((stage) => resolveDefenseMonsterDefaultLevel(stage, null) === 1),
+  [1, 2, 3, 4]
+    .map((stage) => `${stage} → ${resolveDefenseMonsterDefaultLevel(stage, null)}`)
+    .join(' / '),
+)
+check(
+  '真实 boss_info 等级优先：第五防线的 60 级怪物不被改写成 70',
+  resolveDefenseMonsterDefaultLevel(5, 60) === 60,
+)
+check(
+  '记录里等级恰好是 1 也信任记录（不臆造 70）',
+  resolveDefenseMonsterDefaultLevel(5, 1) === 1,
+)
+check(
+  '记录未填等级（0 / undefined）落回防线规则',
+  resolveDefenseMonsterDefaultLevel(5, 0) === DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL &&
+    resolveDefenseMonsterDefaultLevel(5, undefined) === DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
+)
+check(
+  '拿不到防线（null / undefined）时按最保守的 1',
+  resolveDefenseMonsterDefaultLevel(null, null) === 1 &&
+    resolveDefenseMonsterDefaultLevel(undefined, null) === 1,
+)
+check(
+  '详情行：第五防线无 boss_info 记录时补 70（等级行可见）',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, null, 5).level ===
+    DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL,
+)
+check(
+  '详情行：第四防线无记录时按规则补 1（与防线规则同一处理）',
+  buildDefenseMonsterDetailRecord(makeEnemy({ staggerTime: null }), null, null, 4).level === 1,
+)
+check(
+  '详情行：拿不到防线时保持旧口径（无记录 ⇒ null，等级行隐藏）',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, null).level === null &&
+    buildDefenseMonsterDetailRecord(makeEnemy(), null, null, null).level === null,
+)
+check(
+  '详情行：有记录时用记录等级，不套防线默认值',
+  buildDefenseMonsterDetailRecord(makeEnemy(), null, makeBossInfo({ level: 60 }), 5).level === 60,
 )
 
 console.log('[2] getDefenseMonsterCategory：折线图类别推导')
@@ -254,6 +306,11 @@ check('快切用请求序号丢弃过期响应', modalSource.includes('createReq
 check('图表区块按类别推导结果决定是否渲染', modalSource.includes('v-if="chartCategory"'))
 check('图表用 page-scroll 形态（图表自然高度、弹窗 body 滚动）', modalSource.includes(':page-scroll="true"'))
 check('不传危局专属的系数图开关', !modalSource.includes('enable-hp-coeff-charts'))
+check('等级按面板传入的防线补默认值', modalSource.includes('props.stage'))
+check(
+  '开启「弱点与抗性」表开关（表由另一工作流落地，此处只接线）',
+  modalSource.includes(':show-resistance-table="true"'),
+)
 
 const panelSource = readFileSync(
   new URL('../src/components/defense/DefenseDetailPanel.vue', import.meta.url),
@@ -265,6 +322,15 @@ check('卡片声明按钮语义 + 键盘可达', panelSource.includes("canOpenMo
 check('卡片有手型光标与 focus-visible 轮廓', panelSource.includes('.enemy-chip--clickable:focus-visible'))
 check('管理端编辑/删除按钮继续 @click.stop', (panelSource.match(/@click\.stop/g)?.length ?? 0) >= 2)
 check('弹窗传当前版本以取对应期数', panelSource.includes(':variant="defenseVariant"'))
+check(
+  '管理端预填等级改由防线规则推导（不再硬编码 1）',
+  panelSource.includes('resolveDefenseMonsterDefaultLevel') &&
+    !panelSource.includes("level: '1'"),
+)
+check(
+  '面板把点击槽位的防线传给详情弹窗',
+  panelSource.includes(':stage="monsterDetailFrontierStage"'),
+)
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

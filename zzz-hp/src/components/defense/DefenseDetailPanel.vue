@@ -12,7 +12,10 @@ import {
   findDefenseRoomHpComparison,
   formatDefenseRoomHpTitle,
 } from '@/utils/defenseHp'
-import { findDefenseSeasonIndexFromChartPoint } from '@/utils/defenseCompare'
+import {
+  findDefenseSeasonIndexFromChartPoint,
+  resolveDefenseMonsterDefaultLevel,
+} from '@/utils/defenseCompare'
 import { formatHpDelta } from '@/utils/gameData'
 import { createRequestEpoch } from '@/utils/requestEpoch'
 import {
@@ -206,14 +209,22 @@ const monsterDetailOpen = ref(false)
 const monsterDetailEnemy = ref<DefenseEnemy | null>(null)
 /** 打开时记录的定位串（房间 + 波次），与当前期数拼成弹窗副标题 */
 const monsterDetailSlotLabel = ref('')
+/** 打开时记录的防线（stage）：弹窗据此在 boss_info 查无记录时补默认等级 */
+const monsterDetailFrontierStage = ref<number | null>(null)
 
 function canOpenMonsterDetail(enemy: DefenseEnemy) {
   return !props.adminMode && Boolean(enemy.name)
 }
 
-function openMonsterDetail(enemy: DefenseEnemy, roomLabel: string, waveLabel: string) {
+function openMonsterDetail(
+  enemy: DefenseEnemy,
+  frontier: { id: string },
+  roomLabel: string,
+  waveLabel: string,
+) {
   if (!canOpenMonsterDetail(enemy)) return
   monsterDetailEnemy.value = enemy
+  monsterDetailFrontierStage.value = resolveFrontierStage(frontier)
   monsterDetailSlotLabel.value = [roomLabel, waveLabel].filter(Boolean).join(' · ')
   monsterDetailOpen.value = true
 }
@@ -221,17 +232,19 @@ function openMonsterDetail(enemy: DefenseEnemy, roomLabel: string, waveLabel: st
 function closeMonsterDetail() {
   monsterDetailOpen.value = false
   monsterDetailEnemy.value = null
+  monsterDetailFrontierStage.value = null
 }
 
 function onMonsterDetailKeydown(
   event: KeyboardEvent,
   enemy: DefenseEnemy,
+  frontier: { id: string },
   roomLabel: string,
   waveLabel: string,
 ) {
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
-  openMonsterDetail(enemy, roomLabel, waveLabel)
+  openMonsterDetail(enemy, frontier, roomLabel, waveLabel)
 }
 
 /** 与怪物卡片同一口径的往期血量对比，由弹窗用于血量行的膨胀与增量 */
@@ -326,6 +339,8 @@ function buildDefenseMonsterContext(
     monsterSubType: 1,
     count: 1,
   }
+  // `DefenseEnemy` 不带等级，槽位预填只能按防线规则推导（第五防线 70，其余防线 1）
+  const level = String(resolveDefenseMonsterDefaultLevel(slot.stage, null))
   if (!enemy?.id) return base
   try {
     const decoded = decodeDefenseBossId(enemy.id)
@@ -339,7 +354,7 @@ function buildDefenseMonsterContext(
       bossName: enemy.name,
       hp: enemy.hpValue ?? enemy.hp,
       defense: enemy.defense,
-      level: '1',
+      level,
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
       resistanceHigh: enemy.resistanceHigh ?? '',
@@ -353,7 +368,7 @@ function buildDefenseMonsterContext(
       bossName: enemy.name,
       hp: enemy.hpValue ?? enemy.hp,
       defense: enemy.defense,
-      level: '1',
+      level,
       weakness: enemy.weakness ?? '',
       resistance: enemy.resistance ?? '',
       resistanceHigh: enemy.resistanceHigh ?? '',
@@ -394,6 +409,8 @@ function buildDefenseMonsterContextFromSlot(
     monsterCategory: 'boss',
     monsterSubType: 1,
     count: 1,
+    // 与「添加 / 编辑怪物」同一口径：等级由防线推导，避免新增防线 / 房间 / 波次时预填回 1
+    level: String(resolveDefenseMonsterDefaultLevel(slot.stage, null)),
   }
 }
 
@@ -901,8 +918,8 @@ function formatEnemyResistance(value?: string) {
                       :role="canOpenMonsterDetail(enemy) ? 'button' : undefined"
                       :aria-label="canOpenMonsterDetail(enemy) ? `查看 ${enemy.name} 详情` : undefined"
                       :tabindex="canOpenMonsterDetail(enemy) ? 0 : undefined"
-                      @click="openMonsterDetail(enemy, room.label, wave.label)"
-                      @keydown="onMonsterDetailKeydown($event, enemy, room.label, wave.label)"
+                      @click="openMonsterDetail(enemy, frontier, room.label, wave.label)"
+                      @keydown="onMonsterDetailKeydown($event, enemy, frontier, room.label, wave.label)"
                     >
                       <div v-if="adminMode" class="enemy-admin-bar">
                         <button
@@ -1014,6 +1031,7 @@ function formatEnemyResistance(value?: string) {
       :variant="defenseVariant"
       :phase-label="monsterDetailPhaseLabel"
       :hp-comparison="monsterDetailHpComparison"
+      :stage="monsterDetailFrontierStage"
       @close="closeMonsterDetail"
     />
   </div>

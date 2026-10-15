@@ -217,23 +217,58 @@ export interface DefenseMonsterDetailBossInfo {
   stagger_time?: number | null
 }
 
+/** 第五防线（stage 5）：史实上怪物等级为 70 的那道防线 */
+export const DEFENSE_FIFTH_FRONTIER_STAGE = 5
+export const DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL = 70
+/** 其余防线（第一 ~ 第四防线）的怪物默认等级 */
+export const DEFENSE_OTHER_FRONTIER_MONSTER_LEVEL = 1
+
+function hasKnownBossInfoLevel(level: number | null | undefined): level is number {
+  return typeof level === 'number' && Number.isFinite(level) && level > 0
+}
+
+/**
+ * 防线怪物默认等级（唯一出处）：第五防线 70，其余防线 1。
+ *
+ * 有真实 `boss_info` 记录就用记录，**等级恰好是 1 也照用**：该等级同时供计算器与危局弹窗取用
+ * （还参与抗性 / 防御换算），没有任何依据能判定某个第五防线怪物记录里的 1 一定只是占位值，
+ * 在详情里改写成 70 只会让同一个怪物在两处显示不同等级。
+ * 只有「查无记录 / 记录未填等级（null、0、非有限数）」才落回防线规则。
+ */
+export function resolveDefenseMonsterDefaultLevel(
+  stage: number | null | undefined,
+  bossInfoLevel?: number | null,
+): number {
+  if (hasKnownBossInfoLevel(bossInfoLevel)) return bossInfoLevel
+  return stage === DEFENSE_FIFTH_FRONTIER_STAGE
+    ? DEFENSE_FIFTH_FRONTIER_MONSTER_LEVEL
+    : DEFENSE_OTHER_FRONTIER_MONSTER_LEVEL
+}
+
 /**
  * 防卫战怪物详情数据行组装（与危局弹窗同形状，共用 `MonsterDetailStats`）：
  * 血量 / 防御 / 失衡时间 / 弱点 / 抗性取自 `DefenseEnemy`，血量对比由面板按卡片同一口径算好传入；
- * 等级与失衡易伤 `DefenseEnemy` 不带，只能来自 boss_info 基础库（查无记录时为 null ⇒ 对应行不渲染）；
+ * 失衡易伤与等级里的 `DefenseEnemy` 不带，只能来自 boss_info 基础库（查无记录时为 null）；
+ * 等级额外按防线规则补默认值（第五防线 70、其余防线 1）；传 `stage` 表示拿得到防线，
+ * 为 null / 缺省表示拿不到，此时保持旧口径「只有 boss_info 有记录才渲染等级行」；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(
   enemy: DefenseEnemy,
   hpComparison: HpComparison | null,
   bossInfo: DefenseMonsterDetailBossInfo | null,
+  /** 该怪物所在防线（stage）；缺省 / null 表示拿不到防线，不套用防线规则 */
+  stage?: number | null,
 ): MonsterDetailRecord {
   return {
     boss_name: enemy.name || null,
     hp: enemy.hp || null,
     hp_expansion: hpComparison?.expansion ?? null,
     hp_delta_label: hpComparison ? formatHpDelta(hpComparison.diff) : null,
-    level: bossInfo?.level ?? null,
+    level:
+      stage == null
+        ? bossInfo?.level ?? null
+        : resolveDefenseMonsterDefaultLevel(stage, bossInfo?.level),
     defense: enemy.defense ?? null,
     stagger_time: enemy.staggerTime ?? bossInfo?.stagger_time ?? null,
     stagger_multiplier: bossInfo?.stagger_multiplier ?? null,
