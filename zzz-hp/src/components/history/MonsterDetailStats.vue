@@ -275,26 +275,27 @@ function onImageKeydown(event: KeyboardEvent) {
   gap: clamp(0.75rem, 2vw, 1.25rem);
 }
 
-/* 图片列与数据列各占一半（竖排时由 ≤768px 的规则接管宽度），图片放大但设上限避免过高 */
-@media (min-width: 769px) {
-  .monster-detail-media,
-  .monster-detail-data {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-}
-
+/* 布局：图片列固定（不参与伸缩），数据列吃剩余空间 —— 与表格并排时由
+   下面的 --with-resistance-table 规则把图片再放大一档 */
 .monster-detail-media {
   flex-shrink: 0;
-  width: clamp(140px, 24%, 220px);
+  width: clamp(180px, 28%, 280px);
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
+/* 与弱点抗性表并排（表格 50%）：图片再放大一档。只在桌面生效，
+   避免盖掉 ≤768px 竖排时的图片宽度 */
+@media (min-width: 901px) {
+  .monster-detail-stats--with-resistance-table .monster-detail-media {
+    width: clamp(200px, 26%, 340px);
+  }
+}
+
 .monster-detail-image {
-  /* 图片列放大到半宽后，图片本身设上限并居中，避免 3:4 竖图在宽屏下过高 */
-  width: min(100%, 320px);
+  /* 图片列变宽后给图片本身设上限并居中，避免 3:4 竖图在宽屏下过高 */
+  width: min(100%, 360px);
   margin-inline: auto;
   aspect-ratio: 3 / 4;
   border-radius: 10px;
@@ -411,15 +412,12 @@ function onImageKeydown(event: KeyboardEvent) {
 /* 第三列：弱点与抗性表（六属性 × 伤害 / 异常积蓄 / 失衡 / 最大异常积蓄） */
 .monster-resistance-table {
   flex: 0 0 auto;
-  /* 三列并排时表格占 65%，图片与数据列各分剩余空间的一半（见顶部 769px+ 规则） */
-  width: 65%;
+  /* 与图片 / 数据三列并排时表格占 50% */
+  width: 50%;
   min-width: 0;
   /* 极端窄屏下表格内部滚动，避免撑出整页横向滚动条 */
   overflow-x: auto;
 }
-
-/* 表格出现时图片列让位：图片与数据列各吃剩余空间的一半（见顶部 769px+ 的 flex 规则）。
-   原先这里把图片列压到 11% 宽，现已由「图片与数据列等分」取代，故不再需要单独收窄。 */
 
 .monster-resistance-grid {
   width: 100%;

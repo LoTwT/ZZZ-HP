@@ -367,12 +367,18 @@ check(
     /\.detail-version-multiplier \{[\s\S]*?color: #e85d4c;/.test(stats),
 )
 check(
-  '图片列与数据列在桌面端等分宽度（图片放大 / 列表减半）',
-  /@media \(min-width: 769px\) \{[\s\S]*?\.monster-detail-media,\s*\.monster-detail-data \{\s*flex: 1 1 0;/.test(stats),
+  '图片列固定宽度、数据列吃剩余空间（表格出现时图片再放大一档）',
+  /\.monster-detail-media \{[\s\S]*?flex-shrink: 0;[\s\S]*?width: clamp\(180px, 28%, 280px\);/.test(stats) &&
+    /\.monster-detail-data \{[\s\S]*?flex: 1;/.test(stats) &&
+    /@media \(min-width: 901px\) \{[\s\S]*?\.monster-detail-stats--with-resistance-table \.monster-detail-media \{\s*width: clamp\(200px, 26%, 340px\);/.test(stats),
 )
 check(
-  '图片本身设宽度上限，避免半宽列下 3:4 竖图过高',
-  stats.includes('width: min(100%, 320px)'),
+  '弱点与抗性表占 50%',
+  /\.monster-resistance-table \{[\s\S]*?width: 50%;/.test(stats),
+)
+check(
+  '图片本身设宽度上限，避免竖图在宽屏过高',
+  stats.includes('width: min(100%, 360px)'),
 )
 check('三列档位不再单独把图片列压到 11% 宽', !stats.includes('clamp(96px, 11%, 150px)'))
 check(
