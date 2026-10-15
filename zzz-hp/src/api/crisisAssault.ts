@@ -31,6 +31,8 @@ interface ApiBoss {
   hp_coeff_label?: string | null
   stagger_time?: number | null
   stagger_multiplier?: number | null
+  /** 异常条系数（后端按 boss_info 解析内置默认值后下发） */
+  anomaly_bar_coefficient?: number | null
   field_buff?: ApiFieldBuff | null
   field_buff_set_id?: string | null
 }
@@ -156,6 +158,7 @@ function mapBossToEnemy(boss: ApiBoss): EnemySlot {
     weakness: boss.weakness || undefined,
     staggerTime: boss.stagger_time ?? null,
     staggerMultiplier: boss.stagger_multiplier ?? null,
+    anomalyBarCoefficient: boss.anomaly_bar_coefficient ?? null,
     resistance: boss.resistance || undefined,
     resistanceHigh: boss.resistance_high || undefined,
     crisisBaseHp: boss.crisis_base_hp ?? null,

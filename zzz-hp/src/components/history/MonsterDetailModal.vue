@@ -7,7 +7,6 @@ import MonsterDetailStats, {
   type MonsterDetailRecord,
 } from '@/components/history/MonsterDetailStats.vue'
 import { fetchBossChart, type CrisisBossRoomType, type CrisisHpChartMode, type HpChartPoint } from '@/api/crisisAssault'
-import { lookupBossInfo } from '@/api/bossInfo'
 import type { EnemySlot, ModeKey } from '@/types/history'
 import { formatHpDelta } from '@/utils/gameData'
 import {
@@ -65,46 +64,15 @@ const detailRecord = computed<MonsterDetailRecord | null>(() => {
     weakness: enemy.weakness ?? null,
     resistance: enemy.resistance ?? null,
     resistance_high: enemy.resistanceHigh ?? null,
-    // 危局怪按首领敌人取基础异常条；系数优先取 boss_info，未配置时按内置名字表，仍无则 1
+    // 危局怪按首领敌人取基础异常条；系数由 phases API 随 boss 下发（内置默认表后端已解析），缺失按 1
     monster_category: 'boss',
-    anomaly_bar_coefficient: anomalyCoefficient.value,
+    anomaly_bar_coefficient: enemy.anomalyBarCoefficient ?? null,
   }
 })
 
 const showRoomBuffTransition = computed(() =>
   isFieldBuffChanged(props.previousFieldBuff?.fieldBuff ?? null, props.currentFieldBuff?.fieldBuff ?? null),
 )
-
-/** boss_info 异常条系数缓存：同名义怪物重开弹窗不重复请求；命中失败按 null（表按系数 1 兜底） */
-const anomalyCoefficientCache = new Map<string, number | null>()
-const anomalyCoefficient = ref<number | null>(null)
-const bossInfoLoadEpoch = createRequestEpoch()
-
-async function loadAnomalyBarCoefficient() {
-  const bossName = props.enemy?.bossName
-  if (!bossName) {
-    anomalyCoefficient.value = null
-    return
-  }
-  const cached = anomalyCoefficientCache.get(bossName)
-  if (cached !== undefined) {
-    anomalyCoefficient.value = cached
-    return
-  }
-  const token = bossInfoLoadEpoch.next()
-  try {
-    const record = await lookupBossInfo(bossName)
-    if (!bossInfoLoadEpoch.isCurrent(token)) return
-    // 查无记录也缓存为 null，避免重开同一怪物反复请求；null ⇒ 表按系数 1 兜底
-    const coefficient = record?.anomaly_bar_coefficient ?? null
-    anomalyCoefficientCache.set(bossName, coefficient)
-    anomalyCoefficient.value = coefficient
-  } catch {
-    // 请求失败不缓存（可能是瞬时网络问题），本次先按系数 1 渲染
-    if (!bossInfoLoadEpoch.isCurrent(token)) return
-    anomalyCoefficient.value = null
-  }
-}
 
 async function loadBossChartPoints() {
   const bossName = props.enemy?.bossName
@@ -138,7 +106,6 @@ watch(
     if (!open) return
     hpMode.value = props.enemy?.isHardRoom ? 'hard' : 'normal'
     void loadBossChartPoints()
-    void loadAnomalyBarCoefficient()
   },
   { immediate: true },
 )

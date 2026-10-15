@@ -284,8 +284,8 @@ export function resolveDefenseMonsterDefaultLevel(
  * 等级额外按防线规则补默认值（第五防线 70、其余防线 1）；传 `stage` 表示拿得到防线，
  * 为 null / 缺省表示拿不到，此时保持旧口径「只有 boss_info 有记录才渲染等级行」；
  * 基础异常条类别按防卫战怪物 ID 推导（小怪按「普通」、精英按「精英」、Boss 按「首领」，
- * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info，未配置时用内置名字表兜底
- * （见 utils/monsterResistanceTable.ts 的 resolveAnomalyBarCoefficient）；
+ * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info（后端读取时已解析内置默认表，
+ * 目录内怪物能拿到真实系数），缺省 / 非法值由表按 1 兜底；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(

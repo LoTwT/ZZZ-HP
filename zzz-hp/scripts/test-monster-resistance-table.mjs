@@ -5,12 +5,13 @@
  * 基础异常条表来自用户提供的真实游戏数据（按敌人类别 × 属性分组 × 已异常次数分档）；
  * 异常积蓄与失衡的 ±20% 截断属待验证知识；1.32 系数用例复现用户首发的 nanoka 截图
  * （首领 70 级样本：物理 4752 / 火组 3960 / 风 1980）。
- * 异常条系数另有按 Boss 名的内置默认表（`ANOMALY_BAR_COEFFICIENT_BY_NAME`），
- * 使同一组数字无需 boss_info 覆盖值、也无需跑 seed SQL 即可复现。
+ * 异常条系数一律由数据侧下发（`boss_info.anomaly_bar_coefficient`；危局由 phases 随 boss 下发，
+ * 按 Boss 名的内置默认表在后端读取时解析），前端只在字段缺失 / 非法时按 1 兜底。
  *
  * 运行：npx vite-node scripts/test-monster-resistance-table.mjs
  */
 import { readFileSync } from 'node:fs'
+import { fetchCrisisAssaultPhases } from '../src/api/crisisAssault.ts'
 import { RESISTANCE_VALUE_MAP } from '../src/utils/enemyResistance.ts'
 import {
   buildDefenseMonsterDetailRecord,
@@ -18,11 +19,9 @@ import {
 } from '../src/utils/defenseCompare.ts'
 import { encodeDefenseBossId } from '../src/utils/defenseId.ts'
 import {
-  ANOMALY_BAR_COEFFICIENT_BY_NAME,
   MONSTER_RESISTANCE_TABLE_ELEMENTS,
   buildMonsterResistanceRows,
   getMonsterBaseAnomalyProgress,
-  resolveAnomalyBarCoefficient,
 } from '../src/utils/monsterResistanceTable.ts'
 
 let passed = 0
@@ -336,10 +335,6 @@ check(
   stats.includes('monster_category: props.record.monster_category') &&
     stats.includes('anomaly_bar_coefficient: props.record.anomaly_bar_coefficient'),
 )
-check(
-  'record 的 boss_name 一并传入抗性表（内置默认表按名生效）',
-  stats.includes('boss_name: props.record.boss_name'),
-)
 check('最大异常积蓄表头带初始条长提示', stats.includes('title="初始条长（0 次已异常）"'))
 check(
   '窄屏（≤768px）表宽跟随数据块占满整行',
@@ -357,9 +352,15 @@ const modal = readFileSync(
 )
 check('怪物详情弹窗开启该表', modal.includes(':show-resistance-table="true"'))
 check('危局弹窗按首领敌人取基础异常条', modal.includes("monster_category: 'boss'"))
-check('危局弹窗从 boss_info 拉异常条系数', modal.includes('lookupBossInfo'))
-check('危局弹窗用请求序号丢弃过期 boss_info 响应', modal.includes('bossInfoLoadEpoch.isCurrent'))
-check('危局弹窗按怪名缓存系数，重开不重复请求', modal.includes('anomalyCoefficientCache'))
+check('危局弹窗不再请求 boss_info 取系数（系数随 phases 下发）', !modal.includes('lookupBossInfo'))
+check(
+  '危局弹窗直接读槽位下发的系数',
+  modal.includes('anomaly_bar_coefficient: enemy.anomalyBarCoefficient ?? null'),
+)
+check(
+  '危局弹窗不再持有系数缓存 / 请求序号',
+  !modal.includes('anomalyCoefficientCache') && !modal.includes('bossInfoLoadEpoch'),
+)
 
 const comparePanel = readFileSync(
   new URL('../src/components/history/MonsterComparePanel.vue', import.meta.url),
@@ -367,130 +368,153 @@ const comparePanel = readFileSync(
 )
 check('单独怪物对比页不开启该表（保持两列）', !comparePanel.includes('show-resistance-table'))
 
-console.log('[9] 内置异常条系数表（按 Boss 名；本表为内置默认，boss_info 为覆盖值）')
-check(
-  '内置表收录 18 条且系数均为有限正数',
-  Object.keys(ANOMALY_BAR_COEFFICIENT_BY_NAME).length === 18 &&
-    Object.values(ANOMALY_BAR_COEFFICIENT_BY_NAME).every(
-      (coefficient) => Number.isFinite(coefficient) && coefficient > 0,
-    ),
-  `${Object.keys(ANOMALY_BAR_COEFFICIENT_BY_NAME).length} 条`,
+console.log('[9] 异常条系数兜底：值只来自数据侧，前端只按 1 兜底')
+const tableSource = readFileSync(
+  new URL('../src/utils/monsterResistanceTable.ts', import.meta.url),
+  'utf8',
 )
 check(
-  '「亵渎者」→ 1.32（表内带括号写法）',
-  resolveAnomalyBarCoefficient('「亵渎者」') === 1.32,
-  `${resolveAnomalyBarCoefficient('「亵渎者」')}`,
+  '前端不再持有按 Boss 名的内置系数表（默认值单点在后端）',
+  !tableSource.includes('boss_name') && !tableSource.includes('ANOMALY_BAR_COEFFICIENT_BY_NAME'),
 )
 check(
-  '亵渎者 → 1.32（不带括号写法同样命中：归一化容忍括号差异）',
-  resolveAnomalyBarCoefficient('亵渎者') === 1.32,
-  `${resolveAnomalyBarCoefficient('亵渎者')}`,
+  'API 下发 1.32 ⇒ 物理 4752 / 火组 3960 / 风 1980',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: 1.32 })) ===
+    '3960 3960 3960 3960 4752 1980',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: 1.32 })),
 )
 check(
-  '猎血清道夫 → 1.0625（内置默认）',
-  resolveAnomalyBarCoefficient('猎血清道夫') === 1.0625,
-  `${resolveAnomalyBarCoefficient('猎血清道夫')}`,
+  '系数为 null ⇒ 1：首领 3600 / 火组 3000 / 风 1500',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: null })) ===
+    '3000 3000 3000 3000 3600 1500',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: null })),
 )
 check(
-  '内嵌括号名去括号后同值：霸主侵蚀体·庞培 → 1.1',
-  resolveAnomalyBarCoefficient('「霸主侵蚀体·庞培」') === 1.1 &&
-    resolveAnomalyBarCoefficient('霸主侵蚀体·庞培') === 1.1,
+  '系数缺省（字段缺失）⇒ 1，与显式 null 同口径',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss' })) ===
+    '3000 3000 3000 3000 3600 1500',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss' })),
 )
 check(
-  '未收录名称 → 1 兜底',
-  resolveAnomalyBarCoefficient('不存在的怪物') === 1,
+  '非法系数（0 / -1 / NaN / Infinity）⇒ 1，不把最大异常积蓄算成 0 或负数',
+  [0, -1, Number.NaN, Number.POSITIVE_INFINITY].every(
+    (coefficient) =>
+      maxAnomalyList(
+        buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: coefficient }),
+      ) === '3000 3000 3000 3000 3600 1500',
+  ),
 )
 check(
-  'null / undefined / 空串 / 纯空白 → 1 兜底',
-  resolveAnomalyBarCoefficient(null) === 1 &&
-    resolveAnomalyBarCoefficient(undefined) === 1 &&
-    resolveAnomalyBarCoefficient('') === 1 &&
-    resolveAnomalyBarCoefficient('  ') === 1,
-)
-check(
-  '显式值（boss_info 覆盖）优先于内置默认表：1.5 而非 1.32',
-  resolveAnomalyBarCoefficient('「亵渎者」', 1.5) === 1.5,
-  `${resolveAnomalyBarCoefficient('「亵渎者」', 1.5)}`,
-)
-check(
-  '显式值非法（0 / -1 / NaN / Infinity）按未提供处理，回退内置默认表',
-  resolveAnomalyBarCoefficient('「亵渎者」', 0) === 1.32 &&
-    resolveAnomalyBarCoefficient('「亵渎者」', -1) === 1.32 &&
-    resolveAnomalyBarCoefficient('「亵渎者」', Number.NaN) === 1.32 &&
-    resolveAnomalyBarCoefficient('「亵渎者」', Number.POSITIVE_INFINITY) === 1.32,
-)
-check(
-  '未收录名称 + 显式值 ⇒ 用显式值（覆盖值不依赖名称）',
-  resolveAnomalyBarCoefficient('不存在的怪物', 1.25) === 1.25,
+  '系数 1.5 ⇒ 物理 5400 / 火组 4500 / 风 2250（数值随下发值线性变化）',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: 1.5 })) ===
+    '4500 4500 4500 4500 5400 2250',
+  maxAnomalyList(buildMonsterResistanceRows({ monster_category: 'boss', anomaly_bar_coefficient: 1.5 })),
 )
 
-console.log('[10] 端到端：仅凭 boss_name 复现首发截图（不传显式系数）')
-const builtinCoefficientRows = buildMonsterResistanceRows({
-  weakness: '冰、物理、风',
-  resistance: '电',
-  resistance_high: '电',
-  boss_name: '「亵渎者」',
-  monster_category: 'boss',
-})
-const builtinByElement = byElement(builtinCoefficientRows)
+console.log('[10] 端到端：phases 载荷 → EnemySlot → 数据行（系数由 API 下发）')
+/** 与 MonsterDetailModal 的 detailRecord 同口径：危局怪按首领取基础异常条 + 槽位下发的系数 */
+const rowsFromCrisisSlot = (slot) =>
+  buildMonsterResistanceRows({
+    weakness: slot.weakness,
+    resistance: slot.resistance,
+    resistance_high: slot.resistanceHigh,
+    monster_category: 'boss',
+    anomaly_bar_coefficient: slot.anomalyBarCoefficient,
+  })
+
+const phasePayload = {
+  code: 200,
+  message: 'ok',
+  data: [
+    {
+      id: '3.2-4',
+      version: '3.2',
+      phase: '4',
+      phaseLabel: '第 4 期',
+      startDate: null,
+      endDate: null,
+      totalHp: 100,
+      tid: 1,
+      bosses: [
+        {
+          id: 1001,
+          boss_name: '「亵渎者」',
+          hp: 100,
+          defense: 953,
+          level: 70,
+          room: '1',
+          weakness: '冰、物理、风',
+          resistance: '电',
+          resistance_high: '电',
+          boss_image: null,
+          anomaly_bar_coefficient: 1.32,
+        },
+        {
+          id: 1002,
+          boss_name: '未配系数怪',
+          hp: 100,
+          defense: 953,
+          level: 70,
+          room: '2',
+          weakness: null,
+          resistance: null,
+          boss_image: null,
+          anomaly_bar_coefficient: null,
+        },
+      ],
+      buffs: [],
+    },
+  ],
+}
+
+const originalFetch = globalThis.fetch
+globalThis.fetch = async () =>
+  new Response(JSON.stringify(phasePayload), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+const crisisPhases = await fetchCrisisAssaultPhases()
+globalThis.fetch = originalFetch
+
+const apiRoom1Slot = crisisPhases[0].enemies.find((enemy) => enemy.label === '房间 1 Lv70')
+const apiRoom2Slot = crisisPhases[0].enemies.find((enemy) => enemy.label === '房间 2 Lv70')
+const apiEmptySlot = crisisPhases[0].enemies.find((enemy) => enemy.label === '房间 3')
 check(
-  '内置默认 1.32 三元组：物理 4752 / 火组 3960 / 风 1980',
-  builtinByElement['物理'].maxAnomalyProgress === 4752 &&
-    builtinByElement['火'].maxAnomalyProgress === 3960 &&
-    builtinByElement['电'].maxAnomalyProgress === 3960 &&
-    builtinByElement['冰'].maxAnomalyProgress === 3960 &&
-    builtinByElement['以太'].maxAnomalyProgress === 3960 &&
-    builtinByElement['风'].maxAnomalyProgress === 1980,
-  maxAnomalyList(builtinCoefficientRows),
+  'phases 的 anomaly_bar_coefficient 透传到怪物槽位（原先一律显示 1 的根因）',
+  apiRoom1Slot?.anomalyBarCoefficient === 1.32,
+  String(apiRoom1Slot?.anomalyBarCoefficient),
 )
 check(
-  '与显式 1.32 用例四列完全同口径（内置默认可替代手工填值）',
-  tuples(builtinCoefficientRows) === tuples(screenshotRows),
-  tuples(builtinCoefficientRows),
+  '槽位 1.32 ⇒ 数据行四列与首发截图一致（物理 4752 / 火组 3960 / 风 1980）',
+  apiRoom1Slot != null && tuples(rowsFromCrisisSlot(apiRoom1Slot)) === tuples(screenshotRows),
+  apiRoom1Slot ? tuples(rowsFromCrisisSlot(apiRoom1Slot)) : '未取到房间 1 槽位',
 )
 check(
-  'boss_info 覆盖值优先：带 boss_name 传 1.5 ⇒ 物理 5400 / 火组 4500 / 风 2250',
-  maxAnomalyList(
-    buildMonsterResistanceRows({
-      boss_name: '「亵渎者」',
-      monster_category: 'boss',
-      anomaly_bar_coefficient: 1.5,
-    }),
-  ) === '4500 4500 4500 4500 5400 2250',
-  maxAnomalyList(
-    buildMonsterResistanceRows({
-      boss_name: '「亵渎者」',
-      monster_category: 'boss',
-      anomaly_bar_coefficient: 1.5,
-    }),
-  ),
+  '槽位系数为 null ⇒ 前端按 1 兜底（首领 3600 / 火组 3000 / 风 1500）',
+  apiRoom2Slot?.anomalyBarCoefficient === null &&
+    maxAnomalyList(rowsFromCrisisSlot(apiRoom2Slot)) === '3000 3000 3000 3000 3600 1500',
+  apiRoom2Slot ? maxAnomalyList(rowsFromCrisisSlot(apiRoom2Slot)) : '未取到房间 2 槽位',
 )
 check(
-  '非法显式值（0）不生效：带 boss_name 时回退内置 1.32',
-  tuples(
-    buildMonsterResistanceRows({
-      weakness: '冰、物理、风',
-      resistance: '电',
-      resistance_high: '电',
-      boss_name: '「亵渎者」',
-      monster_category: 'boss',
-      anomaly_bar_coefficient: 0,
-    }),
-  ) === tuples(screenshotRows),
-  maxAnomalyList(
-    buildMonsterResistanceRows({
-      weakness: '冰、物理、风',
-      resistance: '电',
-      resistance_high: '电',
-      boss_name: '「亵渎者」',
-      monster_category: 'boss',
-      anomaly_bar_coefficient: 0,
-    }),
-  ),
+  '空槽位不带系数（undefined）⇒ 仍按 1',
+  apiEmptySlot != null &&
+    apiEmptySlot.anomalyBarCoefficient === undefined &&
+    maxAnomalyList(rowsFromCrisisSlot(apiEmptySlot)) === '3000 3000 3000 3000 3600 1500',
+)
+
+const apiSource = readFileSync(new URL('../src/api/crisisAssault.ts', import.meta.url), 'utf8')
+const enemySlotTypes = readFileSync(new URL('../src/types/history.ts', import.meta.url), 'utf8')
+check(
+  'phases API 的 boss 载荷声明 anomaly_bar_coefficient',
+  apiSource.includes('anomaly_bar_coefficient?: number | null'),
 )
 check(
-  '未传 boss_name 时行为不变：仍是首领 × 系数 1',
-  tuples(buildMonsterResistanceRows({ monster_category: 'boss' })) === tuples(plainRows),
+  'phases API 把系数随 boss 透传到槽位',
+  apiSource.includes('anomalyBarCoefficient: boss.anomaly_bar_coefficient ?? null'),
+)
+check(
+  'EnemySlot 声明 anomalyBarCoefficient',
+  enemySlotTypes.includes('anomalyBarCoefficient?: number | null'),
 )
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
