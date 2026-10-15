@@ -14,10 +14,14 @@ import {
   fetchDeductionBossChart,
   fetchDeductionBossList,
 } from '@/api/deduction'
+import { fetchBossInfoList, lookupBossInfo, type BossInfoRecord } from '@/api/bossInfo'
+import BossPickerModal from '@/components/history/BossPickerModal.vue'
+import MonsterDetailStats from '@/components/history/MonsterDetailStats.vue'
 import { usePhaseDetailModal } from '@/composables/usePhaseDetailModal'
 import type { DefenseVariant } from '@/types/defense'
 import { modeTitles, type ModeKey } from '@/types/history'
 import type { DefenseCompareMonsterCategory } from '@/utils/defenseCompare'
+import { joinBossOptionsWithInfo } from '@/utils/bossPickerItems'
 import { resolveAssetUrl } from '@/utils/gameData'
 import { createRequestEpoch } from '@/utils/requestEpoch'
 
@@ -33,10 +37,15 @@ const crisisRoomType = ref<'normal' | 'hard'>('normal')
 const points = ref<HpChartPoint[]>([])
 const bossListLoadEpoch = createRequestEpoch()
 const bossChartLoadEpoch = createRequestEpoch()
+const bossInfoLoadEpoch = createRequestEpoch()
+const bossDetailLoadEpoch = createRequestEpoch()
 const listLoading = ref(false)
 const chartLoading = ref(false)
 const listError = ref('')
 const chartError = ref('')
+const bossInfoRecords = ref<BossInfoRecord[]>([])
+const selectedBossDetail = ref<BossInfoRecord | null>(null)
+const pickerModalOpen = ref(false)
 const { visible: detailVisible, point: detailPoint, open: openPhaseDetail, close: closePhaseDetail } =
   usePhaseDetailModal()
 
@@ -66,6 +75,18 @@ const selectedBossInfo = computed(() =>
 )
 
 const categoryLabel = computed(() => (selectedCategory.value === 'elite' ? '精英' : 'Boss'))
+
+const bossSelectLabel = computed(() =>
+  isDeductionMode.value
+    ? '选择 Boss'
+    : isDefenseMode.value
+      ? `选择${categoryLabel.value}`
+      : crisisRoomType.value === 'hard'
+        ? '选择绝境 Boss'
+        : '选择正常 Boss',
+)
+
+const pickerItems = computed(() => joinBossOptionsWithInfo(bossList.value, bossInfoRecords.value))
 
 async function loadBossList() {
   const token = bossListLoadEpoch.next()
@@ -126,7 +147,57 @@ async function loadBossChart() {
   }
 }
 
-onMounted(loadBossList)
+/**
+ * 拉取 boss_info 基础库全量（后端单页上限 500），按 boss_name 给选择卡片补展示字段。
+ * 加载失败只降级为卡片少字段，不阻断怪物列表与图表。
+ */
+async function loadBossInfoCatalog() {
+  const token = bossInfoLoadEpoch.next()
+  try {
+    const collected: BossInfoRecord[] = []
+    let offset = 0
+    while (offset < 2000) {
+      const result = await fetchBossInfoList({ limit: 500, offset })
+      if (!bossInfoLoadEpoch.isCurrent(token)) return
+      collected.push(...result.items)
+      offset += result.items.length
+      if (!result.items.length || offset >= result.total) break
+    }
+    bossInfoRecords.value = collected
+  } catch {
+    if (!bossInfoLoadEpoch.isCurrent(token)) return
+    bossInfoRecords.value = []
+  }
+}
+
+/** 选中怪物后拉取基础库详情用于数据块；快切时丢弃过期响应，查无记录时整块隐藏 */
+async function loadSelectedBossDetail() {
+  const bossName = selectedBoss.value
+  if (!bossName) {
+    selectedBossDetail.value = null
+    return
+  }
+
+  const token = bossDetailLoadEpoch.next()
+  try {
+    const record = await lookupBossInfo(bossName)
+    if (!bossDetailLoadEpoch.isCurrent(token)) return
+    selectedBossDetail.value = record
+  } catch {
+    if (!bossDetailLoadEpoch.isCurrent(token)) return
+    selectedBossDetail.value = null
+  }
+}
+
+function handleBossPicked(bossName: string) {
+  selectedBoss.value = bossName
+  pickerModalOpen.value = false
+}
+
+onMounted(() => {
+  loadBossList()
+  loadBossInfoCatalog()
+})
 
 watch(defenseVariant, () => {
   if (isDefenseMode.value) {
@@ -149,6 +220,7 @@ watch(crisisRoomType, () => {
 
 watch(selectedBoss, () => {
   loadBossChart()
+  loadSelectedBossDetail()
 })
 </script>
 
@@ -173,17 +245,7 @@ watch(selectedBoss, () => {
         </div>
 
         <div class="selector-field">
-          <label class="selector-label" for="boss-select">
-            {{
-              isDeductionMode
-                ? '选择 Boss'
-                : isDefenseMode
-                  ? `选择${categoryLabel}`
-                  : crisisRoomType === 'hard'
-                    ? '选择绝境 Boss'
-                    : '选择正常 Boss'
-            }}
-          </label>
+          <span class="selector-label">{{ bossSelectLabel }}</span>
           <div class="selector-row">
             <img
               v-if="selectedBossInfo?.boss_image"
@@ -191,22 +253,22 @@ watch(selectedBoss, () => {
               :alt="selectedBoss"
               class="boss-thumb"
             />
-            <select
-              id="boss-select"
-              v-model="selectedBoss"
-              class="boss-select"
-              :disabled="!bossList.length"
+            <span class="boss-selected-name" :class="{ 'boss-selected-name--empty': !selectedBoss }">
+              {{ selectedBoss || '未选择' }}
+            </span>
+            <button
+              type="button"
+              class="boss-picker-btn"
+              :disabled="!pickerItems.length"
+              @click="pickerModalOpen = true"
             >
-              <option v-if="!bossList.length" value="">
-                暂无{{ isDeductionMode ? 'Boss' : isDefenseMode ? categoryLabel : 'Boss' }}
-              </option>
-              <option v-for="boss in bossList" :key="boss.boss_name" :value="boss.boss_name">
-                {{ boss.boss_name }}
-              </option>
-            </select>
+              {{ selectedBoss ? '更换' : '选择' }}
+            </button>
           </div>
         </div>
       </div>
+
+      <MonsterDetailStats class="monster-compare-stats" :record="selectedBossDetail" />
 
       <p v-if="chartLoading" class="status-text">图表加载中...</p>
       <p v-else-if="chartError" class="status-text error">{{ chartError }}</p>
@@ -229,6 +291,15 @@ watch(selectedBoss, () => {
         :enable-hp-converted953-toggle="!isDefenseMode"
         :page-scroll="true"
         @point-click="openPhaseDetail"
+      />
+
+      <BossPickerModal
+        :open="pickerModalOpen"
+        :items="pickerItems"
+        :title="bossSelectLabel"
+        :selected-name="selectedBoss"
+        @select="handleBossPicked"
+        @close="pickerModalOpen = false"
       />
 
       <PhaseDetailModal
@@ -337,6 +408,52 @@ watch(selectedBoss, () => {
   font-size: 0.95rem;
 }
 
+.boss-selected-name {
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.boss-selected-name--empty {
+  font-weight: 500;
+  opacity: 0.6;
+}
+
+.boss-picker-btn {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background-soft);
+  color: var(--color-heading);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.boss-picker-btn:hover:not(:disabled) {
+  border-color: var(--color-heading);
+}
+
+.boss-picker-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.monster-compare-stats {
+  flex-shrink: 0;
+  width: min(640px, 100%);
+  margin: 0 auto 0.85rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+  box-sizing: border-box;
+}
+
 .status-text {
   min-height: 30vh;
   display: flex;
@@ -394,6 +511,15 @@ watch(selectedBoss, () => {
   .boss-select {
     min-width: 0;
     flex: 1;
+    width: 100%;
+  }
+
+  .boss-selected-name {
+    max-width: none;
+    flex: 1;
+  }
+
+  .monster-compare-stats {
     width: 100%;
   }
 }
