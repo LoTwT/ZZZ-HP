@@ -366,25 +366,21 @@ watch(phaseSearchInput, () => {
       <section class="phase-selector">
         <form class="phase-search-form" @submit.prevent="addPhaseFromSearch()">
           <label class="selector-label" for="phase-search-input">搜索添加</label>
-          <div class="selector-actions">
-            <input
-              id="phase-search-input"
-              v-model="phaseSearchInput"
-              type="text"
-              class="phase-search-input"
-              :placeholder="isDeductionMode ? '节点名 / 101' : '1.41 / 1.4第1期'"
-              spellcheck="false"
-            />
-            <button type="submit" class="add-btn">添加</button>
-          </div>
-          <p v-if="inputError" class="input-error">{{ inputError }}</p>
-        </form>
-
-        <div class="picker-entry">
-          <button type="button" class="add-btn" @click="openPhasePicker">
+          <input
+            id="phase-search-input"
+            v-model="phaseSearchInput"
+            type="text"
+            class="phase-search-input"
+            :placeholder="isDeductionMode ? '节点名 / 101' : '1.41 / 1.4第1期'"
+            spellcheck="false"
+          />
+          <button type="submit" class="add-btn">添加</button>
+          <button type="button" class="add-btn picker-btn" @click="openPhasePicker">
             {{ isDeductionMode ? '选择节点' : '选择期数' }}
           </button>
-        </div>
+        </form>
+
+        <p v-if="inputError" class="input-error">{{ inputError }}</p>
 
         <div v-if="selectedPoints.length" class="selected-phases">
           <div class="selected-phases-header">
@@ -559,11 +555,13 @@ watch(phaseSearchInput, () => {
   flex-shrink: 0;
 }
 
+/* 搜索添加（标签 + 输入框 + 添加）与选择期数按钮同排：放不下时换行，不横向溢出 */
 .phase-search-form {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.5rem;
   width: 100%;
 }
 
@@ -574,26 +572,13 @@ watch(phaseSearchInput, () => {
   color: var(--color-heading);
 }
 
-.picker-entry {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
-
-.picker-entry .add-btn {
+.picker-btn {
   min-width: 8rem;
 }
 
-.selector-actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
 .phase-search-input {
-  width: 9.5rem;
+  flex: 0 1 9.5rem;
+  min-width: 8rem;
   padding: 0.45rem 0.65rem;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -740,18 +725,9 @@ watch(phaseSearchInput, () => {
     margin-bottom: 0.55rem;
   }
 
-  .phase-search-form {
-    align-items: stretch;
-  }
-
-  .selector-actions {
-    width: 100%;
-  }
-
   .phase-search-input {
-    flex: 1;
+    flex: 1 1 8rem;
     min-width: 0;
-    width: auto;
   }
 
   .selected-phases {
