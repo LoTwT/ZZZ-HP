@@ -14,7 +14,8 @@ import { elementIconPath, splitTraitElements } from '@/utils/elementIcons'
  *   此处不写任何百分比字面量，全部由该表 × 100 推导。
  * - 异常积蓄 / 失衡列：**推断**——截图中 40% 抗性属性的这两列显示为 20%，
  *   故按「伤害值截断到 ±20% 档（`RESISTANCE_VALUE_MAP.weak` / `.res20`）」实现，待验证。
- * - 最大异常积蓄列：**编码自截图**（70 级怪物样本）的各属性常量，是否随等级变化未经验证。
+ * - 最大异常积蓄列：**用户提供的真实游戏数据**——最大异常积蓄 = 基础异常条长度 × 异常条系数，
+ *   基础值按敌人类别（普通 / 精英 / 首领）与属性分列；展示口径为初始条长（0 次已异常）。
  */
 
 /**
@@ -30,17 +31,56 @@ export const MONSTER_RESISTANCE_TABLE_ELEMENTS: readonly EnemyResistanceElement[
   '风',
 ]
 
+/** 敌人类别（决定基础异常条所在列）；缺省按「首领」 */
+export type MonsterAnomalyBarCategory = 'normal' | 'elite' | 'boss'
+
+/** 基础异常条表的属性分组列：物理、火/电/冰/以太（数据完全一致，共用一列）、风 */
+type MonsterAnomalyBarColumn = 'physical' | 'fireGroup' | 'wind'
+
 /**
- * 各属性「最大异常积蓄」常量。
- * 来源：用户提供的 nanoka 怪物页截图（70 级怪物），物理 4752 / 风 1980，其余属性 3960；
- * 是否随等级缩放尚未验证，故入参 `level` 暂不参与计算。
+ * 基础异常条长度表（用户提供：boss 图鉴数据）。
+ * 行维度：已异常次数 0..8 与 9+，共十档；列维度：敌人类别 × 属性分组。
  */
-const MAX_ANOMALY_PROGRESS_BY_ELEMENT: Partial<Record<EnemyResistanceElement, number>> = {
-  物理: 4752,
-  风: 1980,
+const BASE_ANOMALY_PROGRESS_TABLE: Record<
+  MonsterAnomalyBarCategory,
+  Record<MonsterAnomalyBarColumn, readonly number[]>
+> = {
+  normal: {
+    physical: [720, 734, 748, 762, 777, 792, 807, 823, 839, 855],
+    fireGroup: [600, 612, 624, 636, 648, 660, 673, 686, 699, 712],
+    wind: [300, 500, 624, 636, 648, 660, 673, 686, 699, 712],
+  },
+  elite: {
+    physical: [2700, 2754, 2809, 2865, 2922, 2980, 3039, 3099, 3160, 3223],
+    fireGroup: [2250, 2295, 2340, 2386, 2433, 2481, 2530, 2580, 2631, 2683],
+    wind: [1150, 2000, 2340, 2386, 2433, 2481, 2530, 2580, 2631, 2683],
+  },
+  boss: {
+    physical: [3600, 3672, 3745, 3819, 3895, 3972, 4051, 4132, 4214, 4298],
+    fireGroup: [3000, 3060, 3121, 3183, 3246, 3310, 3376, 3443, 3511, 3581],
+    wind: [1500, 2700, 3121, 3183, 3246, 3310, 3376, 3443, 3511, 3581],
+  },
 }
 
-const DEFAULT_MAX_ANOMALY_PROGRESS = 3960
+function resolveAnomalyBarColumn(element: EnemyResistanceElement): MonsterAnomalyBarColumn {
+  if (element === '物理') return 'physical'
+  if (element === '风') return 'wind'
+  return 'fireGroup'
+}
+
+/**
+ * 取基础异常条长度：已异常次数 0..8 逐档，9 及以上取最后一档（越界按边界档收敛）。
+ * 展示口径恒传 0（初始条长），其余档位供后续扩展（如已异常次数步进器）使用。
+ */
+export function getMonsterBaseAnomalyProgress(
+  category: MonsterAnomalyBarCategory,
+  element: EnemyResistanceElement,
+  occurrence: number,
+): number {
+  const column = BASE_ANOMALY_PROGRESS_TABLE[category][resolveAnomalyBarColumn(element)]
+  const index = Math.min(Math.max(Math.floor(occurrence), 0), column.length - 1)
+  return column[index]!
+}
 
 /** 异常积蓄 / 失衡的截断上下限：即 ±20% 两个档位，非新常量 */
 const ANOMALY_STAGGER_LOWER_BOUND_PERCENT = RESISTANCE_VALUE_MAP.weak * 100
@@ -58,6 +98,10 @@ export interface MonsterResistanceTableInput {
    * 当前不参与计算，仅作调用方显式声明用。
    */
   level?: number | null
+  /** 敌人类别（决定基础异常条所在列）；缺省按「首领」 */
+  monster_category?: MonsterAnomalyBarCategory | null
+  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数）；缺省 / null 按 1 处理 */
+  anomaly_bar_coefficient?: number | null
 }
 
 export interface MonsterResistanceRow {
@@ -71,7 +115,7 @@ export interface MonsterResistanceRow {
   anomalyPercent: number
   /** 失衡百分比（同异常积蓄截断规则） */
   staggerPercent: number
-  /** 最大异常积蓄（整数，千分位由展示层格式化） */
+  /** 最大异常积蓄 = 基础异常条（初始条长）× 异常条系数，四舍五入取整；千分位由展示层格式化 */
   maxAnomalyProgress: number
 }
 
@@ -103,6 +147,8 @@ export function buildMonsterResistanceRows(
   const weakElements = new Set(splitTraitElements(input.weakness))
   const resistElements = new Set(splitTraitElements(input.resistance))
   const highResistElements = new Set(splitTraitElements(input.resistance_high))
+  const category = input.monster_category ?? 'boss'
+  const coefficient = input.anomaly_bar_coefficient ?? 1
 
   return MONSTER_RESISTANCE_TABLE_ELEMENTS.map((element) => {
     const type = resolveResistanceType(element, weakElements, resistElements, highResistElements)
@@ -113,7 +159,7 @@ export function buildMonsterResistanceRows(
       damagePercent,
       anomalyPercent: clampPercent(damagePercent),
       staggerPercent: clampPercent(damagePercent),
-      maxAnomalyProgress: MAX_ANOMALY_PROGRESS_BY_ELEMENT[element] ?? DEFAULT_MAX_ANOMALY_PROGRESS,
+      maxAnomalyProgress: Math.round(getMonsterBaseAnomalyProgress(category, element, 0) * coefficient),
     }
   })
 }

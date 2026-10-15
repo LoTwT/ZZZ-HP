@@ -10,6 +10,7 @@ import {
   type HpComparison,
 } from '@/utils/defenseHp'
 import { formatHpDelta, parseHpString } from '@/utils/gameData'
+import type { MonsterAnomalyBarCategory } from '@/utils/monsterResistanceTable'
 
 const EMPTY_ENEMY: EnemySlot = {
   label: '',
@@ -39,6 +40,19 @@ export function getDefenseMonsterCategory(enemy: DefenseEnemy): DefenseCompareMo
 
 export function isDefenseEliteOrBoss(enemy: DefenseEnemy): boolean {
   return getDefenseMonsterCategory(enemy) != null
+}
+
+/**
+ * 防卫战怪物类别 → 基础异常条类别：小怪（minion）按「普通」取基础值。
+ * 推不出类别（null / 未知）时返回 undefined，字段缺省由「弱点与抗性」表按「首领」兜底。
+ */
+export function defenseMonsterCategoryToTableCategory(
+  category: DefenseMonsterCategory | null,
+): MonsterAnomalyBarCategory | undefined {
+  if (category === 'minion') return 'normal'
+  if (category === 'elite') return 'elite'
+  if (category === 'boss') return 'boss'
+  return undefined
 }
 
 function formatSeasonPhaseLabel(season: DefenseSeason) {
@@ -215,6 +229,8 @@ export interface DefenseMonsterDetailBossInfo {
   level?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
+  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数）；缺省 / null 由表按 1 处理 */
+  anomaly_bar_coefficient?: number | null
 }
 
 /** 第五防线（stage 5）：史实上怪物等级为 70 的那道防线 */
@@ -251,6 +267,8 @@ export function resolveDefenseMonsterDefaultLevel(
  * 失衡易伤与等级里的 `DefenseEnemy` 不带，只能来自 boss_info 基础库（查无记录时为 null）；
  * 等级额外按防线规则补默认值（第五防线 70、其余防线 1）；传 `stage` 表示拿得到防线，
  * 为 null / 缺省表示拿不到，此时保持旧口径「只有 boss_info 有记录才渲染等级行」；
+ * 基础异常条类别按防卫战怪物 ID 推导（小怪按「普通」、精英按「精英」、Boss 按「首领」，
+ * 推不出时缺省由表按「首领」兜底），异常条系数取 boss_info（未填时由表按 1 处理）；
  * 危局专属的基础血量 / 血量系数不填，共享组件里本就不渲染这几行。
  */
 export function buildDefenseMonsterDetailRecord(
@@ -275,6 +293,8 @@ export function buildDefenseMonsterDetailRecord(
     weakness: enemy.weakness ?? null,
     resistance: enemy.resistance ?? null,
     resistance_high: enemy.resistanceHigh ?? null,
+    monster_category: defenseMonsterCategoryToTableCategory(getDefenseMonsterCategory(enemy)),
+    anomaly_bar_coefficient: bossInfo?.anomaly_bar_coefficient ?? null,
   }
 }
 

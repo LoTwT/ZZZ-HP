@@ -39,6 +39,10 @@ export interface MonsterDetailRecord {
   /** 抗性行常驻，无可识别属性时显示占位「无」 */
   resistance?: string | null
   resistance_high?: string | null
+  /** 敌人类别（决定基础异常条）：普通 / 精英 / 首领；缺省按「首领」 */
+  monster_category?: 'normal' | 'elite' | 'boss' | null
+  /** 异常条系数（最大异常积蓄 = 基础异常条 × 系数），缺省按 1 处理 */
+  anomaly_bar_coefficient?: number | null
 }
 
 const props = defineProps<{
@@ -74,6 +78,8 @@ const resistanceRows = computed<MonsterResistanceRow[]>(() => {
     resistance: props.record.resistance,
     resistance_high: props.record.resistance_high,
     level: props.record.level,
+    monster_category: props.record.monster_category,
+    anomaly_bar_coefficient: props.record.anomaly_bar_coefficient,
   })
 })
 
@@ -195,7 +201,7 @@ function onImageKeydown(event: KeyboardEvent) {
             <th scope="col">伤害</th>
             <th scope="col">异常积蓄</th>
             <th scope="col">失衡</th>
-            <th scope="col">最大异常积蓄</th>
+            <th scope="col" title="初始条长（0 次已异常）">最大异常积蓄</th>
           </tr>
         </thead>
         <tbody>
