@@ -390,7 +390,7 @@ watch(phaseSearchInput, () => {
             <button type="button" class="clear-btn" @click="clearPhases">清空</button>
           </div>
 
-          <div v-if="!isDefenseMode" class="phase-tags">
+          <div class="phase-tags">
             <button
               v-for="point in selectedPoints"
               :key="point.label"
