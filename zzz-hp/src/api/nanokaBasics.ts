@@ -4,8 +4,13 @@ import { handleAdminSessionExpired, withAdminAuthHeaders } from '@/utils/adminAu
  * nanoka 采集（基础数据）管理端接口。
  *
  * 后端：`zzz-hp-backend` 的 `/api/admin/nanoka/preview` 与 `/api/admin/nanoka/apply`。
- * 预览只比对「本地采集工具产出的候选文档」与库现状，**不写库**；录入只写界面勾选的条目 / 字段，
+ * 预览只比对「候选文档」与库现状，**不写库**；录入只写界面勾选的条目 / 字段，
  * 且 `expect` 带的是预览时的库现值（乐观锁：库变了后端会跳过并说明原因）。
+ *
+ * 另有「浏览器直采」的两个接口（服务端不联网，抓取一律发生在浏览器）：
+ *   - `/api/admin/nanoka/scan`：把浏览器抓来的 `character.json` / `weapon.json` 交给后端与库比对；
+ *   - `/api/admin/nanoka/collect`：把浏览器抓来的单条详情交给后端映射成候选条目。
+ *   两者都**不写库**，产物最终还是要走 `/preview` + `/apply`。
  */
 
 interface ApiResponse<T> {
@@ -198,4 +203,93 @@ export async function applyNanokaCandidates(
     body: JSON.stringify(payload),
   })
   return { summary: data, message }
+}
+
+// ---------------------------------------------------------------- 浏览器直采链路
+
+/** 索引里「本地缺失」的角色（`element` / `profession` 已由后端查表转成中文） */
+export interface NanokaScanMissingAgent {
+  nanokaId: string
+  code: string
+  zh: string
+  element: string
+  profession: string
+  rarity: number | string | null
+}
+
+/** 索引里「本地缺失」的音擎 */
+export interface NanokaScanMissingWengine {
+  nanokaId: string
+  zh: string
+  en: string
+  rank: number | string | null
+  atk: number | null
+  sub: string
+}
+
+/** 本地有、nanoka 索引里没有的条目（只提示，不自动处理） */
+export interface NanokaScanLocalItem {
+  id: string
+  name: string
+}
+
+export interface NanokaScanCounts {
+  missingAgents: number
+  missingWengines: number
+  extraLocalAgents: number
+  extraLocalWengines: number
+}
+
+/** `POST /api/admin/nanoka/scan` 的结果（后端只比对，不写库） */
+export interface NanokaScanResult {
+  buildTag: string
+  counts: NanokaScanCounts
+  missingAgents: NanokaScanMissingAgent[]
+  missingWengines: NanokaScanMissingWengine[]
+  extraLocalAgents: NanokaScanLocalItem[]
+  extraLocalWengines: NanokaScanLocalItem[]
+}
+
+/** 被丢弃的项（仓库没有对应字段，如角色 basePanel 的 `impact`） */
+export interface NanokaCollectUnsupported {
+  name: string
+  prop: number | string | null
+  format: string | null
+  value: number
+  reason: string
+}
+
+/** `POST /api/admin/nanoka/collect` 的结果：可直接拼进候选文档的条目 + 被丢弃的项 */
+export interface NanokaCollectResult {
+  entry: Record<string, unknown>
+  unsupported: NanokaCollectUnsupported[]
+}
+
+/** 索引比对：请求体是浏览器抓来的 character.json / weapon.json 原文（后端不联网） */
+export async function scanNanokaBasics(payload: {
+  buildTag: string
+  charIndex: unknown
+  weaponIndex: unknown
+}): Promise<NanokaScanResult> {
+  const { data } = await requestApi<NanokaScanResult>('/api/admin/nanoka/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return data
+}
+
+/** 单条详情映射：请求体是浏览器抓来的 `zh/character/<id>.json` 或 `zh/weapon/<id>.json` */
+export async function collectNanokaBasics(payload: {
+  kind: NanokaCandidateKind
+  nanokaId: string
+  meta: unknown
+  detail: unknown
+}): Promise<NanokaCollectResult> {
+  const { data } = await requestApi<NanokaCollectResult>('/api/admin/nanoka/collect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return data
 }

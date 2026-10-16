@@ -10,8 +10,20 @@
  *
  * 候选文档形状（= `nanoka-candidates-*.json`）：
  *   { buildTag, newAgents: [...], newWengines: [...], fillEmptyFields: [{id,name,field,from,to}], conflicts: [{kind,id,name,field,local,nanoka}] }
+ *
+ * 2026-10 追加「浏览器直采」链路（服务端**仍然不联网**）：
+ *   - `scanNanokaBasics`：吃浏览器抓来的 character.json / weapon.json 索引，与库比对出「缺什么」；
+ *   - `collectNanokaEntry`：吃浏览器抓来的单条详情，映射成候选文档条目（不写库）。
+ *   抓取一律发生在浏览器（走用户系统代理）；后端只做映射与 diff，见 nanoka/nanokaBasicsMapper.js。
  */
 import { listCalculatorBuffs, upsertAgent, upsertWengine } from './calculatorBuffService.js'
+import {
+  collectAgentUnsupported,
+  collectWengineUnsupported,
+  diffNanokaIndexAgainstLocal,
+  mapAgentDetail,
+  mapWengineDetail,
+} from './nanoka/nanokaBasicsMapper.js'
 
 const AGENT_LABELS = {
   hp: '生命值',
@@ -305,4 +317,41 @@ export async function applyNanokaCandidates({ entries } = {}) {
   }
 
   return summary
+}
+
+/**
+ * 扫描：吃浏览器抓来的 nanoka 索引（`character.json` / `weapon.json` 原文），与库比对出「缺什么」。
+ * 不联网、不写库；匹配口径见 nanoka/nanokaBasicsMapper.js 的 `diffNanokaIndexAgainstLocal`。
+ */
+export async function scanNanokaBasics({ buildTag, charIndex, weaponIndex } = {}) {
+  const local = await loadLocalState()
+  const diff = diffNanokaIndexAgainstLocal({
+    charIndex,
+    weaponIndex,
+    agents: [...local.agents.values()],
+    wengines: [...local.wengines.values()],
+  })
+  return { buildTag: String(buildTag ?? ''), ...diff }
+}
+
+/**
+ * 采集：吃浏览器抓来的单条详情（`zh/character/<id>.json` 或 `zh/weapon/<id>.json`），
+ * 映射成可直接拼进候选文档的条目。**不联网、不写库**。
+ *
+ * 返回 `{ entry, unsupported }`：`unsupported` 是被丢弃的项（如 basePanel 没有的 `impact`），供界面提示。
+ */
+export function collectNanokaEntry({ kind, nanokaId, meta, detail } = {}) {
+  if (kind !== 'agent' && kind !== 'wengine') throw new Error("kind 必须是 'agent' 或 'wengine'")
+  const id = nanokaId === null || nanokaId === undefined ? '' : String(nanokaId).trim()
+  if (!id) throw new Error('缺少 nanokaId')
+  if (!detail || typeof detail !== 'object') throw new Error('缺少详情 JSON')
+
+  if (kind === 'agent') {
+    const entry = mapAgentDetail({ detail, nanokaId: id, indexMeta: meta })
+    if (!entry.id) throw new Error('角色索引缺少 code，无法生成角色 id')
+    return { entry, unsupported: collectAgentUnsupported(detail) }
+  }
+  const entry = mapWengineDetail({ detail, nanokaId: id, indexMeta: meta })
+  if (!entry.id) throw new Error('音擎索引缺少 en / zh，无法生成音擎 id')
+  return { entry, unsupported: collectWengineUnsupported(detail) }
 }
