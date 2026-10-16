@@ -99,8 +99,10 @@ import {
   setBuffEffectEnabled,
   slotHasPanelConvertEffect,
   syncTeamProfessionAutoEnabled,
+  toTeammateView,
   type MultiSlotBuffSelection,
   type ConvertSlotPanels,
+  type ConvertResolveInputs,
   type BuffSelectionState,
 } from '@/utils/panelBuffCalc'
 import { computeExternalPanelFromTeamSlot } from '@/utils/affixPanelCalc'
@@ -1106,13 +1108,28 @@ const flowInvolvedSlotIndexes = computed(() => {
 const collectedEffectsForFlowTable = computed(() => {
   const involved = flowInvolvedSlotIndexes.value
   const merged = new Map<string, ReturnType<typeof collectAllBuffEffects>[number]>()
-  buffEffectsByMainSlot.value.forEach((items, slotIndex) => {
+  /**
+   * ⚠️ 合并顺序**当前编辑槽位优先**：每个条目带的 `group` 标签是"它那次收集时的主视角"写的
+   * （`buffEffectsByMainSlot[i]` 各自以 i 为主槽收集）。若按槽位号顺序合并，先到的别人视角会赢 ——
+   * 表现就是「南宫那一行的『自身』里冒出雅自己的增益」「南宫自己的团队增益被写成『队友』」。
+   */
+  const order = [
+    activeSlot.value,
+    ...teamSlots.map((_, index) => index).filter((index) => index !== activeSlot.value),
+  ]
+  for (const slotIndex of order) {
+    const items = buffEffectsByMainSlot.value[slotIndex] ?? []
     for (const item of items) {
       if (item.effect.applyTarget === 'self' && !involved.has(slotIndex)) continue
       if (!merged.has(item.effect.id)) merged.set(item.effect.id, item)
     }
-  })
-  return [...merged.values()]
+  }
+  // 非本槽位提供的条目：把标签从"它的主视角"改写成队友口径（`自身 → 队友`）
+  return [...merged.values()].map((item) =>
+    item.providerSlot != null && item.providerSlot !== activeSlot.value
+      ? toTeammateView(item)
+      : item,
+  )
 })
 
 /**
@@ -1136,6 +1153,26 @@ const flowBuffEffectTexts = computed(() =>
     skillSubcategories: skillSubcategories.value,
   }),
 )
+
+/**
+ * 本行增益例外弹窗的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）。
+ *
+ * **按槽位现给**（弹窗打开时取一次）：转模行的数值与局内增益选择器同一套口径，
+ * 且在页面渲染期不做多余的面板取值计算。
+ */
+function buffConvertResolveInputsForSlot(slotIndex: number): ConvertResolveInputs {
+  return {
+    attrDefaults:
+      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(slotIndex) ??
+      panelCalcSectionRef.value?.convertAttrDefaults ??
+      {},
+    panelSourceValues:
+      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(slotIndex) ??
+      panelCalcSectionRef.value?.convertPanelSourceValues ??
+      undefined,
+    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+  }
+}
 
 const mainSlotBuffSelection = computed(() =>
   resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
@@ -1534,8 +1571,10 @@ const activeFinalPanelPreview = computed(() => {
 /**
  * 「确定导入」——**唯一**的面板写盘入口（`dev-docs/affix-calc-manual.md` §1.4）。
  *
- * 写哪一份由弹窗里点确定时所在的子页决定：面板页写「面板导入」那份，
- * 词条页写「词条导入」那份（含词条数与 4/5/6 主属性）。另一份原样保留。
+ * 写哪一份由弹窗里点确定时所在的子页决定：面板页写「面板导入」那份，词条页写「词条导入」那份。另一份原样保留。
+ *
+ * 4/5/6 主属性（容器级字段 `affixDriveDiscMainStats`）**两条路都写** —— 它是「面板上的事实」，
+ * 截图识别也会给出（`panelScreenshot.ts` 的 `driveDiscMainStats`）；词条数 `affixCounts` 只跟词条导入那一路。
  */
 function applyUnifiedImport(payload: UnifiedPresetConfirmPayload) {
   const slot = teamSlots[activeSlot.value]
@@ -1560,9 +1599,15 @@ function applyUnifiedImport(payload: UnifiedPresetConfirmPayload) {
       affixDriveDiscMainStats: { ...payload.affixDriveDiscMainStats },
     })
   } else {
-    slotPanels[agentId] = writePanelSource(existing, 'imported', payload.externalPanel, {
+    const written = writePanelSource(existing, 'imported', payload.externalPanel, {
       importedAt,
       source: payload.panelSourceDetail ?? 'manual',
+    })
+    // 4/5/6 主属性是**面板上的事实**（截图识别也会给出），面板导入这一路同样要落盘 ——
+    // 此前只写了词条导入那份，导致「面板导入（含截图识别到的主属性）」点确定后主属性被丢掉。
+    // 词条数（affixCounts）仍只属于词条导入那一路：面板页没有它的输入。
+    slotPanels[agentId] = writeAffixInputsIntoSource(written, {
+      affixDriveDiscMainStats: { ...payload.affixDriveDiscMainStats },
     })
   }
   skillTalentLevelsByAgent[agentId] = fillSkillTalentLevels(
@@ -2391,7 +2436,8 @@ defineExpose({ scrollToSection })
         :hit-damages="hitDamages"
         :hit-calc-results="hitCalcResults"
         :buff-effects="collectedEffectsForFlowTable"
-    :buff-effect-texts="flowBuffEffectTexts"
+        :buff-effect-texts="flowBuffEffectTexts"
+        :convert-resolve-inputs="buffConvertResolveInputsForSlot"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"

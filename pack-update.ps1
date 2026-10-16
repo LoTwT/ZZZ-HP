@@ -156,6 +156,8 @@ $ExcludeDirs = @(
   '.git',
   # 阿里云证书下载目录（{订单号}_{域名}_iis/）：留存在仓库但绝不进包（含 .pfx 私钥与口令）
   '*_iis',
+  # 留言板已下架（2026-10-13），但本机/服务器上仍留着用户上传（50 MB+）：无论代码在不在，用户上传永不进包
+  'guestbook_image',
   'dist-ssr',
   'coverage',
   '.idea',
@@ -163,7 +165,6 @@ $ExcludeDirs = @(
   '.cursor-search',
   'packages',
   'uploads',
-  'guestbook_image',
   '__screenshots__'
 )
 if (-not $FullPack) {
@@ -229,7 +230,6 @@ if (-not $ShipImages) {
 Invoke-RobocopySafe -Source $Back -Dest (Join-Path $StageRoot 'zzz-hp-backend') -ExtraExcludeDirs $backExtra
 
 foreach ($drop in @(
-  (Join-Path $StageRoot 'zzz-hp-backend\guestbook_image'),
   (Join-Path $StageRoot 'zzz-hp-backend\uploads'),
   (Join-Path $StageRoot 'zzz-hp\.cursor-search'),
   (Join-Path $StageRoot 'zzz-hp\.cursor')
@@ -238,10 +238,6 @@ foreach ($drop in @(
     Remove-Item -LiteralPath $drop -Recurse -Force
   }
 }
-
-$gbKeep = Join-Path $StageRoot 'zzz-hp-backend\guestbook_image'
-New-Item -ItemType Directory -Force -Path $gbKeep | Out-Null
-[System.IO.File]::WriteAllText((Join-Path $gbKeep '.gitkeep'), '', [System.Text.UTF8Encoding]::new($false))
 
 $dataStage = Join-Path $StageRoot 'zzz-hp-backend\data'
 New-Item -ItemType Directory -Force -Path $dataStage | Out-Null

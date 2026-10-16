@@ -10,7 +10,9 @@
  * - **同名标记**：同一分组内第几次出现（只在重名时给）；招式行按全表编号
  * - **灰（不可点）的判据 = 受益者**：这条增益的受益者不在"这一行的受益者集合"里 → 灰
  * - **不参与的角色，其个人增益列不出现**（由页面传入的 items 保证，见 DamageCalcPage）
- * - 行级**只做减法**：与全局一致的不写；空 = `null`（全部继承）
+ * - 行级以**减法**为主（勾选）：与全局一致的不写；叠层 / 自行转模另可按行改数值
+ *   （`stacksByEffectId` / `convertInputsByEffectId`，见 `dev-docs/row-buff-override-stacks-convert.md`）；
+ *   四个键全空 = `null`（全部继承）
  * - 技能组：组行 = `entry.buffOverrides`，成员行 = `memberOverrides[].buffOverrides`（缺省继承整组）
  */
 import type { SkillGroup } from '@/types/calculator'
@@ -361,17 +363,100 @@ export function buildFlowBuffTableRows(input: {
   return rows
 }
 
-/** 某行的有效例外：成员缺省继承整行 */
-export function effectiveRowOverride(
+/**
+ * 这一段**自己写下**的例外（不含继承来的部分）。
+ *
+ * 写回时必须以它为基准：把继承来的内容实体化进这一段的存档，整组之后再改就传不到这一段了。
+ */
+export function ownRowOverride(
   entry: FlowEntry | null | undefined,
   memberKey: string | null | undefined,
 ): FlowBuffOverride | null {
   if (!entry) return null
   if (memberKey) {
     const found = (entry.memberOverrides ?? []).find((item) => item.memberKey === memberKey)
-    return found?.buffOverrides ?? entry.buffOverrides ?? null
+    return found?.buffOverrides ?? null
   }
   return entry.buffOverrides ?? null
+}
+
+/** 一份例外里什么都没写（四个键全空）= 全部继承（**空态判据只此一份**） */
+export function isFlowBuffOverrideEmpty(
+  override: FlowBuffOverride | null | undefined,
+): boolean {
+  if (!override) return true
+  return (
+    !override.disabledBlockIds?.length &&
+    !override.disabledEffectIds?.length &&
+    !Object.keys(override.stacksByEffectId ?? {}).length &&
+    !Object.keys(override.convertInputsByEffectId ?? {}).length
+  )
+}
+
+/**
+ * 整组的例外 + 这一段的例外 → **合并**（2026-10-09 用户口径，取代原来的"整体替换"）。
+ *
+ * - 关闭项取**并集**：整组关的 + 这一段关的 —— 这一段不能把整组关掉的单独开回来
+ * - 层数 / 自行转模**逐效果覆盖**：这一段写了的用这一段的，没写的继续继承整组
+ * - 两边都空 → `null`
+ *
+ * 为什么要合并：原来"这一段有自己任何一条例外 → 整组那份全部失效"，
+ * 于是"整组关了某条 + 这一段只是改了层数"会把那条增益**放回来**（用户 2026-10-09 反馈）。
+ */
+export function mergeFlowBuffOverride(
+  group: FlowBuffOverride | null | undefined,
+  member: FlowBuffOverride | null | undefined,
+): FlowBuffOverride | null {
+  if (!group) return isFlowBuffOverrideEmpty(member) ? null : (member ?? null)
+  if (!member) return isFlowBuffOverrideEmpty(group) ? null : group
+  const stacks = { ...(group.stacksByEffectId ?? {}), ...(member.stacksByEffectId ?? {}) }
+  const converts = {
+    ...(group.convertInputsByEffectId ?? {}),
+    ...(member.convertInputsByEffectId ?? {}),
+  }
+  const merged: FlowBuffOverride = {
+    disabledBlockIds: [
+      ...new Set([...(group.disabledBlockIds ?? []), ...(member.disabledBlockIds ?? [])]),
+    ],
+    disabledEffectIds: [
+      ...new Set([...(group.disabledEffectIds ?? []), ...(member.disabledEffectIds ?? [])]),
+    ],
+    stacksByEffectId: Object.keys(stacks).length ? stacks : null,
+    convertInputsByEffectId: Object.keys(converts).length ? converts : null,
+  }
+  return isFlowBuffOverrideEmpty(merged) ? null : merged
+}
+
+/**
+ * 这一段**真正生效**的例外 = 整组 + 自己（合并）——**读**的地方用它：
+ * 结算（`resolvedHit`）与表格状态；**写**的地方用 `ownRowOverride`，两边别用混。
+ */
+export function effectiveRowOverride(
+  entry: FlowEntry | null | undefined,
+  memberKey: string | null | undefined,
+): FlowBuffOverride | null {
+  if (!entry) return null
+  const own = ownRowOverride(entry, memberKey)
+  if (!memberKey) return own
+  return mergeFlowBuffOverride(entry.buffOverrides, own)
+}
+
+/**
+ * 一份行级例外里有几条「与本行不同」的内容：禁用的块 / 单条 + 层数、转模的行级覆盖。
+ *
+ * **界面上的「例外 N」「增益 N」都用它** —— 各数各的最容易数漏，
+ * 漏了用户就看不到"这一行/这一段改过"（层数、转模这类新版覆盖尤其容易漏）。
+ */
+export function flowBuffOverrideExceptionCount(
+  override: FlowBuffOverride | null | undefined,
+): number {
+  if (!override) return 0
+  return (
+    (override.disabledBlockIds?.length ?? 0) +
+    (override.disabledEffectIds?.length ?? 0) +
+    Object.keys(override.stacksByEffectId ?? {}).length +
+    Object.keys(override.convertInputsByEffectId ?? {}).length
+  )
 }
 
 /** 行受益者计算的输入（结构性类型：传真实 hit 即可，utils 不依赖组件类型） */
@@ -414,8 +499,7 @@ export function resolveRowBeneficiarySlots(input: {
  * `na`（不可点）三种来源：
  * ① 全局未启用（行级不能单独打开）
  * ② **这一行不吃这条**：受益者对不上（2026-09-22 定稿的灰法）
- * ③ 成员行：整组已关且**该成员没有自己的覆盖**（继承自组）；成员有自己的覆盖时按自己的算，
- *    与结算口径一致（`resolveOne`：成员覆盖整体替换整行覆盖）
+ * ③ 成员行：**整组已关**（合并语义下这一段同样不吃，也开不回来）
  */
 export function buildFlowBuffTableStates(input: {
   rows: FlowBuffTableRow[]
@@ -433,11 +517,8 @@ export function buildFlowBuffTableStates(input: {
   const out: Record<string, FlowBuffCellState> = {}
   for (const row of input.rows) {
     const entry = entryById.get(row.entryId) ?? null
+    // 读：这一段真正生效的例外（整组 + 本段合并）
     const rowOverride = effectiveRowOverride(entry, row.memberKey ?? null)
-    const memberOwnOverride =
-      row.kind === 'member' && row.memberKey
-        ? ((entry?.memberOverrides ?? []).find((item) => item.memberKey === row.memberKey) ?? null)
-        : null
     const groupOverride = row.kind === 'member' ? effectiveRowOverride(entry, null) : null
     const beneficiaries = input.beneficiarySlotsOf(row.key)
     for (const column of input.columns) {
@@ -454,12 +535,10 @@ export function buildFlowBuffTableStates(input: {
         out[cellKey] = 'na'
         continue
       }
-      // ③ 成员行「整组已关」：只有**该成员没有自己的覆盖**时才算「继承自组」（不可点）。
-      //    成员有自己的覆盖时按自己的算 —— 与结算一致：`resolveOne` 里成员覆盖整体替换整行覆盖，
-      //    此时被整行关掉的这条对这个成员是**生效**的，表里不该灰。
+      // ③ 成员行「整组已关」：**整组关掉的这一段同样不吃**（合并语义，2026-10-09），
+      //    表里灰、不能从这一段单独开回来 —— 与结算一致（`resolvedHit` 里合并整组 + 本段）。
       const groupOff =
         row.kind === 'member' &&
-        !memberOwnOverride &&
         (groupOverride?.disabledEffectIds?.includes(column.key) ||
           groupOverride?.disabledBlockIds?.includes(column.blockKey))
       if (groupOff) {
@@ -478,8 +557,12 @@ export function buildFlowBuffTableStates(input: {
 /**
  * 写回一个单元格（就地改对象；由调用方换数组引用以触发上层重算）。
  *
- * 写**单条**（`disabledEffectIds`）。老数据里可能有"整组关"（`disabledBlockIds`）：
- * 这时把某一条**开回来** = 只留这一条 —— 该块移出块关名单，同块其它条转成单条关。
+ * 写**单条**（`disabledEffectIds`）。两处基准要说清：
+ *
+ * - 基准取**这一段自己写下的**例外（`ownRowOverride`）—— 继承来的部分不实体化进来，
+ *   否则整组之后再改就传不到这一段了（合并语义下"继承"必须保持是继承）。
+ * - 成员行只能**加**：整组关掉的这条，从这里点不出"开"（表格把它标成 `na`，根本点不到）；
+ *   老数据里可能有"整组关"（`disabledBlockIds`）：这时把某一条**开回来** = 只留这一条。
  */
 export function setFlowBuffEffectDisabled(input: {
   entry: FlowEntry
@@ -492,7 +575,7 @@ export function setFlowBuffEffectDisabled(input: {
   skillId?: string | null
 }): void {
   const { entry, effectId, blockKey, siblingEffectIds, disabled, memberKey, skillId } = input
-  const current = effectiveRowOverride(entry, memberKey ?? null)
+  const current = ownRowOverride(entry, memberKey ?? null)
   const blocks = new Set(current?.disabledBlockIds ?? [])
   const effects = new Set(current?.disabledEffectIds ?? [])
 
@@ -505,12 +588,14 @@ export function setFlowBuffEffectDisabled(input: {
     }
   }
 
+  // 层数 / 转模的行级覆盖原样保留：这里是「勾选」那条线，不该顺手把数值覆盖清掉
   const merged: FlowBuffOverride = {
     disabledBlockIds: [...blocks],
     disabledEffectIds: [...effects],
+    stacksByEffectId: current?.stacksByEffectId ?? null,
+    convertInputsByEffectId: current?.convertInputsByEffectId ?? null,
   }
-  const empty = !merged.disabledBlockIds?.length && !merged.disabledEffectIds?.length
-  const value: FlowBuffOverride | null = empty ? null : merged
+  const value: FlowBuffOverride | null = isFlowBuffOverrideEmpty(merged) ? null : merged
 
   if (memberKey) {
     const list = [...(entry.memberOverrides ?? [])]

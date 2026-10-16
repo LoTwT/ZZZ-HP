@@ -12,7 +12,6 @@ const imageDirs = {
   boss: path.join(projectRoot, 'boss_image'),
   buff: path.join(projectRoot, 'buff_image'),
   calculator: path.join(projectRoot, 'calculator_image'),
-  guestbook: path.join(projectRoot, 'guestbook_image'),
 }
 
 const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -116,8 +115,6 @@ const memoryUploader = createMemoryUploader()
 export const uploadBossImage = memoryUploader.single('image')
 export const uploadBuffImage = memoryUploader.single('image')
 export const uploadCalculatorImage = memoryUploader.single('image')
-/** 留言 / 头像：先入内存，校验魔数后再落盘 */
-export const uploadGuestbookImage = memoryUploader.single('image')
 /** 计算器实体头像 → 前端 public 固定路径（kind、entityId 走 query） */
 export const uploadCalculatorPublicImage = memoryUploader.single('image')
 

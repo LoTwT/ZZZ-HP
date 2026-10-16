@@ -41,6 +41,7 @@ import {
   sortSkillGroupMembers,
 } from '@/utils/skillGroup'
 import { buildSkillMatchCoords, skillTypesIncludeFollowUp } from '@/utils/skillTypes'
+import { mergeFlowBuffOverride } from '@/utils/flowBuffTable'
 import {
   resolveEffectiveBaseMult,
   type SkillTalentLevels,
@@ -120,7 +121,8 @@ export interface ResolvedHit {
   id: string
   /**
    * 该行的增益例外（原始覆盖；缺省/空 = 全部继承全局）。
-   * 组行成员 = 成员覆盖 ?? 整行覆盖。块 → 效果的展开在消费循环前做。
+   * 组行成员 = **整行覆盖 + 成员覆盖合并**（2026-10-09 起：成员只叠加，关闭项取并集）。
+   * 块 → 效果的展开在消费循环前做。
    */
   buffOverride?: FlowBuffOverride | null
   skill: Skill
@@ -338,7 +340,8 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
               staggerPhase: ov?.staggerPhase ?? entry.staggerPhase,
               critMode: entry.critMode,
               hitId: `${entry.id}#${memberIndex}:${member.skillId}`,
-              buffOverride: ov?.buffOverrides ?? entry.buffOverrides,
+              // 这一段生效的例外 = 整组 + 本段**合并**（本段只叠加；不能把整组关掉的放回来）
+              buffOverride: mergeFlowBuffOverride(entry.buffOverrides, ov?.buffOverrides),
               ...(power ? { anomalyPowerAgentId: power } : {}),
               ...(trigger ? { triggerAgentId: trigger } : {}),
             }),

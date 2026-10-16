@@ -16,7 +16,7 @@ import {
 /**
  * 把三大模式的当前面板导出成 PNG：下载 + 复制到剪贴板。
  *
- * 为什么不能直接截 `.mode-content`、面板的两种滚动形态怎么展开、
+ * 为什么不能直接截 `.mode-content`、面板的整页滚动形态与仍需展开的图表横向视口、
  * 以及为何要显式给底色，见 dev-docs/panel-image-export.md §3.3 / §3.4 / §3.5。
  */
 
@@ -66,7 +66,8 @@ export function usePanelImageExport(options: UsePanelImageExportOptions) {
   /**
    * 展开面板内**所有内部可滚动**的容器，返回还原函数。
    *
-   * 面板里可能藏着自带滚动区的容器（图表的 `.charts-scroll`、内容较长的内层列表等）。
+   * 面板里可能藏着自带滚动区的容器（内容较长的内层列表等；图表的横向拖拽视口
+   * `.charts-scroll` 只裁横向，不归这里管，见 assets/panelImageExport.css）。
    * 它们在页面上是「裁剪 + 滚动」，克隆体里却会被完整渲染 —— 两边高度对不上，成图就被截断
    * （实测临界推演内容量翻倍时，末尾整节 `结局2 · 3-4` 缺失）。
    *

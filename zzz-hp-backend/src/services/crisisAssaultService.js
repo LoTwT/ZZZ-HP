@@ -25,7 +25,15 @@ import {
   resolveEffectBlocksForName,
 } from '../utils/sameNameBuffEffects.js'
 import { ensureContentModeColumns } from './contentModeService.js'
-import { ensureBossStaggerSchema, normalizeStaggerTime } from '../utils/bossSchema.js'
+import {
+  ensureBossAnomalySchema,
+  ensureBossResistanceSchema,
+  ensureBossStaggerSchema,
+  normalizeAnomalyBarCoefficient,
+  normalizeStaggerMultiplier,
+  normalizeStaggerTime,
+} from '../utils/bossSchema.js'
+import { resolveAnomalyBarCoefficient } from '../utils/anomalyBarCoefficient.js'
 import { crisisPhaseNumericId, resolveCrisisTidMap } from './crisisTidService.js'
 
 let schemaEnsured = false
@@ -93,7 +101,15 @@ function formatDateValue(value) {
   return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
 }
 
-function enrichBoss(boss, baseHpByName, fieldBuffSetsByName = new Map(), staggerTimeByName = new Map()) {
+function enrichBoss(boss, context = {}) {
+  const {
+    baseHpByName = new Map(),
+    fieldBuffSetsByName = new Map(),
+    staggerTimeByName = new Map(),
+    staggerMultiplierByName = new Map(),
+    resistanceHighByName = new Map(),
+    anomalyBarCoefficientByName = new Map(),
+  } = context
   const baseHp =
     baseHpByName.get(boss.boss_name) ??
     getCrisisBaseHpByName(boss.boss_name)
@@ -119,6 +135,16 @@ function enrichBoss(boss, baseHpByName, fieldBuffSetsByName = new Map(), stagger
   const rowStaggerTime = normalizeStaggerTime(boss.stagger_time)
   const stagger_time =
     rowStaggerTime ?? staggerTimeByName.get(boss.boss_name) ?? null
+  const stagger_multiplier = normalizeStaggerMultiplier(
+    boss.stagger_multiplier ?? staggerMultiplierByName.get(boss.boss_name),
+  )
+  const resistance_high =
+    boss.resistance_high ?? resistanceHighByName.get(boss.boss_name) ?? null
+  // 异常条系数只在读路径物化：boss_info 覆盖值 > 内置默认表（文案见 utils/anomalyBarCoefficient.js）
+  const anomaly_bar_coefficient = resolveAnomalyBarCoefficient(
+    boss.boss_name,
+    anomalyBarCoefficientByName.get(boss.boss_name),
+  )
   return {
     id: boss.id,
     boss_name: boss.boss_name,
@@ -129,7 +155,10 @@ function enrichBoss(boss, baseHpByName, fieldBuffSetsByName = new Map(), stagger
     room: boss.room,
     weakness: boss.weakness,
     resistance: boss.resistance,
+    resistance_high,
+    anomaly_bar_coefficient,
     stagger_time,
+    stagger_multiplier,
     boss_image: boss.boss_image,
     crisis_base_hp: baseHp == null ? null : Number(baseHp),
     hp_coeff_percent: resolved.percent,
@@ -145,6 +174,22 @@ function sumHp(bosses, key = 'hp') {
   return bosses.reduce((sum, boss) => sum + Number(boss[key] || 0), 0)
 }
 
+async function loadBossResistanceHighMap() {
+  await ensureBossResistanceSchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      'SELECT boss_name, resistance_high FROM boss_info WHERE resistance_high IS NOT NULL AND resistance_high <> \'\'',
+    )
+    for (const row of rows) {
+      map.set(row.boss_name, row.resistance_high)
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossResistanceHighMap fallback:', err.message)
+  }
+  return map
+}
+
 async function loadBossStaggerTimeMap() {
   await ensureBossStaggerSchema()
   const map = new Map()
@@ -158,6 +203,39 @@ async function loadBossStaggerTimeMap() {
     }
   } catch (err) {
     console.warn('[crisis] loadBossStaggerTimeMap fallback:', err.message)
+  }
+  return map
+}
+
+async function loadBossStaggerMultiplierMap() {
+  await ensureBossStaggerSchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      'SELECT boss_name, stagger_multiplier FROM boss_info WHERE stagger_multiplier IS NOT NULL',
+    )
+    for (const row of rows) {
+      map.set(row.boss_name, normalizeStaggerMultiplier(row.stagger_multiplier))
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossStaggerMultiplierMap fallback:', err.message)
+  }
+  return map
+}
+
+async function loadBossAnomalyCoefficientMap() {
+  await ensureBossAnomalySchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      'SELECT boss_name, anomaly_bar_coefficient FROM boss_info WHERE anomaly_bar_coefficient IS NOT NULL',
+    )
+    for (const row of rows) {
+      // DECIMAL 列经 mysql2 返回字符串：先归一化成数字，供 resolveAnomalyBarCoefficient 当显式值用
+      map.set(row.boss_name, normalizeAnomalyBarCoefficient(row.anomaly_bar_coefficient))
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossAnomalyCoefficientMap fallback:', err.message)
   }
   return map
 }
@@ -242,6 +320,9 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   const baseHpByName = await loadCrisisBaseHpMap()
   const fieldBuffByName = await loadBossFieldBuffMap()
   const staggerTimeByName = await loadBossStaggerTimeMap()
+  const staggerMultiplierByName = await loadBossStaggerMultiplierMap()
+  const resistanceHighByName = await loadBossResistanceHighMap()
+  const anomalyBarCoefficientByName = await loadBossAnomalyCoefficientMap()
   const globalBuffEffectMap = await loadGlobalBuffEffectMap()
 
   const phaseMap = new Map()
@@ -291,7 +372,14 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
     .filter((item) => item.bosses.length > 0 || includeHidden)
     .map((item) => {
       const bosses = item.bosses.map((boss) =>
-        enrichBoss(boss, baseHpByName, fieldBuffByName, staggerTimeByName),
+        enrichBoss(boss, {
+          baseHpByName,
+          fieldBuffSetsByName: fieldBuffByName,
+          staggerTimeByName,
+          staggerMultiplierByName,
+          resistanceHighByName,
+          anomalyBarCoefficientByName,
+        }),
       )
       const normalBosses = bosses.filter((boss) => !boss.is_hard_room)
       const hardBosses = bosses.filter((boss) => boss.is_hard_room)
@@ -405,7 +493,7 @@ export async function getBossChartHistory(
     )
     .map((boss) => {
       const dateInfo = dateMap.get(seasonDateKey(boss.version, boss.phase))
-      const enriched = enrichBoss(boss, baseHpByName)
+      const enriched = enrichBoss(boss, { baseHpByName })
       const startDate = formatDateValue(dateInfo?.start_date)
       const listed = isSeasonPubliclyVisible(startDate)
       const isHidden = isSeasonUnreleased(startDate)

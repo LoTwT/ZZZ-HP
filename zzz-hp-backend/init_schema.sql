@@ -5,7 +5,7 @@
 -- 说明：
 -- - 仅创建库与表结构，不含业务数据
 -- - 数据导入请使用 insert_*.sql 或 scripts/ 下的导入脚本
--- - 留言板 / 用户安全等增量列仍可能由运行时 ensure* 自愈；启动入口见
+-- - 用户安全等增量列仍可能由运行时 ensure* 自愈；启动入口见
 --   src/bootstrap/ensureRuntimeSchema.js（app 启动时调用）
 
 CREATE DATABASE IF NOT EXISTS zzz DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS boss (
   room VARCHAR(100) DEFAULT NULL COMMENT '房间',
   weakness VARCHAR(255) DEFAULT NULL COMMENT '弱点',
   resistance VARCHAR(255) DEFAULT NULL COMMENT '抗性',
+  resistance_high VARCHAR(255) DEFAULT NULL COMMENT '高抗性属性（40%）；为 resistance 的子集；空则回退 boss_info',
   boss_image VARCHAR(500) DEFAULT NULL COMMENT 'Boss图片',
   stagger_multiplier DECIMAL(5,3) NULL COMMENT '失衡易伤区基础乘数；空则回退 boss_info',
   stagger_time DECIMAL(8,2) NULL COMMENT '失衡时间（秒）；空则回退 boss_info',
@@ -56,9 +57,11 @@ CREATE TABLE IF NOT EXISTS boss_info (
   boss_image VARCHAR(500) DEFAULT NULL COMMENT 'Boss图片',
   weakness VARCHAR(255) DEFAULT NULL COMMENT '弱点',
   resistance VARCHAR(255) DEFAULT NULL COMMENT '抗性',
+  resistance_high VARCHAR(255) DEFAULT NULL COMMENT '高抗性属性（40%）；为 resistance 的子集',
   crisis_base_hp DOUBLE NULL COMMENT '怪物危局基础血量',
   stagger_multiplier DECIMAL(5,3) NOT NULL DEFAULT 1.500 COMMENT '失衡易伤区基础乘数（1.5=150%）',
   stagger_time DECIMAL(8,2) NULL COMMENT '失衡时间（秒）',
+  anomaly_bar_coefficient DECIMAL(6,4) NULL COMMENT '异常条系数；最大异常积蓄 = 基础异常条 × 系数；空按 1 处理',
   field_buff_name VARCHAR(100) NULL COMMENT 'Boss 场地 Buff 名称',
   field_buff_text TEXT NULL COMMENT 'Boss 场地 Buff 文本说明',
   field_buff_image VARCHAR(500) NULL COMMENT 'Boss 场地 Buff 图片',
@@ -221,43 +224,3 @@ CREATE TABLE IF NOT EXISTS changelog (
   PRIMARY KEY (id),
   KEY idx_changelog_published (published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='站点更新日志';
-
--- ---------------------------------------------------------------------------
--- 首页留言板
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS guestbook (
-  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  nickname VARCHAR(40) NOT NULL DEFAULT '匿名' COMMENT '昵称',
-  title VARCHAR(80) NOT NULL DEFAULT '' COMMENT '标题',
-  category VARCHAR(20) NOT NULL DEFAULT '灌水' COMMENT '分类',
-  content VARCHAR(1000) NOT NULL COMMENT '留言内容',
-  is_hidden TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=隐藏，前台不展示',
-  is_anonymous TINYINT(1) NOT NULL DEFAULT 0 COMMENT '匿名发布',
-  is_sensitive TINYINT(1) NOT NULL DEFAULT 0 COMMENT '敏感内容（图片默认模糊）',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_guestbook_visible_created (is_hidden, created_at),
-  KEY idx_guestbook_category (category)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页留言板';
-
-CREATE TABLE IF NOT EXISTS guestbook_comment (
-  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  post_id INT UNSIGNED NOT NULL COMMENT '所属帖子',
-  nickname VARCHAR(40) NOT NULL DEFAULT '匿名' COMMENT '昵称',
-  content VARCHAR(1000) NOT NULL COMMENT '评论内容',
-  is_hidden TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=隐藏',
-  is_anonymous TINYINT(1) NOT NULL DEFAULT 0 COMMENT '匿名评论',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_gb_comment_post_created (post_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='留言板评论';
-
-CREATE TABLE IF NOT EXISTS guestbook_setting (
-  setting_key VARCHAR(64) NOT NULL,
-  setting_value VARCHAR(255) NOT NULL DEFAULT '',
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (setting_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='留言板设置';

@@ -1,3 +1,5 @@
+import { RESISTANCE_VALUE_MAP } from '@/utils/enemyResistance'
+
 /**
  * 绝区零属性图标（本地 /attribute_image/ 目录，由 nanoka CDN 下载管理）
  */
@@ -19,6 +21,8 @@ export type TraitElement = (typeof TRAIT_ELEMENTS)[number]
 export interface ElementIconItem {
   name: string
   icon: string
+  /** 抗性百分比（20 / 40），由 RESISTANCE_VALUE_MAP 推导 */
+  percent: number
 }
 
 export function normalizeTraitElementName(raw: string): string {
@@ -49,10 +53,15 @@ export function toggleTraitElement(list: string[], el: string): string[] {
   return list.includes(el) ? list.filter((item) => item !== el) : [...list, el]
 }
 
-/** 解析「冰属性、以太」这类文本 → 图标列表（去重，忽略未收录属性） */
+/**
+ * 解析「冰属性、以太」这类文本 → 图标列表（去重，忽略未收录属性）
+ * highValue 内的属性为高抗性档（40%），其余抗性属性为 20% 档
+ */
 export function parseElementIcons(
   text: string | string[] | null | undefined,
+  highValue?: string | string[] | null,
 ): ElementIconItem[] {
+  const highSet = new Set(splitTraitElements(highValue))
   const items: ElementIconItem[] = []
   const seen = new Set<string>()
   for (const name of splitTraitElements(text)) {
@@ -60,9 +69,29 @@ export function parseElementIcons(
     const icon = ELEMENT_ICON_MAP[name]
     if (!icon) continue
     seen.add(name)
-    items.push({ name, icon })
+    const level = highSet.has(name) ? RESISTANCE_VALUE_MAP.res40 : RESISTANCE_VALUE_MAP.res20
+    items.push({ name, icon, percent: level * 100 })
   }
   return items
+}
+
+/** 弱点展示口径：游戏内弱点固定 -0.2 档，页面按绝对值显示为 20% */
+export function weakTraitPercent(): number {
+  return Math.abs(RESISTANCE_VALUE_MAP.weak) * 100
+}
+
+/**
+ * 文本形态的弱点/抗性带百分比：如「20%冰、40%火」。
+ * 未收录图标属性的条目原样保留，不强行加百分比。
+ */
+export function formatTraitTextWithPercent(
+  value: string | string[] | null | undefined,
+  highValue?: string | string[] | null,
+): string {
+  const percentByName = new Map(parseElementIcons(value, highValue).map((item) => [item.name, item.percent]))
+  return splitTraitElements(value)
+    .map((name) => (percentByName.has(name) ? `${percentByName.get(name)}%${name}` : name))
+    .join('、')
 }
 
 export function elementIconPath(name: string): string | null {

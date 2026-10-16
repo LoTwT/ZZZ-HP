@@ -35,7 +35,7 @@ const outPath =
     ? path.resolve(args[fileArgIndex + 1])
     : path.join(root, 'scripts', 'data', 'cloud-import', 'site-content.sql')
 
-/** SQL 字面量（与 export-guestbook 同口径的最小实现） */
+/** SQL 字面量（最小实现） */
 function sqlLiteral(value) {
   if (value === null || value === undefined) return 'NULL'
   if (value instanceof Date) {

@@ -1,10 +1,9 @@
 /**
- * 鉴权接线敏感度：消融 requireUser / requireAdmin 后必须红，不能只靠「行为单元」绿过门禁。
+ * 鉴权接线敏感度：消融 requireAdmin 后必须红，不能只靠「行为单元」绿过门禁。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { requireAdmin } from '../src/middleware/requireAdmin.js'
-import { requireUser } from '../src/middleware/requireUser.js'
 import uploadRoutes from '../src/routes/uploadRoutes.js'
 import buffRoutes from '../src/routes/buffRoutes.js'
 import bossRoutes from '../src/routes/bossRoutes.js'
@@ -50,13 +49,6 @@ function makeRes() {
   }
 }
 
-test('留言板上传：requireUser 必须在 Multer 之前', () => {
-  const handlers = assertFirstHandler(uploadRoutes, 'post', '/guestbook', requireUser)
-  assert.ok(handlers.length >= 3, '期望 requireUser → Multer → 错误处理 → 控制器')
-  assert.notEqual(handlers[1], requireUser)
-  assert.notEqual(handlers[1], requireAdmin)
-})
-
 test('管理端图片上传路由首中间件必须是 requireAdmin', () => {
   for (const path of ['/boss', '/buff', '/calculator', '/calculator-public']) {
     assertFirstHandler(uploadRoutes, 'post', path, requireAdmin)
@@ -91,17 +83,6 @@ test('deductionAdmin 整组挂载 requireAdmin', () => {
 
 test('会话核验接口首中间件必须是 requireAdmin', () => {
   assertFirstHandler(adminAuthRoutes, 'get', '/session', requireAdmin)
-})
-
-test('requireUser 无 Bearer 时返回 401 且不 next', async () => {
-  const res = makeRes()
-  let nextCalled = false
-  await requireUser({ headers: {} }, res, () => {
-    nextCalled = true
-  })
-  assert.equal(res.code, 401)
-  assert.match(String(res.body?.message ?? ''), /未登录/)
-  assert.equal(nextCalled, false)
 })
 
 test('requireAdmin 无有效会话时返回 401 且不 next', () => {

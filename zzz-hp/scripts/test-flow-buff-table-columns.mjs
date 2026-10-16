@@ -208,17 +208,35 @@ console.log('--- 单元格三态：成员覆盖与整行覆盖的关系 ---')
     rowOff['f1|e1'] === 'off' && rowOff['f1#0:s1|e1'] === 'na',
     JSON.stringify(rowOff))
 
-  const memberOwn = buildFlowBuffTableStates({
+  // 2026-10-09 用户口径 B：成员例外**合并**（只叠加、不接管）——
+  // 以前"成员有自己覆盖 → 整组的关闭全失效"，于是"整组关了某条 + 这一段只改了层数"
+  // 会把那条增益放回来。现在成员行只能加、不能翻案。
+  const memberOwnNumeric = buildFlowBuffTableStates({
     ...base,
     flow: [{
       id: 'f1', ownerAgentId: 'a0', preparedId: 'p1', count: 1, staggerPhase: 'normal', critMode: 'expected',
       buffOverrides: { disabledEffectIds: ['e1'] },
+      memberOverrides: [{
+        memberKey: '0:s1',
+        skillId: 's1',
+        buffOverrides: { disabledEffectIds: ['e9'], stacksByEffectId: { e1: 3 } },
+      }],
+    }],
+  })
+  check('成员有自己覆盖（含层数）：整组关掉的这条仍是 na（不因"有例外"就放回来）',
+    memberOwnNumeric['f1#0:s1|e1'] === 'na',
+    JSON.stringify(memberOwnNumeric))
+
+  const memberOwnDisabledOther = buildFlowBuffTableStates({
+    ...base,
+    flow: [{
+      id: 'f1', ownerAgentId: 'a0', preparedId: 'p1', count: 1, staggerPhase: 'normal', critMode: 'expected',
       memberOverrides: [{ memberKey: '0:s1', skillId: 's1', buffOverrides: { disabledEffectIds: ['e9'] } }],
     }],
   })
-  check('成员有自己的覆盖：按自己的算 → on（与结算一致，成员覆盖整体替换整行覆盖）',
-    memberOwn['f1#0:s1|e1'] === 'on',
-    JSON.stringify(memberOwn))
+  check('成员关的是别的条 → 这一条照旧 on（合并只看交集/并集，不互相牵连）',
+    memberOwnDisabledOther['f1#0:s1|e1'] === 'on',
+    JSON.stringify(memberOwnDisabledOther))
 
   const memberOff = buildFlowBuffTableStates({
     ...base,

@@ -2137,6 +2137,12 @@ export function sweepDirectDamage(
 const isBrowserMessageChannelUsable =
   typeof window !== 'undefined' && typeof window.MessageChannel === 'function'
 
+// Node 的 setImmediate 不在 tsconfig 的 lib 里（`types: []` 刻意不引 @types/node），
+// 从 globalThis 上取，避免为它把 Node 全局类型拉进整个前端工程。
+const nodeSetImmediate = (
+  globalThis as { setImmediate?: (callback: () => void) => unknown }
+).setImmediate
+
 let yieldChannel: MessageChannel | null = null
 const yieldWaiters: (() => void)[] = []
 
@@ -2154,8 +2160,8 @@ function scheduleYield(resolve: () => void): void {
     yieldChannel.port2.postMessage(null)
     return
   }
-  if (typeof setImmediate === 'function') {
-    setImmediate(resolve)
+  if (typeof nodeSetImmediate === 'function') {
+    nodeSetImmediate(resolve)
     return
   }
   setTimeout(resolve, 0)

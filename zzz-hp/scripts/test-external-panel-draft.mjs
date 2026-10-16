@@ -132,5 +132,61 @@ check(
   /raw === '' \? null : Number\(raw\)/.test(formSource),
 )
 
+// ── 2026-10-08 口径：面板导入未填项回落角色初始面板（resolveExternalPanelDraft 第二参）──
+console.log('\n面板导入未填项回落角色初始面板：')
+
+/** 角色初始面板（AgentBuffDoc.basePanel 形状的最小样本） */
+const agentBase = {
+  hp: 7500,
+  atk: 320,
+  def: 600,
+  critRate: 5,
+  critDmg: 50,
+  dmgBonus: 0,
+  penRate: 0,
+  pen: 0,
+  mastery: 92,
+  anomalyControl: 90,
+  energyRegen: 0,
+}
+
+const fromBase = resolveExternalPanelDraft({ ...empty, atk: 2100 }, agentBase)
+check(
+  '未填项回落初始面板、已填项原样保留',
+  fromBase !== null &&
+    fromBase.hp === 7500 &&
+    fromBase.atk === 2100 &&
+    fromBase.critRate === 5 &&
+    fromBase.mastery === 92,
+  fromBase ? `hp=${fromBase.hp} atk=${fromBase.atk} mastery=${fromBase.mastery}` : 'null',
+)
+check(
+  '初始面板没有的键（减防）落 0',
+  fromBase !== null && fromBase.reduceDefense === 0,
+)
+check('可选键冲击力仍落 0', fromBase !== null && fromBase.impact === 0)
+
+const zeroStillZero = resolveExternalPanelDraft({ ...empty, hp: 0 }, agentBase)
+check(
+  '显式填 0 不被初始面板覆盖（「没填」和「填了 0」仍是两回事）',
+  zeroStillZero !== null && zeroStillZero.hp === 0 && zeroStillZero.atk === agentBase.atk,
+)
+
+const allFromBase = resolveExternalPanelDraft(empty, agentBase)
+check(
+  '全部未填 → 整份就是角色初始面板',
+  allFromBase !== null &&
+    allFromBase.hp === agentBase.hp &&
+    allFromBase.atk === agentBase.atk &&
+    allFromBase.def === agentBase.def &&
+    allFromBase.anomalyControl === agentBase.anomalyControl,
+)
+
+check(
+  '不带 fallback 保持旧行为（缺项 → null）',
+  resolveExternalPanelDraft(empty) === null && resolveExternalPanelDraft(oneMissing) === null,
+)
+check('不带 fallback、填齐 → 照常解析', resolveExternalPanelDraft(full) !== null)
+
 console.log(`\n结果：${passed} PASS / ${failed} FAIL`)
 if (failed > 0) process.exitCode = 1

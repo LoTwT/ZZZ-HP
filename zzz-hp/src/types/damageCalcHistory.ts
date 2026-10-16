@@ -178,6 +178,14 @@ export interface FlowBuffOverride {
   disabledBlockIds?: string[] | null
   /** 按单条效果禁用（下钻） */
   disabledEffectIds?: string[] | null
+  /**
+   * 按效果覆盖叠层数（缺省/无该键 = 继承全局层数；2026-10-08 对齐局内增益）
+   */
+  stacksByEffectId?: Record<string, number> | null
+  /**
+   * 按效果覆盖转模手填输入（缺省/无该键 = 继承全局输入；仅 manual 转模有意义）
+   */
+  convertInputsByEffectId?: Record<string, number> | null
 }
 
 /**

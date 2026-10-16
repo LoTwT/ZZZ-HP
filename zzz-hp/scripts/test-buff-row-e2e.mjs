@@ -19,6 +19,7 @@ import path from 'node:path'
 import { resolveFlow } from '../src/utils/resolvedHit.ts'
 import { buildOptimalEvalContext, evaluateOptimalEventDetail } from '../src/utils/optimalAffixAlloc.ts'
 import { blockKeyOfCollected, collectAllBuffEffects } from '../src/utils/panelBuffCalc.ts'
+import { setFlowBuffEffectDisabled } from '../src/utils/flowBuffTable.ts'
 import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
 import { BUFFS_JSON, FRONTEND_ROOT } from './_paths.mjs'
 
@@ -231,6 +232,176 @@ console.log(`  无例外：${msNone.toFixed(3)} ms/次（走目录缓存）`)
 console.log(`  有例外：${msSome.toFixed(3)} ms/次（例外已并入缓存键，同一例外命中缓存）`)
 console.log(`  倍率：${(msSome / msNone).toFixed(2)}×`)
 console.log('  说明：例外进了缓存键 —— 同一例外重复求值命中缓存，不同例外各自成键；不再有"绕开缓存重算本行"的开销')
+
+console.log('=== 7. 行级层数覆盖要走到伤害数字（并且点格不会把它清掉） ===')
+
+const stackedIds = [
+  ...new Set(
+    allEffects
+      .filter(
+        (item) =>
+          (item.effect.kind === 'stacked' || item.effect.stackable) &&
+          (item.effect.valuePerStack ?? 0) !== 0,
+      )
+      .map((item) => item.effect.id),
+  ),
+]
+let stackId = null
+let stackZeroValue = null
+for (const id of stackedIds) {
+  hitA.buffOverride = { stacksByEffectId: { [id]: 0 } }
+  const value = evalPerHit(hitA)
+  if (value != null && value !== dA0) {
+    stackId = id
+    stackZeroValue = value
+    break
+  }
+}
+hitA.buffOverride = null
+console.log(`  叠层候选 ${stackedIds.length} 条；命中的：${stackId ?? '(无)'}`)
+if (stackedIds.length) {
+  check('存在「层数清零即改变伤害」的叠层增益', stackId != null)
+} else {
+  console.log('  （该 fixture 里没有叠层效果，跳过）')
+}
+if (stackId) {
+  check('层数清零后伤害不增加（层数只做加法贡献）', stackZeroValue <= dA0, `基准 ${dA0} / 清零 ${stackZeroValue}`)
+
+  // 流程增益表点一格 = 勾选写回：不得顺手把层数覆盖清掉 —— 清掉了下面这一行就会回到基准
+  const flowRow = { id: 'e2e-row', buffOverrides: { stacksByEffectId: { [stackId]: 0 } } }
+  setFlowBuffEffectDisabled({
+    entry: flowRow,
+    effectId: 'e2e-effect',
+    blockKey: 'e2e-block',
+    siblingEffectIds: [],
+    disabled: true,
+  })
+  check(
+    '流程表点格后层数覆盖仍在（写回不吞数值覆盖）',
+    flowRow.buffOverrides?.stacksByEffectId?.[stackId] === 0,
+    JSON.stringify(flowRow.buffOverrides),
+  )
+  hitA.buffOverride = flowRow.buffOverrides
+  const afterToggle = evalPerHit(hitA)
+  hitA.buffOverride = null
+  check('点格后仍按行级层数结算（覆盖确实生效）', afterToggle === stackZeroValue, `${stackZeroValue} / ${afterToggle}`)
+}
+
+console.log('=== 8. 行级自行转模输入要走到伤害数字 ===')
+
+const manualConvertIds = [
+  ...new Set(
+    allEffects
+      .filter(
+        (item) => item.effect.kind === 'convert' && item.effect.convert?.panelSource === 'manual',
+      )
+      .map((item) => item.effect.id),
+  ),
+]
+let convertId = null
+let convertValue = null
+for (const id of manualConvertIds) {
+  hitA.buffOverride = { convertInputsByEffectId: { [id]: 9999 } }
+  const value = evalPerHit(hitA)
+  if (value != null && value !== dA0) {
+    convertId = id
+    convertValue = value
+    break
+  }
+}
+hitA.buffOverride = null
+console.log(`  自行转模候选 ${manualConvertIds.length} 条；命中的：${convertId ?? '(无)'}`)
+if (manualConvertIds.length) {
+  check('存在「改自行转模输入即改变伤害」的效果', convertId != null)
+} else {
+  console.log('  （该 fixture 里没有自行设置（manual）转模效果，跳过）')
+}
+if (convertId) {
+  console.log(`  perHit = ${convertValue.toFixed(4)}（基准 ${dA0.toFixed(4)}）`)
+}
+
+console.log('=== 9. 组成员：整组关掉的增益 + 这一段改层数 → 这一段同样不吃（合并语义） ===')
+
+// fixture 里没有技能组流程行 → 用真实招式现造一行（owner 与 A 行同槽，ctx 直接可用）
+const slot0 = scheme.slots[0]
+const srcEntry = (slot0.flow ?? []).find((item) => item.id === hitA.id)
+const srcPrepared = (slot0.prepared ?? []).find((item) => item.id === srcEntry?.preparedId)
+const groupMemberSkills = [...new Set(flowResult.hits.map((h) => h.skill.id))].slice(0, 2)
+const e2eGroupId = 'e2e-skill-group'
+const e2eGroupEntryId = 'e2e-group-row'
+const e2eGroupPreparedId = 'e2e-group-prepared'
+
+if (!srcPrepared || groupMemberSkills.length < 2) {
+  console.log('  （fixture 缺少可用招式，跳过）')
+} else {
+  const groupDef = {
+    id: e2eGroupId,
+    name: 'e2e 技能组',
+    members: groupMemberSkills.map((skillId, order) => ({ order, skillId, count: 1 })),
+  }
+  const groupPrepared = {
+    ...srcPrepared,
+    id: e2eGroupPreparedId,
+    skillId: '',
+    skillGroupId: e2eGroupId,
+  }
+  const groupEntry = {
+    ...srcEntry,
+    id: e2eGroupEntryId,
+    preparedId: e2eGroupPreparedId,
+    count: 1,
+    buffOverrides: { disabledBlockIds: [foundKey ?? blockKeys[0]] },
+    memberOverrides: [
+      {
+        memberKey: `0:${groupMemberSkills[0]}`,
+        skillId: groupMemberSkills[0],
+        buffOverrides: stackId ? { stacksByEffectId: { [stackId]: 0 } } : { disabledEffectIds: [] },
+      },
+    ],
+  }
+  const groupResult = resolveFlow({
+    slots: [{ prepared: [...(slot0.prepared ?? []), groupPrepared], flow: [groupEntry] }, ...scheme.slots.slice(1)],
+    teamSlots: scheme.teamSlots.map((s) => ({ agentId: s.agentId, rank: s.rank })),
+    findSkill: (id) => skillById.get(id) ?? null,
+    findSkillGroup: (id) => (id === e2eGroupId ? groupDef : null),
+    skillSubcategories: buffs.skillSubcategories,
+  })
+  const seg0 = groupResult.hits.find((h) => h.id.startsWith(`${e2eGroupEntryId}#0:`))
+  const seg1 = groupResult.hits.find((h) => h.id.startsWith(`${e2eGroupEntryId}#1:`))
+  const disabledKey = foundKey ?? blockKeys[0]
+  check('组行展开出两段命中', Boolean(seg0 && seg1), groupResult.hits.map((h) => h.id).join(' | '))
+  check(
+    '改过渡数的那一段：整组关掉的块仍在禁用名单里（没有被"整体替换"放回来）',
+    Boolean(seg0?.buffOverride?.disabledBlockIds?.includes(disabledKey)),
+    JSON.stringify(seg0?.buffOverride),
+  )
+  if (stackId) {
+    check(
+      '改过渡数的那一段：本段的层数覆盖也带上了',
+      seg0?.buffOverride?.stacksByEffectId?.[stackId] === 0,
+      JSON.stringify(seg0?.buffOverride),
+    )
+  }
+  check(
+    '没改的那一段：只继承整组（同样关着）',
+    Boolean(seg1?.buffOverride?.disabledBlockIds?.includes(disabledKey)),
+    JSON.stringify(seg1?.buffOverride),
+  )
+  if (seg0) {
+    const withDisable = evalPerHit(seg0)
+    const withoutDisable = evalPerHit({
+      ...seg0,
+      buffOverride: seg0.buffOverride?.stacksByEffectId
+        ? { stacksByEffectId: seg0.buffOverride.stacksByEffectId }
+        : null,
+    })
+    check(
+      '数字层面：这一段改过层数，整组关掉的那块依然在减伤',
+      withDisable != null && withoutDisable != null && withDisable < withoutDisable,
+      `关着 ${withDisable} / 放开 ${withoutDisable}`,
+    )
+  }
+}
 
 console.log('')
 console.log(`=== 结果：passed = ${passed}, failed = ${failed} ===`)

@@ -21,6 +21,8 @@ export interface CreateBossPayload {
   room?: string | null
   weakness?: string | null
   resistance?: string | null
+  /** 高抗性（40%）属性，为 resistance 的子集 */
+  resistance_high?: string | null
   boss_image?: string | null
   stage?: number
   roomInStage?: number
@@ -33,6 +35,8 @@ export interface CreateBossPayload {
   hp_coeff_manual?: boolean
   stagger_multiplier?: number | null
   stagger_time?: number | null
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  anomaly_bar_coefficient?: number | null
   /** 危局当期绑定的场地 Buff 套 id */
   field_buff_set_id?: string | null
 }
@@ -80,9 +84,12 @@ export interface BossInfoRecord {
   boss_image: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   crisis_base_hp?: number | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
+  /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），空按 1 处理 */
+  anomaly_bar_coefficient?: number | null
   field_buff_sets?: Array<{
     id: string
     label?: string | null
@@ -103,6 +110,7 @@ export interface BossInfoSyncResult {
   boss_image: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
 }
 
 export interface CreateBossResult {
@@ -122,6 +130,7 @@ export interface BossRecord {
   room: string | null
   weakness: string | null
   resistance: string | null
+  resistance_high?: string | null
   boss_image: string | null
   stagger_multiplier?: number | null
   stagger_time?: number | null
