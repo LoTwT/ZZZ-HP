@@ -3,10 +3,19 @@
  *
  * 另有「浏览器直采」的两个接口：`/scan`（索引比对）与 `/collect`（单条详情映射）。
  * 抓 nanoka 一律由**浏览器**完成（浏览器走用户系统代理），服务端不联网。
+ *
+ * 2026-10-16 追加「招式（技能倍率）」三件套：
+ *   - `GET /agent-skill-gaps`：纯本地查询，列出还没有 nanoka 招式的角色；
+ *   - `POST /collect-skills`：吃浏览器抓来的角色详情，只算计划不写库；
+ *   - `POST /apply-skills`：算计划并写库（`upsertSkill`），`dryRun: true` 时只算不写。
+ * 招式名与倍率是确定值，这条链路不需要逐字段复核（用户 2026-10-16 裁定）。
  */
 import {
   applyNanokaCandidates,
+  applyNanokaSkills,
   collectNanokaEntry,
+  collectNanokaSkills,
+  listNanokaSkillGaps,
   previewNanokaCandidates,
   scanNanokaBasics,
 } from '../services/nanokaBasicsService.js'
@@ -65,5 +74,45 @@ export async function collectNanokaBasicsHandler(req, res) {
     return success(res, data, message)
   } catch (err) {
     return fail(res, err.message || '详情映射失败', 400, { error: err.message })
+  }
+}
+
+/** GET /api/admin/nanoka/agent-skill-gaps —— 纯本地查询：还没有 nanoka 招式的角色（不联网、不写库） */
+export async function listNanokaSkillGapsHandler(req, res) {
+  try {
+    const rows = await listNanokaSkillGaps()
+    const zero = rows.filter((row) => row.skillCount === 0).length
+    const message = `本地共 ${rows.length} 个角色没有 nanoka 招式（其中 ${zero} 个连本地招式也是 0 条）`
+    return success(res, rows, message)
+  } catch (err) {
+    return failInternal(res, err, '列出缺招式角色失败')
+  }
+}
+
+/** POST /api/admin/nanoka/collect-skills —— 算招式录入计划，只算不写 */
+export async function collectNanokaSkillsHandler(req, res) {
+  try {
+    const { nanokaId, meta, detail, level } = req.body ?? {}
+    const data = await collectNanokaSkills({ nanokaId, meta, detail, level })
+    const { plan, agentName, agentId } = data
+    const message = `${agentName || agentId}：可新建 ${plan.create.length} 条，可覆盖倍率 ${plan.overwrite.length} 条，已一致 ${plan.skipSame.length} 条（未写库）`
+    return success(res, data, message)
+  } catch (err) {
+    return fail(res, err.message || '招式计划计算失败', 400, { error: err.message })
+  }
+}
+
+/** POST /api/admin/nanoka/apply-skills —— 算计划并写库；`dryRun: true` 时只算不写 */
+export async function applyNanokaSkillsHandler(req, res) {
+  try {
+    const { nanokaId, meta, detail, level, dryRun } = req.body ?? {}
+    const data = await applyNanokaSkills({ nanokaId, meta, detail, level, dryRun: dryRun === true })
+    const head = `${data.agentName || data.agentId}`
+    const message = data.dryRun
+      ? `${head}：预览（未写入）——将新建 ${data.plan.create.length} 条 / 覆盖倍率 ${data.plan.overwrite.length} 条 / 跳过 ${data.skipped} 条`
+      : `${head}：新建 ${data.created} / 覆盖 ${data.updated} / 跳过 ${data.skipped}${data.failed ? ` / 失败 ${data.failed}` : ''}`
+    return success(res, data, message)
+  } catch (err) {
+    return fail(res, err.message || '招式录入失败', 400, { error: err.message })
   }
 }

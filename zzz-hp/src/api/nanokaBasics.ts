@@ -293,3 +293,162 @@ export async function collectNanokaBasics(payload: {
   })
   return data
 }
+
+// ---------------------------------------------------------------- 招式（技能倍率）一键录入
+
+/**
+ * 缺 nanoka 招式的角色（`GET /api/admin/nanoka/agent-skill-gaps`）。
+ *
+ * 这个接口是**纯本地查询**（不联网、不写库）：招式名与倍率是确定值，所以这里只负责
+ * 列出「谁还没有招式」；nanoka 侧的数字 id 由浏览器抓 `character.json` 后本地匹配。
+ */
+export interface NanokaSkillGap {
+  id: string
+  name: string
+  element: string
+  profession: string
+  /** 该角色本地现有招式条数（含非 nanoka 来源） */
+  skillCount: number
+  /** 其中 nanoka 来源的条数；本接口返回的行都是 0 */
+  nanokaSkillCount: number
+}
+
+/** 计划里「可新建」的一条（就是可直接写库的招式文档） */
+export interface NanokaSkillPlanCreate {
+  id: string
+  agentId: string
+  name: string
+  damageType: string
+  skillTypes: string[]
+  buffAnchorId: string | null
+  baseMult: number
+  baseMultFactor: number
+  settlementMult: number
+  multSource: string
+  element: string
+  ownerGroupId: string | null
+  note: string
+  damagePercentage: number
+  damagePercentageGrowth: number
+}
+
+/** 计划里「可覆盖倍率」的一条：只改倍率字段，其余（元素 / 类型 / 锚点 / 备注）保留 */
+export interface NanokaSkillPlanOverwrite {
+  id: string
+  name: string
+  from: number | null
+  to: number
+  changed: {
+    baseMult: boolean
+    damagePercentage: boolean
+    damagePercentageGrowth: boolean
+    multSource: boolean
+  }
+  /** 写库载荷（`{...库中现值, ...倍率字段}`）：非倍率字段一律保留 */
+  doc: Record<string, unknown>
+}
+
+/** 计划里「已一致」的一条 */
+export interface NanokaSkillPlanSame {
+  id: string
+  name: string
+  baseMult: number
+}
+
+/** 计划里「本库有、nanoka 没有」的残留（只提示，不删） */
+export interface NanokaSkillPlanUnmatched {
+  id: string
+  name: string
+  baseMult: number
+}
+
+export interface NanokaSkillPlan {
+  create: NanokaSkillPlanCreate[]
+  overwrite: NanokaSkillPlanOverwrite[]
+  skipSame: NanokaSkillPlanSame[]
+  unmatchedLocal: NanokaSkillPlanUnmatched[]
+}
+
+/** `POST /api/admin/nanoka/collect-skills` 的结果（只算不写） */
+export interface NanokaSkillCollectResult {
+  agentId: string
+  agentName: string
+  nanokaId: string | null
+  plan: NanokaSkillPlan
+}
+
+/** 逐条写库明细 */
+export interface NanokaSkillApplyDetail {
+  action: 'create' | 'overwrite'
+  id: string
+  name: string
+  baseMult?: number
+  from?: number | null
+  to?: number
+  changed?: Record<string, boolean>
+  skillTypes?: string[]
+  ok: boolean
+  reason?: string
+}
+
+/** `POST /api/admin/nanoka/apply-skills` 的结果（`dryRun: true` 时只算不写） */
+export interface NanokaSkillApplyResult {
+  agentId: string
+  agentName: string
+  nanokaId: string | null
+  dryRun: boolean
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  details: NanokaSkillApplyDetail[]
+  plan: NanokaSkillPlan
+}
+
+export interface NanokaSkillPayload {
+  nanokaId: string
+  /** character.json 里那一条（拿 code / zh 供后端匹配本地角色） */
+  meta: unknown
+  /** `zh/character/<nanokaId>.json` 原文 */
+  detail: unknown
+  level?: number
+}
+
+/** 列出「还没有 nanoka 招式」的角色（纯本地查询，不联网） */
+export async function listNanokaSkillGaps(): Promise<NanokaSkillGap[]> {
+  const { data } = await requestApi<NanokaSkillGap[]>('/api/admin/nanoka/agent-skill-gaps')
+  return data
+}
+
+/** 招式计划：请求体是浏览器抓来的角色详情，返回会改什么（**不写库**） */
+export async function collectNanokaSkills(
+  payload: NanokaSkillPayload,
+): Promise<{ result: NanokaSkillCollectResult; message: string }> {
+  const { data, message } = await requestApi<NanokaSkillCollectResult>(
+    '/api/admin/nanoka/collect-skills',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  return { result: data, message }
+}
+
+/**
+ * 招式录入：算计划并写库（招式名与倍率是确定值，不需要逐字段复核）。
+ * `dryRun: true` 时后端只算不写，等价于 `/collect-skills`。
+ */
+export async function applyNanokaSkills(
+  payload: NanokaSkillPayload & { dryRun?: boolean },
+): Promise<{ result: NanokaSkillApplyResult; message: string }> {
+  const { data, message } = await requestApi<NanokaSkillApplyResult>(
+    '/api/admin/nanoka/apply-skills',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  return { result: data, message }
+}

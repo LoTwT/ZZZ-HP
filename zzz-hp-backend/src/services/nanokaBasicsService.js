@@ -15,15 +15,25 @@
  *   - `scanNanokaBasics`：吃浏览器抓来的 character.json / weapon.json 索引，与库比对出「缺什么」；
  *   - `collectNanokaEntry`：吃浏览器抓来的单条详情，映射成候选文档条目（不写库）。
  *   抓取一律发生在浏览器（走用户系统代理）；后端只做映射与 diff，见 nanoka/nanokaBasicsMapper.js。
+ *
+ * 2026-10-16 追加「招式（技能倍率）一键录入」（服务端**仍然不联网**）：
+ *   - `listNanokaSkillGaps`：**纯本地查询**——哪些角色还没有 nanoka 招式（顺带给出各自现有招式条数）；
+ *   - `collectNanokaSkills`：吃浏览器抓来的角色详情，算出招式录入计划（不写库）；
+ *   - `applyNanokaSkills`：按计划写库（`upsertSkill`，唯一写路径）。
+ *   招式名与倍率是**确定值**（用户 2026-10-16 裁定），所以这条链路不需要逐字段复核：
+ *   前端默认直接录入，只保留一个「先预览（不写入）」开关。倍率口径见 nanoka/nanokaSkillMapper.js。
  */
 import { listCalculatorBuffs, upsertAgent, upsertWengine } from './calculatorBuffService.js'
+import { listSkills, upsertSkill } from './skillLibraryService.js'
 import {
   collectAgentUnsupported,
   collectWengineUnsupported,
   diffNanokaIndexAgainstLocal,
   mapAgentDetail,
   mapWengineDetail,
+  normalizeName,
 } from './nanoka/nanokaBasicsMapper.js'
+import { planAgentSkillImport } from './nanoka/nanokaSkillMapper.js'
 
 const AGENT_LABELS = {
   hp: '生命值',
@@ -354,4 +364,180 @@ export function collectNanokaEntry({ kind, nanokaId, meta, detail } = {}) {
   const entry = mapWengineDetail({ detail, nanokaId: id, indexMeta: meta })
   if (!entry.id) throw new Error('音擎索引缺少 en / zh，无法生成音擎 id')
   return { entry, unsupported: collectWengineUnsupported(detail) }
+}
+
+// ---------------------------------------------------------------- 招式（技能倍率）一键录入
+
+/**
+ * 一条招式算不算「nanoka 来源」。
+ * 口径与统计现有 1129 条时一致：`multSource === 'nanoka'` 或 id 里带稳定 id 段 `-nk-`
+ * （老数据可能只有 id 没有 multSource）。
+ */
+function isNanokaSkill(skill) {
+  const id = String(skill?.id ?? '')
+  if (id.includes('-nk-')) return true
+  return String(skill?.multSource ?? '').trim() === 'nanoka'
+}
+
+/**
+ * 缺 nanoka 招式的角色清单（**纯本地查询，不联网、不写库**）。
+ *
+ * 用 `listCalculatorBuffs()` 拿角色，用 `listSkills()` 数每个角色现有招式；
+ * 返回 `[{ id, name, element, profession, skillCount, nanokaSkillCount }]`，
+ * 只含 `nanokaSkillCount === 0` 的角色（按现有招式条数升序，再按名字），
+ * 便于一眼看出「0 条」和「条数明显偏少」的差别。
+ */
+export async function listNanokaSkillGaps() {
+  const [buffs, skills] = await Promise.all([listCalculatorBuffs(), listSkills()])
+  const stat = new Map()
+  for (const skill of skills) {
+    const agentId = String(skill?.agentId ?? '')
+    if (!agentId) continue // 公共异常招式（agentId 为空）不算角色招式
+    const row = stat.get(agentId) ?? { skillCount: 0, nanokaSkillCount: 0 }
+    row.skillCount += 1
+    if (isNanokaSkill(skill)) row.nanokaSkillCount += 1
+    stat.set(agentId, row)
+  }
+
+  const rows = (buffs.agents ?? [])
+    .map((agent) => {
+      const id = String(agent.id ?? '')
+      const counts = stat.get(id) ?? { skillCount: 0, nanokaSkillCount: 0 }
+      return {
+        id,
+        name: String(agent.name ?? ''),
+        element: String(agent.element ?? ''),
+        profession: String(agent.profession ?? ''),
+        skillCount: counts.skillCount,
+        nanokaSkillCount: counts.nanokaSkillCount,
+      }
+    })
+    .filter((row) => row.nanokaSkillCount === 0)
+
+  rows.sort(
+    (a, b) => a.skillCount - b.skillCount || a.name.localeCompare(b.name, 'zh-Hans-CN') || (a.id < b.id ? -1 : 1),
+  )
+  return rows
+}
+
+/**
+ * nanoka 索引项 / 详情 → 本地角色。
+ *
+ * 匹配口径：`meta.code` 归一化后对本地 `id`（nanoka code 与本地 id 大多同形，
+ * 如 `Claret` → `claret`；`Soldier 11` → `soldier11`），再对本地 `name`（`meta.zh` / `detail.name`）。
+ * 都对不上就返回 null（接口层报 400，不猜）。
+ */
+export function resolveLocalAgentForNanoka({ agents, meta, detail } = {}) {
+  const list = Array.isArray(agents) ? agents : []
+  const byId = new Map(list.map((a) => [normalizeName(a.id), a]))
+  const byName = new Map(list.map((a) => [normalizeName(a.name), a]).filter(([k]) => k))
+  const code = normalizeName(meta?.code ?? detail?.code_name ?? '')
+  if (code && byId.has(code)) return byId.get(code)
+  for (const raw of [meta?.zh, detail?.name, meta?.en]) {
+    const norm = normalizeName(raw ?? '')
+    if (norm && byName.has(norm)) return byName.get(norm)
+  }
+  return null
+}
+
+function assertSkillDetail({ detail, nanokaId }) {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) {
+    throw new Error(
+      `缺少 nanoka 角色详情 JSON（应传入 zh/character/${nanokaId ?? '<id>'}.json 原文）`,
+    )
+  }
+}
+
+/**
+ * 算某个角色的招式录入计划（**不联网、不写库**）。
+ * `detail` 是浏览器抓来的 `zh/character/<nanokaId>.json` 原文，`meta` 是 character.json 索引项。
+ */
+export async function collectNanokaSkills({ nanokaId, meta, detail, level = 12 } = {}) {
+  assertSkillDetail({ detail, nanokaId })
+  const [buffs, skills] = await Promise.all([listCalculatorBuffs(), listSkills()])
+  const agent = resolveLocalAgentForNanoka({ agents: buffs.agents, meta, detail })
+  if (!agent) {
+    const code = String(meta?.code ?? detail?.code_name ?? '').trim()
+    const zh = String(meta?.zh ?? detail?.name ?? '').trim()
+    throw new Error(
+      `本库找不到角色 ${zh || code || nanokaId || '（未知名）'}：索引 code「${code || '无'}」归一化后与本地角色 id 都对不上，请先把该角色录进主数据`,
+    )
+  }
+  const plan = planAgentSkillImport({
+    agent,
+    detail,
+    existingSkills: skills,
+    subcategories: buffs.skillSubcategories ?? [],
+    level,
+  })
+  return { agentId: String(agent.id), agentName: String(agent.name ?? ''), nanokaId: nanokaId == null ? null : String(nanokaId), plan }
+}
+
+/**
+ * 按计划**写库**（招式名与倍率是确定值，默认直接录入）。
+ *
+ * 写库只用既有 `upsertSkill`（不新造 SQL 写路径）：
+ *   - `create` 整条新建；
+ *   - `overwrite` 只写 `doc`（= `{...existing, ...倍率字段}`，策略 B），
+ *     本库的 `element / skillTypes / buffAnchorId / note / settlementMult / baseMultFactor` 原样保留。
+ *
+ * `dryRun: true` 时只返回计划，不写库。
+ */
+export async function applyNanokaSkills({ nanokaId, meta, detail, level = 12, dryRun = false } = {}) {
+  const { agentId, agentName, plan } = await collectNanokaSkills({ nanokaId, meta, detail, level })
+  const details = []
+  let created = 0
+  let updated = 0
+  let failed = 0
+
+  if (!dryRun) {
+    for (const doc of plan.create) {
+      try {
+        await upsertSkill(doc)
+        created += 1
+        details.push({
+          action: 'create',
+          id: doc.id,
+          name: doc.name,
+          baseMult: doc.baseMult,
+          skillTypes: doc.skillTypes,
+          ok: true,
+        })
+      } catch (err) {
+        failed += 1
+        details.push({ action: 'create', id: doc.id, name: doc.name, ok: false, reason: err?.message ?? String(err) })
+      }
+    }
+    for (const item of plan.overwrite) {
+      try {
+        await upsertSkill(item.doc)
+        updated += 1
+        details.push({
+          action: 'overwrite',
+          id: item.id,
+          name: item.name,
+          from: item.from,
+          to: item.to,
+          changed: item.changed,
+          ok: true,
+        })
+      } catch (err) {
+        failed += 1
+        details.push({ action: 'overwrite', id: item.id, name: item.name, ok: false, reason: err?.message ?? String(err) })
+      }
+    }
+  }
+
+  return {
+    agentId,
+    agentName,
+    nanokaId: nanokaId == null ? null : String(nanokaId),
+    dryRun: Boolean(dryRun),
+    created,
+    updated,
+    skipped: plan.skipSame.length,
+    failed,
+    details,
+    plan,
+  }
 }
