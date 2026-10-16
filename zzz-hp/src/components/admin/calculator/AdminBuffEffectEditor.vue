@@ -571,12 +571,11 @@ defineExpose({
                 v-for="opt in BUFF_SCOPE_OPTIONS.filter((item) => item.id !== 'general')"
                 :key="opt.id"
                 class="chip"
-                :class="{ 'chip-disabled': isScopeLockedToGeneral(effect) }"
-                :title="isScopeLockedToGeneral(effect) ? '当前是「通用」，已覆盖全部子类；勾具体项会自动取消通用' : ''"
+                :class="{ 'chip-muted': isScopeLockedToGeneral(effect) }"
+                :title="isScopeLockedToGeneral(effect) ? '当前是「通用」（已覆盖全部子类）；点具体项会自动取消通用' : ''"
               >
                 <input
                   type="checkbox"
-                  :disabled="isScopeLockedToGeneral(effect)"
                   :checked="isScopeChecked(effect, opt.id)"
                   @change="onScopeToggle(effect, opt.id, ($event.target as HTMLInputElement).checked)"
                 />
@@ -1192,10 +1191,9 @@ defineExpose({
   background: color-mix(in srgb, var(--color-background) 80%, var(--color-border));
 }
 
-/* 作用域多选：只有「通用」时具体项禁用（通用已覆盖全部） */
-.chip-disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* 作用域多选：当前是「通用」时具体项**提示性**变淡（仍可点，点了会自动取消通用） */
+.chip-muted {
+  opacity: 0.72;
 }
 
 .chip-remove {
