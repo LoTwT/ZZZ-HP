@@ -101,7 +101,7 @@ interface KeywordRow {
   inherited: { from: string; fields: string[]; label: string } | null
   /** 同义反复被忽略的条件原文（界面标淡色提示，不入库） */
   tautologyDropped: string[]
-  /** 槽位取值来源（`default-team` = 敌人削弱族目标按规则兜底成全队） */
+  /** 槽位取值来源（`default-team` / `default-team-enemy-status` = 目标按规则兜底成全队） */
   sources: Record<string, string>
   recorded: boolean
   dropReason: string
@@ -520,6 +520,9 @@ interface WasteBlockRow {
 const wasteBlocks = computed<WasteBlockRow[]>(() => {
   const blocks: WasteBlockRow[] = []
   for (const item of items.value) {
+    // **整块 0 条关键字 → 直接不显示**（既不在主视图、也不在废原文区）：
+    // 例「招式文本（支援技）· 快速支援：急救」整块都是机制描述，一条增益都产不出。
+    if (!(item.sentences ?? []).some((sentence) => sentence.hasKeywords)) continue
     const wasteSentences = (item.sentences ?? [])
       .filter((sentence) => !sentence.hasKeywords)
       .map((sentence) => ({
@@ -1440,7 +1443,7 @@ const wasteCount = computed(() =>
       </button>
       <span class="nbf-count">
         关键字 {{ rows.length }} 条 · 已勾选 {{ includedRows.length }} 条 · 可写 {{ writableRows.length }} 条 ·
-        废原文 {{ wasteCount }} 条
+        废句 {{ wasteCount }} 句（{{ wasteBlocks.length }} 个有增益的块）
       </span>
     </div>
 
@@ -1577,7 +1580,11 @@ const wasteCount = computed(() =>
                     <span class="nbf-slot-label" :title="slotHint(entry.id)">
                       {{ entry.label }}
                       <!-- 敌人削弱族的目标默认值是「全队」（原文没写明给谁）→ 淡色「默认」提示，方便一眼改 -->
-                      <em v-if="row.sources[entry.id] === 'default-team'" class="nbf-default-mark">默认</em>
+                      <em
+                        v-if="String(row.sources[entry.id] ?? '').startsWith('default-team')"
+                        class="nbf-default-mark"
+                        >默认</em
+                      >
                     </span>
                     <template v-if="MULTI_SLOT_IDS.includes(entry.id)">
                       <div class="nbf-conditions">
@@ -1658,7 +1665,9 @@ const wasteCount = computed(() =>
 
       <section class="nbf-waste">
         <header class="nbf-stage-head">
-          <h3>废原文（{{ wasteCount }} 句解析不出 · 按来源块整段展示 · 不入库）</h3>
+          <h3>
+            废原文（{{ wasteCount }} 句 · 来自 {{ wasteBlocks.length }} 个有增益的来源块 · 不入库）
+          </h3>
           <div class="nbf-waste-actions">
             <div class="nbf-toggle">
               <button
@@ -1854,7 +1863,7 @@ const wasteCount = computed(() =>
           </template>
 
           <h5 class="nbf-col-title nbf-include-title">
-            全部关键字（勾选 = 是否加入 · 影画在最后）
+            全部关键字（点卡片 = 选中 · 勾选框 = 是否加入 · 影画在最后）
           </h5>
           <ul class="nbf-include-list">
             <li
@@ -1865,26 +1874,34 @@ const wasteCount = computed(() =>
                 'is-current': row.key === activeRow?.key,
                 'nbf-include-off': !row.included,
               }"
+              role="button"
+              tabindex="0"
+              :aria-pressed="row.key === activeRow?.key"
+              @click="selectedKey = row.key"
+              @keydown.enter.prevent="selectedKey = row.key"
+              @keydown.space.prevent="selectedKey = row.key"
             >
-              <label class="nbf-list-label">
-                <input
-                  type="checkbox"
-                  :checked="row.included"
-                  @change="toggleIncluded(row, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="nbf-list-body" @click="selectedKey = row.key">
-                  <span class="nbf-list-line1">
-                    <span class="nbf-list-source">{{ rowSourceTag(row) }}</span>
-                    <span v-if="row.key === activeRow?.key" class="nbf-list-current">当前</span>
-                    <span v-if="!row.included" class="nbf-list-off-tag">不加入</span>
-                  </span>
-                  <span class="nbf-list-line2">
-                    <span class="nbf-chip nbf-chip-stat">{{ displaySlotValue('stat', row.slots.stat) }}</span>
-                    <span class="nbf-chip nbf-chip-value">{{ rowValueTag(row) }}</span>
-                  </span>
-                  <span class="nbf-list-line3" :title="rowMetaTag(row)">{{ rowMetaTag(row) }}</span>
+              <!-- 勾选框独立可点：点击它只切换「加入」，不改变选中 -->
+              <input
+                class="nbf-list-check"
+                type="checkbox"
+                :checked="row.included"
+                :aria-label="`加入：${rowSourceTag(row)}`"
+                @click.stop
+                @change="toggleIncluded(row, ($event.target as HTMLInputElement).checked)"
+              />
+              <span class="nbf-list-body">
+                <span class="nbf-list-line1">
+                  <span class="nbf-list-source">{{ rowSourceTag(row) }}</span>
+                  <span v-if="row.key === activeRow?.key" class="nbf-list-current">当前</span>
+                  <span v-if="!row.included" class="nbf-list-off-tag">不加入</span>
                 </span>
-              </label>
+                <span class="nbf-list-line2">
+                  <span class="nbf-chip nbf-chip-stat">{{ displaySlotValue('stat', row.slots.stat) }}</span>
+                  <span class="nbf-chip nbf-chip-value">{{ rowValueTag(row) }}</span>
+                </span>
+                <span class="nbf-list-line3" :title="rowMetaTag(row)">{{ rowMetaTag(row) }}</span>
+              </span>
             </li>
           </ul>
         </section>
@@ -2531,28 +2548,42 @@ const wasteCount = computed(() =>
 
 /* 条目：统一行高 / 缩进 / 分隔；三种状态各不一样（选中 / hover / 不加入） */
 .nbf-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
   padding: 0.35rem 0.45rem 0.35rem 0.5rem;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   border-left: 3px solid transparent;
   border-radius: 8px;
-  background: var(--color-background-mute, rgba(232, 229, 218, 0.45));
-  transition: background 0.12s ease, border-color 0.12s ease;
+  background: var(--color-background-soft, #fff);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .nbf-list-item + .nbf-list-item {
-  margin-top: 0.1rem;
+  margin-top: 0.2rem;
 }
 
 .nbf-list-item:hover {
-  background: var(--color-background-mute, rgba(232, 229, 218, 0.75));
+  border-color: var(--color-border-hover);
 }
 
-/* 选中态：左边框强调色 + 底色 + 加粗（与 hover / 不加入都区分得开） */
+.nbf-list-item:focus-visible {
+  outline: 2px solid #b8860b;
+  outline-offset: 1px;
+}
+
+/* 选中态：白底 + 强调色左边框 + 极浅底色（不做大面积金/棕底，避免糊成一片） */
 .nbf-list-item.is-current {
   border-color: var(--color-border-hover);
   border-left-color: #b8860b;
-  background: rgba(184, 134, 11, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(184, 134, 11, 0.18);
+  background: #fffdf7;
+  box-shadow: inset 0 0 0 1px rgba(184, 134, 11, 0.14);
+}
+
+.nbf-list-check {
+  margin-top: 0.15rem;
+  cursor: pointer;
 }
 
 .nbf-list-label {
@@ -2584,9 +2615,10 @@ const wasteCount = computed(() =>
 
 .nbf-list-current {
   padding: 0 0.25rem;
+  border: 1px solid rgba(184, 134, 11, 0.55);
   border-radius: 4px;
-  background: #b8860b;
-  color: #fff;
+  background: #fff;
+  color: #8a5a12;
   font-size: 0.66rem;
   font-weight: 700;
 }

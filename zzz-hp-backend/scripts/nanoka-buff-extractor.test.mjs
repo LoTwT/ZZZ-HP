@@ -1120,6 +1120,44 @@ test('目标默认值：敌人削弱族没写明给谁 → 全队（source=defau
   assert.equal(buff.effect.slots.target, '无')
 })
 
+test('目标默认值：敌人状态 + 暴击族（未限定施放者）→ 全队 + 固定 note 短语', () => {
+  // ① 实例：1641 核心被动第 3 句
+  const sentence =
+    '[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%'
+  const effects = keywordEffects(simplifyText({ text: sentence, origin: 'test' }))
+  const critRate = effects.find((effect) => effect.slots.stat === '异常暴击率')
+  const critDmg = effects.find((effect) => effect.slots.stat === '异常暴击伤害')
+  assert.ok(critRate && critDmg, '两句都要抽出来')
+  for (const effect of [critRate, critDmg]) {
+    assert.equal(effect.slots.target, '全队', '敌人状态 + 暴击族 → 目标默认全队')
+    assert.equal(effect.sources.target, 'default-team-enemy-status')
+    assert.equal(effect.layerC.applyTarget, 'team')
+    assert.match(effect.layerC.note, /目标默认：条件为敌人状态、未限定施放者/)
+  }
+  assert.equal(critRate.layerC.stat, 'anomalyCritRate')
+  assert.equal(critRate.layerC.value, 30)
+  assert.equal(critDmg.layerC.stat, 'anomalyCritDmg')
+  assert.equal(critDmg.layerC.value, 25)
+
+  // ② 写明施放者（「菲欧妮造成的」）→ 自身（规则不被吃掉）
+  const selfCase = firstEffect('菲欧妮造成的属性异常伤害触发暴击时，暴击率提升30%')
+  assert.equal(selfCase.effect.slots.stat, '异常暴击率')
+  assert.notEqual(selfCase.effect.sources.target, 'default-team-enemy-status')
+
+  // ③ 减防 / 抗穿 / 易伤族仍走既有「敌人削弱族默认全队」规则（两条并存，互不覆盖）
+  const debuff = firstEffect('招式造成伤害时，无视敌人40%防御力')
+  assert.equal(debuff.effect.slots.stat, '减防')
+  assert.equal(debuff.effect.slots.target, '全队')
+  assert.equal(debuff.effect.sources.target, 'literal', '原文写了「敌人」→ literal')
+
+  // 规则表里也要有这条（单一事实来源）
+  const targetGroup = buildRulesTable().groups.find((group) => group.id === 'target')
+  assert.ok(
+    targetGroup.items.some((item) => /敌人状态/.test(item.game)),
+    '规则表要有「敌人状态 + 暴击族 → 全队」这一条',
+  )
+})
+
 test('解析规则对照表：从词表自动导出（分组 + 条目）', () => {
   const table = buildRulesTable()
   assert.ok(table.groups.length >= 10, `分组数 ${table.groups.length}`)

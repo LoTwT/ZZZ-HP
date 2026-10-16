@@ -1270,12 +1270,20 @@ export function buildRulesTable() {
     },
     {
       id: 'target',
-      title: '目标默认值（敌人削弱族：原文没写明给谁 → 全队）',
+      title: '目标默认值（敌人削弱族 / 敌人状态+暴击族：原文没写明给谁 → 全队）',
       items: [
         ...ENEMY_DEBUFF_STATS_LIST.map((stat) =>
           items(`属性=${stat} 且原文没写明给谁`, '全队', 'applyTarget=team', '界面标淡色「默认」'),
         ),
-        items('原文明确写「自身 / 自己 / 装备者」', '自身', 'applyTarget=self', ''),
+        ...ENEMY_STATUS_CRIT_STATS_LIST.map((stat) =>
+          items(
+            `属性=${stat} + 敌人状态句式（形如「[X]状态下的敌人受到…」）且未限定施放者`,
+            '全队',
+            'applyTarget=team',
+            `note 写固定短语：${ENEMY_STATUS_TARGET_NOTE}`,
+          ),
+        ),
+        items('原文明确写「自身 / 自己 / 装备者 / 该代理人造成的」', '自身', 'applyTarget=self', '两条规则并存，互不覆盖'),
         items('其他属性没写明给谁', NONE, 'applyTarget=self', ''),
       ],
     },
@@ -1401,15 +1409,26 @@ export function classifyConditions({ conditions = [], statValue = '', isConvert 
   }
 }
 
-/** 目标槽位判定（`无` = 原文没写明给谁） */
-function detectTarget(clauseText, selfNames, inherited, statValue = '') {
+/** 目标槽位判定（`无` = 原文没写明给谁）；`unitText` = 整句（只给「敌人状态」规则用） */
+function detectTarget(clauseText, selfNames, inherited, statValue = '', unitText = '') {
   const text = String(clauseText ?? '')
+  const sentence = String(unitText ?? '') || text
   if (TEAM_RE.test(text)) return { value: '全队', source: 'literal' }
   // 敌人削弱族（减防 / 抗穿 / 易伤家族）：作用对象是敌人 → **默认全队**；
   // 只有原文明确写「自身 / 自己 / 装备者」才算自身（用户 2026-10-16）。
   if (ENEMY_DEBUFF_STATS.has(String(statValue ?? ''))) {
     if (/自身|自己|装备者/.test(text)) return { value: '自身', source: 'literal' }
     return { value: '全队', source: /敌人|敌方|目标|对方/.test(text) ? 'literal' : 'default-team' }
+  }
+  // 敌人状态条件 + 暴击族（异常暴击率 / 异常暴击伤害 / 暴击率 / 暴击伤害）：
+  // 句子主语是**敌人状态**且**没限定施放者** → 目标默认 `全队`（用户 2026-10-16 定稿）。
+  // 句式常写在整句抬头（被 `，` 切成子句后会丢）→ 这里看**整句**。
+  if (ENEMY_STATUS_CRIT_STATS.has(String(statValue ?? '')) && ENEMY_STATUS_RE.test(sentence)) {
+    // 但**子句自己**写明「自身 / 装备者 / 该代理人造成的 / <角色名>」→ 仍按自身（别被这条吃掉）
+    const selfMarked =
+      CASTER_RE.test(sentence) || CASTER_RE.test(text) || selfNames.some((name) => name && text.includes(name))
+    if (selfMarked) return { value: '自身', source: 'literal' }
+    return { value: '全队', source: 'default-team-enemy-status' }
   }
   for (const name of selfNames) {
     if (name && text.includes(name)) return { value: '自身', source: 'literal' }
@@ -1418,6 +1437,25 @@ function detectTarget(clauseText, selfNames, inherited, statValue = '') {
   if (inherited) return { value: inherited, source: 'inherited' }
   return { value: NONE, source: 'default' }
 }
+
+/**
+ * **敌人状态 + 暴击族 → 目标默认全队**（用户 2026-10-16 定稿）：
+ * 句子主语是敌人状态（形如「[X]状态下的敌人受到属性异常伤害时…」）且**没限定施放者**
+ * （没写「自身 / 装备者 / 该代理人造成的 / <角色名>造成的」）→ `目标 = 全队`，
+ * note 写固定短语（不是原文）：`目标默认：条件为敌人状态、未限定施放者`。
+ * 实例：1641 核心被动第 3 句 → `anomalyCritRate=30 / anomalyCritDmg=25`，两者都 team。
+ */
+const ENEMY_STATUS_CRIT_STATS = new Set(['异常暴击率', '异常暴击伤害', '暴击率', '暴击伤害'])
+
+/** 「[X]状态下的敌人…」这类**敌人状态**主语句式 */
+const ENEMY_STATUS_RE =
+  /\(?[「【[]?[^」】\]]{1,12}[」】\]]?\)?状态下?的?敌[人方]|状态下的敌[人方]|处于[^，。；]{0,12}状态的敌[人方]/
+
+/** 「限定施放者」的写法（有这些 → 不是"未限定"，按自身处理） */
+const CASTER_RE = /自身|自己|装备者|该代理人造成的|该角色造成的/
+
+/** 目标默认全队时的固定短语（结构化短语白名单，不粘原文） */
+const ENEMY_STATUS_TARGET_NOTE = '目标默认：条件为敌人状态、未限定施放者'
 
 /**
  * **敌人削弱族**（用户 2026-10-16）：作用在敌人身上的削弱类，原文**没写明给谁**时
@@ -1438,6 +1476,9 @@ const ENEMY_DEBUFF_STATS = new Set([
 
 /** 同上（数组形态，给规则表导出用） */
 const ENEMY_DEBUFF_STATS_LIST = [...ENEMY_DEBUFF_STATS]
+
+/** 敌人状态 + 暴击族（数组形态，给规则表导出用；判定在 `detectTarget`） */
+const ENEMY_STATUS_CRIT_STATS_LIST = [...ENEMY_STATUS_CRIT_STATS]
 
 /** 槽位白名单的说明文字（规则表导出用；真正的判定在 `SLOT_VALUE_PREDICATES`） */
 const SLOT_WHITELIST_DESCRIPTIONS = {
@@ -1815,7 +1856,9 @@ export function extractKeywordEffects({
         }
 
         // 目标：按原文认（敌人削弱族没写明给谁 → 默认 `全队`，source=`default-team`，界面标「默认」）
-        const target = detectTarget(group, selfNames, inheritedSlots?.target, stat.value)
+        // **敌人状态条件**（「[X]状态下的敌人受到…」）常写在**整句抬头**（被 `，` 切成子句后丢了）
+        // → 目标判定要看「本句全文」（抬头 + 已并入的句子），用户 2026-10-16。
+        const target = detectTarget(group, selfNames, inheritedSlots?.target, stat.value, unitText)
         const object = detectObject(group, action.value, inheritedSlots?.object)
 
         // 条件分类（按句 + 按属性）：同义反复丢弃 / 能表达的保留 / 落不到字段写「无法提取」
@@ -2328,13 +2371,19 @@ export function mapKeywordsToEffect(keyword = {}) {
   let applyTarget = 'self'
   if (target === '全队') {
     applyTarget = 'team'
+    const targetSource = keyword.sources?.target
     steps.push(
       '目标=全队 → applyTarget=team' +
-        (keyword.sources?.target === 'default-team' ? '（原文没写明给谁，敌人削弱族默认全队）' : ''),
+        (targetSource === 'default-team' ? '（原文没写明给谁，敌人削弱族默认全队）' : '') +
+        (targetSource === 'default-team-enemy-status' ? '（敌人状态条件 + 暴击族、未限定施放者 → 默认全队）' : ''),
     )
   } else {
     steps.push(`目标=${target || NONE} → applyTarget=self`)
   }
+
+  /** 目标默认兜底时写进 note 的**固定短语**（不粘原文；结构化短语白名单） */
+  const targetDefaultNote =
+    keyword.sources?.target === 'default-team-enemy-status' ? ENEMY_STATUS_TARGET_NOTE : ''
 
   // —— 作用域（`scope`，编辑器同名字段）→ `scope`；`无` = 通用（不写 scope 之外的值）
   const scopeSlot = String(slotValue('scope') ?? NONE).trim()
@@ -2440,6 +2489,7 @@ export function mapKeywordsToEffect(keyword = {}) {
     duration && duration !== NONE ? `时长：${duration}` : '',
     object === '当前招式' ? '对象：当前招式' : '',
     tautologyDropped.length ? `同义反复已忽略：${tautologyDropped.join(' / ')}` : '',
+    targetDefaultNote,
     convertNote,
   ]
   const note = noteParts
@@ -2524,6 +2574,8 @@ function decorateEffect(effect, rawText) {
     stackMax: effect.stackMax,
     durationSeconds: effect.durationSeconds,
     anchors: effect.anchors,
+    // `sources` 要带过去：目标默认兜底的固定短语（note）靠它判断
+    sources: effect.sources,
     id: effect.id,
     origin: effect.origin,
     rawText,
