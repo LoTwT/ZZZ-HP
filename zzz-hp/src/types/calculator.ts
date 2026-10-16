@@ -264,6 +264,16 @@ export interface BuffStatModifiers {
   anomalyReleaseCritDmg: number
   /** 异放倍率加算% */
   anomalyReleaseMult: number
+  /**
+   * 子类专用暴击（用户 2026-10-16：暴击按子类拆开，各子类只吃自己的字段；
+   * 属性异常用 `anomalyCrit*`、异放用 `anomalyReleaseCrit*`）。
+   */
+  turbulenceCritRate: number
+  turbulenceCritDmg: number
+  radianceCritRate: number
+  radianceCritDmg: number
+  disorderCritRate: number
+  disorderCritDmg: number
   directDmgMult: number
   /** 决算倍率%（直伤大类下的独立伤害分量，公式同直伤倍率区） */
   settlementDmgMult: number

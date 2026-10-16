@@ -1002,8 +1002,10 @@ test('条件**只取本句**：禁止跨句汇聚（烬火追魂第 4 句的 bug
     '该次[异放]效果触发暴击时，其暴击伤害额外提升40%。',
   ].join('\n')
   const { effects } = extractKeywordEffects({ text, origin: 'test', selfNames: ['菲欧妮'] })
-  const critDmg = effects.find((effect) => effect.slots.stat === '暴击伤害')
-  assert.ok(critDmg, '第 4 句应当产出暴击伤害条')
+  // 子类专用字段口径（用户 2026-10-16）：本句限定「该次[异放]」→ 落**异放暴击伤害**（专用字段），
+  // 不再落共用的「暴击伤害 + scope」
+  const critDmg = effects.find((effect) => effect.slots.stat === '异放暴击伤害')
+  assert.ok(critDmg, '第 4 句应当产出异放暴击伤害条')
   const joined = critDmg.slots.conditions.join(' | ')
   for (const banned of ['下一次普通换入', '快速支援', '招架支援', '生竭']) {
     assert.ok(!joined.includes(banned), `条件里不许出现别的句子里的「${banned}」：${joined}`)
@@ -1013,8 +1015,10 @@ test('条件**只取本句**：禁止跨句汇聚（烬火追魂第 4 句的 bug
   assert.ok(!critDmg.slots.conditions.includes(UNABLE))
   // 也不许凭空生成「限定招式」
   assert.deepEqual(critDmg.skillLimits, [])
-  // 作用域来自**本句**的「[异放]效果」（不是从别的句子搬来的）
-  assert.equal(critDmg.slots.scope, '异放')
+  // 作用域来自**本句**的「[异放]效果」——但子类专用字段口径下，子类已经落到**字段**上
+  // （`异放暴击伤害` → anomalyReleaseCritDmg），作用域槽位因此清成「无」（显示=落库）
+  assert.equal(critDmg.slots.scope, '无')
+  assert.equal(critDmg.slots.stat, '异放暴击伤害')
 })
 
 test('条件白名单硬校验：原句片段一律改写成「无法提取」，绝不冒充可转换', () => {
@@ -1061,7 +1065,8 @@ test('条件白名单硬校验：原句片段一律改写成「无法提取」�
 
 test('同义反复条件：暴伤族 + 「触发暴击时」→ 条件=无；非暴伤族 + 「暴击时」→ 无法提取', () => {
   const tautology = firstEffect('该次[异放]效果触发暴击时，其暴击伤害额外提升40%')
-  assert.equal(tautology.effect.slots.stat, '暴击伤害')
+  // 子类专用字段（用户 2026-10-16）：本句限定异放 → 落 `异放暴击伤害`（专用字段）
+  assert.equal(tautology.effect.slots.stat, '异放暴击伤害')
   assert.deepEqual(tautology.effect.slots.conditions, [NONE])
   assert.ok(tautology.effect.tautologyDropped.length > 0, '界面据此标「同义反复已忽略」')
 
@@ -1870,15 +1875,32 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
 
   // ② 属性暴击率 → 2 条（异常 / 异放）
   const critRate = keywordEffects(simplifyText({ text: '属性暴击率提升10%', origin: 'test' }))
-  assert.equal(critRate.length, 2)
-  assert.deepEqual(critRate.map((effect) => effect.slots.scope).sort(), ['异放', '异常'].sort())
-  assert.ok(critRate.every((effect) => effect.slots.stat === '异常暴击率' && effect.slots.value === 10))
+  // 暴击也一律落**专用字段**（4 个子类：异常/异放/乱流/耀变，不含紊乱）
+  assert.equal(critRate.length, 4)
+  assert.deepEqual(
+    critRate.map((effect) => effect.slots.stat).sort(),
+    ['乱流暴击率', '异放暴击率', '耀变暴击率', '异常暴击率'].sort(),
+  )
+  assert.ok(critRate.every((effect) => effect.slots.scope === '无' && effect.slots.value === 10))
+  assert.deepEqual(
+    critRate.map((effect) => effect.layerC?.stat).sort(),
+    ['anomalyCritRate', 'anomalyReleaseCritRate', 'radianceCritRate', 'turbulenceCritRate'].sort(),
+  )
+  assert.ok(critRate.every((effect) => JSON.stringify(effect.layerC?.scope) === JSON.stringify(['general'])))
   assert.ok(critRate.every((effect) => effect.collection?.title === '属性暴击'))
 
   // ③ 属性暴击伤害 → 2 条
   const critDmg = keywordEffects(simplifyText({ text: '属性暴击伤害提升15%', origin: 'test' }))
-  assert.equal(critDmg.length, 2)
-  assert.ok(critDmg.every((effect) => effect.slots.stat === '异常暴击伤害' && effect.slots.value === 15))
+  assert.equal(critDmg.length, 4)
+  assert.deepEqual(
+    critDmg.map((effect) => effect.slots.stat).sort(),
+    ['乱流暴击伤害', '异放暴击伤害', '耀变暴击伤害', '异常暴击伤害'].sort(),
+  )
+  assert.ok(critDmg.every((effect) => effect.slots.scope === '无' && effect.slots.value === 15))
+  assert.deepEqual(
+    critDmg.map((effect) => effect.layerC?.stat).sort(),
+    ['anomalyCritDmg', 'anomalyReleaseCritDmg', 'radianceCritDmg', 'turbulenceCritDmg'].sort(),
+  )
   assert.ok(critDmg.every((effect) => effect.collection?.title === '属性暴击伤害'))
 
   // ④ 单一目标词**不被合集吃掉**：「异放伤害」仍 1 条

@@ -160,7 +160,15 @@ export const STAT_LABELS = {
   anomalyReleaseDmgBonus: '异放增伤',
   disorderDmgBonus: '紊乱增伤',
   turbulenceDmgBonus: '乱流增伤',
+  anomalyReleaseCritRate: '异放暴击率',
+  anomalyReleaseCritDmg: '异放暴击伤害',
   radianceDmgBonus: '耀变增伤',
+  turbulenceCritRate: '乱流暴击率',
+  turbulenceCritDmg: '乱流暴击伤害',
+  radianceCritRate: '耀变暴击率',
+  radianceCritDmg: '耀变暴击伤害',
+  disorderCritRate: '紊乱暴击率',
+  disorderCritDmg: '紊乱暴击伤害',
   directVulnerable: '直伤易伤',
   anomalyVulnerable: '异常易伤',
   pierce: '穿透值',
@@ -189,6 +197,14 @@ export const STAT_OPTIONS = [
   '乱流增伤',
   '耀变增伤',
   '紊乱增伤',
+  '异放暴击率',
+  '异放暴击伤害',
+  '乱流暴击率',
+  '乱流暴击伤害',
+  '耀变暴击率',
+  '耀变暴击伤害',
+  '紊乱暴击率',
+  '紊乱暴击伤害',
   '异常暴击率',
   '异常暴击伤害',
   '异常精通',
@@ -1245,8 +1261,10 @@ export const COLLECTION_FANOUT_RULES = [
     re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击率|属性暴击(?!伤害)/,
     primaryStats: new Set(['异常暴击率', '暴击率']),
     targets: [
-      { stat: '异常暴击率', scopeSlot: '异常' },
-      { stat: '异常暴击率', scopeSlot: '异放' },
+      { stat: '异常暴击率', scopeSlot: '无' },
+      { stat: '异放暴击率', scopeSlot: '无' },
+      { stat: '乱流暴击率', scopeSlot: '无' },
+      { stat: '耀变暴击率', scopeSlot: '无' },
     ],
     note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
   },
@@ -1256,8 +1274,10 @@ export const COLLECTION_FANOUT_RULES = [
     re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击伤害/,
     primaryStats: new Set(['异常暴击伤害', '暴击伤害']),
     targets: [
-      { stat: '异常暴击伤害', scopeSlot: '异常' },
-      { stat: '异常暴击伤害', scopeSlot: '异放' },
+      { stat: '异常暴击伤害', scopeSlot: '无' },
+      { stat: '异放暴击伤害', scopeSlot: '无' },
+      { stat: '乱流暴击伤害', scopeSlot: '无' },
+      { stat: '耀变暴击伤害', scopeSlot: '无' },
     ],
     note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
   },
@@ -1317,25 +1337,47 @@ export function buildCollectionFanOutRulesTable() {
  *
  * 判定：属性槽位是「增伤 / 异常增伤」这一族 + 本句或作用域槽出现子类词。
  */
-const SUBKIND_DEDICATED_DAMAGE = [
-  { label: '异放', re: /异放/, stat: '异放增伤' },
-  { label: '乱流', re: /乱流/, stat: '乱流增伤' },
-  { label: '耀变', re: /耀变/, stat: '耀变增伤' },
-  { label: '紊乱', re: /紊乱/, stat: '紊乱增伤' },
-  // 「异常」放最后（最泛）：它本身就落在 anomalyDmgBonus 这个专用字段上
-  { label: '属性异常（强击）', re: /强击|属性异常|异常/, stat: '异常增伤' },
+const SUBKIND_DEDICATED = [
+  { label: '异放', re: /异放/, damage: '异放增伤', critRate: '异放暴击率', critDmg: '异放暴击伤害' },
+  { label: '乱流', re: /乱流/, damage: '乱流增伤', critRate: '乱流暴击率', critDmg: '乱流暴击伤害' },
+  { label: '耀变', re: /耀变/, damage: '耀变增伤', critRate: '耀变暴击率', critDmg: '耀变暴击伤害' },
+  { label: '紊乱', re: /紊乱/, damage: '紊乱增伤', critRate: '紊乱暴击率', critDmg: '紊乱暴击伤害' },
+  // 「异常」放最后（最泛）：它本身就落在 anomalyDmgBonus / anomalyCritRate / anomalyCritDmg 这些专用字段上
+  {
+    label: '属性异常（强击）',
+    re: /强击|属性异常|异常/,
+    damage: '异常增伤',
+    critRate: '异常暴击率',
+    critDmg: '异常暴击伤害',
+  },
 ]
 
-/** 「增伤」这一族（只有这一族才有子类专用字段） */
+/** 「增伤」族 */
 const DAMAGE_FAMILY_STATS = new Set(['增伤', '异常增伤', '全属性伤害'])
+/** 「暴击率」族 */
+const CRIT_RATE_FAMILY_STATS = new Set(['暴击率', '异常暴击率'])
+/** 「暴击伤害」族 */
+const CRIT_DMG_FAMILY_STATS = new Set(['暴击伤害', '异常暴击伤害'])
 
-/** 命中子类专用字段（返回规则；不命中返回 null） */
+/**
+ * 命中子类专用字段（返回 `{ label, stat }`；不命中返回 null）。
+ *
+ * 覆盖三族：增伤 / 暴击率 / 暴击伤害 —— **有专用字段就落专用字段**（用户 2026-10-16）。
+ */
 export function detectSubkindDedicatedField({ statKeyword, scopeText = '' }) {
-  if (!DAMAGE_FAMILY_STATS.has(String(statKeyword ?? ''))) return null
+  const keyword = String(statKeyword ?? '')
+  const family = DAMAGE_FAMILY_STATS.has(keyword)
+    ? 'damage'
+    : CRIT_RATE_FAMILY_STATS.has(keyword)
+      ? 'critRate'
+      : CRIT_DMG_FAMILY_STATS.has(keyword)
+        ? 'critDmg'
+        : ''
+  if (!family) return null
   // 只看**作用域槽位**（它由本句解析而来）；绝不用整块原文，否则会误伤同一块里的其它句
   const haystack = String(scopeText ?? '')
-  for (const rule of SUBKIND_DEDICATED_DAMAGE) {
-    if (rule.re.test(haystack)) return rule
+  for (const rule of SUBKIND_DEDICATED) {
+    if (rule.re.test(haystack)) return { label: rule.label, stat: rule[family] }
   }
   return null
 }
@@ -2284,6 +2326,14 @@ const STAT_TABLE = {
   乱流增伤: { '%': 'turbulenceDmgBonus', 点: 'turbulenceDmgBonus' },
   耀变增伤: { '%': 'radianceDmgBonus', 点: 'radianceDmgBonus' },
   紊乱增伤: { '%': 'disorderDmgBonus', 点: 'disorderDmgBonus' },
+  异放暴击率: { '%': 'anomalyReleaseCritRate', 点: 'anomalyReleaseCritRate' },
+  异放暴击伤害: { '%': 'anomalyReleaseCritDmg', 点: 'anomalyReleaseCritDmg' },
+  乱流暴击率: { '%': 'turbulenceCritRate', 点: 'turbulenceCritRate' },
+  乱流暴击伤害: { '%': 'turbulenceCritDmg', 点: 'turbulenceCritDmg' },
+  耀变暴击率: { '%': 'radianceCritRate', 点: 'radianceCritRate' },
+  耀变暴击伤害: { '%': 'radianceCritDmg', 点: 'radianceCritDmg' },
+  紊乱暴击率: { '%': 'disorderCritRate', 点: 'disorderCritRate' },
+  紊乱暴击伤害: { '%': 'disorderCritDmg', 点: 'disorderCritDmg' },
   异常暴击率: { '%': 'anomalyCritRate', 点: 'anomalyCritRate' },
   异常暴击伤害: { '%': 'anomalyCritDmg', 点: 'anomalyCritDmg' },
   异常精通: { 点: 'mastery', '%': 'mastery' },
