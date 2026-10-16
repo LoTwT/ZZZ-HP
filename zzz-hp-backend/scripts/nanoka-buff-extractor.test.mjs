@@ -30,6 +30,7 @@ import {
   SLOT_IDS,
   SLOT_OPTIONS,
   UNABLE,
+  STAT_OPTIONS,
   buildRulesTable,
   checkKeywordMappable,
   enforceSlotWhitelist,
@@ -1842,11 +1843,15 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   // ① 属性伤害 → 恰好 4 条（异常 / 异放 / 乱流 / 耀变；不含紊乱），值相同，带合集元数据
   const damage = keywordEffects(simplifyText({ text: '造成的属性伤害提升20%', origin: 'test' }))
   assert.equal(damage.length, 4, '属性伤害 = 合集 4 条')
-  const damageScopes = damage.map((effect) => effect.slots.scope).sort()
-  assert.deepEqual(damageScopes, ['乱流', '异放', '耀变', '异常'].sort())
+  // 有专用字段就落专用字段：阶段一「属性」槽位显示的就是**最终落库**那个词，作用域清成 `无`
+  const damageStats = damage.map((effect) => effect.slots.stat).sort()
+  assert.deepEqual(damageStats, ['乱流增伤', '异放增伤', '耀变增伤', '异常增伤'].sort())
+  assert.ok(
+    damage.every((effect) => effect.slots.scope === '无'),
+    '落专用字段 → 作用域槽位保持「无」（阶段一显示 = 最终落库）',
+  )
   for (const effect of damage) {
     assert.equal(effect.slots.value, 20)
-    assert.equal(effect.slots.stat, '异常增伤', '扇出目标共用一个工具字段，用作用域区分')
     assert.equal(effect.collection?.title, '属性伤害', '每条都带合集元数据（界面徽章用）')
     assert.match(effect.collection?.note ?? '', /不含紊乱/, '合集口径要写明不含紊乱')
   }
@@ -1877,7 +1882,7 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   // ④ 单一目标词**不被合集吃掉**：「异放伤害」仍 1 条
   const release = keywordEffects(simplifyText({ text: '异放伤害提升30%', origin: 'test' }))
   assert.equal(release.length, 1, '单一目标词保持 1 条')
-  assert.equal(release[0].slots.scope, '异放')
+  // 有专用字段 → 阶段一显示 异放增伤、作用域清成「无」\n  assert.equal(release[0].slots.stat, '异放增伤')\n  assert.equal(release[0].slots.scope, '无')
   assert.equal(release[0].collection, undefined, '不是合集 → 没有合集元数据')
 
   // ⑤ 「火属性伤害」「全属性伤害」也不是合集
@@ -1896,4 +1901,27 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   assert.ok(group.items.some((item) => /紊乱/.test(item.note ?? '')), '要写明不含紊乱')
   const statGroup = table.groups.find((item) => item.id === 'stat')
   assert.match(statGroup.title, /工具层/, '属性/字段清单那组要标「工具层」')
+})
+test('属性下拉（STAT_OPTIONS）与词表一致：子类增伤关键词既可查表、也可在「属性」下拉里选到', () => {
+  const expected = {
+    异放增伤: 'anomalyReleaseDmgBonus',
+    乱流增伤: 'turbulenceDmgBonus',
+    耀变增伤: 'radianceDmgBonus',
+    紊乱增伤: 'disorderDmgBonus',
+  }
+  for (const [keyword, field] of Object.entries(expected)) {
+    assert.ok(STAT_OPTIONS.includes(keyword), `「${keyword}」必须出现在属性下拉（STAT_OPTIONS）里`)
+    const mapped = mapKeywordsToEffect({
+      slots: { stat: keyword, action: '提升', value: 10, unit: '%', scope: '无' },
+      id: `t-${keyword}`,
+      origin: 'test',
+    })
+    assert.equal(mapped.ok, true, `「${keyword}」必须能查表（词表里要有对应字段）`)
+    assert.equal(mapped.effect.stat, field)
+    assert.deepEqual(mapped.effect.scope, ['general'], '专用字段 → scope 用默认')
+  }
+  // 词表可查 → 下拉可选：所有子类专用关键词都在下拉里（防"抽出来的词在下拉里不存在"）
+  for (const keyword of Object.keys(expected)) {
+    assert.ok(STAT_OPTIONS.includes(keyword), `${keyword} 下拉缺失`)
+  }
 })

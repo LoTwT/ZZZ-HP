@@ -185,6 +185,10 @@ export const STAT_OPTIONS = [
   '增伤',
   '招式增伤',
   '异常增伤',
+  '异放增伤',
+  '乱流增伤',
+  '耀变增伤',
+  '紊乱增伤',
   '异常暴击率',
   '异常暴击伤害',
   '异常精通',
@@ -1227,10 +1231,11 @@ export const COLLECTION_FANOUT_RULES = [
     /** 当前解析出的 stat（合集代表值） */
     primaryStats: new Set(['异常增伤', '增伤']),
     targets: [
-      { stat: '异常增伤', scopeSlot: '异常' },
-      { stat: '异常增伤', scopeSlot: '异放' },
-      { stat: '异常增伤', scopeSlot: '乱流' },
-      { stat: '异常增伤', scopeSlot: '耀变' },
+      // 落**专用字段**（用户 2026-10-16：有专用字段就落专用字段，不要「共用字段 + scope」）→ 作用域槽位保持「无」
+      { stat: '异常增伤', scopeSlot: '无' },
+      { stat: '异放增伤', scopeSlot: '无' },
+      { stat: '乱流增伤', scopeSlot: '无' },
+      { stat: '耀变增伤', scopeSlot: '无' },
     ],
     note: '合集 = 异常 / 异放 / 乱流 / 耀变（不含紊乱）',
   },
@@ -2009,7 +2014,7 @@ export function extractKeywordEffects({
         const scopeValue = skillLimits.length
           ? '招式'
           : detectScope([prefix, ...pending, group].join('，'))
-        const scope = {
+        let scope = {
           value: scopeValue,
           source: scopeValue === NONE ? 'default' : 'literal',
         }
@@ -2074,6 +2079,18 @@ export function extractKeywordEffects({
           statValue: stat.value,
           isConvert: groupIsConvert,
         })
+        // **子类专用字段**（用户 2026-10-16）：阶段一就显示**最终落库**的词。
+        // 例：`增伤 + 作用域=异放` → `属性=异放增伤` + `作用域=无`（有专用字段就不再用 scope 兜），
+        // 避免"审阅面显示的和库里写的不一致"。
+        const subkindSlotUpgrade = detectSubkindDedicatedField({
+          statKeyword: stat.value,
+          scopeText: String(scope.value ?? '').trim(),
+        })
+        if (subkindSlotUpgrade) {
+          stat = { value: subkindSlotUpgrade.stat, source: stat.source === 'unable' ? 'literal' : stat.source }
+          scope = { value: NONE, source: 'default' }
+        }
+
         // **结构性硬校验**：任何槽位出现词表外的值（原文片段 / 长文本）→ 一律 `无法提取`
         const { slots: checkedSlots, violations: slotViolations } = enforceSlotWhitelist(
           createSlots({
