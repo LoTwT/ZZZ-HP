@@ -37,6 +37,7 @@ export type AdminCalculatorPanel =
   | 'skill-library'
   | 'affix-preset'
   | 'import-export'
+  | 'nanoka'
 
 export type SupportStatNeed =
   | 'hp'

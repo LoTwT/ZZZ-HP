@@ -20,6 +20,7 @@ import seasonDateRoutes from './routes/seasonDateRoutes.js'
 import seasonContentRoutes from './routes/seasonContentRoutes.js'
 import deductionRoutes from './routes/deductionRoutes.js'
 import deductionAdminRoutes from './routes/deductionAdminRoutes.js'
+import nanokaBasicsRoutes from './routes/nanokaBasicsRoutes.js'
 import affixPresetRoutes from './routes/affixPresetRoutes.js'
 import pool from './config/db.js'
 import { ensureRuntimeSchema } from './bootstrap/ensureRuntimeSchema.js'
@@ -147,6 +148,7 @@ app.use('/api/site-info', siteInfoRoutes)
 app.use('/api/season-dates', seasonDateRoutes)
 app.use('/api/deduction', deductionRoutes)
 app.use('/api/admin/deduction', deductionAdminRoutes)
+app.use('/api/admin/nanoka', nanokaBasicsRoutes)
 app.use('/api/affix-preset', affixPresetRoutes)
 
 app.use((_req, res) => {

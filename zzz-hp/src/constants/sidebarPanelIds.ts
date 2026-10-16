@@ -37,6 +37,7 @@ export const ADMIN_CALCULATOR_PANELS: readonly AdminCalculatorPanel[] = [
   'skill-library',
   'affix-preset',
   'import-export',
+  'nanoka',
 ] as const
 
 export function isAdminCalculatorPanelId(value: unknown): value is AdminCalculatorPanel {

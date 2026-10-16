@@ -71,6 +71,7 @@ const panelLabels: Record<AdminCalculatorPanel, string> = {
   'skill-library': '招式库',
   'affix-preset': '官方预设词条库',
   'import-export': '导入 / 导出',
+  nanoka: 'nanoka 采集',
 }
 
 const panels = computed(() =>
