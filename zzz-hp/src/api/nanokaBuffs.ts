@@ -144,6 +144,11 @@ export interface NanokaKeywordEffect {
   tautologyDropped: string[]
   /** 被槽位白名单硬校验改写成「无法提取」的槽位（界面用；**不入库**） */
   unmappableSlots: { slot: string; value: string; reason: string }[]
+  /**
+   * **合集扇出元数据**（抽取层；界面徽章「合集：属性伤害」用它；**写入库前剔除、不进结算**）。
+   * 形如 `{ id: 'attribute-damage', title: '属性伤害', note: '合集 = 异常 / 异放 / 乱流 / 耀变（不含紊乱）', targetStat: '异常增伤' }`
+   */
+  collection?: { id: string; title: string; note: string; targetStat: string }
   anchors: NanokaKeywordAnchors
   /** 锚点关联不上 → false（这条不录） */
   recorded: boolean

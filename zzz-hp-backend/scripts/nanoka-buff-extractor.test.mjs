@@ -1820,4 +1820,53 @@ test('化简的公开入口与 buildItem 同源（只重跑阶段1）', () => {
   assert.equal(simplified.effects[0].layerC.stat, 'dmgBonus')
   assert.deepEqual(simplified.waste, [])
 })
+test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 / 属性暴击伤害→2 条；单一目标词不被吃掉', () => {
+  // ① 属性伤害 → 恰好 4 条（异常 / 异放 / 乱流 / 耀变；不含紊乱），值相同，带合集元数据
+  const damage = keywordEffects(simplifyText({ text: '造成的属性伤害提升20%', origin: 'test' }))
+  assert.equal(damage.length, 4, '属性伤害 = 合集 4 条')
+  const damageScopes = damage.map((effect) => effect.slots.scope).sort()
+  assert.deepEqual(damageScopes, ['乱流', '异放', '耀变', '异常'].sort())
+  for (const effect of damage) {
+    assert.equal(effect.slots.value, 20)
+    assert.equal(effect.slots.stat, '异常增伤', '扇出目标共用一个工具字段，用作用域区分')
+    assert.equal(effect.collection?.title, '属性伤害', '每条都带合集元数据（界面徽章用）')
+    assert.match(effect.collection?.note ?? '', /不含紊乱/, '合集口径要写明不含紊乱')
+  }
+  assert.equal(new Set(damage.map((effect) => effect.layerC?.stat)).size, 1, '当前阶段2 字段仍是异常增伤')
 
+  // ② 属性暴击率 → 2 条（异常 / 异放）
+  const critRate = keywordEffects(simplifyText({ text: '属性暴击率提升10%', origin: 'test' }))
+  assert.equal(critRate.length, 2)
+  assert.deepEqual(critRate.map((effect) => effect.slots.scope).sort(), ['异放', '异常'].sort())
+  assert.ok(critRate.every((effect) => effect.slots.stat === '异常暴击率' && effect.slots.value === 10))
+  assert.ok(critRate.every((effect) => effect.collection?.title === '属性暴击'))
+
+  // ③ 属性暴击伤害 → 2 条
+  const critDmg = keywordEffects(simplifyText({ text: '属性暴击伤害提升15%', origin: 'test' }))
+  assert.equal(critDmg.length, 2)
+  assert.ok(critDmg.every((effect) => effect.slots.stat === '异常暴击伤害' && effect.slots.value === 15))
+  assert.ok(critDmg.every((effect) => effect.collection?.title === '属性暴击伤害'))
+
+  // ④ 单一目标词**不被合集吃掉**：「异放伤害」仍 1 条
+  const release = keywordEffects(simplifyText({ text: '异放伤害提升30%', origin: 'test' }))
+  assert.equal(release.length, 1, '单一目标词保持 1 条')
+  assert.equal(release[0].slots.scope, '异放')
+  assert.equal(release[0].collection, undefined, '不是合集 → 没有合集元数据')
+
+  // ⑤ 「火属性伤害」「全属性伤害」也不是合集
+  assert.equal(keywordEffects(simplifyText({ text: '火属性伤害提升10%', origin: 'test' })).length, 1)
+  assert.equal(keywordEffects(simplifyText({ text: '全属性伤害提升10%', origin: 'test' })).length, 1)
+
+  // ⑥ 合集信息**写入前剔除、不入库**（sanitizeEffect 只留 schema 字段）
+  const sanitized = sanitizeEffect({ ...damage[0].layerC, collection: damage[0].collection }, 0)
+  assert.equal('collection' in sanitized, false, '合集信息不入库')
+
+  // ⑦ 规则表里有「合集扇出」组，且与「工具层」属性清单分开表述
+  const table = buildRulesTable()
+  const group = table.groups.find((item) => item.id === 'collection-fanout')
+  assert.ok(group, '规则表要有合集扇出组')
+  assert.match(group.title, /抽取层/)
+  assert.ok(group.items.some((item) => /紊乱/.test(item.note ?? '')), '要写明不含紊乱')
+  const statGroup = table.groups.find((item) => item.id === 'stat')
+  assert.match(statGroup.title, /工具层/, '属性/字段清单那组要标「工具层」')
+})

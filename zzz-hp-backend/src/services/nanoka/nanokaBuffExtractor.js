@@ -1200,13 +1200,134 @@ export function enforceSlotWhitelist(slots = {}) {
  *
  * @returns {{ version:string, groups:Array<{ id:string, title:string, items:Array<{game:string, slot:string, field:string, note:string}> }> }}
  */
+/**
+ * **合集扇出**（**抽取层**映射表；用户 2026-10-16）⭐
+ *
+ * 游戏原文里有些词是「合集」：一个词在语义上覆盖多个子类，而工具字段是**分离**的
+ * → 一句原文按这张表扇出成**多条独立效果**（每条可单独勾选/删除）。
+ *
+ * ⚠️ 边界（用户强调）：
+ *   - 这张表**只决定"这句原文生成哪几条效果"**；生成出来的就是普通效果对象；
+ *   - 合集信息（`collection`）**只用于抽取结果与界面回显**：写入库前剔除、
+ *     **不进结算、不被字段定义 / scope 数组 / 迁移 / 校验引用**；
+ *   - 界面徽章「合集：属性伤害」只是**来源提示**，不是数据层属性。
+ *
+ * 口径（用户给定）：属性伤害 = 异常 / 异放 / 乱流 / 耀变（**不含紊乱**）；
+ * 属性暴击 / 属性暴击伤害同口径（不含紊乱）；紊乱以后可能补。
+ * 单一目标词（「异放伤害」「异常精通」…）**不被合集吃掉** —— 它们解析出的 stat
+ * 不在下表的 `primaryStats` 里，天然不匹配。
+ */
+export const COLLECTION_FANOUT_RULES = [
+  {
+    id: 'attribute-damage',
+    title: '属性伤害',
+    /** 原文匹配（**前面不能是元素字**，否则是「火属性伤害」= 元素增伤，不扇出） */
+    re: /(?:^|[^物理火冰电以太风])属性(?:异常)?伤害/,
+    /** 当前解析出的 stat（合集代表值） */
+    primaryStats: new Set(['异常增伤', '增伤']),
+    targets: [
+      { stat: '异常增伤', scopeSlot: '异常' },
+      { stat: '异常增伤', scopeSlot: '异放' },
+      { stat: '异常增伤', scopeSlot: '乱流' },
+      { stat: '异常增伤', scopeSlot: '耀变' },
+    ],
+    note: '合集 = 异常 / 异放 / 乱流 / 耀变（不含紊乱）',
+  },
+  {
+    id: 'attribute-crit-rate',
+    title: '属性暴击',
+    re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击率|属性暴击(?!伤害)/,
+    primaryStats: new Set(['异常暴击率', '暴击率']),
+    targets: [
+      { stat: '异常暴击率', scopeSlot: '异常' },
+      { stat: '异常暴击率', scopeSlot: '异放' },
+    ],
+    note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
+  },
+  {
+    id: 'attribute-crit-dmg',
+    title: '属性暴击伤害',
+    re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击伤害/,
+    primaryStats: new Set(['异常暴击伤害', '暴击伤害']),
+    targets: [
+      { stat: '异常暴击伤害', scopeSlot: '异常' },
+      { stat: '异常暴击伤害', scopeSlot: '异放' },
+    ],
+    note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
+  },
+]
+
+/** 命中合集规则（只看本句文本 + 当前 stat） */
+function matchCollectionRule(clauseText, statKeyword, elementsSlot) {
+  const text = String(clauseText ?? '')
+  // 「全属性伤害」= 不限元素的元素增伤（单一目标词）→ 不按合集处理
+  if (/全属性/.test(text) || String(statKeyword ?? '').startsWith('全属性')) return null
+  for (const rule of COLLECTION_FANOUT_RULES) {
+    if (!rule.re.test(text)) continue
+    if (!rule.primaryStats.has(String(statKeyword ?? ''))) continue
+    // 「火属性伤害」= 元素增伤（元素槽有值）→ 不是合集
+    if (elementsSlot && elementsSlot !== NONE) continue
+    return rule
+  }
+  return null
+}
+
+/**
+ * 把一条关键字效果按合集规则扇出成多条（**纯函数**；不命中就原样返回 `[effect]`）。
+ * 每条扇出项带 `collection` 元数据（抽取/界面用，入库前剔除）。
+ */
+export function planCollectionFanOut({ effect, clauseText, statKeyword, effectsLength = 0 }) {
+  const elementsSlot = Array.isArray(effect?.slots?.elements)
+    ? effect.slots.elements.find((item) => item && item !== NONE) ?? NONE
+    : effect?.slots?.elements
+  const rule = matchCollectionRule(clauseText, statKeyword, elementsSlot)
+  if (!rule) return [effect]
+  return rule.targets.map((target, offset) => ({
+    ...effect,
+    id: `${effect.origin}#${effectsLength + offset}`,
+    index: effectsLength + offset,
+    slots: { ...effect.slots, stat: target.stat, scope: target.scopeSlot },
+    sources: { ...effect.sources, stat: 'literal', scope: 'literal' },
+    /** 合集元数据（**不入库**）：界面徽章「合集：属性伤害」用它 */
+    collection: { id: rule.id, title: rule.title, note: rule.note, targetStat: target.stat },
+  }))
+}
+
+export function buildCollectionFanOutRulesTable() {
+  return COLLECTION_FANOUT_RULES.map((rule) => ({
+    id: rule.id,
+    title: rule.title,
+    targets: rule.targets.map((target) => `${target.stat}（作用域=${target.scopeSlot}）`),
+    note: rule.note,
+  }))
+}
+
 export function buildRulesTable() {
   const items = (game, slot, field, note = '') => ({ game, slot, field, note })
   const reText = (value) => String(value)
   const groups = [
     {
+      id: 'collection-fanout',
+      title: '合集扇出（**抽取层映射**：原文合集词 → 生成哪几条效果；与"工具支持哪些字段"无关）',
+      items: [
+        ...COLLECTION_FANOUT_RULES.flatMap((rule) =>
+          rule.targets.map((target) =>
+            items(
+              reText(rule.re),
+              `属性=${target.stat}`,
+              `作用域=${target.scopeSlot}`,
+              `${rule.title}；${rule.note}`,
+            ),
+          ),
+        ),
+        items('单一目标词（「异放伤害」「异常精通」…）', '保持 1 条', '', '不被合集吃掉（stat 不在合集的 primaryStats 里）'),
+        items('「火属性伤害」这类<元素>属性伤害', '保持 1 条（元素增伤）', '', '前一个字是元素字 → 不按合集处理'),
+        items('合集信息（`collection`）', '不入库 / 不进结算', '', '只用于抽取结果与界面徽章「合集：…」来源提示'),
+      ],
+    },
+    {
       id: 'stat',
-      title: '属性词表（游戏措辞 → 关键字「属性」槽位 → 阶段2 字段）',
+      title: '属性/字段清单（**工具层**：游戏措辞 → 关键字「属性」槽位 → 阶段2 字段）',
       items: STAT_RULES_INTERNAL.map((rule) =>
         items(
           reText(rule.re),
@@ -1993,6 +2114,37 @@ export function extractKeywordEffects({
         })
         if (!mappable.ok) {
           pushWaste(group, mappable.reason)
+          continue
+        }
+
+        // —— **合集扇出**（抽取层；用户 2026-10-16）：「属性伤害 / 属性暴击 / 属性暴击伤害」
+        //    这类合集词 → 扇出成多条**独立**效果（每条可单独勾选/删除；徽章标来源）。
+        //    合集信息只进抽取结果与界面，**写入库前剔除、不进结算**。
+        const fanOut = planCollectionFanOut({
+          effect,
+          clauseText: group,
+          statKeyword: stat.value,
+          effectsLength: effects.length,
+        })
+        if (fanOut.length > 1) {
+          let pushedInClause = false
+          for (const item of fanOut) {
+            const itemMappable = checkKeywordMappable({
+              slots: item.slots,
+              text: `${unitText}，${group}`,
+            })
+            if (!itemMappable.ok) {
+              pushWaste(group, itemMappable.reason)
+              continue
+            }
+            effects.push(item)
+            unitEffects.push(item)
+            pushedInClause = true
+          }
+          if (pushedInClause) {
+            lastEffect = unitEffects[unitEffects.length - 1] ?? lastEffect
+            emittedInClause = true
+          }
           continue
         }
 

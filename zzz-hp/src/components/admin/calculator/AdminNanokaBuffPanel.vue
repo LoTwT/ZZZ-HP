@@ -104,6 +104,8 @@ interface KeywordRow {
   inherited: { from: string; fields: string[]; label: string } | null
   /** 同义反复被忽略的条件原文（界面标淡色提示，不入库） */
   tautologyDropped: string[]
+  /** 合集扇出来源（**界面提示用，不入库**）：{ id, title, note, targetStat } */
+  collection?: { id: string; title: string; note: string; targetStat: string }
   /** 槽位取值来源（`default-team` / `default-team-enemy-status` = 目标按规则兜底成全队） */
   sources: Record<string, string>
   recorded: boolean
@@ -748,6 +750,7 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     skillLimits: Array.isArray(effect.skillLimits) ? effect.skillLimits.map((item) => ({ ...item })) : [],
     inherited: effect.inherited ?? null,
     tautologyDropped: Array.isArray(effect.tautologyDropped) ? [...effect.tautologyDropped] : [],
+    collection: effect.collection ? { ...effect.collection } : undefined,
     sources: { ...effect.sources },
     recorded: effect.recorded,
     dropReason: effect.dropReason,
@@ -1639,6 +1642,14 @@ const wasteCount = computed(() =>
                   </span>
                   <span v-if="row.tautologyDropped.length" class="nbf-badge nbf-badge-muted">
                     同义反复已忽略
+                  </span>
+                  <!-- 合集扇出：只标来源（抽取层），不入库、不进结算 -->
+                  <span
+                    v-if="row.collection"
+                    class="nbf-badge nbf-badge-collection"
+                    :title="row.collection.note"
+                  >
+                    合集：{{ row.collection.title }}
                   </span>
                   <span v-if="row.inherited" class="nbf-badge nbf-badge-inherit">
                     {{ row.inherited.label }}
@@ -3072,6 +3083,11 @@ const wasteCount = computed(() =>
   background: rgba(120, 120, 100, 0.16);
   color: var(--color-text);
   opacity: 0.75;
+}
+
+.nbf-badge-collection {
+  border-color: rgba(120, 90, 160, 0.45);
+  color: #6b4f96;
 }
 
 .nbf-badge-muted {
