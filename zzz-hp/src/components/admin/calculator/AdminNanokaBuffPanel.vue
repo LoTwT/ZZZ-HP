@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import {
   applyNanokaBuffs,
   extractNanokaBuffs,
+  fetchNanokaEmptyTargets,
   fetchNanokaRules,
   isNanokaBuffsAuthError,
   parseNanokaBuffs,
@@ -14,6 +15,8 @@ import {
   type NanokaBuffItem,
   type NanokaBuffKind,
   type NanokaBuffSentence,
+  type NanokaEmptyTarget,
+  type NanokaEmptyTargets,
   type NanokaExtractResult,
   type NanokaExtractorMeta,
   type NanokaKeywordAnchors,
@@ -478,6 +481,106 @@ async function openRules() {
   } finally {
     rulesLoading.value = false
   }
+}
+
+/** 「找空活干」：0 增益的角色 / 音擎（只读查询；点一项 = 直接选中，**不自动抓取**，避免误触） */
+const emptyVisible = ref(false)
+const emptyLoading = ref(false)
+const emptyData = ref<NanokaEmptyTargets | null>(null)
+const emptyMessage = ref('')
+const emptyQuery = ref('')
+
+/** 本地兜底口径（与后端 `listEmptyBuffTargets` 同一条规则）：数 `effectBlocks[].effects` 条数 */
+function countLocalEffects(container: unknown): number {
+  const blocks = (container as { effectBlocks?: { effects?: unknown[] }[] } | null)?.effectBlocks
+  if (!Array.isArray(blocks)) return 0
+  return blocks.reduce(
+    (total, block) => total + (Array.isArray(block?.effects) ? block.effects.length : 0),
+    0,
+  )
+}
+
+const localEmptyTargets = computed<NanokaEmptyTarget[]>(() => {
+  if (kind.value === 'wengine') {
+    return wengines.value
+      .map((doc) => {
+        const items = (doc as { refinementBuffs?: unknown[] }).refinementBuffs ?? []
+        const count =
+          countLocalEffects((doc as { fixedBuffs?: unknown }).fixedBuffs) +
+          items.reduce<number>((total, container) => total + countLocalEffects(container), 0)
+        return {
+          id: String(doc.id),
+          name: String(doc.name ?? ''),
+          element: '',
+          profession: String((doc as { profession?: string }).profession ?? ''),
+          rarity: (doc as { rarity?: string | number }).rarity ?? null,
+          effectCount: count,
+        }
+      })
+      .filter((row) => row.effectCount === 0)
+  }
+  return agents.value
+    .map((doc) => {
+      const items = (doc as { mindscapeBuffs?: unknown[] }).mindscapeBuffs ?? []
+      const count = items.reduce<number>((total, container) => total + countLocalEffects(container), 0)
+      return {
+        id: String(doc.id),
+        name: String(doc.name ?? ''),
+        element: String((doc as { element?: string }).element ?? ''),
+        profession: String((doc as { profession?: string }).profession ?? ''),
+        rarity: null,
+        effectCount: count,
+      }
+    })
+    .filter((row) => row.effectCount === 0)
+})
+
+const emptyButtonLabel = computed(() => {
+  if (emptyLoading.value) return '查询中…'
+  const count = (emptyData.value?.empty ?? localEmptyTargets.value).length
+  return `列出 0 增益的${kindLabel.value}（${count}）`
+})
+
+const emptyRows = computed(() => {
+  const list = emptyData.value?.empty ?? localEmptyTargets.value
+  const query = emptyQuery.value.trim().toLowerCase()
+  if (!query) return list
+  return list.filter(
+    (row) => row.name.toLowerCase().includes(query) || row.id.toLowerCase().includes(query),
+  )
+})
+
+const emptyFewRows = computed(() => emptyData.value?.few ?? [])
+
+/** 拉一次 0 增益列表（**只读**；每次打开都重新查，处理完（写入后）的条目自然会消失） */
+async function loadEmptyTargets() {
+  emptyLoading.value = true
+  try {
+    const { result, message: serverMessage } = await fetchNanokaEmptyTargets(kind.value)
+    emptyData.value = result
+    emptyMessage.value = serverMessage
+  } catch (err) {
+    // 后端不可用时退回本地口径（同一规则，界面照常能用）
+    emptyData.value = null
+    emptyMessage.value = `${describeError(err)}（已退回本地口径：${localEmptyTargets.value.length} 条）`
+  } finally {
+    emptyLoading.value = false
+  }
+}
+
+async function openEmptyTargets() {
+  emptyVisible.value = true
+  emptyQuery.value = ''
+  await loadEmptyTargets()
+}
+
+/** 点一项 = 等价于在「本地角色 / 本地音擎」下拉里选中它（停在可点 [抓取增益] 的状态） */
+function pickEmptyTarget(row: NanokaEmptyTarget) {
+  selectedId.value = row.id
+  localQuery.value = ''
+  emptyVisible.value = false
+  messageKind.value = 'ok'
+  message.value = `已选中${kindLabel.value}「${row.name}」（ID ${row.id}）—— 现在可以直接点 [抓取增益]`
 }
 
 function openOriginal(item: NanokaBuffItem, sentenceIndex = -1) {
@@ -1334,7 +1437,11 @@ async function runApply(dryRun: boolean) {
     message.value = serverMessage
     writeMessage.value = serverMessage
     if (dryRun) confirmVisible.value = true
-    else confirmVisible.value = false
+    else {
+      confirmVisible.value = false
+      // 真的写进去了 → 0 增益列表要重新查（处理完的条目从列表消失；只读查询）
+      if (!result.writeError) void loadEmptyTargets()
+    }
   } catch (err) {
     handleError(err, '写入失败')
   } finally {
@@ -1417,6 +1524,15 @@ const wasteCount = computed(() =>
       </label>
       <button type="button" class="primary-btn" :disabled="busy || !selectedId" @click="fetchAndExtract">
         {{ fetching ? '抓取中…' : extracting ? '抽取中…' : '抓取增益' }}
+      </button>
+      <!-- 「找空活干」：列出 0 增益的目标，点一项直接选中（不自动抓取，避免误触） -->
+      <button
+        type="button"
+        class="secondary-btn nbf-empty-btn"
+        :disabled="emptyLoading"
+        @click="openEmptyTargets"
+      >
+        {{ emptyButtonLabel }}
       </button>
       <button type="button" class="secondary-btn" @click="openRules">解析规则</button>
     </div>
@@ -1779,6 +1895,52 @@ const wasteCount = computed(() =>
               </ul>
               <p v-if="group.items.length > 40" class="nbf-sub">…还有 {{ group.items.length - 40 }} 条（完整清单见 dev-docs 导出的 md）</p>
             </section>
+          </div>
+        </div>
+
+        <!-- 「找空活干」弹窗：0 增益的角色 / 音擎；点一项 = 直接选中（不自动抓取） -->
+        <div v-if="emptyVisible" class="nbf-modal-mask" @click.self="emptyVisible = false">
+          <div class="nbf-modal nbf-empty-modal">
+            <header class="nbf-modal-head">
+              <h4>0 增益的{{ kindLabel }}（{{ emptyRows.length }} / {{ emptyData?.empty.length ?? localEmptyTargets.length }}）</h4>
+              <button type="button" class="nbf-mini-btn" @click="emptyVisible = false">关闭</button>
+            </header>
+            <p class="nbf-sub">
+              {{ emptyLoading ? '查询中…' : emptyMessage }}
+              · 口径：该{{ kindLabel }}**所有增益容器里 effect 条数 = 0**（只数增益条，note / 原文不算）
+              · 点一项 = 直接选中（不自动抓取）
+            </p>
+            <label class="field nbf-field">
+              <span class="field-label">搜索</span>
+              <input v-model="emptyQuery" type="text" class="field-input" placeholder="名称 / ID" />
+            </label>
+            <ul v-if="emptyRows.length" class="nbf-empty-list">
+              <li v-for="row in emptyRows" :key="`et-${row.id}`">
+                <button type="button" class="nbf-empty-item" @click="pickEmptyTarget(row)">
+                  <span class="nbf-empty-name">{{ row.name }}</span>
+                  <span class="nbf-chip">ID {{ row.id }}</span>
+                  <span v-if="row.element || row.profession" class="nbf-sub">
+                    {{ [row.element, row.profession].filter(Boolean).join(' · ') }}
+                  </span>
+                  <span v-if="row.rarity" class="nbf-sub">{{ row.rarity }}</span>
+                </button>
+              </li>
+            </ul>
+            <p v-else class="empty-hint">
+              {{ emptyLoading ? '查询中…' : `没有 0 增益的${kindLabel}了（这个列表里的都处理完了）。` }}
+            </p>
+            <details v-if="emptyFewRows.length" class="nbf-empty-few">
+              <summary>增益条很少的（≤ {{ emptyData?.fewThreshold ?? 2 }} 条 · {{ emptyFewRows.length }} 个，供参考）</summary>
+              <ul class="nbf-empty-list">
+                <li v-for="row in emptyFewRows" :key="`ef-${row.id}`">
+                  <button type="button" class="nbf-empty-item" @click="pickEmptyTarget(row)">
+                    <span class="nbf-empty-name">{{ row.name }}</span>
+                    <span class="nbf-chip">ID {{ row.id }}</span>
+                    <span class="nbf-sub">现有 {{ row.effectCount }} 条增益</span>
+                  </button>
+                </li>
+              </ul>
+            </details>
           </div>
         </div>
       </Teleport>
@@ -2847,6 +3009,57 @@ const wasteCount = computed(() =>
   background: rgba(178, 59, 46, 0.16);
   color: #b23b2e;
   font-weight: 700;
+}
+
+/* 「找空活干」：0 增益列表 */
+.nbf-empty-modal {
+  width: min(760px, 94vw);
+  max-height: 82vh;
+  overflow: auto;
+}
+
+.nbf-empty-list {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nbf-empty-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background-soft, #fff);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nbf-empty-item:hover {
+  border-color: var(--color-border-hover);
+}
+
+.nbf-empty-name {
+  font-weight: 600;
+}
+
+.nbf-empty-few {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.nbf-empty-few summary {
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.nbf-empty-btn {
+  white-space: nowrap;
 }
 
 /* 淡色「默认」标记：目标值是按规则兜底的（敌人削弱族 → 全队），一眼能改 */

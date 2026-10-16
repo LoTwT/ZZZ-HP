@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import {
   applyNanokaBuffsHandler,
+  emptyTargetsNanokaBuffsHandler,
   extractNanokaBuffsHandler,
   parseNanokaBuffsHandler,
   rulesNanokaBuffsHandler,
@@ -18,5 +19,7 @@ router.post('/parse', requireAdmin, parseNanokaBuffsHandler)
 router.post('/apply', requireAdmin, applyNanokaBuffsHandler)
 // 解析规则对照表（只读；从抽取器词表自动导出）
 router.get('/rules', requireAdmin, rulesNanokaBuffsHandler)
+// 「找空活干」：0 增益的角色 / 音擎（只读查询，不写库）
+router.get('/empty-targets', requireAdmin, emptyTargetsNanokaBuffsHandler)
 
 export default router

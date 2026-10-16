@@ -1328,3 +1328,73 @@ export async function applyBuffItems({ kind, id, rows = [], dryRun = false } = {
   return result
 }
 
+// ---------------------------------------------------------------- 「找空活干」：0 增益的目标
+
+/** 数一个容器里的**增益条**（`effectBlocks[].effects` 的条数；note / 原文不算） */
+function countContainerEffects(container) {
+  if (!container || typeof container !== 'object') return 0
+  const blocks = Array.isArray(container.effectBlocks) ? container.effectBlocks : []
+  return blocks.reduce(
+    (total, block) => total + (Array.isArray(block?.effects) ? block.effects.length : 0),
+    0,
+  )
+}
+
+/** 该目标所有增益容器里的 effect 条数（角色 = mindscapeBuffs[0..6]；音擎 = fixedBuffs + refinementBuffs[0..4]） */
+export function countTargetEffects(kind, doc = {}) {
+  if (kind === 'wengine') {
+    return (
+      countContainerEffects(doc.fixedBuffs) +
+      (Array.isArray(doc.refinementBuffs) ? doc.refinementBuffs : []).reduce(
+        (total, container) => total + countContainerEffects(container),
+        0,
+      )
+    )
+  }
+  return (Array.isArray(doc.mindscapeBuffs) ? doc.mindscapeBuffs : []).reduce(
+    (total, container) => total + countContainerEffects(container),
+    0,
+  )
+}
+
+/**
+ * **列出「0 增益」的角色 / 音擎**（用户 2026-10-16：「找空活干」入口）——纯函数，**只读不写库**。
+ *
+ * 定义：该目标**所有增益容器里 effect 条数 = 0**（只数增益条，note / 原文不算）。
+ *   - 角色 = `mindscapeBuffs[0..6]` 的全部 `effectBlocks[].effects`；
+ *   - 音擎 = `fixedBuffs` + `refinementBuffs[0..4]`。
+ * 顺带回「增益条很少（≤ fewThreshold）」的列表供参考。按名字排序。
+ */
+export function listEmptyBuffTargets({ kind = 'agent', buffs = {}, fewThreshold = 2 } = {}) {
+  const normalizedKind = kind === 'wengine' ? 'wengine' : 'agent'
+  const list = normalizedKind === 'wengine' ? buffs.wengines ?? [] : buffs.agents ?? []
+  const rows = list.map((doc) => ({
+    id: String(doc?.id ?? ''),
+    name: String(doc?.name ?? ''),
+    element: String(doc?.element ?? ''),
+    profession: String(doc?.profession ?? ''),
+    rarity: doc?.rarity ?? doc?.rank ?? null,
+    effectCount: countTargetEffects(normalizedKind, doc),
+  }))
+  const byName = (left, right) =>
+    left.name.localeCompare(right.name, 'zh-Hans-CN') || left.id.localeCompare(right.id)
+  return {
+    kind: normalizedKind,
+    kindLabel: KIND_LABELS[normalizedKind],
+    total: rows.length,
+    fewThreshold,
+    /** 0 增益（该目标一条增益都没有 → 可以「找空活干」） */
+    empty: rows.filter((row) => row.effectCount === 0).sort(byName),
+    /** 增益条很少（>0 且 ≤ fewThreshold，供参考） */
+    few: rows
+      .filter((row) => row.effectCount > 0 && row.effectCount <= fewThreshold)
+      .sort((left, right) => left.effectCount - right.effectCount || byName(left, right)),
+  }
+}
+
+/** 读库版本（**只读查询**，用既有 `listCalculatorBuffs()`；不写库） */
+export async function findEmptyBuffTargets(options = {}) {
+  const buffs = await listCalculatorBuffs()
+  return { ...listEmptyBuffTargets({ ...options, buffs }), queriedAt: new Date().toISOString() }
+}
+

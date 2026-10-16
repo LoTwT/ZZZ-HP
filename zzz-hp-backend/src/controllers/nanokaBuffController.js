@@ -13,6 +13,7 @@
 import {
   applyBuffItems,
   extractBuffItems,
+  findEmptyBuffTargets,
   nanokaRulesTable,
   simplifyBuffTexts,
   smartMergeParse,
@@ -20,6 +21,29 @@ import {
 import { fail, success } from '../utils/response.js'
 
 const KIND_LABELS = { agent: '角色', wengine: '音擎' }
+
+/**
+ * GET /api/admin/nanoka-buffs/empty-targets?kind=agent|wengine
+ * 「找空活干」：列出**所有增益容器里 effect 条数 = 0** 的角色 / 音擎（只读查询，不写库）。
+ * 顺带返回「增益条很少（≤ fewThreshold）」的列表供参考。
+ */
+export async function emptyTargetsNanokaBuffsHandler(req, res) {
+  try {
+    const kind = String(req.query?.kind ?? 'agent') === 'wengine' ? 'wengine' : 'agent'
+    const fewThreshold = Number.parseInt(String(req.query?.fewThreshold ?? ''), 10)
+    const data = await findEmptyBuffTargets({
+      kind,
+      fewThreshold: Number.isFinite(fewThreshold) && fewThreshold >= 0 ? fewThreshold : 2,
+    })
+    return success(
+      res,
+      data,
+      `${KIND_LABELS[kind]}：0 增益 ${data.empty.length} / ${data.total} 条（增益条 ≤ ${data.fewThreshold} 的另有 ${data.few.length} 条）`,
+    )
+  } catch (err) {
+    return fail(res, err.message || '0 增益列表读取失败', 400, { error: err.message })
+  }
+}
 
 /** GET /api/admin/nanoka-buffs/rules —— 解析规则对照表（只读；单一事实来源，不写库） */
 export async function rulesNanokaBuffsHandler(_req, res) {

@@ -1270,10 +1270,17 @@ export function buildRulesTable() {
     },
     {
       id: 'target',
-      title: '目标默认值（敌人削弱族 / 敌人状态+暴击族：原文没写明给谁 → 全队）',
+      title: '目标判定（以主语为准：点名角色 → 自身；无主语 + 敌人状态 → 全队）',
       items: [
-        ...ENEMY_DEBUFF_STATS_LIST.map((stat) =>
-          items(`属性=${stat} 且原文没写明给谁`, '全队', 'applyTarget=team', '界面标淡色「默认」'),
+        // 规则① 最高优先：点名角色 / 自身类主语
+        items('句子里点名角色（本角色名，如「菲欧妮…」「11号…」）', '自身', 'applyTarget=self', '规则① 最高优先（压过敌人状态→全队）'),
+        items('句子写「自身 / 自己 / 装备者 / 该代理人 / 本角色」', '自身', 'applyTarget=self', '规则①'),
+        // 规则② 无主语（泛指）+ 敌人状态限定
+        items(
+          '无主语（泛指）+ 敌人状态句式（「[X]状态下的敌人受到…」「对[X]状态下的敌人造成…」）',
+          '全队',
+          'applyTarget=team',
+          `规则② **增伤与暴击族都适用**；note 写固定短语：${ENEMY_STATUS_TARGET_NOTE}`,
         ),
         ...ENEMY_STATUS_CRIT_STATS_LIST.map((stat) =>
           items(
@@ -1283,7 +1290,21 @@ export function buildRulesTable() {
             `note 写固定短语：${ENEMY_STATUS_TARGET_NOTE}`,
           ),
         ),
-        items('原文明确写「自身 / 自己 / 装备者 / 该代理人造成的」', '自身', 'applyTarget=self', '两条规则并存，互不覆盖'),
+        // 规则③ 无主语、也不带敌人状态 → 不动
+        items('无主语且**不带**敌人状态（例：「造成的伤害提升20%」）', '沿用既有默认', '', '规则③ 保持现状，不改成全队'),
+        // 指回前句（放在规则②之前）
+        items(
+          '句中含「该增益效果 / 该效果 / 该增益 / 上述效果」且**同段前一条已有目标**',
+          '沿用被指向那条的目标（通常 自身）',
+          'sources.target=refer-back',
+          '指回前句回落：不因为句中出现「…状态下的敌人」就翻成全队（条件仍用 applySituation 表达）',
+        ),
+        items('句中有指回词但**前一条没有自身增益可回落**', '按规则②判（无主语 + 敌人状态 → 全队）', '', '边界'),
+        // 规则⑤ 敌人削弱族不受影响
+        ...ENEMY_DEBUFF_STATS_LIST.map((stat) =>
+          items(`属性=${stat} 且原文没写明给谁`, '全队', 'applyTarget=team', '敌人削弱族既有规则，不受"以主语为准"影响；界面标淡色「默认」'),
+        ),
+        items('原文明确写「全队 / 我方全体 / 队伍中所有…」', '全队', 'applyTarget=team', '字面写明的全队（最先判）'),
         items('其他属性没写明给谁', NONE, 'applyTarget=self', ''),
       ],
     },
@@ -1409,41 +1430,61 @@ export function classifyConditions({ conditions = [], statValue = '', isConvert 
   }
 }
 
-/** 目标槽位判定（`无` = 原文没写明给谁）；`unitText` = 整句（只给「敌人状态」规则用） */
-function detectTarget(clauseText, selfNames, inherited, statValue = '', unitText = '') {
+/**
+ * 目标槽位判定 —— **以主语为准**（用户 2026-10-16 定稿，覆盖"按属性分"的写法）：
+ *
+ * 1. 句子里**点名了角色**（本角色名 / `自身` / `自己` / `装备者` / `该代理人` / `本角色`）→ `自身`；
+ * 2. 句子里**没有主语（泛指）**且带**敌人状态限定**（「[X]状态下的敌人受到…」「对[X]状态下的敌人造成…」）
+ *    → `全队`（note 写固定短语；**增伤与暴击族都适用**）；
+ * 3. 无主语、也不带敌人状态（例：「造成的伤害提升 20%」）→ **沿用既有默认**（不动）；
+ * 4. 减防 / 抗穿 / 易伤族既有规则（敌人削弱族默认全队）**不受影响**（先判，见下）；
+ * 5. 原文明确写「全队 / 我方…」→ 字面 `全队`（最先判）。
+ *
+ * `unitText` = 整句：**敌人状态句式常写在抬头**（被 `，` 切成子句后子句里没有它）→ 这条看整句；
+ * 而「点名角色 / 自身」按**子句**认（避免同句后半句提到角色名就把前面的泛指句判成自身，
+ * 例：1641 核心被动「…暴击伤害为25%，若菲欧妮的初始异常掌控大于155点…」后半句有角色名，
+ * 但前面两条暴击句仍是泛指 → 全队）。
+ *
+ * 附：**指回前句回落**（用户 2026-10-16，放在规则②之前）——句子含「该增益效果 / 该效果 / 该增益 /
+ * 上述效果」这类指回前文的词，且**同段前一条已有目标**（通常是自身增益）→ 沿用那条的目标，
+ * 不因为句中出现「…状态下的敌人」就翻成 `全队`。例：「…火属性伤害提升10%，攻击处于失衡状态下的
+ * 敌人时，该增益效果额外提升22.5%」→ 22.5% 那条仍是 `自身`（条件用 `applySituation=stagger` 表达）。
+ */
+function detectTarget(clauseText, selfNames, inherited, statValue = '', unitText = '', prevTarget = '') {
   const text = String(clauseText ?? '')
   const sentence = String(unitText ?? '') || text
   if (TEAM_RE.test(text)) return { value: '全队', source: 'literal' }
   // 敌人削弱族（减防 / 抗穿 / 易伤家族）：作用对象是敌人 → **默认全队**；
-  // 只有原文明确写「自身 / 自己 / 装备者」才算自身（用户 2026-10-16）。
+  // 只有原文明确写「自身 / 自己 / 装备者」才算自身（用户 2026-10-16；这条不受"以主语为准"影响）
   if (ENEMY_DEBUFF_STATS.has(String(statValue ?? ''))) {
     if (/自身|自己|装备者/.test(text)) return { value: '自身', source: 'literal' }
     return { value: '全队', source: /敌人|敌方|目标|对方/.test(text) ? 'literal' : 'default-team' }
   }
-  // 敌人状态条件 + 暴击族（异常暴击率 / 异常暴击伤害 / 暴击率 / 暴击伤害）：
-  // 句子主语是**敌人状态**且**没限定施放者** → 目标默认 `全队`（用户 2026-10-16 定稿）。
-  // 句式常写在整句抬头（被 `，` 切成子句后会丢）→ 这里看**整句**。
-  if (ENEMY_STATUS_CRIT_STATS.has(String(statValue ?? '')) && ENEMY_STATUS_RE.test(sentence)) {
-    // 但**子句自己**写明「自身 / 装备者 / 该代理人造成的 / <角色名>」→ 仍按自身（别被这条吃掉）
-    const selfMarked =
-      CASTER_RE.test(sentence) || CASTER_RE.test(text) || selfNames.some((name) => name && text.includes(name))
-    if (selfMarked) return { value: '自身', source: 'literal' }
-    return { value: '全队', source: 'default-team-enemy-status' }
-  }
+  // ① 点名角色 / 自身类主语 → 自身（最高优先，压过「敌人状态 → 全队」）
   for (const name of selfNames) {
     if (name && text.includes(name)) return { value: '自身', source: 'literal' }
   }
-  if (SELF_RE.test(text)) return { value: '自身', source: 'literal' }
+  if (SELF_MARKER_RE.test(text) || SELF_RE.test(text)) return { value: '自身', source: 'literal' }
+  // ①.5 指回前句：句中有「该增益效果 / 该效果 / 该增益 / 上述效果」且前一条已有目标 → 沿用它的目标
+  if (BACKREF_RE.test(text) && prevTarget && prevTarget !== NONE && prevTarget !== UNABLE) {
+    return { value: prevTarget, source: 'refer-back' }
+  }
+  // ② 无主语（泛指）+ 敌人状态限定 → 全队（增伤 / 暴击族都适用）
+  if (ENEMY_STATUS_RE.test(sentence)) return { value: '全队', source: 'default-team-enemy-status' }
+  // ③ 其余：沿用既有默认（继承 / `无`）
   if (inherited) return { value: inherited, source: 'inherited' }
   return { value: NONE, source: 'default' }
 }
 
+/** 指回前文的词（用户 2026-10-16：这类句子沿用被指向那条的目标，不按敌人状态翻全队） */
+const BACKREF_RE = /该增益效果|该效果|该增益|上述效果|此增益效果/
+
 /**
- * **敌人状态 + 暴击族 → 目标默认全队**（用户 2026-10-16 定稿）：
- * 句子主语是敌人状态（形如「[X]状态下的敌人受到属性异常伤害时…」）且**没限定施放者**
- * （没写「自身 / 装备者 / 该代理人造成的 / <角色名>造成的」）→ `目标 = 全队`，
+ * **敌人状态（泛指）→ 目标默认全队**（用户 2026-10-16 定稿）：
+ * 句子没有主语（泛指）、带敌人状态限定（形如「[X]状态下的敌人受到…」）→ `目标 = 全队`，
  * note 写固定短语（不是原文）：`目标默认：条件为敌人状态、未限定施放者`。
- * 实例：1641 核心被动第 3 句 → `anomalyCritRate=30 / anomalyCritDmg=25`，两者都 team。
+ * 实例：1641 核心被动第 3 句 → `anomalyCritRate=30 / anomalyCritDmg=25`，两者都 team；
+ * 一旦句子里点名角色（「菲欧妮对[灼蚀]状态下的敌人造成的伤害提升30%」）→ 回落 `自身`。
  */
 const ENEMY_STATUS_CRIT_STATS = new Set(['异常暴击率', '异常暴击伤害', '暴击率', '暴击伤害'])
 
@@ -1451,8 +1492,11 @@ const ENEMY_STATUS_CRIT_STATS = new Set(['异常暴击率', '异常暴击伤害'
 const ENEMY_STATUS_RE =
   /\(?[「【[]?[^」】\]]{1,12}[」】\]]?\)?状态下?的?敌[人方]|状态下的敌[人方]|处于[^，。；]{0,12}状态的敌[人方]/
 
-/** 「限定施放者」的写法（有这些 → 不是"未限定"，按自身处理） */
-const CASTER_RE = /自身|自己|装备者|该代理人造成的|该角色造成的/
+/**
+ * 「点名角色 / 自身类主语」的写法（用户 2026-10-16 规则①）：
+ * 本角色名（`selfNames`，如「菲欧妮」「11号」）+ `自身 / 自己 / 装备者 / 该代理人 / 本角色`。
+ */
+const SELF_MARKER_RE = /自身|自己|装备者|该代理人|本角色/
 
 /** 目标默认全队时的固定短语（结构化短语白名单，不粘原文） */
 const ENEMY_STATUS_TARGET_NOTE = '目标默认：条件为敌人状态、未限定施放者'
@@ -1858,7 +1902,16 @@ export function extractKeywordEffects({
         // 目标：按原文认（敌人削弱族没写明给谁 → 默认 `全队`，source=`default-team`，界面标「默认」）
         // **敌人状态条件**（「[X]状态下的敌人受到…」）常写在**整句抬头**（被 `，` 切成子句后丢了）
         // → 目标判定要看「本句全文」（抬头 + 已并入的句子），用户 2026-10-16。
-        const target = detectTarget(group, selfNames, inheritedSlots?.target, stat.value, unitText)
+        // `prevTarget`：同段**前一条**的目标（给「该增益效果…」这类指回前句的句子回落用）。
+        const prevTarget = unitEffects.length ? String(unitEffects[unitEffects.length - 1].slots.target ?? '') : ''
+        const target = detectTarget(
+          group,
+          selfNames,
+          inheritedSlots?.target,
+          stat.value,
+          unitText,
+          prevTarget,
+        )
         const object = detectObject(group, action.value, inheritedSlots?.object)
 
         // 条件分类（按句 + 按属性）：同义反复丢弃 / 能表达的保留 / 落不到字段写「无法提取」

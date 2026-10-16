@@ -526,3 +526,39 @@ export async function fetchNanokaRules(): Promise<{ result: NanokaRulesTable; me
   const { data, message } = await requestApi<NanokaRulesTable>('/api/admin/nanoka-buffs/rules')
   return { result: data, message }
 }
+
+/**
+ * 「找空活干」：0 增益的角色 / 音擎（只读查询，后端用既有 `listCalculatorBuffs()`，不写库）。
+ * 定义：所有增益容器里 effect 条数 = 0（角色 = mindscapeBuffs[0..6]；音擎 = fixedBuffs + refinementBuffs[0..4]）。
+ */
+export interface NanokaEmptyTarget {
+  id: string
+  name: string
+  element: string
+  profession: string
+  rarity: string | number | null
+  effectCount: number
+}
+
+export interface NanokaEmptyTargets {
+  kind: 'agent' | 'wengine'
+  kindLabel: string
+  total: number
+  fewThreshold: number
+  /** 0 增益（一条增益都没有） */
+  empty: NanokaEmptyTarget[]
+  /** 增益条很少（>0 且 ≤ fewThreshold），供参考 */
+  few: NanokaEmptyTarget[]
+  queriedAt: string
+}
+
+export async function fetchNanokaEmptyTargets(
+  kind: 'agent' | 'wengine',
+  fewThreshold = 2,
+): Promise<{ result: NanokaEmptyTargets; message: string }> {
+  const query = `kind=${encodeURIComponent(kind)}&fewThreshold=${Number(fewThreshold) || 0}`
+  const { data, message } = await requestApi<NanokaEmptyTargets>(
+    `/api/admin/nanoka-buffs/empty-targets?${query}`,
+  )
+  return { result: data, message }
+}

@@ -60,7 +60,9 @@ import {
   appendSourceText,
   applyAnchorPlanToRows,
   applyBuffItems,
+  countTargetEffects,
   extractBuffItems,
+  listEmptyBuffTargets,
   matchSkillDescTargets,
   planAnchorCreations,
   planBuffApply,
@@ -1120,16 +1122,36 @@ test('目标默认值：敌人削弱族没写明给谁 → 全队（source=defau
   assert.equal(buff.effect.slots.target, '无')
 })
 
-test('目标默认值：敌人状态 + 暴击族（未限定施放者）→ 全队 + 固定 note 短语', () => {
-  // ① 实例：1641 核心被动第 3 句
+test('目标判定以主语为准：点名角色 → 自身；无主语 + 敌人状态 → 全队（增伤与暴击族都适用）', () => {
+  const names = ['菲欧妮']
+  /** 原始关键字效果（`firstEffect` 不带 layerC）→ 手动跑一次映射 */
+  const mapped = (effect) => mapKeywordsToEffect({ slots: effect.slots, sources: effect.sources })
+
+  // ① 点名角色 + 敌人状态 → 自身（规则① 最高优先）
+  const named = firstEffect('菲欧妮对[蚀]状态下的敌人造成的伤害提升30%'.replace('[蚀]', '[灼蚀]'), {
+    selfNames: names,
+  })
+  assert.equal(named.effect.slots.stat, '增伤')
+  assert.equal(named.effect.slots.target, '自身')
+  assert.equal(named.effect.sources.target, 'literal')
+  assert.equal(mapped(named.effect).effect.applyTarget, 'self')
+
+  // ② 无主语（泛指）+ 敌人状态 → 全队（**增伤也适用**）
+  const generic = firstEffect('对[灼蚀]状态下的敌人造成的伤害提升30%', { selfNames: names })
+  assert.equal(generic.effect.slots.target, '全队')
+  assert.equal(generic.effect.sources.target, 'default-team-enemy-status')
+  assert.equal(mapped(generic.effect).effect.applyTarget, 'team')
+  assert.match(mapped(generic.effect).effect.note, /目标默认：条件为敌人状态、未限定施放者/)
+
+  // ③ 1641 核心被动那句（子句里没有角色名）暴击族 → 全队 + note 短语
   const sentence =
     '[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%'
-  const effects = keywordEffects(simplifyText({ text: sentence, origin: 'test' }))
+  const effects = keywordEffects(simplifyText({ text: sentence, origin: 'test', selfNames: names }))
   const critRate = effects.find((effect) => effect.slots.stat === '异常暴击率')
   const critDmg = effects.find((effect) => effect.slots.stat === '异常暴击伤害')
   assert.ok(critRate && critDmg, '两句都要抽出来')
   for (const effect of [critRate, critDmg]) {
-    assert.equal(effect.slots.target, '全队', '敌人状态 + 暴击族 → 目标默认全队')
+    assert.equal(effect.slots.target, '全队', '无主语 + 敌人状态 → 全队')
     assert.equal(effect.sources.target, 'default-team-enemy-status')
     assert.equal(effect.layerC.applyTarget, 'team')
     assert.match(effect.layerC.note, /目标默认：条件为敌人状态、未限定施放者/)
@@ -1139,23 +1161,64 @@ test('目标默认值：敌人状态 + 暴击族（未限定施放者）→ 全�
   assert.equal(critDmg.layerC.stat, 'anomalyCritDmg')
   assert.equal(critDmg.layerC.value, 25)
 
-  // ② 写明施放者（「菲欧妮造成的」）→ 自身（规则不被吃掉）
-  const selfCase = firstEffect('菲欧妮造成的属性异常伤害触发暴击时，暴击率提升30%')
-  assert.equal(selfCase.effect.slots.stat, '异常暴击率')
-  assert.notEqual(selfCase.effect.sources.target, 'default-team-enemy-status')
+  // ④ 点名「11号」→ 自身
+  const named11 = firstEffect('11号造成的火属性伤害提升10%', { selfNames: ['11号'] })
+  assert.equal(named11.effect.slots.target, '自身')
+  assert.equal(named11.effect.sources.target, 'literal')
+  assert.equal(mapped(named11.effect).effect.applyTarget, 'self')
 
-  // ③ 减防 / 抗穿 / 易伤族仍走既有「敌人削弱族默认全队」规则（两条并存，互不覆盖）
-  const debuff = firstEffect('招式造成伤害时，无视敌人40%防御力')
+  // ⑤ 减防 / 抗穿 / 易伤族既有规则不受影响
+  const debuff = firstEffect('招式造成伤害时，无视敌人40%防御力', { selfNames: names })
   assert.equal(debuff.effect.slots.stat, '减防')
   assert.equal(debuff.effect.slots.target, '全队')
   assert.equal(debuff.effect.sources.target, 'literal', '原文写了「敌人」→ literal')
 
-  // 规则表里也要有这条（单一事实来源）
+  // ⑥ 无主语、也不带敌人状态 → 沿用既有默认（不动）
+  const plain = firstEffect('造成的伤害提升20%', { selfNames: names })
+  assert.equal(plain.effect.slots.target, '无')
+  assert.equal(mapped(plain.effect).effect.applyTarget, 'self')
+
+  // 规则表里要有「以主语为准」的几条（单一事实来源）
   const targetGroup = buildRulesTable().groups.find((group) => group.id === 'target')
-  assert.ok(
-    targetGroup.items.some((item) => /敌人状态/.test(item.game)),
-    '规则表要有「敌人状态 + 暴击族 → 全队」这一条',
+  const games = targetGroup.items.map((item) => item.game).join(' | ')
+  assert.match(games, /点名角色/)
+  assert.match(games, /敌人状态/)
+  assert.match(games, /不带/)
+})
+
+test('目标判定：指回前句的句子沿用被指向那条的目标（不因「…状态下的敌人」翻全队）', () => {
+  const names = ['11号']
+  const text =
+    '「11号」造成的火属性伤害提升10%，攻击处于失衡状态下的敌人时，该增益效果额外提升22.5%。'
+  const effects = keywordEffects(simplifyText({ text, origin: 'test', selfNames: names }))
+  assert.equal(effects.length, 2)
+  assert.equal(effects[0].slots.target, '自身')
+  assert.equal(effects[1].slots.target, '自身', '指回前句 → 沿用前一条（自身）')
+  assert.equal(effects[1].sources.target, 'refer-back')
+  assert.equal(effects[1].layerC.applyTarget, 'self')
+  assert.equal(effects[1].layerC.applySituation, 'stagger', '条件「失衡」用既有字段表达')
+  assert.ok(!/目标默认：条件为敌人状态/.test(effects[1].layerC.note), '不该套用敌人状态默认短语')
+
+  // 句中有指回词、但**前一条没有自身增益可回落** → 仍按规则②（无主语 + 敌人状态 → 全队）
+  const noReferent = firstEffect('攻击处于失衡状态下的敌人时，该增益效果额外提升22.5%', {
+    selfNames: names,
+  })
+  assert.equal(noReferent.effect.slots.target, '全队')
+  assert.equal(noReferent.effect.sources.target, 'default-team-enemy-status')
+
+  // 1641 核心被动那句（无指回词）→ 仍 team
+  const core = keywordEffects(
+    simplifyText({
+      text: '[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%',
+      origin: 'test',
+      selfNames: ['菲欧妮'],
+    }),
   )
+  assert.ok(core.every((effect) => effect.slots.target === '全队'))
+
+  // 规则表里有「指回前句」这一条
+  const targetGroup = buildRulesTable().groups.find((group) => group.id === 'target')
+  assert.ok(targetGroup.items.some((item) => /该增益效果|指回前句/.test(`${item.game}${item.note}`)))
 })
 
 test('解析规则对照表：从词表自动导出（分组 + 条目）', () => {
@@ -1675,6 +1738,8 @@ test('增益接口接线：/extract /simplify /parse /apply 的首个中间件�
     ['post', '/simplify'],
     ['post', '/parse'],
     ['post', '/apply'],
+    ['get', '/rules'],
+    ['get', '/empty-targets'],
   ]
   for (const [method, path] of routes) {
     const layer = nanokaBuffRoutes.stack.find(
@@ -1685,6 +1750,68 @@ test('增益接口接线：/extract /simplify /parse /apply 的首个中间件�
     assert.equal(handlers[0], requireAdmin, `${method.toUpperCase()} ${path} 首个中间件应为 requireAdmin`)
     assert.ok(handlers.length >= 2, `${method.toUpperCase()} ${path} 缺少控制器`)
   }
+})
+
+test('「找空活干」：列出 0 增益的角色 / 音擎（只数增益条，不看 note / 原文）', () => {
+  const block = (effects, note = '') => ({ id: 'blk', name: '块', note, effects })
+  const effect = { stat: 'dmgBonus', kind: 'fixed', value: 10 }
+  const agent = (id, name, blocks) => ({
+    id,
+    name,
+    element: '以太',
+    profession: '异常',
+    mindscapeBuffs: blocks,
+  })
+  const wengine = (id, name, fixed, refinements) => ({
+    id,
+    name,
+    rarity: 'S',
+    fixedBuffs: fixed,
+    refinementBuffs: refinements,
+  })
+  const buffs = {
+    agents: [
+      agent('2', '乙角色', [{ effectBlocks: [block([effect])] }]),
+      agent('1', '甲角色', [{ effectBlocks: [] }, { effectBlocks: [] }]),
+      agent('3', '丙角色', [
+        { effectBlocks: [] },
+        // 只有 note / 没有 effects → 仍算 0 增益
+        { effectBlocks: [{ id: 'b', name: '只写了原文', note: '原文：…', effects: [] }] },
+      ]),
+    ],
+    wengines: [
+      wengine('w2', '乙音擎', { effectBlocks: [block([effect, effect])] }, [
+        { effectBlocks: [block([effect])] },
+      ]),
+      wengine('w1', '甲音擎', { effectBlocks: [] }, [{ effectBlocks: [] }, { effectBlocks: [] }]),
+    ],
+  }
+
+  assert.equal(countTargetEffects('agent', buffs.agents[0]), 1)
+  assert.equal(countTargetEffects('agent', buffs.agents[2]), 0, 'note 不算增益条')
+  assert.equal(countTargetEffects('wengine', buffs.wengines[0]), 3, 'fixedBuffs + refinementBuffs 都要数')
+
+  const agents = listEmptyBuffTargets({ kind: 'agent', buffs })
+  assert.deepEqual(
+    agents.empty.map((row) => row.name),
+    ['丙角色', '甲角色'],
+    '按名字排序',
+  )
+  assert.ok(agents.empty.every((row) => row.effectCount === 0))
+  assert.equal(agents.total, 3)
+  assert.equal(agents.few.length, 1, '增益条 ≤ 2 的另列参考')
+  assert.equal(agents.few[0].effectCount, 1)
+
+  const wengines = listEmptyBuffTargets({ kind: 'wengine', buffs })
+  assert.deepEqual(
+    wengines.empty.map((row) => row.id),
+    ['w1'],
+  )
+  assert.equal(wengines.kindLabel, '音擎')
+  assert.equal(wengines.kind, 'wengine')
+
+  // 默认阈值 = 2：3 条的既不在 empty 也不在 few
+  assert.ok(!wengines.few.some((row) => row.id === 'w2'))
 })
 
 test('化简的公开入口与 buildItem 同源（只重跑阶段1）', () => {
