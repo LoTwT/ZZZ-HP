@@ -38,6 +38,7 @@ export type AdminCalculatorPanel =
   | 'affix-preset'
   | 'import-export'
   | 'nanoka'
+  | 'nanoka-buffs'
 
 export type SupportStatNeed =
   | 'hp'

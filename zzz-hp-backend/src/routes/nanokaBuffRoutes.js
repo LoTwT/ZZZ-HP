@@ -1,0 +1,19 @@
+import { Router } from 'express'
+import {
+  applyNanokaBuffsHandler,
+  extractNanokaBuffsHandler,
+  parseNanokaBuffsHandler,
+  simplifyNanokaBuffsHandler,
+} from '../controllers/nanokaBuffController.js'
+import { requireAdmin } from '../middleware/requireAdmin.js'
+
+const router = Router()
+
+// 增益（关键字 → 增益块）：抓 nanoka 由**浏览器**负责（服务端不联网）。
+// extract / simplify / parse 只算不写；apply 才写库，且只写确认过的行（按槽位下标定位）。
+router.post('/extract', requireAdmin, extractNanokaBuffsHandler)
+router.post('/simplify', requireAdmin, simplifyNanokaBuffsHandler)
+router.post('/parse', requireAdmin, parseNanokaBuffsHandler)
+router.post('/apply', requireAdmin, applyNanokaBuffsHandler)
+
+export default router

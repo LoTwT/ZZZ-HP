@@ -38,6 +38,7 @@ export const ADMIN_CALCULATOR_PANELS: readonly AdminCalculatorPanel[] = [
   'affix-preset',
   'import-export',
   'nanoka',
+  'nanoka-buffs',
 ] as const
 
 export function isAdminCalculatorPanelId(value: unknown): value is AdminCalculatorPanel {

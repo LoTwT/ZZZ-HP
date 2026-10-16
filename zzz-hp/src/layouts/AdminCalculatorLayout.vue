@@ -12,6 +12,7 @@ import AdminSkillLibraryPanel from '@/components/admin/calculator/AdminSkillLibr
 import AdminAffixPresetPanel from '@/components/admin/calculator/AdminAffixPresetPanel.vue'
 import AdminBuffImportExportPanel from '@/components/admin/calculator/AdminBuffImportExportPanel.vue'
 import AdminNanokaCollectPanel from '@/components/admin/calculator/AdminNanokaCollectPanel.vue'
+import AdminNanokaBuffPanel from '@/components/admin/calculator/AdminNanokaBuffPanel.vue'
 import type { AgentBuffEditActionId, AgentBuffEditSectionId } from '@/constants/agentBuffEditNav'
 import type { BangbooBuffEditActionId, BangbooBuffEditSectionId } from '@/constants/bangbooBuffEditNav'
 import type { DriveDiscBuffEditActionId, DriveDiscBuffEditSectionId } from '@/constants/driveDiscBuffEditNav'
@@ -197,6 +198,7 @@ async function handleSkillLibraryAction(actionId: 'save' | 'delete') {
         <AdminAffixPresetPanel v-show="activePanel === 'affix-preset'" />
         <AdminBuffImportExportPanel v-show="activePanel === 'import-export'" />
         <AdminNanokaCollectPanel v-show="activePanel === 'nanoka'" />
+        <AdminNanokaBuffPanel v-show="activePanel === 'nanoka-buffs'" />
       </template>
     </main>
   </div>

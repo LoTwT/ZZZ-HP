@@ -21,6 +21,7 @@ import seasonContentRoutes from './routes/seasonContentRoutes.js'
 import deductionRoutes from './routes/deductionRoutes.js'
 import deductionAdminRoutes from './routes/deductionAdminRoutes.js'
 import nanokaBasicsRoutes from './routes/nanokaBasicsRoutes.js'
+import nanokaBuffRoutes from './routes/nanokaBuffRoutes.js'
 import affixPresetRoutes from './routes/affixPresetRoutes.js'
 import pool from './config/db.js'
 import { ensureRuntimeSchema } from './bootstrap/ensureRuntimeSchema.js'
@@ -149,6 +150,8 @@ app.use('/api/season-dates', seasonDateRoutes)
 app.use('/api/deduction', deductionRoutes)
 app.use('/api/admin/deduction', deductionAdminRoutes)
 app.use('/api/admin/nanoka', nanokaBasicsRoutes)
+// nanoka 增益（关键字 → 增益块）：extract / simplify / parse 只算不写，apply 才写库
+app.use('/api/admin/nanoka-buffs', nanokaBuffRoutes)
 app.use('/api/affix-preset', affixPresetRoutes)
 
 app.use((_req, res) => {
