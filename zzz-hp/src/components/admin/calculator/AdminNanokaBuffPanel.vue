@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import {
   applyNanokaBuffs,
   extractNanokaBuffs,
+  fetchNanokaRules,
   isNanokaBuffsAuthError,
   parseNanokaBuffs,
   simplifyNanokaBuffs,
@@ -22,6 +23,7 @@ import {
   type NanokaLayerCEffect,
   type NanokaParseConflict,
   type NanokaParseResultRow,
+  type NanokaRulesTable,
 } from '@/api/nanokaBuffs'
 import AdminConfirmDialog from '@/components/admin/AdminConfirmDialog.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
@@ -97,6 +99,10 @@ interface KeywordRow {
   skillLimits: { name: string; category: string }[]
   /** 指代来源提示（界面用）：`依赖上一句 · 增伤`，没有则 null */
   inherited: { from: string; fields: string[]; label: string } | null
+  /** 同义反复被忽略的条件原文（界面标淡色提示，不入库） */
+  tautologyDropped: string[]
+  /** 槽位取值来源（`default-team` = 敌人削弱族目标按规则兜底成全队） */
+  sources: Record<string, string>
   recorded: boolean
   dropReason: string
   unableSlots: string[]
@@ -238,6 +244,7 @@ const FALLBACK_SLOT_OPTIONS: Record<string, string[]> = {
   unit: ['%', '点', NONE],
   target: ['自身', '全队', '指定职业', '指定阵营', NONE, UNABLE],
   conditions: [NONE, '攻击失衡敌人时', '攻击非失衡敌人时', '发动强化特殊技时', '发动连携技或终结技时', UNABLE],
+  scope: [NONE, '招式', '异常', '紊乱', '乱流', '异放', '耀变', '异化系数'],
   stacks: [NONE, UNABLE],
   duration: [NONE, UNABLE],
   object: ['当前招式', '装备者', '敌人', NONE, UNABLE],
@@ -253,6 +260,7 @@ const SLOT_ORDER = [
   'unit',
   'target',
   'conditions',
+  'scope',
   'stacks',
   'duration',
   'object',
@@ -269,6 +277,8 @@ const SLOT_LABELS: Record<string, string> = {
   unit: '单位',
   target: '目标',
   conditions: '条件',
+  /** 作用域 = 编辑器里的 `scope`（用户 2026-10-16：字段名就叫「作用域」）；「限定招式」并进这一格 */
+  scope: '作用域',
   stacks: '层数',
   duration: '时长',
   object: '对象',
@@ -430,6 +440,27 @@ const originalVisible = ref(false)
 const originalItem = ref<NanokaBuffItem | null>(null)
 const originalHighlight = ref(0)
 
+/** 「解析规则」弹窗（只读；数据来自后端 `/rules`，界面不手写规则） */
+const rulesVisible = ref(false)
+const rulesLoading = ref(false)
+const rules = ref<NanokaRulesTable | null>(null)
+const rulesMessage = ref('')
+
+async function openRules() {
+  rulesVisible.value = true
+  if (rules.value || rulesLoading.value) return
+  rulesLoading.value = true
+  try {
+    const { result, message: serverMessage } = await fetchNanokaRules()
+    rules.value = result
+    rulesMessage.value = serverMessage
+  } catch (err) {
+    rulesMessage.value = describeError(err)
+  } finally {
+    rulesLoading.value = false
+  }
+}
+
 function openOriginal(item: NanokaBuffItem, sentenceIndex = -1) {
   originalItem.value = item
   const keywordSentencesOfItem = keywordSentences(item)
@@ -543,6 +574,7 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
       unit: String(effect.slots.unit ?? NONE),
       target: String(effect.slots.target ?? NONE),
       conditions: Array.isArray(effect.slots.conditions) ? [...effect.slots.conditions] : [NONE],
+      scope: String(effect.slots.scope ?? NONE),
       stacks: String(effect.slots.stacks ?? NONE),
       duration: String(effect.slots.duration ?? NONE),
       object: String(effect.slots.object ?? NONE),
@@ -553,6 +585,8 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     anchors: effect.anchors,
     skillLimits: Array.isArray(effect.skillLimits) ? effect.skillLimits.map((item) => ({ ...item })) : [],
     inherited: effect.inherited ?? null,
+    tautologyDropped: Array.isArray(effect.tautologyDropped) ? [...effect.tautologyDropped] : [],
+    sources: { ...effect.sources },
     recorded: effect.recorded,
     dropReason: effect.dropReason,
     unableSlots: [...(effect.unableSlots ?? [])],
@@ -1025,7 +1059,7 @@ function mergeParseRows(parsed: NanokaParseResultRow[]) {
       gain:
         result.effect == null
           ? row.gain
-          : defaultGain(result.effect as NanokaLayerCEffect, row.gain?.note ?? row.sentence),
+          : defaultGain(result.effect as NanokaLayerCEffect, row.gain?.note ?? ''),
       conflicts: result.conflicts ?? [],
       stale: Boolean(result.stale),
       blocked: Boolean(result.blocked),
@@ -1109,7 +1143,7 @@ function buildApplyRows(): NanokaApplyRow[] {
     rawText: row.rawText,
     keywordSlots: { ...row.slots, conditions: [...row.slots.conditions] },
     convert: row.convert ? { ...row.convert } : null,
-    effect: { ...(row.gain as GainFields), note: row.gain?.note ?? row.sentence } as Partial<NanokaLayerCEffect>,
+    effect: { ...(row.gain as GainFields), note: row.gain?.note ?? '' } as Partial<NanokaLayerCEffect>,
     anchors: row.anchors,
     skillDesc: row.skillDesc,
   }))
@@ -1231,6 +1265,7 @@ const wasteCount = computed(() => wasteSentences.value.length)
       <button type="button" class="primary-btn" :disabled="busy || !selectedId" @click="fetchAndExtract">
         {{ fetching ? '抓取中…' : extracting ? '抽取中…' : '抓取增益' }}
       </button>
+      <button type="button" class="secondary-btn" @click="openRules">解析规则</button>
     </div>
 
     <p v-if="statusLine" class="nbf-status">{{ statusLine }}</p>
@@ -1330,7 +1365,10 @@ const wasteCount = computed(() => wasteSentences.value.length)
                     <template v-else>· 转模</template>
                   </span>
                   <span v-if="row.skillLimits.length" class="nbf-badge nbf-badge-anchor">
-                    限定招式：{{ row.skillLimits.map((item) => item.name).join(' + ') }}
+                    限定招式（锚点）：{{ row.skillLimits.map((item) => item.name).join(' + ') }}
+                  </span>
+                  <span v-if="row.tautologyDropped.length" class="nbf-badge nbf-badge-muted">
+                    同义反复已忽略
                   </span>
                   <span v-if="row.inherited" class="nbf-badge nbf-badge-inherit">
                     {{ row.inherited.label }}
@@ -1345,7 +1383,6 @@ const wasteCount = computed(() => wasteSentences.value.length)
                   <button type="button" class="nbf-mini-btn nbf-danger" @click="removeRow(row)">删</button>
                 </header>
 
-                <p class="nbf-kw-sentence">{{ row.sentence }}</p>
                 <p v-if="row.anchors.labels.length" class="nbf-sub">
                   招式锚点：{{ row.anchors.ok ? `已关联（${row.anchors.skillTargets.length} 个目标）` : '关联不上 → 不录' }}
                 </p>
@@ -1383,7 +1420,11 @@ const wasteCount = computed(() => wasteSentences.value.length)
 
                   <!-- 有值的槽位 -->
                   <div v-for="entry in slotBuckets(row).visible" :key="`v-${entry.id}`" class="nbf-slot">
-                    <span class="nbf-slot-label" :title="slotHint(entry.id)">{{ entry.label }}</span>
+                    <span class="nbf-slot-label" :title="slotHint(entry.id)">
+                      {{ entry.label }}
+                      <!-- 敌人削弱族的目标默认值是「全队」（原文没写明给谁）→ 淡色「默认」提示，方便一眼改 -->
+                      <em v-if="row.sources[entry.id] === 'default-team'" class="nbf-default-mark">默认</em>
+                    </span>
                     <template v-if="MULTI_SLOT_IDS.includes(entry.id)">
                       <div class="nbf-conditions">
                         <div
@@ -1478,30 +1519,63 @@ const wasteCount = computed(() => wasteSentences.value.length)
         <p v-if="wasteOpen && !wasteSentences.length" class="empty-hint">没有废原文。</p>
       </section>
 
-      <!-- 「整块原文」弹窗：剔除完全解析不出来的句子，并高亮当前句 -->
-      <div v-if="originalVisible && originalItem" class="nbf-modal-mask" @click.self="closeOriginal">
-        <div class="nbf-modal">
-          <header class="nbf-modal-head">
-            <h4>{{ originalItem.slotLabel }} · {{ originalItem.title || '（无标题）' }} · 整块原文</h4>
-            <button type="button" class="nbf-mini-btn" @click="closeOriginal">关闭</button>
-          </header>
-          <p class="nbf-sub">
-            写入槽位：{{ originalItem.landing?.label ?? '—' }} ·
-            这里只列**产出过关键字**的句子（完全解析不出来的句子属废原文，只在底部废原文区出现）
-          </p>
-          <ol class="nbf-original-list">
-            <li
-              v-for="sentence in originalSentences"
-              :key="`o-${sentence.sentenceIndex}`"
-              :class="{ 'nbf-original-current': sentence.sentenceIndex === originalHighlight }"
-            >
-              <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
-              <span class="nbf-original-text">{{ sentence.rawSentence }}</span>
-              <span class="nbf-sub">{{ sentence.keywords.length }} 条关键字</span>
-            </li>
-          </ol>
+      <!-- 「整块原文」弹窗：剔除完全解析不出来的句子，并高亮当前句。
+           **Teleport 到 body**：面板外层容器可能有 transform / overflow，会裁掉 position:fixed 的弹窗 -->
+      <Teleport to="body">
+        <div v-if="originalVisible && originalItem" class="nbf-modal-mask" @click.self="closeOriginal">
+          <div class="nbf-modal">
+            <header class="nbf-modal-head">
+              <h4>{{ originalItem.slotLabel }} · {{ originalItem.title || '（无标题）' }} · 整块原文</h4>
+              <button type="button" class="nbf-mini-btn" @click="closeOriginal">关闭</button>
+            </header>
+            <p class="nbf-sub">
+              写入槽位：{{ originalItem.landing?.label ?? '—' }} ·
+              这里只列产出过关键字的句子（完全解析不出来的句子属废原文，只在底部废原文区出现）
+            </p>
+            <ol class="nbf-original-list">
+              <li
+                v-for="sentence in originalSentences"
+                :key="`o-${sentence.sentenceIndex}`"
+                :class="{ 'nbf-original-current': sentence.sentenceIndex === originalHighlight }"
+              >
+                <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
+                <span class="nbf-original-text">{{ sentence.rawSentence }}</span>
+                <span class="nbf-sub">{{ sentence.keywords.length }} 条关键字</span>
+              </li>
+            </ol>
+          </div>
         </div>
-      </div>
+
+        <!-- 「解析规则」弹窗：数据全部来自后端 `/rules`（抽取器词表自动导出），界面不手写 -->
+        <div v-if="rulesVisible" class="nbf-modal-mask" @click.self="rulesVisible = false">
+          <div class="nbf-modal nbf-rules-modal">
+            <header class="nbf-modal-head">
+              <h4>解析规则对照表{{ rules ? ` · v${rules.version}` : '' }}</h4>
+              <button type="button" class="nbf-mini-btn" @click="rulesVisible = false">关闭</button>
+            </header>
+            <p class="nbf-sub">
+              {{ rulesLoading ? '读取中…' : rulesMessage }}
+              · 由后端从抽取器词表**自动导出**（单一事实来源），界面不手写
+            </p>
+            <section v-for="group in rules?.groups ?? []" :key="group.id" class="nbf-rules-group">
+              <h5>{{ group.title }}（{{ group.items.length }} 条）</h5>
+              <ul class="nbf-rules-list">
+                <li v-for="(item, index) in group.items.slice(0, 40)" :key="`r-${group.id}-${index}`">
+                  <code>{{ item.game }}</code>
+                  <span class="nbf-rules-arrow">→</span>
+                  <span>{{ item.slot }}</span>
+                  <template v-if="item.field">
+                    <span class="nbf-rules-arrow">→</span>
+                    <code>{{ item.field }}</code>
+                  </template>
+                  <span v-if="item.note" class="nbf-sub">{{ item.note }}</span>
+                </li>
+              </ul>
+              <p v-if="group.items.length > 40" class="nbf-sub">…还有 {{ group.items.length - 40 }} 条（完整清单见 dev-docs 导出的 md）</p>
+            </section>
+          </div>
+        </div>
+      </Teleport>
     </div>
 
     <!-- ============================================================ 阶段二 -->
@@ -2118,6 +2192,59 @@ const wasteCount = computed(() => wasteSentences.value.length)
 .nbf-badge-inherit {
   border-color: rgba(150, 110, 30, 0.45);
   color: #8a5a12;
+}
+
+/* 淡色「默认」标记：目标值是按规则兜底的（敌人削弱族 → 全队），一眼能改 */
+.nbf-default-mark {
+  margin-left: 0.3rem;
+  padding: 0 0.25rem;
+  font-size: 0.68rem;
+  font-style: normal;
+  border-radius: 4px;
+  background: rgba(120, 120, 100, 0.16);
+  color: var(--color-text);
+  opacity: 0.75;
+}
+
+.nbf-badge-muted {
+  border-color: rgba(120, 120, 100, 0.35);
+  color: var(--color-text);
+  opacity: 0.8;
+}
+
+/* 「解析规则」弹窗 */
+.nbf-rules-modal {
+  width: min(1080px, 100%);
+}
+
+.nbf-rules-group {
+  margin-top: 0.7rem;
+}
+
+.nbf-rules-group h5 {
+  margin: 0 0 0.3rem;
+  font-size: 0.85rem;
+  color: var(--color-heading);
+}
+
+.nbf-rules-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.nbf-rules-list code {
+  padding: 0 0.2rem;
+  border-radius: 4px;
+  background: var(--color-background-mute, rgba(232, 229, 218, 0.7));
+}
+
+.nbf-rules-arrow {
+  margin: 0 0.3rem;
+  opacity: 0.6;
 }
 
 .nbf-item,

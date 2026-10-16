@@ -28,12 +28,24 @@ import { normalizeSkillName, stripSkillTitlePrefix } from './nanokaSkillMapper.j
 
 // ================================================================== 槽位定义
 
+/** 该维度「这句话里没出现」 */
+export const NONE = '无'
+/** 该维度「出现了但归不了类」——**绝不能拿 `无` 糊过去**（用户铁律：解析不出来就是 `无法提取`） */
+export const UNABLE = '无法提取'
+
+/** 该维度缺失/读不出（给白名单校验用） */
+export function isUNABLEValue(value) {
+  if (Array.isArray(value)) return value.includes(UNABLE)
+  return String(value ?? '').trim() === UNABLE
+}
+
 /**
  * 槽位 id（顺序即界面 / 文本里的顺序）。
  *
- * 常规 9 槽位 + **元素**：用户 2026-10-16 二次确认「元素不拆条」——
- * `elementFilter` 本来就是数组（编辑器「属性限定（可多选）」），所以关键字的 `元素` 槽位
- * **允许复数**，一条关键字可以直接带多个元素 → 落成 `elementFilter: ['火','冰']`。
+ * 常规 9 槽位 + **元素** + **生效范围**：
+ *   - **元素**（用户 2026-10-16「元素不拆条」）：`elementFilter` 本来就是数组 → 允许复数；
+ *   - **生效范围**（用户 2026-10-16 二次确认）：工具里**有**子类限定字段，就是编辑器「生效范围」下拉
+ *     （`scope`）；原来的「限定招式」并进这一格。
  * **复数白名单 = 条件、元素**（其他槽位仍单值，多值即拆条）。
  */
 export const SLOT_IDS = [
@@ -44,6 +56,7 @@ export const SLOT_IDS = [
   'unit',
   'target',
   'conditions',
+  'scope',
   'stacks',
   'duration',
   'object',
@@ -61,15 +74,56 @@ export const SLOT_LABELS = {
   unit: '单位',
   target: '目标',
   conditions: '条件',
+  /** **作用域** = 编辑器里的 `scope`（用户口径：字段名就叫「作用域」）；「限定招式」也并进这一格 */
+  scope: '作用域',
   stacks: '层数',
   duration: '时长',
   object: '对象',
 }
 
-/** 该维度「这句话里没出现」 */
-export const NONE = '无'
-/** 该维度「出现了但归不了类」——**绝不能拿 `无` 糊过去** */
-export const UNABLE = '无法提取'
+/**
+ * **生效范围**的取值（以源码为准）：`zzz-hp/src/types/calculator.ts:63` 的 `BUFF_SCOPE_OPTIONS`
+ * = 通用 / 招式 / 异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数；编辑器下拉在
+ * `AdminBuffEffectEditor.vue:550`。`无` = 通用（阶段2 **不写** scope）。
+ */
+export const SCOPE_OPTIONS = [NONE, '招式', '异常', '紊乱', '乱流', '异放', '耀变', '异化系数']
+
+/** 槽位取值（中文）→ `scope` 字段值；`无` → 空串（= 不写 scope） */
+export const SCOPE_SLOT_TO_ID = {
+  [NONE]: '',
+  招式: 'skill',
+  异常: 'anomaly',
+  紊乱: 'disorder',
+  乱流: 'turbulence',
+  异放: 'anomalyRelease',
+  耀变: 'radiance',
+  异化系数: 'mutation',
+}
+
+/**
+ * 阶段1：从子句里认「生效范围」。先认**明确点名子类**的措辞（异放 / 耀变 / 乱流 / 紊乱 / 异化系数），
+ * 再认**显式限定异常**的措辞（`仅对属性异常生效` 这类）；`招式` 由招式锚点那条路填（见 `detectSkillLimits`）。
+ */
+const SCOPE_RULES = [
+  { id: '异放', re: /\[?异放\]?/ },
+  { id: '耀变', re: /\[?耀变\]?/ },
+  { id: '乱流', re: /\[?乱流\]?/ },
+  { id: '紊乱', re: /\[?紊乱\]?/ },
+  { id: '异化系数', re: /异化系数/ },
+  {
+    id: '异常',
+    re: /(?:仅|只|限定)(?:对|对处于)?(?:属性)?异常(?:伤害)?(?:状态)?(?:生效|计入|计算|有效)|(?:属性)?异常伤害(?:计算|结算|生效)时/,
+  },
+]
+
+/** 认一条子句的生效范围（没认出来 = `无` = 通用） */
+export function detectScope(text) {
+  const source = String(text ?? '')
+  for (const rule of SCOPE_RULES) {
+    if (rule.re.test(source)) return rule.id
+  }
+  return NONE
+}
 
 /** 关键字入库前缀（v3 变更 2：关键字入库，带前缀/索引便于检索） */
 export const KEYWORD_PREFIX = '[关键字]'
@@ -302,6 +356,7 @@ export const SLOT_OPTIONS = {
   unit: [...UNIT_OPTIONS, NONE],
   target: [...TARGET_OPTIONS, NONE, UNABLE],
   conditions: CONDITION_OPTIONS,
+  scope: SCOPE_OPTIONS,
   stacks: STACK_OPTIONS,
   duration: DURATION_OPTIONS,
   object: [...OBJECT_OPTIONS, NONE, UNABLE],
@@ -369,24 +424,57 @@ export function extractNumbers(text) {
   return out
 }
 
+/** 抬头句的「前提头」特征（用于把 `前提：效果` 这类写在同一个子句里的情况拆开） */
+const PREMISE_HEAD_RE =
+  /时|若|存在|触发|达到|大于|不足|处于|状态|条件|队伍|敌人|目标|持有|装备|发动|命中|持续|以上|以下|每/
+
+/** 把 `前提：效果` 拆成两个子句（`：` 不在括号里、且前半句像前提时才拆） */
+function splitClauseAtColon(clause) {
+  const index = clause.search(/[：:]/)
+  if (index <= 0) return [clause]
+  const head = clause.slice(0, index)
+  const tail = clause.slice(index + 1).trim()
+  if (!tail) return [clause]
+  if (/[「」[\]【】]/.test(head)) return [clause] // `[强化特殊技：眩焰]` 这类名字不许拆
+  if (!PREMISE_HEAD_RE.test(head)) return [clause]
+  return [`${head}：`, tail]
+}
+
 /**
- * 切句：先按 `。；\n` 切「句（unit）」，再按 `，,` 切「子句」。
- * 返回 `[{ text, clauses }]`。
+ * 切句：先按 `。；\n` 切「句（unit）」，再按 `，,` 切「子句」。返回 `[{ text, clauses }]`。
+ *
+ * ⚠ **抬头句合并**（用户 2026-10-16 报的 bug）：以 `：` 结尾的「抬头句」（如
+ * 「…时发动：」「…时触发：」）**并入下一句**，因为它的作用范围就是它引领的那句描述。
+ * 不合并的话，抬头句会变成独立的一句并让 `prefix` 泄漏到后面**别的句子**上
+ * （实例：烬火追魂第 4 句凭空多出「下一次普通换入、快速支援、招架支援换入前场时发动」，
+ * 还因此误判出「限定招式：招架支援 + 快速支援」）。
  */
 export function splitUnits(text) {
   const cleaned = cleanNanokaText(text)
   if (!cleaned) return []
-  return cleaned
+  const raw = cleaned
     .split(/[。；\n]/)
     .map((unit) => unit.trim())
     .filter(Boolean)
-    .map((unit) => ({
-      text: unit,
-      clauses: unit
-        .split(/[，,]/)
-        .map((clause) => clause.trim())
-        .filter(Boolean),
-    }))
+  const merged = []
+  for (const unit of raw) {
+    const previous = merged[merged.length - 1]
+    if (previous && /[：:]$/.test(previous)) {
+      merged[merged.length - 1] = `${previous}${unit}`
+      continue
+    }
+    merged.push(unit)
+  }
+  return merged.map((unit) => {
+    const clauses = []
+    for (const clause of unit
+      .split(/[，,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)) {
+      clauses.push(...splitClauseAtColon(clause))
+    }
+    return { text: unit, clauses }
+  })
 }
 
 /** 判定用的文本：去掉角色 / 音擎自身名与 `N号` 这类名字里的数字（「11号」的 11 不是增益数值） */
@@ -1043,10 +1131,286 @@ function conditionList(parts) {
   return list.length ? list : noCondition()
 }
 
-/** 目标槽位判定（`无` = 默认自身；队伍条件是「条件」不是「目标」） */
-function detectTarget(clauseText, selfNames, inherited) {
+/**
+ * **槽位值白名单（结构性硬校验）** —— 用户铁律：*解析不出来就是 `无法提取`，
+ * 绝不允许把原文粘进槽位*（把原句塞进条件槽等于伪造「可转换」）。
+ *
+ * 每个槽位的合法取值只有两类：
+ *   a. 来自**该槽位的枚举 / 词表**（属性、动作、单位、目标、作用域、条件可选项、元素…）；
+ *   b. 字面量 `无` 或 `无法提取`。
+ * 其余任何值（原句片段、含标点的长文本、超长字符串…）→ **一律改写成 `无法提取`**，
+ * 并在该条上记 `unmappableSlots`，**不写 note、不冒充条件**。
+ */
+const SLOT_VALUE_PREDICATES = {
+  stat: (value) => STAT_OPTIONS.includes(value) || Object.prototype.hasOwnProperty.call(STAT_TABLE, value),
+  elements: (value) => ELEMENTS.includes(value),
+  action: (value) => ACTION_OPTIONS.includes(value),
+  value: (value) => /^\d+(?:\.\d+)?%?$/.test(String(value).trim()),
+  unit: (value) => UNIT_OPTIONS.includes(value),
+  target: (value) => TARGET_OPTIONS.includes(value),
+  conditions: (value) => MODELABLE_CONDITION_RES.some((re) => re.test(value)),
+  scope: (value) => SCOPE_OPTIONS.includes(value),
+  stacks: (value) => /^(?:最多\s*)?\d+\s*层$/.test(String(value).trim()),
+  duration: (value) => /^\d+(?:\.\d+)?\s*秒$/.test(String(value).trim()),
+  object: (value) => OBJECT_OPTIONS.includes(value),
+}
+
+/** 单值槽位：词表外 → `无法提取`；多值槽位（条件 / 元素）：词表外的项剔掉并追加 `无法提取` */
+export function enforceSlotWhitelist(slots = {}) {
+  const out = { ...slots }
+  const violations = []
+  const isAllowed = (id, value) => {
+    const text = String(value ?? '').trim()
+    if (!text || text === NONE || text === UNABLE) return true
+    const predicate = SLOT_VALUE_PREDICATES[id]
+    if (!predicate) return true
+    // 硬护栏：任何含句读的长文本都不可能是枚举值
+    if (text.length > 24 || /[。；：，、！？]/.test(text)) return false
+    return predicate(text)
+  }
+  for (const id of SLOT_IDS) {
+    const value = out[id]
+    if (Array.isArray(value)) {
+      const kept = []
+      let hit = false
+      for (const item of value) {
+        if (isAllowed(id, item)) {
+          if (!kept.includes(item)) kept.push(item)
+          continue
+        }
+        hit = true
+        violations.push({ slot: id, value: String(item), reason: 'unmappable-condition' })
+      }
+      if (hit) kept.push(UNABLE)
+      out[id] = kept.length ? kept : [NONE]
+      continue
+    }
+    if (!isAllowed(id, value)) {
+      violations.push({ slot: id, value: String(value), reason: 'unmappable-condition' })
+      out[id] = UNABLE
+    }
+  }
+  return { slots: out, violations }
+}
+
+/**
+ * **解析规则对照表**（用户 2026-10-16 欠账）：从本文件的词表 / 规则**自动导出**，
+ * 单一事实来源（不许手写第二份）。前端「解析规则」弹窗与 `dev-docs/nanoka-buff-rules-*.md`
+ * 都吃这一份数据。
+ *
+ * @returns {{ version:string, groups:Array<{ id:string, title:string, items:Array<{game:string, slot:string, field:string, note:string}> }> }}
+ */
+export function buildRulesTable() {
+  const items = (game, slot, field, note = '') => ({ game, slot, field, note })
+  const reText = (value) => String(value)
+  const groups = [
+    {
+      id: 'stat',
+      title: '属性词表（游戏措辞 → 关键字「属性」槽位 → 阶段2 字段）',
+      items: STAT_RULES_INTERNAL.map((rule) =>
+        items(
+          reText(rule.re),
+          rule.keyword,
+          Object.values(STAT_TABLE[rule.keyword] ?? {})[0] ?? '（词表里没有对应字段 → 废原文）',
+          '',
+        ),
+      ),
+    },
+    {
+      id: 'stat-alias',
+      title: '属性别名（老数据 / 手动补词：属性值 → 阶段2 字段）',
+      items: Object.entries(STAT_TABLE).map(([keyword, byUnit]) =>
+        items('（手动 / 老字样）', keyword, Object.values(byUnit)[0] ?? '', `单位档：${Object.keys(byUnit).join(' / ')}`),
+      ),
+    },
+    {
+      id: 'action',
+      title: '动作词表（→ 关键字「动作」槽位；无「回复」）',
+      items: ACTION_RULES_INTERNAL.map((rule) => items(reText(rule.re), rule.keyword, '', '')),
+    },
+    {
+      id: 'literal',
+      title: '游戏字面改写规则（游戏原文 → 工具语义 → 阶段2 字段）',
+      items: GAME_LITERAL_REWRITES.map((rule) =>
+        items(
+          rule.game ?? '',
+          rule.tool ?? rule.keyword ?? '',
+          rule.field ?? '',
+          rule.note ?? `动作：${rule.action ?? ''}`,
+        ),
+      ),
+    },
+    {
+      id: 'anomaly',
+      title: '异常语境（本句有「属性异常伤害 / 异常暴击」时改写属性）',
+      items: Object.entries(ANOMALY_STAT_MAP).map(([from, to]) =>
+        items(`本句出现 ${reText(ANOMALY_MARK_RE)}`, to, Object.values(STAT_TABLE[to] ?? {})[0] ?? '', `原属性：${from}`),
+      ),
+    },
+    {
+      id: 'convert',
+      title: '转模（动作=转化）专用槽位与吸收规则',
+      items: [
+        ...CONVERT_SLOT_IDS.map((id) => items(CONVERT_SLOT_HINTS[id] ?? '', CONVERT_SLOT_LABELS[id], '', '')),
+        ...ABSORBED_CONDITION_RULES.map((rule) =>
+          items(reText(rule.re), `条件被吸收 → ${rule.absorbed}`, 'convert.defaultBase', '不写「无法提取」'),
+        ),
+      ],
+    },
+    {
+      id: 'scope',
+      title: '作用域（= 编辑器 `scope`；「限定招式」并进这一格）',
+      items: [
+        ...SCOPE_RULES.map((rule) =>
+          items(reText(rule.re), rule.id, SCOPE_SLOT_TO_ID[rule.id] ?? '', ''),
+        ),
+        items('该句明确限定某招式（锚点匹配 / 建锚点）', '招式', 'skill + skillTargets', '锚点建不出 → 这条不录'),
+        items('（没认出来）', NONE, 'general（不写 scope）', ''),
+      ],
+    },
+    {
+      id: 'target',
+      title: '目标默认值（敌人削弱族：原文没写明给谁 → 全队）',
+      items: [
+        ...ENEMY_DEBUFF_STATS_LIST.map((stat) =>
+          items(`属性=${stat} 且原文没写明给谁`, '全队', 'applyTarget=team', '界面标淡色「默认」'),
+        ),
+        items('原文明确写「自身 / 自己 / 装备者」', '自身', 'applyTarget=self', ''),
+        items('其他属性没写明给谁', NONE, 'applyTarget=self', ''),
+      ],
+    },
+    {
+      id: 'condition',
+      title: '条件判定（只取本句 / 同义反复丢弃 / 落不到字段写「无法提取」）',
+      items: [
+        items('条件只允许来自**它自己那句**（抬头句已并入下一句）', '本句条件', '', '跨句汇聚 = bug'),
+        ...INTRINSIC_PREMISE_RULES.map((rule) =>
+          items(reText(rule.re), '条件=无（同义反复，丢弃）', '', `属性自带的定义性前提：${rule.stats.join(' / ')}`),
+        ),
+        ...MODELABLE_CONDITION_RES.map((re) => items(reText(re), '保留条件文本', 'applySituation / 职业队伍条件', '')),        items('其余任何条件（触发器 / 状态 / 周期…）', UNABLE, '', '阻断自动映射、阶段2 标红待补；不许写进 note'),
+      ],
+    },
+    {
+      id: 'slot-whitelist',
+      title: '槽位白名单硬校验（词表外的值一律改写成「无法提取」）',
+      items: SLOT_IDS.map((id) =>
+        items('（结构性校验）', id, '', SLOT_WHITELIST_DESCRIPTIONS[id] ?? '词表 / 无 / 无法提取'),
+      ),
+    },
+    {
+      id: 'waste',
+      title: '废原文判定（整条丢弃 · 带原因 · 不入库）',
+      items: HARD_SKIP_RULES.map((rule) => items(reText(rule.re), '废原文', '', rule.reason)),
+    },
+    {
+      id: 'mappable',
+      title: '可映射性预检（阶段1 末：进阶段2 还是废原文）',
+      items: [
+        items('动作 / 属性 = 无法提取（或空）', '留阶段2', 'blocked / 待补', '等人补，不丢'),
+        items('动作认得，但属性在词表里查不到字段', '废原文', '', '整条在阶段1 结束'),
+        items('命中机制 / 舍弃模式（我方减伤、生命回复、回能、无敌…）', '废原文', '', '在更早的步骤就丢弃'),
+      ],
+    },
+  ]
+  return { version: '2026-10-16', groups }
+}
+
+/**
+ * **属性自带的定义性前提**（同义反复）表（用户 2026-10-16）：
+ * 属性是**暴伤族**时，「暴击时 / 触发暴击时」这类前提是该属性**自带的生效前提**，
+ * 属于同义反复 → 条件**丢弃**（`无`），既不标 `无法提取`、也不进 note。
+ * 反例守则：属性 = 增伤 / 攻击力 / 减防 / 异常精通… 时，「暴击时」**不是**同义反复
+ * （工具是期望值计算，没有这个条件）→ `无法提取`，**绝不能**丢掉条件当无条件生效。
+ */
+const INTRINSIC_PREMISE_RULES = [
+  { stats: ['暴击伤害', '异常暴击伤害', '异放暴击伤害'], re: /暴击/ },
+]
+
+/**
+ * **被专用字段吸收的条件**（用户 2026-10-16）：条件本身没有对应字段，但它的**信息已经落到别的槽位**了
+ * —— 那就不该再标 `无法提取`（也不是同义反复，是「已吸收」）：
+ *   - 转模的「初始值 > X」阈值 → `基础值(defaultBase)`（`每点超过155点…`）。
+ */
+const ABSORBED_CONDITION_RULES = [
+  { absorbed: '基础值', re: /(?:超过|大于|高于|超出|多于)\s*\d+(?:\.\d+)?/ },
+]
+
+/**
+ * **结构句**（刷新口径 / 每层单独结算…）：根本不是条件，也不该标 `无法提取`
+ * ——它只描述刷新与结算方式，原文照旧整段入库 → 从条件槽里丢掉。
+ */
+const STRUCTURAL_CONDITION_RE = /刷新|单独结算|独立结算|重复触发|再次触发/
+
+/**
+ * 工具**能表达**的条件（其余一律 `无法提取`）：
+ *   - 失衡 / 非失衡 → `applySituation`
+ *   - 队伍 / 职业条件 → `applyProfession` / `teamProfession*`
+ * （元素限定走 `元素` 槽位、招式限定走 `作用域` + 锚点、层数走 `层数` 槽位，都不算「条件」）
+ */
+const MODELABLE_CONDITION_RES = [
+  /(?:攻击)?(?:处于)?非失衡/,
+  /(?:攻击)?(?:处于)?失衡/,
+  /队伍中存在|队伍中有|队内|同阵营|同属性|其他\[?异常\]?角色/,
+]
+
+/**
+ * 条件分类（阶段1，**按句**）：
+ *   1. **同义反复**（属性自带前提）→ 丢弃（`droppedTautology`，界面可标淡色提示）；
+ *   2. **被专用字段吸收**（转模的「初始值 > X」→ `基础值`）→ 丢弃（`absorbed`）；
+ *   3. 工具能表达的 → 保留文本（阶段2 落 `applySituation` / 职业队伍条件）；
+ *   4. 其余（触发器、状态、周期…）→ 该槽位写 `无法提取`（阻断自动映射、阶段2 标红待补）。
+ *
+ * @returns {{ value:string[], droppedTautology:string[], absorbed:string[], unable:string[] }}
+ */
+export function classifyConditions({ conditions = [], statValue = '', isConvert = false } = {}) {
+  const kept = []
+  const droppedTautology = []
+  const absorbed = []
+  const unable = []
+  for (const raw of Array.isArray(conditions) ? conditions : []) {
+    const text = String(raw ?? '').trim()
+    if (!text || text === NONE) continue
+    const intrinsic = INTRINSIC_PREMISE_RULES.find(
+      (rule) => rule.stats.includes(String(statValue)) && rule.re.test(text),
+    )
+    if (intrinsic) {
+      droppedTautology.push(text)
+      continue
+    }
+    if (isConvert && ABSORBED_CONDITION_RULES.some((rule) => rule.re.test(text))) {
+      absorbed.push(text)
+      continue
+    }
+    if (STRUCTURAL_CONDITION_RE.test(text)) {
+      absorbed.push(text)
+      continue
+    }
+    if (MODELABLE_CONDITION_RES.some((re) => re.test(text))) {
+      if (!kept.includes(text)) kept.push(text)
+      continue
+    }
+    if (!unable.includes(text)) unable.push(text)
+  }
+  return {
+    // 能表达的保留；落不到字段的写「无法提取」（两者混在一起时该条照样被阻断，等人补）
+    value:
+      kept.length || unable.length ? [...kept, ...(unable.length ? [UNABLE] : [])] : noCondition(),
+    droppedTautology,
+    absorbed,
+    unable,
+  }
+}
+
+/** 目标槽位判定（`无` = 原文没写明给谁） */
+function detectTarget(clauseText, selfNames, inherited, statValue = '') {
   const text = String(clauseText ?? '')
   if (TEAM_RE.test(text)) return { value: '全队', source: 'literal' }
+  // 敌人削弱族（减防 / 抗穿 / 易伤家族）：作用对象是敌人 → **默认全队**；
+  // 只有原文明确写「自身 / 自己 / 装备者」才算自身（用户 2026-10-16）。
+  if (ENEMY_DEBUFF_STATS.has(String(statValue ?? ''))) {
+    if (/自身|自己|装备者/.test(text)) return { value: '自身', source: 'literal' }
+    return { value: '全队', source: /敌人|敌方|目标|对方/.test(text) ? 'literal' : 'default-team' }
+  }
   for (const name of selfNames) {
     if (name && text.includes(name)) return { value: '自身', source: 'literal' }
   }
@@ -1054,6 +1418,43 @@ function detectTarget(clauseText, selfNames, inherited) {
   if (inherited) return { value: inherited, source: 'inherited' }
   return { value: NONE, source: 'default' }
 }
+
+/**
+ * **敌人削弱族**（用户 2026-10-16）：作用在敌人身上的削弱类，原文**没写明给谁**时
+ * 默认 `目标=全队`（不是自身）。依据（全库人工记录）：
+ *   `staggerVulnerable` team=13/self=0、`globalStaggerVulnerable` team=2/self=0、
+ *   `reduceDefense` team=19/self=26、`resPen` team=23/self=51（减防 / 抗穿人工不统一，但**易伤族一致用全队**）。
+ * 只有原文明确写「自身 / 自己 / 装备者」时才用 `自身`（那时 `detectTarget` 已经判成 literal）。
+ */
+const ENEMY_DEBUFF_STATS = new Set([
+  '减防',
+  '抗性穿透',
+  '失衡易伤',
+  '失衡易伤（全局）',
+  '易伤',
+  '直伤易伤',
+  '异常易伤',
+])
+
+/** 同上（数组形态，给规则表导出用） */
+const ENEMY_DEBUFF_STATS_LIST = [...ENEMY_DEBUFF_STATS]
+
+/** 槽位白名单的说明文字（规则表导出用；真正的判定在 `SLOT_VALUE_PREDICATES`） */
+const SLOT_WHITELIST_DESCRIPTIONS = {
+  stat: '属性词表 / `无` / `无法提取`',
+  elements: '元素词表（可多选：物理 / 火 / 冰 / 电 / 以太 / 风）/ `无`',
+  action: '动作词表（提升 / 降低 / 无视 / 转化）/ `无法提取`',
+  value: '纯数字 / `无` / `无法提取`',
+  unit: '单位词表（% / 点）/ `无`',
+  target: '目标词表（自身 / 全队 / 指定职业 / 指定阵营）/ `无`',
+  conditions: '工具能表达的条件（失衡 / 非失衡 / 队伍职业条件）；其余一律 `无法提取`',
+  scope: '作用域词表（招式 / 异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数）/ `无`',
+  stacks: '`最多 N 层` / `N 层` / `无` / `无法提取`',
+  duration: '`N 秒` / `无` / `无法提取`',
+  object: '对象词表（当前招式 / 装备者 / 敌人 / 能量）/ `无`',
+}
+
+/** 敌人削弱族的目标兜底已并入 `detectTarget`（`default-team` = 原文没写明给谁） */
 
 /** 对象槽位判定（增益作用在谁 / 什么上） */
 function detectObject(clauseText, action, inherited) {
@@ -1069,8 +1470,8 @@ function detectObject(clauseText, action, inherited) {
   return { value: NONE, source: 'default' }
 }
 
-/** 一条关键字的 9 槽位 + 元素（**不许缺格**） */
-function createSlots({ stat, elements, action, value, unit, target, conditions, stacks, duration, object }) {
+/** 一条关键字的槽位（**不许缺格**） */
+function createSlots({ stat, elements, action, value, unit, target, conditions, scope, stacks, duration, object }) {
   return {
     stat: stat?.value ?? NONE,
     elements: Array.isArray(elements) && elements.length ? [...elements] : [NONE],
@@ -1079,6 +1480,7 @@ function createSlots({ stat, elements, action, value, unit, target, conditions, 
     unit: unit?.value ?? NONE,
     target: target?.value ?? NONE,
     conditions: conditions?.value ?? noCondition(),
+    scope: scope?.value ?? NONE,
     stacks: stacks ?? NONE,
     duration: duration ?? NONE,
     object: object?.value ?? NONE,
@@ -1086,7 +1488,7 @@ function createSlots({ stat, elements, action, value, unit, target, conditions, 
 }
 
 /** 槽位取值的来源（界面用来区分「原文写的」/「继承来的」/「默认」/「读不出」） */
-function createSources({ stat, elements, action, value, unit, target, conditions, stacks, duration, object }) {
+function createSources({ stat, elements, action, value, unit, target, conditions, scope, stacks, duration, object }) {
   return {
     stat: stat?.source ?? 'default',
     elements: Array.isArray(elements) && elements.length ? 'literal' : 'default',
@@ -1095,6 +1497,7 @@ function createSources({ stat, elements, action, value, unit, target, conditions
     unit: unit?.source ?? 'default',
     target: target?.source ?? 'default',
     conditions: conditions?.source ?? 'default',
+    scope: scope?.source ?? 'default',
     stacks: stacks?.source ?? 'default',
     duration: duration?.source ?? 'default',
     object: object?.source ?? 'default',
@@ -1183,6 +1586,9 @@ export function extractKeywordEffects({
   units.forEach((unit, unitIndex) => {
     currentSentence = unitIndex
     anomalyContext = false // 异常语境**按句重置**
+    // **条件只取本句**（用户 2026-10-16 修 1）：抬头条件（`…：`）只作用于它自己那句
+    // （抬头句已与下一句合并，见 `splitUnits`），**不跨句泄漏**。
+    prefix = ''
     pending = []
     const unitText = unit.clauses.join('，')
     const stack = readStackInfo(unitText)
@@ -1197,8 +1603,9 @@ export function extractKeywordEffects({
       if (ANOMALY_MARK_RE.test(clause)) anomalyContext = true
 
       // 0) 触发上限 / 冷却尾巴：补进上一条的「条件」（条件槽位是唯一允许复数的）
+      //    只补**同一句**里的上一条（跨句汇聚是 bug），且最终由末尾的分类兜底再过滤一遍。
       if (TRAILING_LIMIT_RE.test(clause) && !gainNumbers(clause).length) {
-        if (lastEffect && unitEffects.includes(lastEffect)) {
+        if (lastEffect && unitEffects.includes(lastEffect) && lastEffect.unitIndex === unitIndex) {
           lastEffect.slots.conditions = conditionList([...lastEffect.slots.conditions, clause])
           continue
         }
@@ -1279,17 +1686,16 @@ export function extractKeywordEffects({
       //    转模句（动作=转化）**不拆**：`每1点攻击力转化为1.5点暴击率` 是一个效果。
       const groups = isConvert ? [clause] : splitClauseIntoGroups(clause)
       const thresholds = extractThresholds(clause)
-      const skillLimits = detectSkillLimits([prefix, ...pending, clause].join('，'))
+      // 招式限定只看**本句**（prefix 已按句重置 + 抬头句已合并）：不许把别的句子的招式名搬过来
+      const skillLimits = detectSkillLimits([...pending, clause].join('，'))
       const anchorInfo = skillLimits.length
         ? resolveSkillAnchors({ limits: skillLimits, anchors, agentId })
         : resolveSkillAnchors({ limits: [], anchors, agentId })
-      const skillLimitCondition = skillLimits.length
-        ? `限定招式：${skillLimits.map((item) => item.name).join(' + ')}`
-        : ''
-      const documentConditions = conditionList([
+      // **条件只取本句**（用户 2026-10-16 修 1）：抬头条件（`…：`）已被合并进本句，
+      // 招式限定并进「作用域」槽位，不再塞进条件。
+      const clauseConditions = conditionList([
         prefix,
         ...pending,
-        skillLimitCondition,
         // 阈值短语（`不足40点`）也是条件：它是触发门槛，不是增益数值
         ...thresholds,
       ])
@@ -1358,6 +1764,17 @@ export function extractKeywordEffects({
                 } · ${stat.value}`,
               }
             : null
+        // 作用域（编辑器 `scope`）：句中点名子类（异放 / 耀变 / 乱流 / 紊乱 / 异化系数）或
+        // 显式限定异常（`仅对属性异常生效`）→ 填这一格；有招式限定 → `招式`（「限定招式」并进这一格）。
+        // 判定范围含**本句的前置子句**（`[异放]效果触发暴击时，其暴击伤害额外提升40%` 这类）。
+        const scopeValue = skillLimits.length
+          ? '招式'
+          : detectScope([prefix, ...pending, group].join('，'))
+        const scope = {
+          value: scopeValue,
+          source: scopeValue === NONE ? 'default' : 'literal',
+        }
+
         // 数值 / 单位（**层数、时长不进数值**；阈值不进数值；`技能等级+2` 这类纯数写 `无`）
         // 转模条：数值 / 单位**不适用**（比例% 走专用槽位），显式写 `无`（不是「无法提取」）。
         const valueTokens = gainNumbers(group)
@@ -1397,8 +1814,32 @@ export function extractKeywordEffects({
           elements = []
         }
 
-        const target = detectTarget(group, selfNames, inheritedSlots?.target)
+        // 目标：按原文认（敌人削弱族没写明给谁 → 默认 `全队`，source=`default-team`，界面标「默认」）
+        const target = detectTarget(group, selfNames, inheritedSlots?.target, stat.value)
         const object = detectObject(group, action.value, inheritedSlots?.object)
+
+        // 条件分类（按句 + 按属性）：同义反复丢弃 / 能表达的保留 / 落不到字段写「无法提取」
+        const conditionInfo = classifyConditions({
+          conditions: clauseConditions,
+          statValue: stat.value,
+          isConvert: groupIsConvert,
+        })
+        // **结构性硬校验**：任何槽位出现词表外的值（原文片段 / 长文本）→ 一律 `无法提取`
+        const { slots: checkedSlots, violations: slotViolations } = enforceSlotWhitelist(
+          createSlots({
+            stat,
+            elements,
+            action,
+            value,
+            unit,
+            target,
+            conditions: { value: conditionInfo.value, source: 'literal' },
+            scope,
+            stacks: NONE,
+            duration: NONE,
+            object,
+          }),
+        )
 
         const recorded = !(skillLimits.length && anchorInfo.ok !== true)
         const effect = {
@@ -1408,18 +1849,7 @@ export function extractKeywordEffects({
           unitIndex,
           unitText,
           sentence: group,
-          slots: createSlots({
-            stat,
-            elements,
-            action,
-            value,
-            unit,
-            target,
-            conditions: { value: documentConditions, source: 'literal' },
-            stacks: NONE,
-            duration: NONE,
-            object,
-          }),
+          slots: checkedSlots,
           sources: createSources({
             stat,
             elements,
@@ -1428,6 +1858,7 @@ export function extractKeywordEffects({
             unit,
             target,
             conditions: { source: 'literal' },
+            scope,
             stacks: { source: 'default' },
             duration: { source: 'default' },
             object,
@@ -1436,10 +1867,14 @@ export function extractKeywordEffects({
           stackMax: null,
           durationSeconds: null,
           perStack: false,
-          // —— v3 招式限定（条件，不是来源 / 落点）
+          // —— v3 招式限定（并进「生效范围」这一格；具体招式仍走锚点 `skillTargets`）
           skillLimits,
           /** 指代来源提示（界面用，不入库）：`{ from, fields, label }`，如「依赖上一句 · 增伤」 */
           inherited: inheritedInfo,
+          /** 同义反复被忽略的条件（界面用，不入库）：如暴伤族的「触发暴击时」 */
+          tautologyDropped: conditionInfo.droppedTautology,
+          /** 被硬校验改写成「无法提取」的槽位（界面用，不入库） */
+          unmappableSlots: slotViolations,
           anchors: {
             ok: anchorInfo.ok,
             labels: anchorInfo.labels,
@@ -1457,10 +1892,7 @@ export function extractKeywordEffects({
         // —— v3：可映射性预检（动作 + 属性 → 阶段2 词表反查）。查不到字段的**整条**进废原文，
         //    阶段1 就结束（不进阶段2）：「生命回复」「立即回复 N 点能量」都走这条。
         const mappable = checkKeywordMappable({
-          slots: {
-            ...effect.slots,
-            conditions: documentConditions,
-          },
+          slots: effect.slots,
           text: `${unitText}，${group}`,
         })
         if (!mappable.ok) {
@@ -1495,6 +1927,23 @@ export function extractKeywordEffects({
       }
     }
   })
+
+  // —— 末尾兜底：所有条目的槽位再过一次「条件分类 + 白名单硬校验」
+  //    （后置追加条件、以及任何漏网的原句片段都在这里被规范成 `无` / `无法提取`）
+  for (const effect of effects) {
+    const info = classifyConditions({
+      conditions: effect.slots.conditions,
+      statValue: effect.slots.stat,
+      isConvert: effect.slots.action === '转化',
+    })
+    effect.slots.conditions = info.value
+    effect.tautologyDropped = [
+      ...new Set([...(effect.tautologyDropped ?? []), ...info.droppedTautology]),
+    ]
+    const checked = enforceSlotWhitelist(effect.slots)
+    effect.slots = checked.slots
+    effect.unmappableSlots = [...(effect.unmappableSlots ?? []), ...checked.violations]
+  }
 
   // —— 按句配对视图（界面用；入库口径不变）
   const sentences = units.map((unit, index) => {
@@ -1814,42 +2263,56 @@ export function mapKeywordsToEffect(keyword = {}) {
     }
   }
 
-  // —— 条件 → applySituation（条件原文一律进 note）
-  // 条件**不阻断**映射（v2 规格 §三：映射不了的才由「我补词表」解决；条件只是不做完整枚举建模）
-  const conditionTexts = conditions.filter((item) => item && item !== NONE)
+  // —— 条件 → applySituation（失衡 / 非失衡是工具字段；其余能表达的保留文本，落不到字段的
+  //    在阶段1 就已经写成 `无法提取` —— 见 `classifyConditions`）
+  const conditionTexts = conditions.filter((item) => item && item !== NONE && item !== UNABLE)
+  const unableConditions = conditions.filter((item) => item === UNABLE)
   let applySituation = 'global'
-  if (!conditionTexts.length) {
+  if (!conditionTexts.length && !unableConditions.length) {
     steps.push(`条件=${NONE} → applySituation=global`)
   } else {
     const joined = conditionTexts.join('，')
     if (/非失衡/.test(joined)) applySituation = 'non_stagger'
     else if (/失衡/.test(joined)) applySituation = 'stagger'
     steps.push(
-      `条件=${conditionTexts.join(' + ')} → applySituation=${applySituation}` +
-        (applySituation === 'global' ? '（阶段2 不做条件枚举建模，条件原文进 note）' : ''),
+      `条件=${conditions.join(' + ')} → applySituation=${applySituation}` +
+        (applySituation === 'global' ? '（工具是期望值计算，没建模的条件不许塞进 note）' : ''),
     )
-    for (const text of conditionTexts) {
-      if (applySituation === 'global' || !/失衡/.test(text)) {
-        notices.push(`条件「${text}」阶段2 不做完整建模 → 只进 note`)
-      }
-    }
   }
 
   // —— 目标 → applyTarget
   let applyTarget = 'self'
   if (target === '全队') {
     applyTarget = 'team'
-    steps.push('目标=全队 → applyTarget=team')
+    steps.push(
+      '目标=全队 → applyTarget=team' +
+        (keyword.sources?.target === 'default-team' ? '（原文没写明给谁，敌人削弱族默认全队）' : ''),
+    )
   } else {
     steps.push(`目标=${target || NONE} → applyTarget=self`)
   }
 
-  // —— 招式锚点（v3：条件用锚点关联到该招式；关联不上前面已 return）
+  // —— 作用域（`scope`，编辑器同名字段）→ `scope`；`无` = 通用（不写 scope 之外的值）
+  const scopeSlot = String(slots.scope ?? NONE).trim()
+  const scopeId = SCOPE_SLOT_TO_ID[scopeSlot] ?? ''
+  let scope = 'general'
+  if (scopeId) {
+    scope = scopeId
+    steps.push(`作用域=${scopeSlot} → scope=${scopeId}`)
+  } else {
+    steps.push('作用域=无 → scope=general（通用）')
+  }
+
+  // —— 招式锚点（v3：并进「作用域=招式」；关联不上前面已 return）
   const anchors = keyword.anchors && isPlainObject(keyword.anchors) ? keyword.anchors : null
   const skillTargets = Array.isArray(anchors?.skillTargets) ? anchors.skillTargets : []
   if (skillTargets.length) {
+    if (!scopeId) {
+      scope = 'skill'
+      steps.push('有招式锚点但作用域槽位是「无」→ scope=skill（兜底）')
+    }
     steps.push(
-      `限定招式=${anchors.labels.join(' + ')} → skillTargets=` +
+      `作用域=招式 + 限定招式=${anchors.labels.join(' + ')} → skillTargets=` +
         JSON.stringify(skillTargets),
     )
   }
@@ -1920,11 +2383,19 @@ export function mapKeywordsToEffect(keyword = {}) {
   const convertNote = isConvert
     ? `转模：读取属性=${CONVERT_FROM_LABELS[convert?.convertFrom] ?? convert?.convertFrom ?? UNABLE} 折算比例=${convert?.convertRatio ?? UNABLE}`
     : ''
+  // **note 只允许**（用户 2026-10-16）：用户手填的内容，或**枚举性 / 结构化**的固定短语
+  // （时长、对象、转模说明、作用域、同义反复已忽略…）。**绝不自动粘原句 / 半句** ——
+  // 原文照旧整块入库（`formatSourceBlock` 的 `原文：…`），不由 note 承担。
+  void conditionTexts
+  const scopeSlotLabel = String(keyword?.slots?.scope ?? NONE).trim()
+  const tautologyDropped = Array.isArray(keyword?.tautologyDropped) ? keyword.tautologyDropped : []
   const noteParts = [
-    String(keyword.rawText ?? '').trim(),
-    ...conditionTexts,
-    duration && duration !== NONE ? duration : '',
-    object === '当前招式' ? `对象=${object}` : '',
+    scopeSlotLabel && scopeSlotLabel !== NONE && scopeSlotLabel !== UNABLE
+      ? `作用域：${scopeSlotLabel}`
+      : '',
+    duration && duration !== NONE ? `时长：${duration}` : '',
+    object === '当前招式' ? '对象：当前招式' : '',
+    tautologyDropped.length ? `同义反复已忽略：${tautologyDropped.join(' / ')}` : '',
     convertNote,
   ]
   const note = noteParts
@@ -1940,7 +2411,8 @@ export function mapKeywordsToEffect(keyword = {}) {
     ? {
         id: String(keyword.id ?? ''),
         origin: String(keyword.origin ?? ''),
-        scope: 'general',
+        /** 作用域（编辑器同名 `scope`）：`无` → `general` */
+        scope,
         applyTarget,
         applySituation,
         applyProfession: null,

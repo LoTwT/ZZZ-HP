@@ -3,6 +3,7 @@ import {
   applyNanokaBuffsHandler,
   extractNanokaBuffsHandler,
   parseNanokaBuffsHandler,
+  rulesNanokaBuffsHandler,
   simplifyNanokaBuffsHandler,
 } from '../controllers/nanokaBuffController.js'
 import { requireAdmin } from '../middleware/requireAdmin.js'
@@ -15,5 +16,7 @@ router.post('/extract', requireAdmin, extractNanokaBuffsHandler)
 router.post('/simplify', requireAdmin, simplifyNanokaBuffsHandler)
 router.post('/parse', requireAdmin, parseNanokaBuffsHandler)
 router.post('/apply', requireAdmin, applyNanokaBuffsHandler)
+// 解析规则对照表（只读；从抽取器词表自动导出）
+router.get('/rules', requireAdmin, rulesNanokaBuffsHandler)
 
 export default router

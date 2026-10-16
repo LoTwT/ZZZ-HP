@@ -13,12 +13,24 @@
 import {
   applyBuffItems,
   extractBuffItems,
+  nanokaRulesTable,
   simplifyBuffTexts,
   smartMergeParse,
 } from '../services/nanokaBuffService.js'
 import { fail, success } from '../utils/response.js'
 
 const KIND_LABELS = { agent: '角色', wengine: '音擎' }
+
+/** GET /api/admin/nanoka-buffs/rules —— 解析规则对照表（只读；单一事实来源，不写库） */
+export async function rulesNanokaBuffsHandler(_req, res) {
+  try {
+    const data = nanokaRulesTable()
+    const count = data.groups.reduce((total, group) => total + group.items.length, 0)
+    return success(res, data, `解析规则 ${data.groups.length} 组 / ${count} 条`)
+  } catch (err) {
+    return fail(res, err.message || '解析规则读取失败', 400, { error: err.message })
+  }
+}
 
 /** POST /api/admin/nanoka-buffs/extract —— 抽取（不写库） */
 export async function extractNanokaBuffsHandler(req, res) {

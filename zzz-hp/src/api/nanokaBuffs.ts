@@ -52,8 +52,10 @@ export interface NanokaKeywordSlots {
   value: number | string
   unit: string
   target: string
-  /** **唯一允许复数**的槽位（与 `elements` 一起构成复数白名单） */
+  /** **允许复数**的槽位之一（与 `elements` 一起构成复数白名单） */
   conditions: string[]
+  /** **作用域**（= 编辑器 `scope`）：`招式 / 异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数` 或 `无` */
+  scope: string
   stacks: string
   duration: string
   object: string
@@ -138,6 +140,10 @@ export interface NanokaKeywordEffect {
    * 例 `{ from: '上一句', fields: ['属性'], label: '依赖上一句 · 增伤' }`
    */
   inherited: { from: string; fields: string[]; label: string } | null
+  /** 同义反复被忽略的条件原文（界面标淡色提示；**不入库**） */
+  tautologyDropped: string[]
+  /** 被槽位白名单硬校验改写成「无法提取」的槽位（界面用；**不入库**） */
+  unmappableSlots: { slot: string; value: string; reason: string }[]
   anchors: NanokaKeywordAnchors
   /** 锚点关联不上 → false（这条不录） */
   recorded: boolean
@@ -500,5 +506,23 @@ export async function applyNanokaBuffs(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+  return { result: data, message }
+}
+
+/** 解析规则对照表（只读；后端从抽取器词表自动导出，界面不手写死） */
+export interface NanokaRuleItem {
+  game: string
+  slot: string
+  field: string
+  note: string
+}
+
+export interface NanokaRulesTable {
+  version: string
+  groups: { id: string; title: string; items: NanokaRuleItem[] }[]
+}
+
+export async function fetchNanokaRules(): Promise<{ result: NanokaRulesTable; message: string }> {
+  const { data, message } = await requestApi<NanokaRulesTable>('/api/admin/nanoka-buffs/rules')
   return { result: data, message }
 }

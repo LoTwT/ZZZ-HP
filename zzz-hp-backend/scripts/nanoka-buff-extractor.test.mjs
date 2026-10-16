@@ -30,7 +30,9 @@ import {
   SLOT_IDS,
   SLOT_OPTIONS,
   UNABLE,
+  buildRulesTable,
   checkKeywordMappable,
+  enforceSlotWhitelist,
   cleanNanokaText,
   detectSkillLimits,
   extractAgentBuffItems,
@@ -156,13 +158,13 @@ test('文本工具：去标签 / 抽数值 / 切句 / 层数 / 时长', () => {
 
 // ================================================================== 2. 9 槽位模型
 
-test('9 槽位 + 元素不许缺格：每条关键字都能渲染出全部槽位（属性写工具语义）', () => {
+test('槽位不许缺格（9 常规 + 元素 + 作用域）：每条关键字都能渲染出全部槽位（属性写工具语义）', () => {
   const { effect } = firstEffect('造成的伤害提升10%')
   assert.deepEqual(Object.keys(effect.slots), SLOT_IDS)
   for (const id of SLOT_IDS) assert.ok(id in effect.slots, `缺少槽位 ${id}`)
   assert.match(
     formatKeywordSlots(effect.slots),
-    /^属性=增伤 元素=无 动作=提升 数值=10 单位=% 目标=无 条件=无 层数=无 时长=无 对象=无$/,
+    /^属性=增伤 元素=无 动作=提升 数值=10 单位=% 目标=无 条件=无 作用域=无 层数=无 时长=无 对象=无$/,
   )
 })
 
@@ -244,12 +246,17 @@ test('1 段原文 → N 条关键字（除「条件」外，任何槽位出现�
   assert.equal(effects[1].slots.target, '全队')
 })
 
-test('条件槽位是**唯一允许复数**的槽位', () => {
+test('条件槽位是**允许复数**的槽位（白名单 = 条件 / 元素）；落不到字段的写「无法提取」', () => {
   const { effect } = firstEffect('若能量不足40点，攻击失衡敌人时，造成的伤害提升10%')
   assert.ok(Array.isArray(effect.slots.conditions))
-  assert.ok(effect.slots.conditions.length >= 2)
-  assert.ok(effect.slots.conditions.some((item) => /能量不足/.test(item)))
+  // 「攻击失衡敌人时」是工具能表达的（applySituation）；「能量不足40点」是触发器 → 无法提取
   assert.ok(effect.slots.conditions.some((item) => /失衡/.test(item)))
+  assert.ok(effect.slots.conditions.includes(UNABLE), '落不到字段的条件必须写「无法提取」')
+  assert.ok(
+    !effect.slots.conditions.some((item) => /能量不足/.test(item)),
+    '不许把原句片段塞进条件槽（那是伪造「可转换」）',
+  )
+  assert.deepEqual(MULTI_SLOT_IDS, ['conditions', 'elements'])
 })
 
 // ================================================================== 3. 槽位语义（v3 新口径）
@@ -634,7 +641,12 @@ test('招式限定：锚点关联上 → 条件 + skillTargets；关联不上 �
   const text = '[普通攻击]、[冲刺攻击]造成的伤害提升3%'
   const { effect } = firstEffect(text, { anchors: ANCHORS, agentId: '1041' })
   assert.equal(effect.recorded, true)
-  assert.ok(effect.slots.conditions.includes('限定招式：普通攻击 + 冲刺攻击'))
+  // 「限定招式」**并进「作用域」槽位**（用户 2026-10-16：工具里就是 scope 字段），不再塞条件
+  assert.equal(effect.slots.scope, '招式')
+  assert.ok(
+    !effect.slots.conditions.some((item) => /限定招式/.test(item)),
+    '限定招式不再写进条件槽',
+  )
   const mapped = mapKeywordsToEffect({
     slots: effect.slots,
     anchors: effect.anchors,
@@ -642,6 +654,7 @@ test('招式限定：锚点关联上 → 条件 + skillTargets；关联不上 �
     origin: 'test',
   })
   assert.equal(mapped.ok, true)
+  assert.equal(mapped.effect.scope, 'skill')
   assert.deepEqual(mapped.effect.skillTargets, [
     { category: 'basic', subcategoryId: 'a-basic' },
     { category: 'dodge', subcategoryId: 'a-dash' },
@@ -694,7 +707,8 @@ test('招式文本的效果进角色增益块（槽位 0），并带技能「描
   })
   const effect = item.effects.find((entry) => entry.recorded)
   assert.ok(effect)
-  assert.ok(effect.slots.conditions.includes('限定招式：强化特殊技'))
+  assert.equal(effect.slots.scope, '招式', '限定招式 → 作用域=招式')
+  assert.ok(effect.slots.conditions.every((entry) => !/限定招式/.test(entry)))
 })
 
 test('招式锚点：库里没有同名小类 → **按该技能名建立锚点**（建不出才不录）', () => {
@@ -796,6 +810,7 @@ test('显示规则：只显示有值的槽位；`无` 默认隐藏；`无法提�
     'elements',
     'target',
     'conditions',
+    'scope',
     'stacks',
     'object',
   ])
@@ -818,18 +833,40 @@ function recordableEffects(item) {
   return (item?.effects ?? []).filter((effect) => effect.recorded && effect.layerC)
 }
 
+/** 抽出来的关键字（`recorded` 即可，`layerC` 可能因为「无法提取」被阻断而暂时是 null） */
+function keywordEffects(item) {
+  return (item?.effects ?? []).filter((effect) => effect.recorded)
+}
+
 test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗性 / 废原文）', { skip: SKIP }, () => {
   const detail = readFixture('char', '1041')
   const result = extractAgentBuffItems({ detail, nanokaId: '1041', anchors: [] })
   const items = itemsOf(result)
 
-  // 核心被动：限定 [普通攻击] / [冲刺攻击] → 招式条件 + 锚点（只回落大类）
-  const core = recordableEffects(items.get('core'))[0]
+  // 核心被动：限定 [普通攻击] / [冲刺攻击] → **作用域=招式** + 锚点（只回落大类）；
+  // 「触发[火力镇压]时」落不到工具字段 → 条件=无法提取（阻断自动映射，等人补）
+  const core = keywordEffects(items.get('core'))[0]
   assert.equal(core.slots.stat, '招式增伤')
   assert.equal(core.slots.value, 70)
-  assert.ok(core.slots.conditions.includes('限定招式：普通攻击 + 冲刺攻击'))
-  assert.equal(core.layerC.stat, 'skillDmgBonus')
-  assert.deepEqual(core.layerC.skillTargets, [
+  assert.equal(core.slots.scope, '招式')
+  assert.deepEqual(core.slots.conditions, [UNABLE])
+  assert.equal(core.blocked, true, '条件标了无法提取 → 阻断自动映射')
+  assert.equal(core.layerC, null)
+  assert.deepEqual(core.anchors.skillTargets, [
+    { category: 'basic', subcategoryId: null },
+    { category: 'dodge', subcategoryId: null },
+  ])
+  // 人补完条件后重解析：作用域=招式 → scope=skill + skillTargets
+  const coreFixed = mapKeywordsToEffect({
+    slots: { ...core.slots, conditions: [NONE] },
+    anchors: core.anchors,
+    id: core.id,
+    origin: core.origin,
+  })
+  assert.equal(coreFixed.ok, true)
+  assert.equal(coreFixed.effect.scope, 'skill')
+  assert.equal(coreFixed.effect.stat, 'skillDmgBonus')
+  assert.deepEqual(coreFixed.effect.skillTargets, [
     { category: 'basic', subcategoryId: null },
     { category: 'dodge', subcategoryId: null },
   ])
@@ -840,13 +877,20 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   assert.ok(items.get('talent-1').waste.length > 0)
   for (const entry of items.get('talent-1').waste) assert.ok(entry.reason, '废原文必须带原因')
 
-  // 影画 2：叠层 → kind=stacked / 12 层，时长 15 秒只进 note
-  const talent2 = recordableEffects(items.get('talent-2'))[0]
-  assert.equal(talent2.layerC.kind, 'stacked')
-  assert.equal(talent2.layerC.maxStacks, 12)
-  assert.equal(talent2.layerC.valuePerStack, 3)
+  // 影画 2：叠层 → kind=stacked / 12 层，时长 15 秒只进 note（条件同样待补）
+  const talent2 = keywordEffects(items.get('talent-2'))[0]
   assert.equal(talent2.slots.duration, '15 秒')
-  assert.match(talent2.layerC.note, /15 秒/)
+  assert.deepEqual(talent2.slots.conditions, [UNABLE])
+  const talent2Fixed = mapKeywordsToEffect({
+    slots: { ...talent2.slots, conditions: [NONE] },
+    stackMax: talent2.stackMax,
+    id: talent2.id,
+    origin: talent2.origin,
+  })
+  assert.equal(talent2Fixed.effect.kind, 'stacked')
+  assert.equal(talent2Fixed.effect.maxStacks, 12)
+  assert.equal(talent2Fixed.effect.valuePerStack, 3)
+  assert.match(talent2Fixed.effect.note, /15 秒/)
 
   // 影画 3 / 5：「技能等级+2」在阶段2 词表里没有对应字段 → 阶段1 结束时整条废原文
   for (const slot of ['talent-3', 'talent-5']) {
@@ -854,12 +898,21 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
     assert.ok(items.get(slot).waste.some((item) => /没有对应字段/.test(item.reason)))
   }
 
-  // 影画 6：无视目标 25% 抗性 → resPen
-  const talent6 = recordableEffects(items.get('talent-6'))[0]
+  // 影画 6：无视目标 25% 抗性 → resPen；敌人削弱族没写明给谁 → **目标默认全队**（source=default-team）
+  const talent6 = keywordEffects(items.get('talent-6'))[0]
   assert.equal(talent6.slots.stat, '抗性穿透')
   assert.equal(talent6.slots.action, '无视')
-  assert.equal(talent6.layerC.stat, 'resPen')
-  assert.equal(talent6.layerC.value, 25)
+  assert.equal(talent6.slots.target, '全队')
+  // 原文写了「无视目标…」→ 目标来源是 literal；**没写明给谁**时才是 default-team（界面标「默认」）
+  assert.ok(['literal', 'default-team'].includes(talent6.sources.target))
+  const talent6Fixed = mapKeywordsToEffect({
+    slots: { ...talent6.slots, conditions: [NONE] },
+    id: talent6.id,
+    origin: talent6.origin,
+  })
+  assert.equal(talent6Fixed.effect.stat, 'resPen')
+  assert.equal(talent6Fixed.effect.value, 25)
+  assert.equal(talent6Fixed.effect.applyTarget, 'team')
 
   // 影画 4：抗打断 / 无敌 / 我方减伤 → 整条废原文（不入库）
   assert.equal(items.get('talent-4').verdict, 'waste')
@@ -876,7 +929,7 @@ test('1641「菲欧妮」：转模条（异常掌控 → 暴击率）与无视�
   const detail = readFixture('char', '1641')
   const result = extractAgentBuffItems({ detail, nanokaId: '1641', anchors: [] })
   const items = itemsOf(result)
-  const coreEffects = recordableEffects(items.get('core'))
+  const coreEffects = keywordEffects(items.get('core'))
 
   const mastery = coreEffects.find((effect) => effect.layerC.stat === 'mastery')
   assert.equal(mastery.layerC.value, 85)
@@ -897,7 +950,7 @@ test('1641「菲欧妮」：转模条（异常掌控 → 暴击率）与无视�
   assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritRate' && effect.layerC.value === 30))
   assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritDmg' && effect.layerC.value === 25))
 
-  const talent6 = recordableEffects(items.get('talent-6'))
+  const talent6 = keywordEffects(items.get('talent-6'))
   const resPen = talent6.find((effect) => effect.layerC.stat === 'resPen')
   const reduceDefense = talent6.find((effect) => effect.layerC.stat === 'reduceDefense')
   assert.equal(resPen.layerC.value, 15)
@@ -921,13 +974,173 @@ test('14164「涅槃初翎」：精炼 1–5 各自成档（精通 90→126 / �
     const item = items.get(`refinement-${level}`)
     assert.equal(item.landing.container, 'refinementBuffs')
     assert.equal(item.containerIndex, level - 1, `精炼 ${level} → refinementBuffs[${level - 1}]`)
-    const effects = recordableEffects(item)
-    const mastery = effects.find((effect) => effect.layerC.stat === 'mastery')
-    const dmg = effects.find((effect) => effect.layerC.stat === 'dmgBonus')
+    const effects = (item.effects ?? []).filter((effect) => effect.recorded)
+    const mastery = effects.find((effect) => effect.slots.stat === '异常精通')
+    const dmg = effects.find((effect) => effect.slots.stat === '增伤')
+    assert.equal(mastery.layerC.stat, 'mastery')
     assert.equal(mastery.layerC.value, masteryValue)
-    assert.equal(dmg.layerC.value, dmgValue)
-    assert.equal(dmg.layerC.elementFilter[0], '火')
+    // 触发条件（「…产生暴击时」）落不到工具字段 → 无法提取、阻断；人补完条件后重解析
+    assert.deepEqual(dmg.slots.conditions, [UNABLE])
+    const dmgFixed = mapKeywordsToEffect({
+      slots: { ...dmg.slots, conditions: [NONE] },
+      id: dmg.id,
+      origin: dmg.origin,
+    })
+    assert.equal(dmgFixed.effect.stat, 'dmgBonus')
+    assert.equal(dmgFixed.effect.value, dmgValue)
+    assert.deepEqual(dmgFixed.effect.elementFilter, ['火'])
     assert.equal(item.skillDesc ?? null, null, '音擎文本没有「技能描述」落点')
+  }
+})
+
+test('条件**只取本句**：禁止跨句汇聚（烬火追魂第 4 句的 bug）', () => {
+  // 抬头句「…时发动：」只作用于它引领的那句（splitUnits 已把抬头句并入下一句）
+  const text = [
+    '当菲欧妮处于[生竭]状态时，下一次普通换入、快速支援、招架支援换入前场时发动：',
+    '周身环绕火焰，对周围敌人造成火属性伤害，视为[终结技]伤害。',
+    '终结一击命中处于冰属性异常状态的敌人时，触发1次[异放]效果。',
+    '该次[异放]效果触发暴击时，其暴击伤害额外提升40%。',
+  ].join('\n')
+  const { effects } = extractKeywordEffects({ text, origin: 'test', selfNames: ['菲欧妮'] })
+  const critDmg = effects.find((effect) => effect.slots.stat === '暴击伤害')
+  assert.ok(critDmg, '第 4 句应当产出暴击伤害条')
+  const joined = critDmg.slots.conditions.join(' | ')
+  for (const banned of ['下一次普通换入', '快速支援', '招架支援', '生竭']) {
+    assert.ok(!joined.includes(banned), `条件里不许出现别的句子里的「${banned}」：${joined}`)
+  }
+  // 「该次[异放]效果触发暴击时」对暴击伤害是**同义反复** → 条件=无（不是无法提取）
+  assert.deepEqual(critDmg.slots.conditions, [NONE])
+  assert.ok(!critDmg.slots.conditions.includes(UNABLE))
+  // 也不许凭空生成「限定招式」
+  assert.deepEqual(critDmg.skillLimits, [])
+  // 作用域来自**本句**的「[异放]效果」（不是从别的句子搬来的）
+  assert.equal(critDmg.slots.scope, '异放')
+})
+
+test('条件白名单硬校验：原句片段一律改写成「无法提取」，绝不冒充可转换', () => {
+  const { effects } = extractKeywordEffects({
+    text: '队伍中任意角色对敌人造成的属性异常伤害产生暴击时，装备者造成的火属性伤害提升40%',
+    origin: 'test',
+  })
+  const row = effects.find((effect) => effect.slots.stat === '增伤')
+  assert.ok(row)
+  assert.deepEqual(row.slots.conditions, [UNABLE])
+
+  // 结构性硬校验（直接调）：词表外的长文本 / 含句读的值 → 一律 `无法提取` 并记原因
+  const direct = enforceSlotWhitelist({
+    stat: '队伍中任意角色对敌人造成的属性异常伤害产生暴击时',
+    action: '提升',
+    value: 40,
+    unit: '%',
+    target: '无',
+    conditions: ['无'],
+    scope: '随便编的作用域',
+    stacks: '无',
+    duration: '无',
+    object: '无',
+    elements: ['无'],
+  })
+  assert.equal(direct.slots.stat, UNABLE)
+  assert.equal(direct.slots.scope, UNABLE)
+  assert.ok(direct.violations.some((item) => item.slot === 'stat' && item.reason === 'unmappable-condition'))
+  assert.ok(direct.violations.some((item) => item.slot === 'scope'))
+  // 全量断言：任何槽位都不许等于原句片段（长文本 / 含句读）
+  for (const effect of effects) {
+    for (const id of SLOT_IDS) {
+      const value = effect.slots[id]
+      const list = Array.isArray(value) ? value : [value]
+      for (const item of list) {
+        const text = String(item ?? '')
+        if (text === NONE || text === UNABLE) continue
+        assert.ok(text.length <= 24, `槽位 ${id} 的值过长（疑似原句）：${text}`)
+        assert.ok(!/[。；：，、！？]/.test(text), `槽位 ${id} 的值含句读（疑似原句）：${text}`)
+      }
+    }
+  }
+})
+
+test('同义反复条件：暴伤族 + 「触发暴击时」→ 条件=无；非暴伤族 + 「暴击时」→ 无法提取', () => {
+  const tautology = firstEffect('该次[异放]效果触发暴击时，其暴击伤害额外提升40%')
+  assert.equal(tautology.effect.slots.stat, '暴击伤害')
+  assert.deepEqual(tautology.effect.slots.conditions, [NONE])
+  assert.ok(tautology.effect.tautologyDropped.length > 0, '界面据此标「同义反复已忽略」')
+
+  const notTautology = firstEffect('暴击时，造成的伤害提升40%')
+  assert.equal(notTautology.effect.slots.stat, '增伤')
+  assert.deepEqual(notTautology.effect.slots.conditions, [UNABLE])
+  assert.equal(notTautology.effect.tautologyDropped.length, 0)
+})
+
+test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ 作用域=异放 → scope=anomalyRelease', () => {
+  const { effect } = firstEffect('菲欧妮触发的[异放]效果无视敌人40%防御力')
+  assert.equal(effect.slots.stat, '减防')
+  assert.equal(effect.slots.action, '无视')
+  assert.equal(effect.slots.value, 40)
+  assert.equal(effect.slots.scope, '异放')
+  assert.equal(effect.slots.target, '全队')
+  const mapped = mapKeywordsToEffect({ slots: effect.slots, id: 'x', origin: 'test' })
+  assert.equal(mapped.ok, true)
+  assert.equal(mapped.effect.stat, 'reduceDefense')
+  assert.equal(mapped.effect.value, 40)
+  assert.equal(mapped.effect.scope, 'anomalyRelease')
+  assert.equal(mapped.effect.applyTarget, 'team')
+
+  // 对照：普通（无作用域）减防 → 通用
+  const plain = firstEffect('无视敌人40%防御力')
+  assert.equal(plain.effect.slots.scope, '无')
+  assert.equal(mapKeywordsToEffect({ slots: plain.effect.slots, id: 'y', origin: 'test' }).effect.scope, 'general')
+
+  // 其他子类各自对应
+  for (const [slotValue, id] of [
+    ['紊乱', 'disorder'],
+    ['乱流', 'turbulence'],
+    ['耀变', 'radiance'],
+    ['异化系数', 'mutation'],
+  ]) {
+    const mappedSub = mapKeywordsToEffect(
+      keyword({ slots: { stat: '增伤', action: '提升', value: 10, unit: '%', scope: slotValue } }),
+    )
+    assert.equal(mappedSub.effect.scope, id, `作用域=${slotValue} → scope=${id}`)
+  }
+})
+
+test('目标默认值：敌人削弱族没写明给谁 → 全队（source=default-team）；写明自身才是自身', () => {
+  const defaulted = firstEffect('无视25%火属性伤害抗性')
+  assert.equal(defaulted.effect.slots.stat, '抗性穿透')
+  assert.equal(defaulted.effect.slots.target, '全队')
+  assert.equal(defaulted.effect.sources.target, 'default-team', '界面据此标淡色「默认」')
+  assert.equal(
+    mapKeywordsToEffect({ slots: defaulted.effect.slots, id: 't1', origin: 'test' }).effect.applyTarget,
+    'team',
+  )
+
+  // 明确写「装备者 / 自身」→ 自身（不是默认兜底）
+  const self = firstEffect('装备者的防御力降低10%')
+  assert.equal(self.effect.slots.stat, '减防')
+  assert.equal(self.effect.slots.target, '自身')
+  assert.equal(self.effect.sources.target, 'literal')
+
+  // 非削弱族不受影响
+  const buff = firstEffect('造成的伤害提升10%')
+  assert.equal(buff.effect.slots.target, '无')
+})
+
+test('解析规则对照表：从词表自动导出（分组 + 条目）', () => {
+  const table = buildRulesTable()
+  assert.ok(table.groups.length >= 10, `分组数 ${table.groups.length}`)
+  const total = table.groups.reduce((acc, group) => acc + group.items.length, 0)
+  assert.ok(total >= 100, `条目数 ${total}`)
+  for (const group of table.groups) {
+    assert.ok(group.id && group.title, '每组都要有 id / title')
+    assert.ok(group.items.length > 0, `${group.id} 不该是空组`)
+    for (const item of group.items) {
+      assert.equal(typeof item.game, 'string')
+      assert.equal(typeof item.slot, 'string')
+    }
+  }
+  const ids = table.groups.map((group) => group.id)
+  for (const required of ['stat', 'action', 'literal', 'anomaly', 'convert', 'scope', 'target', 'condition', 'waste']) {
+    assert.ok(ids.includes(required), `缺少分组 ${required}`)
   }
 })
 

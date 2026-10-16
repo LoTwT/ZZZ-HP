@@ -108,6 +108,14 @@ function wengineKey(raw) {
   return normalizeNameKey(raw).replace(/[_\-‐-―]/g, '')
 }
 
+/**
+ * **解析规则对照表**（只读）：直接取抽取器的 `buildRulesTable()`（单一事实来源，
+ * 前端「解析规则」弹窗与 `dev-docs/nanoka-buff-rules-*.md` 导出共用这一份）。
+ */
+export function nanokaRulesTable() {
+  return buildRulesTable()
+}
+
 /** 去重（保留首次出现的顺序，按 key 函数） */
 export function uniqueBy(list, keyOf) {
   const seen = new Set()
