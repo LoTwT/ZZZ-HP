@@ -53,7 +53,7 @@ export interface MonsterDetailRecord {
 }
 
 const props = defineProps<{
-  /** 右侧数据行取值；缺省时只渲染左侧图片列（单独怪物对比的未选择 / 查无基础库记录态） */
+  /** 右侧数据行取值；缺省时只渲染左侧图片列（怪物数据库的未选择 / 查无基础库记录态） */
   record?: MonsterDetailRecord | null
   /** 左侧图片地址；缺省渲染「怪物图片」占位块 */
   imageUrl?: string | null
