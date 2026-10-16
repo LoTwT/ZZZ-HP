@@ -2415,6 +2415,12 @@ export function applyBuffModsToPanel(
       (baseEnergyRegen * mods.energyRegen) / 100 +
       mods.energyRegenFlat,
     anomalyCritRate: externalPanel.anomalyCritRate + mods.anomalyCritRate,
+    turbulenceCritRate: externalPanel.anomalyCritRate + mods.turbulenceCritRate,
+    turbulenceCritDmg: externalPanel.anomalyCritDmg + mods.turbulenceCritDmg,
+    radianceCritRate: externalPanel.anomalyCritRate + mods.radianceCritRate,
+    radianceCritDmg: externalPanel.anomalyCritDmg + mods.radianceCritDmg,
+    disorderCritRate: externalPanel.anomalyCritRate + mods.disorderCritRate,
+    disorderCritDmg: externalPanel.anomalyCritDmg + mods.disorderCritDmg,
     anomalyCritDmg: externalPanel.anomalyCritDmg + mods.anomalyCritDmg,
     anomalyDmgBonus: externalPanel.anomalyDmgBonus + mods.anomalyDmgBonus,
     anomalyReleaseCritRate:

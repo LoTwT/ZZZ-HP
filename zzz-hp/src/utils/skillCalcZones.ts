@@ -211,8 +211,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'turbulence') {
-    const hasCritZone =
-      result.turbulenceUsesAnomalyCrit && isActiveZone(result.anomalyFullCritZone)
+    // 乱流**只吃自己的**暴击（用户 2026-10-16：不再蹭异常暴击）
+    const hasCritZone = isActiveZone(result.turbulenceFullCritZone)
     push(rows, '乱流基础倍率', result.turbulenceBaseMultRatio)
     push(rows, '异常持续时间', result.effectiveAnomalyDuration)
     push(rows, '乱流补偿倍率', result.turbulenceCompMultRatio)
@@ -222,7 +222,7 @@ export function buildSkillCalcZoneRows(
     push(rows, '乱流倍率区', result.turbulenceZone)
     push(rows, '乱流综合增伤区', result.turbulenceCombinedDmgBonusZone)
     if (hasCritZone) {
-      push(rows, '异常暴击区', result.anomalyFullCritZone)
+      push(rows, '乱流暴击区', result.turbulenceFullCritZone)
     }
     pushAnomalyFinalDamages(rows, {
       hasCritZone,
@@ -234,11 +234,12 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'anomalyRelease') {
-    const hasCritZone = isActiveZone(result.anomalyCombinedFullCritZone)
     push(rows, '异放综合增伤区', result.anomalyReleaseCombinedDmgBonusZone)
     push(rows, '异放倍率区', result.anomalyReleaseMultZone)
+    // 「异常综合暴击区」已删除 → 异放用自己的暴击区（用户 2026-10-16）
+    const hasCritZone = isActiveZone(result.anomalyReleaseFullCritZone)
     if (hasCritZone) {
-      push(rows, '异常综合暴击区', result.anomalyCombinedFullCritZone)
+      push(rows, '异放暴击区', result.anomalyReleaseFullCritZone)
     }
     pushAnomalyFinalDamages(rows, {
       hasCritZone,

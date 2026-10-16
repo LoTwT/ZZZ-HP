@@ -196,6 +196,13 @@ export type AffixExternalFixedParts = {
   impact: number
   anomalyCritRate: number
   anomalyCritDmg: number
+  /** 子类专用暴击（可选：agentBase 不提供时按 0，由预设/驱动盘等来源单独补） */
+  turbulenceCritRate?: number
+  turbulenceCritDmg?: number
+  radianceCritRate?: number
+  radianceCritDmg?: number
+  disorderCritRate?: number
+  disorderCritDmg?: number
   anomalyDmgBonus: number
   directDmgMult: number
   anomalyMult: number
@@ -251,6 +258,13 @@ export function buildAffixExternalFixedParts(
     // 冲击力：没有「基础冲击力」这份数据，按点数加（与异常掌控 / 能量恢复同口径）
     impact: mainStats.impact,
     anomalyCritRate: agentBase.anomalyCritRate,
+    // 子类专用暴击：agentBase 里没有 → 0（由预设/驱动盘等来源单独补）
+    turbulenceCritRate: 0,
+    turbulenceCritDmg: 0,
+    radianceCritRate: 0,
+    radianceCritDmg: 0,
+    disorderCritRate: 0,
+    disorderCritDmg: 0,
     anomalyCritDmg: agentBase.anomalyCritDmg,
     anomalyDmgBonus: agentBase.anomalyDmgBonus,
     directDmgMult: agentBase.directDmgMult,
@@ -329,6 +343,12 @@ export function applyAffixCountsToFixedParts(
      */
     impact: roundPanelValue(parts.impact),
     anomalyCritRate: roundPanelValue(parts.anomalyCritRate),
+    turbulenceCritRate: roundPanelValue(parts.turbulenceCritRate ?? 0),
+    turbulenceCritDmg: roundPanelValue(parts.turbulenceCritDmg ?? 0),
+    radianceCritRate: roundPanelValue(parts.radianceCritRate ?? 0),
+    radianceCritDmg: roundPanelValue(parts.radianceCritDmg ?? 0),
+    disorderCritRate: roundPanelValue(parts.disorderCritRate ?? 0),
+    disorderCritDmg: roundPanelValue(parts.disorderCritDmg ?? 0),
     anomalyCritDmg: roundPanelValue(parts.anomalyCritDmg),
     anomalyDmgBonus: roundPanelValue(parts.anomalyDmgBonus),
     anomalyReleaseCritRate: 0,
