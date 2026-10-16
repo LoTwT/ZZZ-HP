@@ -40,6 +40,7 @@ import {
   type AffixLibraryStore,
 } from '@/utils/affixLibrary'
 import { normalizeBuffScopes } from '@/utils/buffScope'
+import { resolveAffixScopeForSave } from '@/utils/affixLibrary'
 
 /**
  * 词条库弹窗：多套库切换 + 条目编辑 + 导入导出。
@@ -113,6 +114,10 @@ const enabledSet = computed(() => new Set(props.enabledIds))
 const UNGROUPED_TAB = '__ungrouped__'
 const activeTab = ref<string>('manage')
 const editingEntryId = ref('')
+/** 正在编辑条目的**原始**作用域数组（保存时未改动就原样回写，避免静默压扁多值） */
+const editingEntryScope = ref<BuffScope[]>(['general'])
+/** 打开表单时的作用域初值；一旦被改动 → 视为用户显式选择 */
+const initialDraftScope = ref<BuffScope>('general')
 
 watch(activeTab, () => {
   if (editingEntryId.value) cancelEdit()
@@ -657,6 +662,8 @@ type EntryFormDraft = {
   group: string
   applySituation: BuffApplySituation
   scope: BuffScope
+  /** 用户是否显式改过 scope（没改 → 保存时原样保留整个数组，避免压扁多值） */
+  scopeTouched: boolean
   skillCategory: BuffSkillTargetId
   appliesToAnomaly: boolean
 }
@@ -670,6 +677,7 @@ function emptyDraft(): EntryFormDraft {
     group: '',
     applySituation: 'global',
     scope: 'general',
+    scopeTouched: false,
     skillCategory: 'basic',
     appliesToAnomaly: false,
   }
@@ -677,6 +685,14 @@ function emptyDraft(): EntryFormDraft {
 
 const draft = ref(emptyDraft())
 const draftError = ref<string | null>(null)
+
+// 作用域被显式改动过才覆盖原数组（否则保存时原样保留，防止多值被压成单值）
+watch(
+  () => draft.value.scope,
+  (next) => {
+    if (next !== initialDraftScope.value) draft.value.scopeTouched = true
+  },
+)
 
 function perRollUnitHint(target: AffixLibraryEntryTarget): string {
   return affixPerRollUnit(target) === 'percent' ? '%' : ''
@@ -694,8 +710,13 @@ function conditionFieldsFromForm(row: EntryFormDraft): Partial<AffixLibraryEntry
   }
   return {
     applySituation: row.applySituation,
-    // 表单是单选，写出去统一数组口径
-    scope: normalizeBuffScopes(row.scope),
+    // 未改动 → 原样保留整个数组；改动过 → 单元素数组（见 resolveAffixScopeForSave）
+    // 新增条目（没在编辑任何条目）= 用户显式选的作用域；编辑中则看是否改过
+    scope: resolveAffixScopeForSave(
+      editingEntryScope.value,
+      row.scope,
+      row.scopeTouched || !editingEntryId.value,
+    ),
     ...(row.scope === 'skill'
       ? {
           skillCategory: row.skillCategory,
@@ -726,6 +747,8 @@ async function toggleEdit(entry: AffixLibraryEntry) {
     return
   }
   editingEntryId.value = entry.id
+  editingEntryScope.value = normalizeBuffScopes(entry.scope)
+  initialDraftScope.value = normalizeBuffScopes(entry.scope)[0] ?? 'general'
   draftError.value = null
   draft.value = {
     label: entry.label,
@@ -734,8 +757,9 @@ async function toggleEdit(entry: AffixLibraryEntry) {
     cap: entry.cap,
     group: entry.group,
     applySituation: entry.applySituation || 'global',
-    // 数组口径：表单只展示主作用域（多选态在管理端编辑器里改）
+    // 数组口径：表单展示主作用域；用户没改就原样回写整个数组（多值不丢）
     scope: normalizeBuffScopes(entry.scope)[0] ?? 'general',
+    scopeTouched: false,
     skillCategory: entry.skillCategory || 'basic',
     appliesToAnomaly: entry.appliesToAnomaly === true,
   }

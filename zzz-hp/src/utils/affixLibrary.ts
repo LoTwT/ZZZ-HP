@@ -441,6 +441,11 @@ export interface AffixLibraryEntry {
   applySituation?: BuffApplySituation
   /** 作用域（**数组**口径；读时兼容单值字符串） */
   scope?: BuffScope[]
+  /**
+   * 表单保存作用域：**未改动** → 原样保留整个数组（多值数组不会被压成首个成员）；
+   * **显式改动** → 写成该单元素数组。避免"单选表单静默压扁多值"导致的数据丢失。
+   */
+  scopeTouched?: boolean
   skillCategory?: BuffSkillTargetId
   skillSubcategoryId?: string | null
   appliesToAnomaly?: boolean
@@ -714,6 +719,19 @@ const serverAffixPreset = ref<{
 
 /** 服务端条目里被跳过的条数（target 不是本版本认识的字段）—— 供界面/测试读出 */
 export const skippedServerPresetEntries = ref(0)
+
+/**
+ * 表单保存作用域（**防数据丢失**）：
+ * - 用户没改过 scope → 原样回写整个数组（`['anomaly','anomalyRelease']` 仍是多值）；
+ * - 用户显式改成某个值 → 写成 `[该值]`。
+ */
+export function resolveAffixScopeForSave(
+  original: unknown,
+  draftScope: BuffScope | undefined,
+  touched: boolean,
+): BuffScope[] {
+  return touched ? normalizeBuffScopes(draftScope) : normalizeBuffScopes(original)
+}
 
 function readPresetConditionString(value: unknown, allowed: ReadonlySet<string>): string | undefined {
   return typeof value === 'string' && allowed.has(value) ? value : undefined
