@@ -107,8 +107,10 @@ interface KeywordRow {
   dropReason: string
   unableSlots: string[]
   skillDesc: NanokaBuffItem['skillDesc']
-  // —— 面板状态（不入库）
+  /** 面板状态（不入库） */
   detailOpen: boolean
+  /** 阶段二：是否加入（默认加入；取消勾选 → 标灰、不参与写入准备） */
+  included: boolean
   patchSlot: string
   keywordDirty: boolean
   /** 阶段二：实际增益（增益块全字段） */
@@ -377,12 +379,6 @@ function isEmptySlotValue(value: unknown): boolean {
   return !text || text === NONE
 }
 
-function isUnableValue(value: unknown): boolean {
-  if (value === UNABLE) return true
-  if (Array.isArray(value)) return value.includes(UNABLE)
-  return false
-}
-
 /** 关键字行要显示的槽位（只显示有值；`无` 进 hidden；`无法提取` 进 unable） */
 function slotBuckets(row: KeywordRow) {
   const visible: { id: string; label: string; value: unknown; unable: boolean }[] = []
@@ -411,6 +407,22 @@ function slotBuckets(row: KeywordRow) {
 function conditionText(value: unknown): string {
   if (Array.isArray(value)) return value.join(' + ')
   return String(value ?? NONE)
+}
+
+/** 槽位值是不是槽位级 `无法提取`（详情里要标 ⚠X，别当普通值） */
+function isUnableValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.includes(UNABLE)
+  return String(value ?? '').trim() === UNABLE
+}
+
+/** 详情里某槽位的展示文本（元素 / 条件是复数，逐个列出） */
+function slotText(row: KeywordRow, slotId: string): string {
+  const value = (row.slots as unknown as Record<string, unknown>)[slotId]
+  if (Array.isArray(value)) {
+    const list = value.filter((item) => item !== NONE && item !== '')
+    return list.length ? list.map((item) => displaySlotValue(slotId, item)).join(' + ') : NONE
+  }
+  return displaySlotValue(slotId, value)
 }
 
 function isElementChecked(row: KeywordRow, element: string): boolean {
@@ -592,6 +604,8 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     unableSlots: [...(effect.unableSlots ?? [])],
     skillDesc: item.skillDesc,
     detailOpen: false,
+    // 默认全部加入（可写条目全勾选）；用户可在阶段二把不想加入的去掉
+    included: true,
     patchSlot: '',
     keywordDirty: false,
     gain: effect.layerC || effect.recorded ? defaultGain(effect.layerC, effect.sentence) : null,
@@ -614,6 +628,7 @@ function applyExtractResult(result: NanokaExtractResult) {
   rows.value = result.items.flatMap((item) =>
     item.effects.map((effect, index) => toRow(effect, item, index)),
   )
+  selectedKey.value = rows.value[0]?.key ?? ''
   page.value = 'stage1'
   writePlan.value = null
   writeMessage.value = ''
@@ -825,6 +840,10 @@ function mergeSimplified(
   simplified.effects.forEach((effect, index) => {
     rows.value.push(toRow(effect, item, index))
   })
+  // 阶段二选中的条目可能刚被重算掉 → 挪到第一条，别让右侧空着
+  if (!rows.value.some((row) => row.key === selectedKey.value)) {
+    selectedKey.value = rows.value[0]?.key ?? ''
+  }
   // 按句配对视图跟着刷新（废原文区由 wasteSentences 计算，不必另存）
   item.sentences = simplified.sentences ?? []
   item.waste = simplified.waste ?? []
@@ -981,6 +1000,7 @@ function removeMulti(row: KeywordRow, slotId: string, index: number) {
 
 function removeRow(row: KeywordRow) {
   rows.value = rows.value.filter((entry) => entry.key !== row.key)
+  if (selectedKey.value === row.key) selectedKey.value = rows.value[0]?.key ?? ''
   messageKind.value = 'ok'
   message.value = `已删掉该条关键字；它在阶段二的增益行会保留并标「关键字里已无此条」（点 [解析] 生效）`
 }
@@ -1126,10 +1146,42 @@ function resolveConflict(row: KeywordRow, conflict: NanokaParseConflict, choice:
   row.conflicts = row.conflicts.filter((item) => item.field !== conflict.field)
 }
 
+// ---------------------------------------------------------------- 阶段二：左选右看（主从布局）
+
+/** 阶段二当前选中的关键字（右侧**只**显示这一条的实际增益） */
+const selectedKey = ref('')
+
+const activeRow = computed<KeywordRow | null>(() => {
+  const row = rows.value.find((item) => item.key === selectedKey.value)
+  return row ?? rows.value[0] ?? null
+})
+
+/** 勾选了「加入」的条目（未勾选的不参与写入准备） */
+const includedRows = computed(() => rows.value.filter((row) => row.included))
+
+/** 某个条目的下拉标签：来源块 · 第 N 句 · 属性=… */
+function rowLabel(row: KeywordRow): string {
+  const condition = conditionText(row.slots.conditions)
+  return (
+    `${row.itemSlotLabel} · 第 ${row.sentenceIndex + 1} 句 · 属性=${displaySlotValue('stat', row.slots.stat)}` +
+    ` · 动作=${row.slots.action}` +
+    (row.slots.action === '转化'
+      ? ' · 转模'
+      : ` · 数值=${row.slots.value}${row.slots.unit === '无' ? '' : row.slots.unit}`) +
+    (condition && condition !== '无' ? ` · 条件=${condition}` : '') +
+    (row.included ? '' : '（不加入）')
+  )
+}
+
+/** 切换勾选：不加入的条目在左侧标灰、不参与写入 */
+function toggleIncluded(row: KeywordRow, value: boolean) {
+  row.included = value
+}
+
 // ---------------------------------------------------------------- 写入（准备 → 确认写入）
 
 const writableRows = computed(() =>
-  rows.value.filter((row) => row.recorded && !row.blocked && row.gain),
+  rows.value.filter((row) => row.included && row.recorded && !row.blocked && row.gain),
 )
 
 function buildApplyRows(): NanokaApplyRow[] {
@@ -1289,7 +1341,8 @@ const wasteCount = computed(() => wasteSentences.value.length)
         阶段二 · 关键字 → 增益
       </button>
       <span class="nbf-count">
-        关键字 {{ rows.length }} 条 · 可写 {{ writableRows.length }} 条 · 废原文 {{ wasteCount }} 条
+        关键字 {{ rows.length }} 条 · 已勾选 {{ includedRows.length }} 条 · 可写 {{ writableRows.length }} 条 ·
+        废原文 {{ wasteCount }} 条
       </span>
     </div>
 
@@ -1593,35 +1646,92 @@ const wasteCount = computed(() => wasteSentences.value.length)
         </div>
       </header>
 
-      <div class="nbf-columns">
-        <section class="nbf-col">
-          <h4 class="nbf-col-title">关键字（与阶段一同一份数据）</h4>
-          <div v-for="row in rows" :key="`s2k-${row.key}`" class="nbf-kw-row nbf-kw-row-compact">
-            <header class="nbf-kw-head">
-              <span class="nbf-kw-index">{{ row.itemSlotLabel }} · 第 {{ row.sentenceIndex + 1 }} 句</span>
-              <span class="nbf-kw-summary">
-                属性={{ displaySlotValue('stat', row.slots.stat) }} · 动作={{ row.slots.action }}
-                <template v-if="row.slots.action !== '转化'">
-                  · 数值={{ row.slots.value }}{{ row.slots.unit === '无' ? '' : row.slots.unit }}
+      <!-- 左选右看：左侧窄（下拉选择 + 勾选 + 详情），右侧宽（当前这一条的实际增益） -->
+      <div class="nbf-master">
+        <section class="nbf-master-left">
+          <h4 class="nbf-col-title">选一条关键字</h4>
+          <select v-model="selectedKey" class="field-input nbf-master-select">
+            <option v-for="row in rows" :key="`opt-${row.key}`" :value="row.key">
+              {{ rowLabel(row) }}
+            </option>
+          </select>
+
+          <template v-if="activeRow">
+            <label class="nbf-include">
+              <input
+                type="checkbox"
+                :checked="activeRow.included"
+                @change="toggleIncluded(activeRow, ($event.target as HTMLInputElement).checked)"
+              />
+              <span>加入这条{{ activeRow.included ? '' : '（当前不加入）' }}</span>
+            </label>
+
+            <button type="button" class="nbf-mini-btn" @click="activeRow.detailOpen = !activeRow.detailOpen">
+              {{ activeRow.detailOpen ? '收起详情' : '详情' }}
+            </button>
+
+            <!-- 详情：信息量不少于阶段一（11 槽位 + 转模槽位 + 来源句 + 指代 / 无法提取标记） -->
+            <div v-if="activeRow.detailOpen" class="nbf-detail">
+              <p class="nbf-detail-sentence">{{ activeRow.sentence }}</p>
+              <p v-if="activeRow.inherited" class="nbf-sub">{{ activeRow.inherited.label }}（属性从前文继承）</p>
+              <p v-if="activeRow.tautologyDropped.length" class="nbf-sub">
+                同义反复已忽略：{{ activeRow.tautologyDropped.join(' / ') }}
+              </p>
+              <ul class="nbf-detail-slots">
+                <li v-for="entry in SLOT_ORDER" :key="`d-${entry}`">
+                  <span class="nbf-slot-label">{{ slotLabel(entry) }}</span>
+                  <span
+                    class="nbf-detail-value"
+                    :class="{ 'nbf-detail-unable': isUnableValue(activeRow.slots[entry]) }"
+                  >
+                    {{ isUnableValue(activeRow.slots[entry]) ? '⚠X ' : '' }}{{ slotText(activeRow, entry) }}
+                  </span>
+                </li>
+                <template v-if="activeRow.slots.action === '转化' && activeRow.convert">
+                  <li v-for="id in CONVERT_SLOT_ORDER" :key="`dc-${id}`">
+                    <span class="nbf-slot-label">{{ slotLabel(id) }}</span>
+                    <span class="nbf-detail-value">{{ displaySlotValue(id, activeRow.convert[id]) }}</span>
+                  </li>
                 </template>
-                · 条件={{ conditionText(row.slots.conditions) }}
-              </span>
-              <span v-if="!row.recorded" class="nbf-badge nbf-badge-drop">不录</span>
-              <span v-if="row.blocked" class="nbf-badge nbf-badge-drop">{{ row.blockReason }}</span>
-            </header>
-            <p class="nbf-kw-sentence">{{ row.sentence }}</p>
-          </div>
+              </ul>
+              <p class="nbf-sub">
+                招式锚点：{{ activeRow.anchors.labels.length ? activeRow.anchors.labels.join(' + ') : '无' }} ·
+                状态：{{ activeRow.recorded ? (activeRow.blocked ? '待补（无法提取）' : '可写') : '不录' }}
+              </p>
+            </div>
+          </template>
+
+          <h5 class="nbf-col-title nbf-include-title">全部关键字（勾选 = 是否加入）</h5>
+          <ul class="nbf-include-list">
+            <li v-for="row in rows" :key="`inc-${row.key}`" :class="{ 'nbf-include-off': !row.included }">
+              <label>
+                <input
+                  type="checkbox"
+                  :checked="row.included"
+                  @change="toggleIncluded(row, ($event.target as HTMLInputElement).checked)"
+                />
+                <button type="button" class="nbf-link-btn" @click="selectedKey = row.key">
+                  {{ rowLabel(row) }}
+                </button>
+              </label>
+            </li>
+          </ul>
         </section>
 
-        <section class="nbf-col">
+        <section class="nbf-master-right">
           <h4 class="nbf-col-title">实际增益（增益块全字段 · 可手改）</h4>
           <p v-if="!rows.length" class="empty-hint">还没有关键字：回阶段一 [抓取增益] / [化简]。</p>
-          <div v-for="row in rows" :key="`g-${row.key}`" class="nbf-gain">
+          <p v-else-if="!activeRow" class="empty-hint">左侧选一条关键字。</p>
+          <div v-else-if="!activeRow.included" class="nbf-excluded">
+            这条已取消勾选（**不加入**）：它的增益不参与「写入（准备）」。要看/改就重新勾选「加入这条」。
+          </div>
+          <div v-for="row in activeRow ? [activeRow] : []" :key="`g-${row.key}`" class="nbf-gain">
             <header class="nbf-kw-head">
-              <span class="nbf-kw-index">{{ row.itemSlotLabel }}</span>
+              <span class="nbf-kw-index">{{ row.itemSlotLabel }} · 第 {{ row.sentenceIndex + 1 }} 句</span>
               <span v-if="row.stale" class="nbf-badge nbf-badge-warn">关键字里已无此条</span>
               <span v-if="row.added" class="nbf-badge nbf-badge-ok">关键字新增</span>
               <span v-if="row.blocked" class="nbf-badge nbf-badge-drop">{{ row.blockReason }}</span>
+              <span v-if="!row.included" class="nbf-badge nbf-badge-warn">不加入</span>
               <span v-if="row.writeLabel" class="nbf-write-label">{{ row.writeLabel }}</span>
             </header>
 
@@ -2187,6 +2297,142 @@ const wasteCount = computed(() => wasteSentences.value.length)
 
 .nbf-original-text {
   margin: 0 0.4rem;
+}
+
+/* 阶段二：左选右看（左侧窄 = 选择器 + 详情，右侧宽 = 当前这条的实际增益） */
+.nbf-master {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .nbf-master {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.nbf-master-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft, rgba(250, 248, 242, 0.6));
+}
+
+.nbf-master-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nbf-master-select {
+  width: 100%;
+}
+
+.nbf-include {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.nbf-include-title {
+  margin-top: 0.5rem;
+}
+
+.nbf-include-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 22rem;
+  overflow: auto;
+  font-size: 0.78rem;
+}
+
+.nbf-include-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.nbf-include-off {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.nbf-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nbf-link-btn:hover {
+  text-decoration: underline;
+}
+
+.nbf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.nbf-detail-sentence {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.nbf-detail-slots {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.nbf-detail-slots li {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.nbf-detail-slots .nbf-slot-label {
+  flex: 0 0 4.6rem;
+}
+
+.nbf-detail-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nbf-detail-unable {
+  color: #b23b2e;
+  font-weight: 600;
+}
+
+.nbf-excluded {
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--color-border-hover);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  opacity: 0.85;
 }
 
 .nbf-badge-inherit {
