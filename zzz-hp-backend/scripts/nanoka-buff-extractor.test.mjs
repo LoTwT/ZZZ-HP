@@ -73,6 +73,8 @@ import {
   smartMergeParse,
   summarizeItems,
 } from '../src/services/nanokaBuffService.js'
+import { normalizeBuffScopes } from '../src/services/calculatorBuffService.js'
+import { buildAffixEffectTemplate } from '../src/utils/affixEffectTemplate.js'
 import nanokaBuffRoutes from '../src/routes/nanokaBuffRoutes.js'
 import { requireAdmin } from '../src/middleware/requireAdmin.js'
 
@@ -1924,4 +1926,37 @@ test('属性下拉（STAT_OPTIONS）与词表一致：子类增伤关键词既�
   for (const keyword of Object.keys(expected)) {
     assert.ok(STAT_OPTIONS.includes(keyword), `${keyword} 下拉缺失`)
   }
+})
+test('作用域数组口径（前后端同源）：单值兼容 / general 归一 / 去重剔非法保序 / skill 并存 / 写库前归一', () => {
+  // ① 单值兼容
+  assert.deepEqual(normalizeBuffScopes('anomaly'), ['anomaly'])
+  assert.deepEqual(normalizeBuffScopes(['anomalyRelease']), ['anomalyRelease'])
+  // ② general 归一（含 general 时其余丢弃）+ 缺省/空/全非法
+  assert.deepEqual(normalizeBuffScopes(['anomaly', 'general']), ['general'])
+  assert.deepEqual(normalizeBuffScopes(['general', 'skill']), ['general'])
+  assert.deepEqual(normalizeBuffScopes([]), ['general'])
+  assert.deepEqual(normalizeBuffScopes(undefined), ['general'])
+  assert.deepEqual(normalizeBuffScopes(['bogus']), ['general'])
+  // ③ 去重 + 剔非法 + 按枚举顺序保序
+  assert.deepEqual(normalizeBuffScopes(['radiance', 'anomaly', 'anomaly', 'bogus']), ['anomaly', 'radiance'])
+  assert.deepEqual(
+    normalizeBuffScopes(['mutation', 'skill', 'turbulence']),
+    ['skill', 'turbulence', 'mutation'],
+  )
+  // ④ skill 与其它并存（招式锚点仍需 skillTargets）
+  assert.deepEqual(normalizeBuffScopes(['skill', 'anomaly']), ['skill', 'anomaly'])
+  // ⑤ 写库前归一（nanoka 写入路径 `sanitizeEffect` 落数组）
+  const sanitized = sanitizeEffect(
+    { id: 'a', stat: 'dmgBonus', kind: 'fixed', value: 10, applyTarget: 'self', scope: 'anomaly' },
+    0,
+  )
+  assert.ok(Array.isArray(sanitized.scope), 'scope 写库前必须是数组')
+  assert.deepEqual(sanitized.scope, ['anomaly'])
+  // ⑥ 官方预设模板的条件字段也走数组口径
+  const template = buildAffixEffectTemplate({
+    target: 'gain:dmgBonus',
+    perRoll: 3,
+    scope: 'anomaly',
+  })
+  assert.deepEqual(template?.spec?.conditions?.scope, ['anomaly'])
 })

@@ -1,4 +1,15 @@
 import pool from '../config/db.js'
+import { normalizeBuffScopes } from './calculatorBuffService.js'
+
+/** 作用域（**数组口径**）：顶栏优先；兼容单值字符串 / 数组；两边都没有 → `undefined` */
+function readPresetScopes(...values) {
+  for (const value of values) {
+    const raw = Array.isArray(value) ? value : value == null ? [] : [value]
+    const valid = raw.filter((item) => typeof item === 'string' && item.trim())
+    if (valid.length) return normalizeBuffScopes(valid)
+  }
+  return undefined
+}
 import { buildAffixEffectTemplate, parseAffixEffectTemplate } from '../utils/affixEffectTemplate.js'
 
 /**
@@ -155,7 +166,7 @@ async function migrateToEffectJsonColumn() {
     const template = buildAffixEffectTemplate({
       target: row.target,
       applySituation: raw.applySituation,
-      scope: raw.scope,
+      scope: normalizeBuffScopes(raw.scope),
       skillCategory: raw.skillCategory,
       skillSubcategoryId: raw.skillSubcategoryId,
       appliesToAnomaly: raw.appliesToAnomaly,
@@ -267,7 +278,8 @@ function rowToEntry(row) {
     sortOrder: readInt(row.sort_order, 0),
     applySituation:
       typeof raw?.applySituation === 'string' ? raw.applySituation : specCond.applySituation,
-    scope: typeof raw?.scope === 'string' ? raw.scope : specCond.scope,
+    // 作用域**数组口径**（读时兼容单值字符串；两边都认，顶栏优先）
+    scope: readPresetScopes(raw?.scope, specCond.scope),
     skillCategory:
       typeof raw?.skillCategory === 'string'
         ? raw.skillCategory
