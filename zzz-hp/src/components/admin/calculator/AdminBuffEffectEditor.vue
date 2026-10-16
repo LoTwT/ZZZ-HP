@@ -561,6 +561,7 @@ defineExpose({
             <div class="chip-row">
               <label class="chip">
                 <input
+                  :key="isScopeChecked(effect, 'general') ? 'on' : 'off'"
                   type="checkbox"
                   :checked="isScopeChecked(effect, 'general')"
                   @change="onScopeToggle(effect, 'general', ($event.target as HTMLInputElement).checked)"
@@ -575,6 +576,7 @@ defineExpose({
                 :title="isScopeLockedToGeneral(effect) ? '当前是「通用」（已覆盖全部子类）；点具体项会自动取消通用' : ''"
               >
                 <input
+                  :key="isScopeChecked(effect, opt.id) ? 'on' : 'off'"
                   type="checkbox"
                   :checked="isScopeChecked(effect, opt.id)"
                   @change="onScopeToggle(effect, opt.id, ($event.target as HTMLInputElement).checked)"
