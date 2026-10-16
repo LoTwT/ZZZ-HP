@@ -533,14 +533,19 @@ export function readConvertParts(text) {
   const ratioTokens = gainNumbers(ratioSource)
   const convertRatio = ratioTokens.length ? ratioTokens[0].value : UNABLE
 
-  const baseMatch = /(?:基础值|初始值)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?/.exec(source)
+  const explicitBase = /(?:基础值|初始值)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?/.exec(source)
+  // 「每点**超过** X 的…」/「大于 X 的部分」/「超出部分」：X 是**基础值**（不参与折算的那部分），
+  // 用户 2026-10-16 报的坑：不落基础值 → 阶段2 会把全部来源值都折算进去（多算 X）。
+  const exceedBase =
+    /(?:超过|大于|高于|超出|多于)\s*(\d+(?:\.\d+)?)\s*(?:点|%|层)?/.exec(source) ??
+    /(?:超过|大于|高于|超出|多于)[^，。；]{0,8}?(\d+(?:\.\d+)?)/.exec(source)
   const capMatch = /上限\s*(?:为)?\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?/.exec(source)
 
   return {
     convertFrom,
     convertPanelSource,
     convertRatio,
-    convertBase: baseMatch ? Number(baseMatch[1]) : null,
+    convertBase: explicitBase ? Number(explicitBase[1]) : exceedBase ? Number(exceedBase[1]) : null,
     convertCap: capMatch ? Number(capMatch[1]) : null,
     fromLabel: CONVERT_FROM_LABELS[convertFrom] ?? '',
     targetText,
@@ -826,6 +831,23 @@ const CONDITION_TAIL_RE = /(?:时|后|期间|情况下|状态下|触发)[：:]?$
 /** 指代 / 修饰词（`该增益效果` / `额外提升` / `再次提升`）：阶段1 归一 */
 const REFERENCE_RE =
   /该(?:增益)?效果|上述效果|该增益|此效果|该效果|同样|额外提升|额外增加|再次提升|继续提升|额外获得/
+
+/**
+ * **异常语境判定**（用户 2026-10-16 报的坑）：同一句/子句说的是「（属性）异常伤害」时，
+ * 后面那个「暴击率 / 暴击伤害 / 增伤」属于**异常暴击区**，不能落成普通 `critRate` / `critDmg`。
+ *   - 本句出现「属性异常伤害 / 异常伤害 / 异常暴击」→ 打开异常语境（**按句重置**）；
+ *   - 同句后面的子句（含用「该效果 / 该增益效果」指代的那句）**继承**这个语境。
+ * 对照正例（1641 额外能力）：`…受到属性异常伤害的暴击伤害提升15%` → `anomalyCritDmg=15`；
+ * 反例守则（1041 额外能力）：本句没有异常词时，「该增益效果额外提升 22.5%」不许判成异常区。
+ */
+const ANOMALY_MARK_RE = /(?:属性)?异常伤害|异常暴击/
+
+/** 异常语境下要改写的属性（工具语义 → 异常区字段名） */
+const ANOMALY_STAT_MAP = {
+  暴击率: '异常暴击率',
+  暴击伤害: '异常暴击伤害',
+  增伤: '异常增伤',
+}
 
 /** 队伍 / 自身 指代 */
 const TEAM_RE = /全队|队伍全体|我方全体|我方所有|队伍中所有|队伍中全体/
@@ -1131,7 +1153,9 @@ export function isMechanismText(text) {
  * @param {string[]} [options.selfNames] 自身名（判「自身」指代 / 剔名字里的数字）
  * @param {Array<object>|null} [options.anchors] 技能库小类（锚点）；`null` = 没加载 → 招式限定条不录
  * @param {string} [options.agentId] 角色 id（锚点按角色过滤）
- * @returns {{ effects:Array, waste:Array<{text:string, reason:string}> }}
+ * @returns {{ effects:Array, waste:Array<{sentenceIndex:number, text:string, reason:string}>, sentences:Array }}
+ *   `sentences` 是**按句配对**用的视图（用户 2026-10-16）：一句 → 该句抽出的关键字 + 该句的废原文，
+ *   界面左侧只显示「产出过关键字」的句子（其余只在底部废原文区出现）；**入库口径不变**（见 `buildItem`）。
  */
 export function extractKeywordEffects({
   text,
@@ -1146,15 +1170,19 @@ export function extractKeywordEffects({
   let prefix = '' // 段落级前缀条件（`…：` 抬头，作用于整段）
   let pending = [] // 子句级条件（作用于紧随其后的那一条，用掉即清）
   let lastEffect = null // 指代继承的来源
+  let currentSentence = 0 // 当前句下标（废原文按句归档）
+  let anomalyContext = false // 本句是不是「异常语境」（见 ANOMALY_MARK_RE）
 
   const pushWaste = (clause, reason) => {
-    const key = `${clause}|${reason}`
-    if (!waste.some((item) => `${item.text}|${item.reason}` === key)) {
-      waste.push({ text: clause, reason })
+    const key = `${currentSentence}|${clause}|${reason}`
+    if (!waste.some((item) => `${item.sentenceIndex}|${item.text}|${item.reason}` === key)) {
+      waste.push({ sentenceIndex: currentSentence, text: clause, reason })
     }
   }
 
   units.forEach((unit, unitIndex) => {
+    currentSentence = unitIndex
+    anomalyContext = false // 异常语境**按句重置**
     pending = []
     const unitText = unit.clauses.join('，')
     const stack = readStackInfo(unitText)
@@ -1164,6 +1192,9 @@ export function extractKeywordEffects({
     for (const rawClause of unit.clauses) {
       const clause = rawClause.trim()
       if (!clause) continue
+
+      // 异常语境：**先**在本句任何 continue 之前打开（后面的「该效果」指代要继承它）
+      if (ANOMALY_MARK_RE.test(clause)) anomalyContext = true
 
       // 0) 触发上限 / 冷却尾巴：补进上一条的「条件」（条件槽位是唯一允许复数的）
       if (TRAILING_LIMIT_RE.test(clause) && !gainNumbers(clause).length) {
@@ -1305,6 +1336,28 @@ export function extractKeywordEffects({
           }
         }
         if (stat.value === NONE || !stat.value) stat = { value: UNABLE, source: 'unable' }
+
+        // 异常语境（用户 2026-10-16）：**本句**出现过「（属性）异常伤害 / 异常暴击」（含同句前面的子句，
+        // 以及后面用「该效果」指代的情况）→ 暴击率 / 暴击伤害 / 增伤落**异常区**
+        // （anomalyCritRate / anomalyCritDmg / anomalyDmgBonus）。
+        const anomalyInScope = anomalyContext || ANOMALY_MARK_RE.test(group)
+        if (anomalyInScope && ANOMALY_STAT_MAP[stat.value]) {
+          stat = { value: ANOMALY_STAT_MAP[stat.value], source: stat.source }
+        }
+
+        // 指代来源提示（用户 2026-10-16）：这条关键字靠**前文语义**（「该效果」指代 / 主语省略）
+        // 才成立时标出来，免得它看起来像凭空冒出来的。例：`依赖上一句 · 增伤`。
+        const inheritedInfo =
+          stat.source === 'inherited' && inherited
+            ? {
+                from:
+                  Number(inherited.unitIndex ?? -1) === Number(unitIndex) ? '前文' : '上一句',
+                fields: ['属性'],
+                label: `依赖${
+                  Number(inherited.unitIndex ?? -1) === Number(unitIndex) ? '前文' : '上一句'
+                } · ${stat.value}`,
+              }
+            : null
         // 数值 / 单位（**层数、时长不进数值**；阈值不进数值；`技能等级+2` 这类纯数写 `无`）
         // 转模条：数值 / 单位**不适用**（比例% 走专用槽位），显式写 `无`（不是「无法提取」）。
         const valueTokens = gainNumbers(group)
@@ -1385,6 +1438,8 @@ export function extractKeywordEffects({
           perStack: false,
           // —— v3 招式限定（条件，不是来源 / 落点）
           skillLimits,
+          /** 指代来源提示（界面用，不入库）：`{ from, fields, label }`，如「依赖上一句 · 增伤」 */
+          inherited: inheritedInfo,
           anchors: {
             ok: anchorInfo.ok,
             labels: anchorInfo.labels,
@@ -1441,7 +1496,19 @@ export function extractKeywordEffects({
     }
   })
 
-  return { effects, waste }
+  // —— 按句配对视图（界面用；入库口径不变）
+  const sentences = units.map((unit, index) => {
+    const keywords = effects.filter((effect) => effect.unitIndex === index)
+    return {
+      sentenceIndex: index,
+      rawSentence: unit.text,
+      keywords,
+      waste: waste.filter((item) => item.sentenceIndex === index),
+      hasKeywords: keywords.length > 0,
+    }
+  })
+
+  return { effects, waste, sentences }
 }
 
 // ================================================================== 阶段2：纯查表映射
@@ -1966,22 +2033,31 @@ function decorateEffect(effect, rawText) {
  */
 export function simplifyText({ text, origin = '', selfNames = [], anchors = null, agentId = '' } = {}) {
   const rawText = cleanNanokaText(text)
-  if (!rawText) return { rawText: '', effects: [], waste: [] }
-  const { effects, waste } = extractKeywordEffects({
+  if (!rawText) return { rawText: '', effects: [], waste: [], sentences: [] }
+  const { effects, waste, sentences } = extractKeywordEffects({
     text: rawText,
     origin,
     selfNames,
     anchors,
     agentId,
   })
-  return { rawText, effects: effects.map((effect) => decorateEffect(effect, effect.sentence)), waste }
+  return {
+    rawText,
+    effects: effects.map((effect) => decorateEffect(effect, effect.sentence)),
+    waste,
+    sentences,
+  }
 }
 
 /**
  * 组装一个「原文项」：落点 + 原文 + **关键字效果（层B→层C）** + **废原文**清单。
  *
- * v3：`waste` 是**整条丢弃**（不入库、确认写入后丢弃，只在阶段一底部展示原因）；
- * 与槽位级 `无法提取` 严格区分。
+ * ⚠ 两种「单位」别混（用户 2026-10-16 界面口径）：
+ *   - `rawText` / `effects` / `waste` = **入库单位**（整个来源块）：原文**完整入库**（含机制句）、
+ *     `[关键字]` 行照旧；
+ *   - `sentences` = **显示单位**（一句一个）：`{ sourceKey, sourceLabel, sentenceIndex, rawSentence,
+ *     keywords, waste, hasKeywords }`；界面左侧**只显示 `hasKeywords === true` 的句子**，
+ *     其余句子只进底部废原文区（**只改显示，不改入库**）。
  */
 function buildItem({
   slot,
@@ -2003,6 +2079,18 @@ function buildItem({
   const decorated = simplified.effects
   const waste = simplified.waste
   const recordable = decorated.filter((effect) => effect.recorded)
+  const keywordsById = new Map(decorated.map((effect) => [effect.id, effect]))
+  const sentences = simplified.sentences.map((sentence) => ({
+    sourceKey: slot,
+    sourceLabel: slotLabel,
+    sentenceIndex: sentence.sentenceIndex,
+    rawSentence: sentence.rawSentence,
+    keywords: sentence.keywords
+      .map((effect) => keywordsById.get(effect.id))
+      .filter(Boolean),
+    waste: sentence.waste,
+    hasKeywords: sentence.keywords.length > 0,
+  }))
   return {
     slot,
     slotLabel,
@@ -2012,6 +2100,8 @@ function buildItem({
     rawText,
     numbers: extractNumbers(rawText).map((item) => item.value),
     effects: decorated,
+    /** 按句配对视图（界面用；左侧只显示 hasKeywords 的句子） */
+    sentences,
     /** 废原文：不入库；阶段二确认写入后丢弃 */
     waste,
     landing: landing ?? null,

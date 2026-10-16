@@ -133,6 +133,11 @@ export interface NanokaKeywordEffect {
   perStack: boolean
   /** 招式限定（`[普通攻击]` 这类），不是来源 / 落点 */
   skillLimits: { name: string; category: string }[]
+  /**
+   * **指代来源提示**（界面用，不入库）：这条靠前文语义（「该效果」指代 / 主语省略）才成立时标出来，
+   * 例 `{ from: '上一句', fields: ['属性'], label: '依赖上一句 · 增伤' }`
+   */
+  inherited: { from: string; fields: string[]; label: string } | null
   anchors: NanokaKeywordAnchors
   /** 锚点关联不上 → false（这条不录） */
   recorded: boolean
@@ -145,11 +150,26 @@ export interface NanokaKeywordEffect {
 
 /** **废原文**：整条丢弃（不入库、确认写入后丢弃），带丢弃原因 */
 export interface NanokaWasteClause {
+  /** 属于哪一句（按句归档，界面底部按句显示） */
+  sentenceIndex?: number
   text: string
   reason: string
 }
 
-/** 一个「原文项」（四类来源之一段） */
+/** **按句配对**的显示单位（一句 → 该句抽出的关键字 + 该句的废原文） */
+export interface NanokaBuffSentence {
+  sourceKey: string
+  sourceLabel: string
+  /** 句序号（0 基；切句口径 = 阶段1 的 `。；\n`） */
+  sentenceIndex: number
+  rawSentence: string
+  keywords: NanokaKeywordEffect[]
+  waste: NanokaWasteClause[]
+  /** 左侧主视图**只显示** `hasKeywords === true` 的句子；其余只进底部废原文区 */
+  hasKeywords: boolean
+}
+
+/** 一个「原文项」（四类来源之一段；**入库单位**是整块） */
 export interface NanokaBuffItem {
   slot: string
   slotLabel: string
@@ -159,6 +179,8 @@ export interface NanokaBuffItem {
   rawText: string
   numbers: number[]
   effects: NanokaKeywordEffect[]
+  /** 按句配对视图（**显示单位**；入库仍按整块原文 `rawText`，机制句也照旧入库） */
+  sentences: NanokaBuffSentence[]
   waste: NanokaWasteClause[]
   landing: {
     container: string
@@ -217,6 +239,7 @@ export interface NanokaSimplifyResult {
     containerIndex: number | null
     rawText: string
     effects: NanokaKeywordEffect[]
+    sentences: NanokaBuffSentence[]
     waste: NanokaWasteClause[]
     landing: NanokaBuffItem['landing']
     skillDesc: NanokaBuffItem['skillDesc']

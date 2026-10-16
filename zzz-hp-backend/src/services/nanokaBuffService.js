@@ -1157,6 +1157,7 @@ export async function simplifyBuffTexts({ kind, nanokaId, items = [] } = {}) {
         anchors,
         agentId: String(item?.agentId ?? agentId ?? ''),
       })
+      const byId = new Map(simplified.effects.map((effect) => [effect.id, effect]))
       return {
         slot: String(item?.slot ?? ''),
         slotLabel: String(item?.slotLabel ?? ''),
@@ -1164,6 +1165,19 @@ export async function simplifyBuffTexts({ kind, nanokaId, items = [] } = {}) {
         containerIndex: item?.containerIndex ?? null,
         rawText: simplified.rawText,
         effects: simplified.effects,
+        /** 按句配对视图（界面左侧只显示 hasKeywords 的句子） */
+        sentences: simplified.sentences.map((sentence) => {
+          const keywords = sentence.keywords.map((effect) => byId.get(effect.id)).filter(Boolean)
+          return {
+            sourceKey: String(item?.slot ?? ''),
+            sourceLabel: String(item?.slotLabel ?? ''),
+            sentenceIndex: sentence.sentenceIndex,
+            rawSentence: sentence.rawSentence,
+            keywords,
+            waste: sentence.waste,
+            hasKeywords: keywords.length > 0,
+          }
+        }),
         waste: simplified.waste,
         landing: item?.landing ?? null,
         skillDesc: item?.skillDesc ?? null,

@@ -12,6 +12,7 @@ import {
   type NanokaApplyRow,
   type NanokaBuffItem,
   type NanokaBuffKind,
+  type NanokaBuffSentence,
   type NanokaExtractResult,
   type NanokaExtractorMeta,
   type NanokaKeywordAnchors,
@@ -85,6 +86,8 @@ interface KeywordRow {
   rawText: string
   origin: string
   sentence: string
+  /** 该关键字所属的**句序号**（按句配对用；切句口径 = 阶段1 的 `。；\n`） */
+  sentenceIndex: number
   slots: NanokaKeywordSlots
   convert: NanokaKeywordConvert | null
   stackMax: number | null
@@ -92,6 +95,8 @@ interface KeywordRow {
   anchors: NanokaKeywordAnchors
   /** 招式限定（`[普通攻击]` 这类）：条件，不是来源 / 落点 */
   skillLimits: { name: string; category: string }[]
+  /** 指代来源提示（界面用）：`依赖上一句 · 增伤`，没有则 null */
+  inherited: { from: string; fields: string[]; label: string } | null
   recorded: boolean
   dropReason: string
   unableSlots: string[]
@@ -141,12 +146,14 @@ interface GainFields {
   } | null
 }
 
-interface WasteRow {
+/** 底部「废原文」区的一行 = **一句**（整句都抽不出关键字；只改显示，不改入库） */
+interface WasteSentenceRow {
   itemKey: string
-  itemTitle: string
-  slotLabel: string
-  text: string
-  reason: string
+  sourceLabel: string
+  title: string
+  sentenceIndex: number
+  rawSentence: string
+  reasons: string[]
 }
 
 // ---------------------------------------------------------------- 顶部选择 / 状态
@@ -159,7 +166,6 @@ const page = ref<Page>('stage1')
 const meta = ref<NanokaExtractorMeta | null>(null)
 const items = ref<NanokaBuffItem[]>([])
 const rows = ref<KeywordRow[]>([])
-const waste = ref<WasteRow[]>([])
 const localName = ref('')
 const nanokaName = ref('')
 const nanokaId = ref('')
@@ -353,10 +359,6 @@ function statFieldLabel(key: string): string {
   return field ? buffStatFieldLabel(field) : key
 }
 
-function rowsFor(slot: string): KeywordRow[] {
-  return rows.value.filter((row) => row.itemKey === slot)
-}
-
 /** 该槽位是不是「无值」（`无` / 空）——`无` 默认隐藏（v3.1） */
 function isEmptySlotValue(value: unknown): boolean {
   if (value === null || value === undefined) return true
@@ -405,6 +407,67 @@ function isElementChecked(row: KeywordRow, element: string): boolean {
   const filter = row.gain?.elementFilter
   return Array.isArray(filter) && filter.includes(element)
 }
+
+// ---------------------------------------------------------------- 按句配对（v3.24）
+
+/** 左侧主视图只显示**产出过关键字**的句子（用户 2026-10-16） */
+function keywordSentences(item: NanokaBuffItem): NanokaBuffSentence[] {
+  return (item.sentences ?? []).filter((sentence) => sentence.hasKeywords)
+}
+
+/** 某句（某来源块内）的关键字行 —— 左右按句配对 */
+function rowsForSentence(itemKey: string, sentenceIndex: number): KeywordRow[] {
+  return rows.value.filter(
+    (row) => row.itemKey === itemKey && row.sentenceIndex === sentenceIndex,
+  )
+}
+
+/** 左侧要显示哪些来源块（整块抽不出关键字 → 不显示，只在废原文区出现） */
+const visibleItems = computed(() => items.value.filter((item) => keywordSentences(item).length > 0))
+
+// —— 「整块原文」弹窗（用户 2026-10-16）：弹窗里同样剔除完全解析不出来的句子，并高亮当前句
+const originalVisible = ref(false)
+const originalItem = ref<NanokaBuffItem | null>(null)
+const originalHighlight = ref(0)
+
+function openOriginal(item: NanokaBuffItem, sentenceIndex = -1) {
+  originalItem.value = item
+  const keywordSentencesOfItem = keywordSentences(item)
+  originalHighlight.value =
+    sentenceIndex >= 0
+      ? sentenceIndex
+      : (keywordSentencesOfItem[0]?.sentenceIndex ?? 0)
+  originalVisible.value = true
+}
+
+function closeOriginal() {
+  originalVisible.value = false
+  originalItem.value = null
+}
+
+/** 弹窗里显示的句子：**同样剔除**完全解析不出来的句子（那些只在底部废原文区） */
+const originalSentences = computed<NanokaBuffSentence[]>(() =>
+  originalItem.value ? keywordSentences(originalItem.value) : [],
+)
+
+// ---------------------------------------------------------------- Row 组装
+const wasteSentences = computed<WasteSentenceRow[]>(() => {
+  const out: WasteSentenceRow[] = []
+  for (const item of items.value) {
+    for (const sentence of item.sentences ?? []) {
+      if (sentence.hasKeywords) continue
+      out.push({
+        itemKey: item.slot,
+        sourceLabel: item.slotLabel,
+        title: item.title,
+        sentenceIndex: sentence.sentenceIndex,
+        rawSentence: sentence.rawSentence,
+        reasons: [...new Set(sentence.waste.map((entry) => entry.reason))],
+      })
+    }
+  }
+  return out
+})
 
 // ---------------------------------------------------------------- Row 组装
 
@@ -471,6 +534,7 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     rawText: item.rawText,
     origin: effect.origin,
     sentence: effect.sentence,
+    sentenceIndex: Number(effect.unitIndex ?? 0),
     slots: {
       stat: String(effect.slots.stat ?? NONE),
       elements: Array.isArray(effect.slots.elements) ? [...effect.slots.elements] : [NONE],
@@ -488,6 +552,7 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     durationSeconds: effect.durationSeconds,
     anchors: effect.anchors,
     skillLimits: Array.isArray(effect.skillLimits) ? effect.skillLimits.map((item) => ({ ...item })) : [],
+    inherited: effect.inherited ?? null,
     recorded: effect.recorded,
     dropReason: effect.dropReason,
     unableSlots: [...(effect.unableSlots ?? [])],
@@ -515,15 +580,6 @@ function applyExtractResult(result: NanokaExtractResult) {
   rows.value = result.items.flatMap((item) =>
     item.effects.map((effect, index) => toRow(effect, item, index)),
   )
-  waste.value = result.items.flatMap((item) =>
-    item.waste.map((entry) => ({
-      itemKey: item.slot,
-      itemTitle: `${item.slotLabel} · ${item.title}`,
-      slotLabel: item.slotLabel,
-      text: entry.text,
-      reason: entry.reason,
-    })),
-  )
   page.value = 'stage1'
   writePlan.value = null
   writeMessage.value = ''
@@ -532,7 +588,6 @@ function applyExtractResult(result: NanokaExtractResult) {
 function resetAll() {
   items.value = []
   rows.value = []
-  waste.value = []
   meta.value = null
   localName.value = ''
   nanokaName.value = ''
@@ -719,7 +774,14 @@ function onKindChange() {
 
 // ---------------------------------------------------------------- [化简]（阶段一）
 
-function mergeSimplified(slot: string, simplified: { effects: NanokaKeywordEffect[]; waste: { text: string; reason: string }[] }) {
+function mergeSimplified(
+  slot: string,
+  simplified: {
+    effects: NanokaKeywordEffect[]
+    sentences: NanokaBuffSentence[]
+    waste: { sentenceIndex?: number; text: string; reason: string }[]
+  },
+) {
   const item = items.value.find((entry) => entry.slot === slot)
   if (!item) return
   item.effects = simplified.effects
@@ -729,17 +791,10 @@ function mergeSimplified(slot: string, simplified: { effects: NanokaKeywordEffec
   simplified.effects.forEach((effect, index) => {
     rows.value.push(toRow(effect, item, index))
   })
-  // 废原文重算
-  waste.value = [
-    ...waste.value.filter((entry) => entry.itemKey !== slot),
-    ...simplified.waste.map((entry) => ({
-      itemKey: item.slot,
-      itemTitle: `${item.slotLabel} · ${item.title}`,
-      slotLabel: item.slotLabel,
-      text: entry.text,
-      reason: entry.reason,
-    })),
-  ]
+  // 按句配对视图跟着刷新（废原文区由 wasteSentences 计算，不必另存）
+  item.sentences = simplified.sentences ?? []
+  item.waste = simplified.waste ?? []
+  item.effects = simplified.effects
 }
 
 async function simplifyOne(slot: string) {
@@ -768,7 +823,11 @@ async function simplifyOne(slot: string) {
     })
     const simplified = result.items[0]
     if (simplified) {
-      mergeSimplified(slot, { effects: simplified.effects, waste: simplified.waste })
+      mergeSimplified(slot, {
+        effects: simplified.effects,
+        sentences: simplified.sentences ?? [],
+        waste: simplified.waste,
+      })
       messageKind.value = 'ok'
       message.value = `${item.slotLabel}：${serverMessage}`
     }
@@ -800,7 +859,11 @@ async function simplifyAll() {
       })),
     })
     for (const simplified of result.items) {
-      mergeSimplified(simplified.slot, { effects: simplified.effects, waste: simplified.waste })
+      mergeSimplified(simplified.slot, {
+        effects: simplified.effects,
+        sentences: simplified.sentences ?? [],
+        waste: simplified.waste,
+      })
     }
     messageKind.value = 'ok'
     message.value = `全部化简完成：${serverMessage}`
@@ -1120,7 +1183,7 @@ const confirmMessage = computed(() => {
 const canWrite = computed(() => writableRows.value.length > 0 && !busy.value)
 
 const wasteOpen = ref(true)
-const wasteCount = computed(() => waste.value.length)
+const wasteCount = computed(() => wasteSentences.value.length)
 </script>
 
 <template>
@@ -1211,47 +1274,52 @@ const wasteCount = computed(() => waste.value.length)
         </div>
       </header>
 
-      <div class="nbf-columns">
-        <section class="nbf-col">
-          <h4 class="nbf-col-title">原文（只读 · 四类来源）</h4>
-          <p v-if="!items.length" class="empty-hint">还没有抽取结果：先选本地记录 → [抓取增益]。</p>
-          <article v-for="item in items" :key="item.slot" class="nbf-item">
-            <header class="nbf-item-head">
-              <span class="nbf-chip">{{ item.slotLabel }}</span>
-              <span class="nbf-item-title">{{ item.title }}</span>
-              <span
-                class="nbf-badge"
-                :class="item.verdict === 'buff' ? 'nbf-badge-ok' : 'nbf-badge-waste'"
-              >
-                {{ item.verdict === 'buff' ? '有增益' : '废原文' }}
-              </span>
-              <span v-if="item.landing" class="nbf-sub">写入槽位：{{ item.landing.label }}</span>
-              <button type="button" class="nbf-mini-btn" :disabled="busy" @click="simplifyOne(item.slot)">
-                化简
-              </button>
-            </header>
-            <p class="nbf-raw-text">{{ item.rawText }}</p>
-            <p v-if="item.skillDesc" class="nbf-sub">
-              技能「描述」落点：{{ item.skillDesc.skillName }}
-            </p>
-          </article>
-        </section>
+      <!-- 一句原文 ↔ 该句的关键字：按句配对（v3.24）。抽不出关键字的句子不进这里，只在底部废原文区 -->
+      <p v-if="!items.length" class="empty-hint">还没有抽取结果：先选本地记录 → [抓取增益]。</p>
+      <p v-else-if="!visibleItems.length" class="empty-hint">
+        这次抽取没有任何句子产出关键字（全部进了底部「废原文」）。
+      </p>
+      <article v-for="item in visibleItems" :key="item.slot" class="nbf-item">
+        <header class="nbf-item-head">
+          <span class="nbf-chip">{{ item.slotLabel }}</span>
+          <span class="nbf-item-title">{{ item.title }}</span>
+          <span class="nbf-badge nbf-badge-ok">有增益 {{ keywordSentences(item).length }} 句</span>
+          <span v-if="item.landing" class="nbf-sub">写入槽位：{{ item.landing.label }}</span>
+          <button type="button" class="nbf-mini-btn" @click="openOriginal(item)">整块原文</button>
+          <button type="button" class="nbf-mini-btn" :disabled="busy" @click="simplifyOne(item.slot)">
+            化简
+          </button>
+        </header>
+        <p v-if="item.skillDesc" class="nbf-sub">
+          技能「描述」落点：{{ item.skillDesc.skillName }}
+        </p>
 
-        <section class="nbf-col">
-          <h4 class="nbf-col-title">关键字（可编辑 · 9 槽位）</h4>
-          <p v-if="!rows.length" class="empty-hint">这段原文没抽出可录的关键字（见底部「废原文」）。</p>
-          <div v-for="item in items" :key="`kw-${item.slot}`">
-            <template v-if="rowsFor(item.slot).length">
-              <p class="nbf-kw-group-head">
-                {{ item.slotLabel }} · {{ item.title }}
-                <span class="nbf-sub">1 段原文 → {{ rowsFor(item.slot).length }} 条关键字</span>
-              </p>
-              <div
-                v-for="(row, rowIndex) in rowsFor(item.slot)"
-                :key="row.key"
-                class="nbf-kw-row"
-                :class="{ 'nbf-kw-row-off': !row.recorded }"
+        <!-- 一句一对：左 = 该句原文（约 1/3），右 = 该句的关键字（摘要行 + 展开区）；每对独立成块 -->
+        <div
+          v-for="sentence in keywordSentences(item)"
+          :key="`${item.slot}-${sentence.sentenceIndex}`"
+          class="nbf-pair"
+        >
+          <div class="nbf-pair-raw">
+            <div class="nbf-pair-raw-head">
+              <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
+              <button
+                type="button"
+                class="nbf-mini-btn"
+                @click="openOriginal(item, sentence.sentenceIndex)"
               >
+                整块里看
+              </button>
+            </div>
+            <p class="nbf-raw-text">{{ sentence.rawSentence }}</p>
+          </div>
+          <div class="nbf-pair-kw">
+            <div
+              v-for="(row, rowIndex) in rowsForSentence(item.slot, sentence.sentenceIndex)"
+              :key="row.key"
+              class="nbf-kw-row"
+              :class="{ 'nbf-kw-row-off': !row.recorded }"
+            >
                 <header class="nbf-kw-head">
                   <span class="nbf-kw-index">B{{ rowIndex + 1 }}</span>
                   <span class="nbf-kw-summary">
@@ -1263,6 +1331,9 @@ const wasteCount = computed(() => waste.value.length)
                   </span>
                   <span v-if="row.skillLimits.length" class="nbf-badge nbf-badge-anchor">
                     限定招式：{{ row.skillLimits.map((item) => item.name).join(' + ') }}
+                  </span>
+                  <span v-if="row.inherited" class="nbf-badge nbf-badge-inherit">
+                    {{ row.inherited.label }}
                   </span>
                   <span v-if="!row.recorded" class="nbf-badge nbf-badge-drop">
                     这条不录 · {{ row.dropReason }}
@@ -1386,27 +1457,51 @@ const wasteCount = computed(() => waste.value.length)
                   </template>
                 </div>
               </div>
-            </template>
           </div>
-        </section>
-      </div>
+        </div>
+      </article>
 
       <section class="nbf-waste">
         <header class="nbf-stage-head">
-          <h3>废原文（{{ wasteCount }} 条 · 带丢弃原因 · 不入库）</h3>
+          <h3>废原文（{{ wasteCount }} 句 · 带丢弃原因 · 不入库）</h3>
           <button type="button" class="nbf-mini-btn" @click="wasteOpen = !wasteOpen">
             {{ wasteOpen ? '收起' : '展开' }}
           </button>
         </header>
         <ul v-if="wasteOpen" class="nbf-waste-list">
-          <li v-for="(entry, index) in waste" :key="`w-${index}`">
-            <span class="nbf-chip">{{ entry.slotLabel }}</span>
-            <span class="nbf-waste-text">{{ entry.text }}</span>
-            <span class="nbf-waste-reason">{{ entry.reason }}</span>
+          <li v-for="entry in wasteSentences" :key="`w-${entry.itemKey}-${entry.sentenceIndex}`">
+            <span class="nbf-chip">{{ entry.sourceLabel }} · 第 {{ entry.sentenceIndex + 1 }} 句</span>
+            <span class="nbf-waste-text">{{ entry.rawSentence }}</span>
+            <span class="nbf-waste-reason">{{ entry.reasons.join(' / ') || '没抓到可量的增益' }}</span>
           </li>
         </ul>
-        <p v-if="wasteOpen && !waste.length" class="empty-hint">没有废原文。</p>
+        <p v-if="wasteOpen && !wasteSentences.length" class="empty-hint">没有废原文。</p>
       </section>
+
+      <!-- 「整块原文」弹窗：剔除完全解析不出来的句子，并高亮当前句 -->
+      <div v-if="originalVisible && originalItem" class="nbf-modal-mask" @click.self="closeOriginal">
+        <div class="nbf-modal">
+          <header class="nbf-modal-head">
+            <h4>{{ originalItem.slotLabel }} · {{ originalItem.title || '（无标题）' }} · 整块原文</h4>
+            <button type="button" class="nbf-mini-btn" @click="closeOriginal">关闭</button>
+          </header>
+          <p class="nbf-sub">
+            写入槽位：{{ originalItem.landing?.label ?? '—' }} ·
+            这里只列**产出过关键字**的句子（完全解析不出来的句子属废原文，只在底部废原文区出现）
+          </p>
+          <ol class="nbf-original-list">
+            <li
+              v-for="sentence in originalSentences"
+              :key="`o-${sentence.sentenceIndex}`"
+              :class="{ 'nbf-original-current': sentence.sentenceIndex === originalHighlight }"
+            >
+              <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
+              <span class="nbf-original-text">{{ sentence.rawSentence }}</span>
+              <span class="nbf-sub">{{ sentence.keywords.length }} 条关键字</span>
+            </li>
+          </ol>
+        </div>
+      </div>
     </div>
 
     <!-- ============================================================ 阶段二 -->
@@ -1429,7 +1524,7 @@ const wasteCount = computed(() => waste.value.length)
           <h4 class="nbf-col-title">关键字（与阶段一同一份数据）</h4>
           <div v-for="row in rows" :key="`s2k-${row.key}`" class="nbf-kw-row nbf-kw-row-compact">
             <header class="nbf-kw-head">
-              <span class="nbf-kw-index">{{ row.itemSlotLabel }}</span>
+              <span class="nbf-kw-index">{{ row.itemSlotLabel }} · 第 {{ row.sentenceIndex + 1 }} 句</span>
               <span class="nbf-kw-summary">
                 属性={{ displaySlotValue('stat', row.slots.stat) }} · 动作={{ row.slots.action }}
                 <template v-if="row.slots.action !== '转化'">
@@ -1912,6 +2007,117 @@ const wasteCount = computed(() => waste.value.length)
   letter-spacing: 0.04em;
   color: var(--color-heading);
   opacity: 0.85;
+}
+
+/* 按句配对：左 = 该句原文（约 1/3），右 = 该句关键字（约 2/3）；**每对独立成块**，行高按较长一侧撑开 */
+.nbf-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 0.75rem;
+  align-items: stretch;
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft, rgba(250, 248, 242, 0.6));
+}
+
+.nbf-pair + .nbf-pair {
+  margin-top: 0.7rem;
+}
+
+@media (max-width: 1100px) {
+  .nbf-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.nbf-pair-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nbf-pair-raw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.nbf-pair-kw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* 「整块原文」弹窗 */
+.nbf-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(20, 18, 12, 0.42);
+}
+
+.nbf-modal {
+  width: min(920px, 100%);
+  max-height: 78vh;
+  overflow: auto;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background);
+  box-shadow: 0 18px 48px rgba(20, 18, 12, 0.28);
+}
+
+.nbf-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.nbf-modal-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-heading);
+}
+
+.nbf-original-list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nbf-original-list li {
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.nbf-original-current {
+  border: 1px solid var(--color-border-hover);
+  background: var(--color-background-mute, rgba(232, 229, 218, 0.7));
+  font-weight: 600;
+}
+
+.nbf-original-text {
+  margin: 0 0.4rem;
+}
+
+.nbf-badge-inherit {
+  border-color: rgba(150, 110, 30, 0.45);
+  color: #8a5a12;
 }
 
 .nbf-item,

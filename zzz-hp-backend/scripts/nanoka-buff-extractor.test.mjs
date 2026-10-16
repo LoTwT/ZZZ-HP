@@ -427,14 +427,16 @@ test('「改既有机制的上限」没有字段 → 废原文', () => {
   assert.match(capped.waste[0].reason, /改既有机制的上限/)
 })
 
-test('废原文带丢弃原因、可去重，且与「无法提取」不是一回事', () => {
+test('废原文带丢弃原因、**按句归档**，同一句内可去重', () => {
   const { effects, waste } = extractKeywordEffects({
-    text: '招式发动期间拥有无敌效果；招式发动期间拥有无敌效果；抗打断等级提升。',
+    text: '招式发动期间拥有无敌效果，招式发动期间拥有无敌效果。抗打断等级提升。',
     origin: 'test',
   })
   assert.equal(effects.length, 0)
-  assert.equal(waste.length, 2, '同一句废原文只记一次')
-  for (const item of waste) assert.ok(item.reason, '废原文必须带原因')
+  // 同一句里重复的机制子句只记一次；不同句各记一次
+  assert.equal(waste.length, 2)
+  assert.ok(waste.every((item) => typeof item.sentenceIndex === 'number'), '废原文要带句序号')
+  assert.ok(waste.every((item) => item.reason), '废原文必须带原因')
 })
 
 // ================================================================== 4. 转模（动作=转化）
@@ -497,6 +499,120 @@ test('「每点 X 使得 Y 提升 Z」也算转模（读取属性 / 目标属性
   const { effect } = firstEffect('每点超过的异常掌控会使得该效果的暴击率额外提升0.7%')
   assert.equal(effect.slots.action, '转化')
   assert.equal(effect.slots.stat, '暴击率')
+})
+
+test('转模**基础值**：「每点超过 X」/「大于 X 的部分」 → defaultBase = X（否则会多折算 X）', () => {
+  // 用户 2026-10-16 报的坑：基础值不落 → 阶段2 把全部来源值都折算进去
+  const parts = readConvertParts(
+    '若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%',
+  )
+  assert.equal(parts.convertBase, 155)
+  assert.equal(parts.convertRatio, 0.7)
+
+  const { effect } = firstEffect(
+    '若初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%',
+  )
+  assert.equal(effect.convert.convertBase, 155)
+  const mapped = mapKeywordsToEffect({
+    slots: effect.slots,
+    convert: effect.convert,
+    id: 'c-base',
+    origin: 'test',
+  })
+  assert.equal(mapped.effect.kind, 'convert')
+  assert.equal(mapped.effect.convert.defaultBase, 155)
+  assert.equal(mapped.effect.convert.ratioPercent, 0.7)
+
+  // 同类措辞：「超出 X 的部分」/「大于 X 的部分」
+  assert.equal(readConvertParts('超出100点攻击力的部分转化为暴击率，比例1%').convertBase, 100)
+  assert.equal(readConvertParts('大于200点的部分转化为增伤').convertBase, 200)
+  // 没有基准值时基础值仍留空（不瞎填）
+  assert.equal(readConvertParts('每1点攻击力转化为1.5点暴击率').convertBase, null)
+})
+
+test('异常语境：「属性异常伤害」句里的暴击率 / 暴击伤害 / 增伤落**异常区**', () => {
+  const { effects } = extractKeywordEffects({
+    text: '[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%。',
+    origin: 'test',
+  })
+  const stats = effects.map((effect) => effect.slots.stat)
+  assert.ok(stats.includes('异常暴击率'), `异常语境的暴击率应落异常区，实际：${stats.join('/')}`)
+  assert.ok(stats.includes('异常暴击伤害'))
+  assert.equal(
+    mapKeywordsToEffect(keyword({ slots: { stat: '异常暴击率', action: '提升', value: 30, unit: '%' } }))
+      .effect.stat,
+    'anomalyCritRate',
+  )
+  assert.equal(
+    mapKeywordsToEffect(keyword({ slots: { stat: '异常暴击伤害', action: '提升', value: 25, unit: '%' } }))
+      .effect.stat,
+    'anomalyCritDmg',
+  )
+
+  // 对照：没有异常语境 → 普通暴击区
+  const plain = firstEffect('暴击率提升30%')
+  assert.equal(plain.effect.slots.stat, '暴击率')
+  // 「该增益效果」指代但**本句没有异常词** → 不误判成异常区
+  const referenceOnly = simplifyText({
+    text: '造成的火属性伤害提升10%，攻击处于失衡状态下的敌人时，该增益效果额外提升22.5%',
+    origin: 'test',
+  })
+  assert.equal(referenceOnly.effects[1].slots.stat, '增伤')
+  assert.equal(referenceOnly.effects[1].layerC.stat, 'dmgBonus')
+})
+
+test('指代来源提示：靠前文语义（「该效果」/省略主语）成立的关键字要标出来', () => {
+  const sameSentence = firstEffect(
+    '造成的火属性伤害提升10%，攻击处于失衡状态下的敌人时，该增益效果额外提升22.5%',
+  )
+  assert.equal(sameSentence.effects[0].inherited, null, 'literal 关键字不该有指代提示')
+  assert.match(sameSentence.effects[1].inherited.label, /^依赖前文 · /)
+
+  // 跨句指代 → 「依赖上一句」
+  const crossSentence = extractKeywordEffects({
+    text: '造成的伤害提升10%。该效果额外提升5%。',
+    origin: 'test',
+  })
+  assert.match(crossSentence.effects[1].inherited.label, /^依赖上一句 · /)
+  assert.equal(crossSentence.effects[1].inherited.from, '上一句')
+})
+
+test('按句配对：一句一个 `sentences` 条目；抽不出关键字的句子只进废原文', () => {
+  const detail = {
+    name: '测试角色',
+    passive: {
+      level: {
+        1: {
+          level: 1,
+          name: ['核心被动：甲', '额外能力：乙'],
+          desc: ['造成的伤害提升10%。招式发动期间拥有无敌效果。', '招式发动期间拥有无敌效果。'],
+        },
+      },
+    },
+    talent: [],
+    skill: {},
+  }
+  const result = extractAgentBuffItems({ detail, nanokaId: 'test', anchors: [] })
+  const core = result.items.find((item) => item.slot === 'core')
+  assert.ok(Array.isArray(core.sentences), 'item 必须带 sentences（按句配对视图）')
+  assert.equal(core.sentences.length, 2)
+  assert.equal(core.sentences[0].sourceKey, 'core')
+  assert.equal(core.sentences[0].sourceLabel, '核心被动')
+  assert.equal(core.sentences[0].sentenceIndex, 0)
+  assert.match(core.sentences[0].rawSentence, /造成的伤害提升10%/)
+  assert.equal(core.sentences[0].hasKeywords, true)
+  assert.equal(core.sentences[0].keywords.length, 1)
+  // 机制句：不进主视图（hasKeywords=false），但**照旧入库**（rawText 完整）
+  assert.equal(core.sentences[1].hasKeywords, false)
+  assert.equal(core.sentences[1].keywords.length, 0)
+  assert.ok(core.sentences[1].waste.length > 0)
+  assert.ok(core.sentences[1].waste.every((entry) => entry.sentenceIndex === 1))
+  assert.match(core.rawText, /无敌效果/, '入库口径不变：机制句仍在 rawText 里')
+
+  // 整块都抽不出关键字 → verdict=waste，所有句子 hasKeywords 都是 false（左侧不显示该块）
+  const extra = result.items.find((item) => item.slot === 'extra')
+  assert.equal(extra.verdict, 'waste')
+  assert.ok(extra.sentences.every((sentence) => sentence.hasKeywords === false))
 })
 
 // ================================================================== 5. 招式限定 = 条件
@@ -769,10 +885,17 @@ test('1641「菲欧妮」：转模条（异常掌控 → 暴击率）与无视�
   const convert = coreEffects.find((effect) => effect.layerC.kind === 'convert')
   assert.ok(convert, '「每点异常掌控使得暴击率提升」应当出转模条')
   assert.equal(convert.slots.action, '转化')
-  assert.equal(convert.layerC.stat, 'critRate')
+  // 异常语境（用户 2026-10-16 纠正）：这句说的是「属性异常伤害」，暴击落**异常暴击区**
+  assert.equal(convert.slots.stat, '异常暴击率')
+  assert.equal(convert.layerC.stat, 'anomalyCritRate')
   assert.equal(convert.layerC.value, 0)
   assert.equal(convert.layerC.convert.from, 'anomalyControl')
   assert.equal(convert.layerC.convert.ratioPercent, 0.7)
+  assert.equal(convert.layerC.convert.defaultBase, 155, '「每点超过 155」的 155 要落基础值')
+
+  // 同句的「基础暴击率为30%」「暴击伤害为25%」也落异常区
+  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritRate' && effect.layerC.value === 30))
+  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritDmg' && effect.layerC.value === 25))
 
   const talent6 = recordableEffects(items.get('talent-6'))
   const resPen = talent6.find((effect) => effect.layerC.stat === 'resPen')
