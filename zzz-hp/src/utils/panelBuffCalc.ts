@@ -17,6 +17,7 @@ import type {
   WengineBuffDoc,
 } from '@/types/calculator'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
+import { normalizeBuffScopes } from '@/utils/buffScope'
 import {
   createEmptyExternalPanel,
   createDefaultExternalPanel,
@@ -57,10 +58,6 @@ import {
   effectInstanceToBuffEffect,
   instantiateBuffEffect,
 } from '@/utils/effectAdapters'
-
-function flattenBlocks(blocks: { effects?: BuffEffect[] }[]): BuffEffect[] {
-  return blocks.flatMap((block) => block.effects ?? [])
-}
 
 /** 局内 Buff 选择：模块注释与效果块注释相同（或空白）时只保留一条 */
 function mergeBuffDisplayNotes(...parts: Array<string | null | undefined>): string {
@@ -211,7 +208,7 @@ function withRefinementAnomalyFlags(
         .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
         .join('|')
       flagged.add(
-        `${effect.stat}|${effect.kind}|${effect.scope}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`,
+        `${effect.stat}|${effect.kind}|${normalizeBuffScopes(effect.scope).join(',')}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`,
       )
     }
   }
@@ -230,7 +227,7 @@ function withRefinementAnomalyFlags(
     const targets = (effect.skillTargets ?? [])
       .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
       .join('|')
-    const key = `${effect.stat}|${effect.kind}|${effect.scope}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`
+    const key = `${effect.stat}|${effect.kind}|${normalizeBuffScopes(effect.scope).join(',')}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`
     if (!flagged.has(key) || effect.appliesToAnomaly === true) return effect
     return { ...effect, appliesToAnomaly: true }
   })
@@ -2089,10 +2086,10 @@ export function rowBuffSelectionOverlay(
   if (!hasStacks && !hasConverts) return null
   return {
     stacksByEffectId: hasStacks
-      ? { ...(selection?.stacksByEffectId ?? {}), ...stacks }
+      ? { ...selection?.stacksByEffectId, ...stacks }
       : selection?.stacksByEffectId,
     convertInputs: hasConverts
-      ? { ...(selection?.convertInputs ?? {}), ...converts }
+      ? { ...selection?.convertInputs, ...converts }
       : selection?.convertInputs,
   }
 }

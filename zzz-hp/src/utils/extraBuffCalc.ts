@@ -1,21 +1,18 @@
 import type {
-  BuffApplySituation,
   BuffEffect,
   BuffScope,
   BuffSkillTarget,
-  BuffStatModifiers,
   SkillCalcContext,
   StaggerPhase,
 } from '@/types/calculator'
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { buffScopeLabel, normalizeBuffScopes } from '@/utils/buffScope'
 import {
   countTeamProfession,
   createEmptyBuffEffect,
   effectMatchesContext,
   effectMatchesTeamProfessionGate,
-  resolveEffectsToMods,
 } from '@/utils/buffEffect'
-import { createEmptyBuffStatModifiers, mergeBuffStatModifiers } from '@/utils/calculatorUi'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
 
 export type { ExtraBuffGain }
@@ -74,7 +71,7 @@ export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
   const applySlot = resolveExtraGainApplySlot(gain)
   return createEmptyBuffEffect({
     id: gain.id,
-    scope: gain.scope ?? 'general',
+    scope: normalizeBuffScopes(gain.scope),
     applyTarget: applySlot === 'team' ? 'team' : 'self',
     applySituation: gain.applySituation ?? 'global',
     applyProfession: gain.applyProfession ?? null,
@@ -153,18 +150,8 @@ export type ExtraGainMergeOptions = {
  * 勾选表强制全开：角色 Buff 的 `isEffectEnabled` 会把「有队内职业人数条件、未进勾选」
  * 默认关掉；额外增益没有勾选 UI，不能吃那条规则。
  */
-export function scopeLabel(scope: BuffScope | undefined): string {
-  const map: Record<BuffScope, string> = {
-    general: '通用',
-    skill: '招式',
-    anomaly: '异常',
-    disorder: '紊乱',
-    turbulence: '乱流',
-    anomalyRelease: '异放',
-    radiance: '耀变',
-    mutation: '异化系数',
-  }
-  return map[scope ?? 'general']
+export function scopeLabel(scope: BuffScope | BuffScope[] | undefined | null): string {
+  return buffScopeLabel(scope)
 }
 
 export function normalizeExtraGainSkillTargets(gain: ExtraBuffGain): BuffSkillTarget[] | undefined {

@@ -1,6 +1,4 @@
 import type {
-  BuffApplySituation,
-  BuffScope,
   BuffSkillTargetId,
   BuffStatKey,
 } from '@/types/calculator'

@@ -656,7 +656,7 @@ test('招式限定：锚点关联上 → 条件 + skillTargets；关联不上 �
     origin: 'test',
   })
   assert.equal(mapped.ok, true)
-  assert.equal(mapped.effect.scope, 'skill')
+  assert.deepEqual(mapped.effect.scope, ['skill']) /* scope 数组口径 */
   assert.deepEqual(mapped.effect.skillTargets, [
     { category: 'basic', subcategoryId: 'a-basic' },
     { category: 'dodge', subcategoryId: 'a-dash' },
@@ -857,7 +857,7 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   assert.equal(core.layerC.value, 70)
   assert.equal(core.layerC.applySituation, 'global', '条件按无处理 → 常驻生效')
   assert.ok(!/触发|火力镇压/.test(core.layerC.note), '不许把条件原文写进 note 冒充条件')
-  assert.equal(core.layerC.scope, 'skill', '作用域=招式 → scope=skill')
+  assert.deepEqual(core.layerC.scope, ['skill'], '作用域=招式 → scope=[skill]（数组口径）')
   assert.deepEqual(core.layerC.skillTargets, [
     { category: 'basic', subcategoryId: null },
     { category: 'dodge', subcategoryId: null },
@@ -871,7 +871,7 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   })
   assert.equal(coreFixed.ok, true)
   assert.equal(coreFixed.effect.applySituation, 'stagger', '补上的条件要生效')
-  assert.equal(coreFixed.effect.scope, 'skill')
+  assert.deepEqual(coreFixed.effect.scope, ['skill'])
   assert.deepEqual(coreFixed.effect.skillTargets, [
     { category: 'basic', subcategoryId: null },
     { category: 'dodge', subcategoryId: null },
@@ -1079,13 +1079,13 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
   assert.equal(mapped.ok, true)
   assert.equal(mapped.effect.stat, 'reduceDefense')
   assert.equal(mapped.effect.value, 40)
-  assert.equal(mapped.effect.scope, 'anomalyRelease')
+  assert.deepEqual(mapped.effect.scope, ['anomalyRelease'])
   assert.equal(mapped.effect.applyTarget, 'team')
 
   // 对照：普通（无作用域）减防 → 通用
   const plain = firstEffect('无视敌人40%防御力')
   assert.equal(plain.effect.slots.scope, '无')
-  assert.equal(mapKeywordsToEffect({ slots: plain.effect.slots, id: 'y', origin: 'test' }).effect.scope, 'general')
+  assert.deepEqual(mapKeywordsToEffect({ slots: plain.effect.slots, id: 'y', origin: 'test' }).effect.scope, ['general'])
 
   // 其他子类各自对应
   for (const [slotValue, id] of [
@@ -1097,7 +1097,7 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
     const mappedSub = mapKeywordsToEffect(
       keyword({ slots: { stat: '增伤', action: '提升', value: 10, unit: '%', scope: slotValue } }),
     )
-    assert.equal(mappedSub.effect.scope, id, `作用域=${slotValue} → scope=${id}`)
+    assert.deepEqual(mappedSub.effect.scope, [id], `作用域=${slotValue} → scope=[${id}]（数组口径）`)
   }
 })
 
@@ -1300,7 +1300,7 @@ test('`无法提取` 分软硬：条件 / 作用域 / 目标等按「无」处�
   const softScope = mapKeywordsToEffect({
     slots: { stat: '增伤', action: '提升', value: 10, unit: '%', scope: UNABLE },
   })
-  assert.equal(softScope.effect.scope, 'general', '作用域=无法提取 → 通用')
+  assert.deepEqual(softScope.effect.scope, ['general'], '作用域=无法提取 → 通用')
 })
 
 // ================================================================== 8. 写入计划（假对象，不碰库）

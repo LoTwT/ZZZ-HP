@@ -2558,8 +2558,11 @@ export function mapKeywordsToEffect(keyword = {}) {
     ? {
         id: String(keyword.id ?? ''),
         origin: String(keyword.origin ?? ''),
-        /** 作用域（编辑器同名 `scope`）：`无` → `general` */
-        scope,
+        /**
+         * 作用域（编辑器同名 `scope`，**数组口径**）：`无` → `['general']`。
+         * 阶段1 一次只认一个子类 → 写成单元素数组；以后可多选。
+         */
+        scope: [scope],
         applyTarget,
         applySituation,
         applyProfession: null,

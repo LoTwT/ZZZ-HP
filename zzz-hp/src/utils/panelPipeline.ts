@@ -1,4 +1,5 @@
 import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { normalizeBuffScopes } from '@/utils/buffScope'
 import type { BuffStatKey, BuffStatModifiers, DriveDiscBuffDoc } from '@/types/calculator'
 import type { AffixCounts, AffixDriveDiscMainStats, PanelStats } from '@/types/calculatorPanel'
 import { createEmptyAffixCounts } from '@/types/calculatorPanel'
@@ -152,7 +153,9 @@ export function applyAllocatedAffixEffects(
       stat: inst.stat as BuffStatKey,
       value: inst.magnitude,
       applySituation: inst.conditions.applySituation ?? 'global',
-      scope: inst.conditions.skillTargets?.length ? 'skill' : 'general',
+      scope: normalizeBuffScopes(
+        inst.conditions.scope ?? (inst.conditions.skillTargets?.length ? 'skill' : 'general'),
+      ),
       applyTarget: 'self',
       applySlot,
       skillCategory: inst.conditions.skillTargets?.[0]?.category,

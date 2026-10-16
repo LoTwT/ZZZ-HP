@@ -3,6 +3,12 @@
  * 运行：npx vite-node scripts/test-extra-gain-effect-adapt.mjs
  */
 import { extraGainAppliesToSlot, extraGainMatchesEvent, extraGainToEffect } from '../src/utils/extraBuffCalc.ts'
+/** 读时兼容：单值字符串与数组都算（scope 数组改造期间的容错比较，不比数值） */
+function sameScopes(value, expected) {
+  const list = Array.isArray(value) ? value : value == null || value === '' ? [] : [value]
+  return list.length === expected.length && list.every((item, index) => item === expected[index])
+}
+
 import { buildBuffCatalog, collectAllBuffEffects, collectPanelBuffMods } from '../src/utils/panelBuffCalc.ts'
 import { countTeamProfession, effectMatchesTeamProfessionGate } from '../src/utils/buffEffect.ts'
 import { adaptAffixLibraryEntry, adaptBuffEffect } from '../src/utils/effectAdapters.ts'
@@ -161,7 +167,7 @@ console.log('\n[2] 适配器与 collectAllBuffEffects')
   )].filter(Boolean)
   const applied = applyAllocatedAffixEffects(makePanel(), allocated, {}, 0)
   check('词条 gain 条件抄进 extraGains', applied.extraGains[0]?.skillCategory === 'basic')
-  check('词条 gain 作用域为招式', applied.extraGains[0]?.scope === 'skill')
+  check('词条 gain 作用域为招式', sameScopes(applied.extraGains[0]?.scope, ['skill']))
 }
 
 console.log('\n[3] 空增益：产物里没有额外条目')

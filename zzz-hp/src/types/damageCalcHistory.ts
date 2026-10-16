@@ -97,7 +97,8 @@ export interface DamageCalcPanelSnapshot {
     stat: keyof BuffStatModifiers
     value: number
     applySituation?: import('@/types/calculator').BuffApplySituation
-    scope?: import('@/types/calculator').BuffScope
+    /** 作用域（数组口径；历史数据里的单值字符串读时会归一化） */
+    scope?: import('@/types/calculator').BuffScope[]
     applyTarget?: import('@/types/calculator').BuffApplyTarget
     applySlot?: number | 'team'
     skillCategory?: import('@/types/calculator').BuffSkillTargetId

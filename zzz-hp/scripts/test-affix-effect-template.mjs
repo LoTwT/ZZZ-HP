@@ -3,6 +3,12 @@
  * 运行：npx vite-node scripts/test-affix-effect-template.mjs
  */
 import { adaptAffixLibraryEntry } from '../src/utils/effectAdapters.ts'
+/** 读时兼容：单值字符串与数组都算（scope 数组改造期间的容错比较，不比数值） */
+function sameScopes(value, expected) {
+  const list = Array.isArray(value) ? value : value == null || value === '' ? [] : [value]
+  return list.length === expected.length && list.every((item, index) => item === expected[index])
+}
+
 import {
   buildAffixEffectTemplate,
   parseAffixEffectTemplate,
@@ -87,7 +93,7 @@ console.log('\n[3] 读新优先：effectJson 条件能抬到条目上')
   ]
   const { entries, skipped } = parseAffixPresetEntries(raw)
   check('没有跳过', skipped === 0)
-  check('抄上 scope=skill', entries[0]?.scope === 'skill')
+  check('抄上 scope=skill', sameScopes(entries[0]?.scope, ['skill']))
   check('抄上招式大类', entries[0]?.skillCategory === 'basic')
 }
 

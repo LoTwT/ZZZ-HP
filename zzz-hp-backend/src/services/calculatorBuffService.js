@@ -25,9 +25,42 @@ const BUFF_SCOPE_VALUES = new Set([
   'mutation',
 ])
 
+/** 作用域（**数组口径**）；顺序与前端 `BUFF_SCOPE_OPTIONS` 一致 */
+const BUFF_SCOPE_ORDER = [
+  'general',
+  'skill',
+  'anomaly',
+  'disorder',
+  'turbulence',
+  'anomalyRelease',
+  'radiance',
+  'mutation',
+]
+
+/**
+ * 作用域归一化（**与前端 `zzz-hp/src/utils/buffScope.ts` 同源规则**）：
+ * 1. 非法值剔除、去重、按固定顺序输出；
+ * 2. 缺省 / null / 空数组 / 全非法 → `['general']`；
+ * 3. **含 `general` → 只留 `['general']`**（通用覆盖全部）；
+ * 4. `skill` 可与其它成员并存（招式锚点仍需 `skillTargets`）；
+ * 5. 读时兼容单值字符串，写时统一数组。
+ */
+export function normalizeBuffScopes(value) {
+  const raw = Array.isArray(value) ? value : value == null ? [] : [value]
+  const picked = new Set()
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const text = item.trim()
+    if (!BUFF_SCOPE_VALUES.has(text)) continue
+    if (text === 'general') return ['general']
+    picked.add(text)
+  }
+  if (!picked.size) return ['general']
+  return BUFF_SCOPE_ORDER.filter((id) => picked.has(id))
+}
+
 function normalizeScopeValue(value) {
-  if (typeof value === 'string' && BUFF_SCOPE_VALUES.has(value)) return value
-  return 'general'
+  return normalizeBuffScopes(value)
 }
 
 function flatModsToEffects(mods, applyTarget) {
@@ -40,7 +73,8 @@ function flatModsToEffects(mods, applyTarget) {
     if (!value) continue
     effects.push({
       id: `legacy-${applyTarget}-${key}`,
-      scope: 'general',
+      // 写时统一数组口径
+      scope: ['general'],
       applyTarget,
       kind: 'fixed',
       stat: key,
@@ -55,7 +89,7 @@ function effectsToFlatMods(effects, applyTarget) {
   const result = createEmptyBuffStatModifiers()
   for (const effect of effects || []) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
-    if (effect.scope && effect.scope !== 'general') continue
+    if (!normalizeBuffScopes(effect.scope).includes('general')) continue
     let amount = readNumber(effect.value ?? effect.valuePerStack)
     if (!BUFF_STAT_KEYS.includes(effect.stat)) continue
     if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {

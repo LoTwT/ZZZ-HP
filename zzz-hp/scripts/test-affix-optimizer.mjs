@@ -10,6 +10,12 @@
  * 运行：npx vite-node scripts/test-affix-optimizer.mjs
  */
 import { readFileSync } from 'node:fs'
+
+/** 读时兼容：单值字符串与数组都算（scope 数组改造期间的容错比较，不比数值） */
+function sameScopes(value, expected) {
+  const list = Array.isArray(value) ? value : value == null || value === '' ? [] : [value]
+  return list.length === expected.length && list.every((item, index) => item === expected[index])
+}
 import {
   createEmptyAffixCounts,
   createDefaultAffixDriveDiscMainStats,
@@ -1795,7 +1801,7 @@ console.log('\n[21] 词条分配：有条件 gain: 与局外词条同一套预�
     enabledByDefault: true,
   }
   const gain = extraGainFromLibraryEntry(scoped, 1)
-  check('库条目条件抄进 extraGain', gain?.scope === 'skill' && gain.skillCategory === 'basic')
+  check('库条目条件抄进 extraGain', sameScopes(gain?.scope, ['skill']) && gain.skillCategory === 'basic')
   check('条件摘要含普通攻击', affixEntryConditionSummary(scoped).includes('普通攻击'))
 
   const persisted = coerceAffixLibraryState({
@@ -1805,7 +1811,7 @@ console.log('\n[21] 词条分配：有条件 gain: 与局外词条同一套预�
   })
   check(
     '存档读回招式条件',
-    persisted.customEntries[0]?.skillCategory === 'basic' && persisted.customEntries[0]?.scope === 'skill',
+    persisted.customEntries[0]?.skillCategory === 'basic' && sameScopes(persisted.customEntries[0]?.scope, ['skill']),
   )
 
   const basicCtx = makeCtx({ hits: makeCategoryHits('basic') })

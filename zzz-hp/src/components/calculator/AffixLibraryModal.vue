@@ -39,6 +39,7 @@ import {
   type AffixLibraryState,
   type AffixLibraryStore,
 } from '@/utils/affixLibrary'
+import { normalizeBuffScopes } from '@/utils/buffScope'
 
 /**
  * 词条库弹窗：多套库切换 + 条目编辑 + 导入导出。
@@ -693,7 +694,8 @@ function conditionFieldsFromForm(row: EntryFormDraft): Partial<AffixLibraryEntry
   }
   return {
     applySituation: row.applySituation,
-    scope: row.scope,
+    // 表单是单选，写出去统一数组口径
+    scope: normalizeBuffScopes(row.scope),
     ...(row.scope === 'skill'
       ? {
           skillCategory: row.skillCategory,
@@ -732,7 +734,8 @@ async function toggleEdit(entry: AffixLibraryEntry) {
     cap: entry.cap,
     group: entry.group,
     applySituation: entry.applySituation || 'global',
-    scope: entry.scope || 'general',
+    // 数组口径：表单只展示主作用域（多选态在管理端编辑器里改）
+    scope: normalizeBuffScopes(entry.scope)[0] ?? 'general',
     skillCategory: entry.skillCategory || 'basic',
     appliesToAnomaly: entry.appliesToAnomaly === true,
   }

@@ -21,6 +21,7 @@ import type {
   SkillSubcategory,
 } from '@/types/calculator'
 import { CONVERT_FROM_OPTIONS } from '@/types/calculator'
+import { buffScopeLabel, hasBuffScope, normalizeBuffScopes } from '@/utils/buffScope'
 import { isLuminousElement } from '@/utils/remielUtils'
 import {
   isSkillConvertFromKey,
@@ -29,28 +30,6 @@ import {
 } from '@/utils/skillTalentLevels'
 import { formatCalcDecimal, roundCalc } from '@/utils/calcNumberFormat'
 import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
-
-const BUFF_SCOPE_SET = new Set<string>([
-  'general',
-  'skill',
-  'anomaly',
-  'disorder',
-  'turbulence',
-  'anomalyRelease',
-  'radiance',
-  'mutation',
-])
-
-const BUFF_SCOPE_LABELS: Record<string, string> = {
-  general: '通用',
-  skill: '招式',
-  anomaly: '异常',
-  disorder: '紊乱',
-  turbulence: '乱流',
-  anomalyRelease: '异放',
-  radiance: '耀变',
-  mutation: '异化系数',
-}
 
 function isAnomalyDamageScope(scope: BuffScope): boolean {
   return (
@@ -246,7 +225,7 @@ export function normalizeTeamProfessionValues(
 }
 
 export function createEmptyBuffEffect(
-  overrides: Partial<BuffEffect> = {},
+  overrides: Partial<Omit<BuffEffect, 'scope'>> & { scope?: BuffScope | BuffScope[] } = {},
 ): BuffEffect {
   const skillTargets = normalizeSkillTargets(
     overrides.skillTargets,
@@ -257,7 +236,7 @@ export function createEmptyBuffEffect(
   return {
     id: overrides.id ?? newEffectId(),
     origin: overrides.origin ?? '',
-    scope: overrides.scope ?? 'general',
+    scope: normalizeBuffScopes(overrides.scope),
     applyTarget: overrides.applyTarget ?? 'self',
     applySituation: overrides.applySituation ?? 'global',
     applyProfession:
@@ -351,7 +330,7 @@ function normalizeSkillTargets(
 export function flatModsToEffects(
   mods: BuffStatModifiers,
   applyTarget: BuffApplyTarget,
-  scope: BuffScope = 'general',
+  scope: BuffScope | BuffScope[] = 'general',
   idPrefix = '',
 ): BuffEffect[] {
   const effects: BuffEffect[] = []
@@ -410,7 +389,7 @@ export function effectsToFlatMods(
   let total = emptyMods()
   for (const effect of effects) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
-    if (effect.scope !== 'general') continue
+    if (!hasBuffScope(effect.scope, 'general')) continue
     const amount = resolveEffectBaseValue(effect, effect.defaultStacks ?? 1)
     if (isBuffMultFactorKey(effect.stat)) {
       if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) continue
@@ -503,12 +482,29 @@ export function resolveConvertValue(
   return roundCalc(amount)
 }
 
+/**
+ * 作用域生效判定（**数组口径**：任一成员命中即生效）。
+ *
+ * 与「把 `scope: ['a','b']` 拆成两条单值行」完全等价：逐成员跑同一个单值判定，
+ * 任一为真即真（`singleScopeMatchesContext` 就是改造前的整段单值逻辑）。
+ */
 export function effectMatchesContext(
   effect: BuffEffect,
   ctx: SkillCalcContext | null | undefined,
 ): boolean {
+  return normalizeBuffScopes(effect.scope).some((scope) =>
+    singleScopeMatchesContext(effect, ctx, scope),
+  )
+}
+
+/** 单值作用域判定（改造前 `effectMatchesContext` 的原逻辑，逐字保留语义） */
+function singleScopeMatchesContext(
+  effect: BuffEffect,
+  ctx: SkillCalcContext | null | undefined,
+  scope: BuffScope,
+): boolean {
   if (!ctx) {
-    return effect.scope === 'general'
+    return scope === 'general'
   }
 
   const situation = effect.applySituation ?? 'global'
@@ -525,8 +521,6 @@ export function effectMatchesContext(
   ) {
     return false
   }
-
-  const scope = effect.scope
 
   if (scope === 'mutation') {
     return ctx.damageKind === 'anomaly'
@@ -853,13 +847,6 @@ export function expandBuffOverrideToEffectIds(
   return out.size ? out : null
 }
 
-function normalizeScope(value: unknown): BuffScope {
-  if (typeof value === 'string' && BUFF_SCOPE_SET.has(value)) {
-    return value as BuffScope
-  }
-  return 'general'
-}
-
 function normalizeApplyTarget(value: unknown): BuffApplyTarget {
   return value === 'team' ? 'team' : 'self'
 }
@@ -950,7 +937,7 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
   const effect = createEmptyBuffEffect({
     id: typeof entry.id === 'string' && entry.id ? entry.id : newEffectId(),
     origin: typeof entry.origin === 'string' ? entry.origin : '',
-    scope: normalizeScope(entry.scope),
+    scope: normalizeBuffScopes(entry.scope),
     applyTarget: normalizeApplyTarget(entry.applyTarget),
     applySituation: normalizeApplySituation(entry.applySituation),
     applyProfession:
@@ -1010,7 +997,7 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
   if (effect.kind === 'stacked' || effect.stackable || effect.kind === 'convert') {
     effect.value = 0
   }
-  if (effect.scope === 'skill') {
+  if (hasBuffScope(effect.scope, 'skill')) {
     const targets = getEffectSkillTargets(effect)
     if (!targets.length) {
       setEffectSkillTargets(effect, [{ category: 'basic', subcategoryId: null }])
@@ -1066,9 +1053,9 @@ const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
 
 function resolveAppliesToAnomaly(entry: Record<string, unknown>): boolean | undefined {
   if (entry.appliesToAnomaly != null) return Boolean(entry.appliesToAnomaly)
-  const scope = normalizeScope(entry.scope)
+  const scopes = normalizeBuffScopes(entry.scope)
   const stat = normalizeStat(entry.stat)
-  if (scope === 'skill' && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
+  if (scopes.includes('skill') && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
   return undefined
 }
 
@@ -1268,7 +1255,7 @@ export function formatSkillTargetsPrefix(
   effect: BuffEffect,
   skillSubcategories?: SkillSubcategory[] | null,
 ): string {
-  if (effect.scope !== 'skill') return ''
+  if (!hasBuffScope(effect.scope, 'skill')) return ''
   return getEffectSkillTargets(effect)
     .map((target) => formatSkillTargetBracket(target, skillSubcategories))
     .join('')
@@ -1281,12 +1268,16 @@ export function effectSummaryLabel(
 ): string {
   const target = effect.applyTarget === 'team' ? '全队' : '自身'
   const skillPrefix = formatSkillTargetsPrefix(effect, skillSubcategories)
-  const scope =
-    effect.scope === 'skill'
-      ? skillPrefix
-        ? `招式·${skillPrefix}`
-        : '招式'
-      : (BUFF_SCOPE_LABELS[effect.scope] ?? '通用')
+  // 作用域是数组：多选时按顺序拼接（如「异常 + 异放」；招式带上锚点括号）
+  const scope = normalizeBuffScopes(effect.scope)
+    .map((id) =>
+      id === 'skill'
+        ? skillPrefix
+          ? `招式·${skillPrefix}`
+          : '招式'
+        : buffScopeLabel([id]),
+    )
+    .join(' + ')
   const situation =
     APPLY_SITUATION_LABELS[effect.applySituation ?? 'global'] ?? '全局'
   const applyProf = formatApplyProfessionLabel(effect)

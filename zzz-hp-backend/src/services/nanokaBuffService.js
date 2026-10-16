@@ -61,6 +61,21 @@ const SCOPE_VALUES = new Set([
   'radiance',
   'mutation',
 ])
+
+/** 作用域归一化（**与 `calculatorBuffService.normalizeBuffScopes` 同源规则**；本文件内联一份避免循环依赖） */
+function normalizeBuffScopesLocal(value) {
+  const raw = Array.isArray(value) ? value : value == null ? [] : [value]
+  const picked = new Set()
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const text = item.trim()
+    if (!SCOPE_VALUES.has(text)) continue
+    if (text === 'general') return ['general']
+    picked.add(text)
+  }
+  if (!picked.size) return ['general']
+  return [...SCOPE_VALUES].filter((id) => picked.has(id))
+}
 const APPLY_TARGET_VALUES = new Set(['self', 'team'])
 const APPLY_SITUATION_VALUES = new Set(['global', 'stagger', 'non_stagger'])
 const EFFECT_KINDS = new Set(['fixed', 'stacked', 'convert'])
@@ -188,7 +203,8 @@ export function sanitizeEffect(input, index = 0) {
   const effect = {
     id: String(raw.id ?? `eff-${index}`).trim() || `eff-${index}`,
     origin: typeof raw.origin === 'string' ? raw.origin : '',
-    scope: SCOPE_VALUES.has(raw.scope) ? raw.scope : 'general',
+    // 作用域数组口径（读时兼容单值字符串；写库统一数组）
+    scope: normalizeBuffScopesLocal(raw.scope),
     applyTarget: APPLY_TARGET_VALUES.has(raw.applyTarget) ? raw.applyTarget : 'self',
     applySituation: APPLY_SITUATION_VALUES.has(raw.applySituation) ? raw.applySituation : 'global',
     applyProfession:

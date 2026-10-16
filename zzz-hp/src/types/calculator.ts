@@ -340,7 +340,12 @@ export interface BuffEffect {
   id: string
   /** @deprecated 已改用效果块名称展示，仅兼容旧数据 */
   origin?: string
-  scope: BuffScope
+  /**
+   * 作用域（**数组**，多选）：成员 = `BUFF_SCOPE_OPTIONS`。
+   * 读时兼容单值字符串 / 缺省（归一化见 `normalizeBuffScopes`）；含 `general` 时其余丢弃。
+   * 结算语义：数组内**任一命中即生效**（与拆成多条单值行等价）。
+   */
+  scope: BuffScope[]
   applyTarget: BuffApplyTarget
   /** 作用情况：全局 / 失衡期 / 非失衡期，默认全局 */
   applySituation?: BuffApplySituation

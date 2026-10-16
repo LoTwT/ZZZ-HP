@@ -10,6 +10,7 @@ import {
   EFFECT_SPEC_VERSION,
 } from '@/types/effectSpec'
 import { operationForStat } from '@/utils/effectStatRegistry'
+import { normalizeBuffScopes } from '@/utils/buffScope'
 import {
   affixRollsToEquivalentRolls,
   statKeyOfTarget,
@@ -84,7 +85,7 @@ export function effectInstanceToBuffEffect(instance: EffectInstance): BuffEffect
   const skillTargets = instance.conditions.skillTargets
   return createEmptyBuffEffect({
     id: instance.instanceId,
-    scope: instance.conditions.scope ?? 'general',
+    scope: normalizeBuffScopes(instance.conditions.scope),
     applyTarget: beneficiaryToApplyTarget(instance.beneficiary),
     applySituation: instance.conditions.applySituation ?? 'global',
     applyProfession: instance.conditions.applyProfession,
