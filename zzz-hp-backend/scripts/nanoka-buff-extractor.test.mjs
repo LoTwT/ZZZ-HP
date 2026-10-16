@@ -1097,7 +1097,25 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
     const mappedSub = mapKeywordsToEffect(
       keyword({ slots: { stat: '增伤', action: '提升', value: 10, unit: '%', scope: slotValue } }),
     )
-    assert.deepEqual(mappedSub.effect.scope, [id], `作用域=${slotValue} → scope=[${id}]（数组口径）`)
+    // **子类专用字段优先**（用户 2026-10-16）：「增伤」族遇到子类作用域 → 落该子类的**专用字段**，
+    // 而不是「共用字段 + scope」。没有专用字段的场合（招式 / 异化系数）才用 scope 表达。
+    const dedicatedDamage = {
+      异放: 'anomalyReleaseDmgBonus',
+      乱流: 'turbulenceDmgBonus',
+      耀变: 'radianceDmgBonus',
+      紊乱: 'disorderDmgBonus',
+      异常: 'anomalyDmgBonus',
+    }[slotValue]
+    if (dedicatedDamage) {
+      assert.equal(
+        mappedSub.effect.stat,
+        dedicatedDamage,
+        `作用域=${slotValue} → 落专用字段 ${dedicatedDamage}（不再用 scope 兜）`,
+      )
+      assert.deepEqual(mappedSub.effect.scope, ['general'], '落专用字段时 scope 用默认（数组口径）')
+    } else {
+      assert.deepEqual(mappedSub.effect.scope, [id], `作用域=${slotValue} → scope=[${id}]（数组口径）`)
+    }
   }
 })
 
@@ -1832,7 +1850,16 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
     assert.equal(effect.collection?.title, '属性伤害', '每条都带合集元数据（界面徽章用）')
     assert.match(effect.collection?.note ?? '', /不含紊乱/, '合集口径要写明不含紊乱')
   }
-  assert.equal(new Set(damage.map((effect) => effect.layerC?.stat)).size, 1, '当前阶段2 字段仍是异常增伤')
+  // 用户 2026-10-16 口径：**有专用字段就落专用字段**，「属性伤害」= 4 个专用字段各一条，scope 用默认
+  assert.deepEqual(
+    damage.map((effect) => effect.layerC?.stat).sort(),
+    ['anomalyDmgBonus', 'anomalyReleaseDmgBonus', 'radianceDmgBonus', 'turbulenceDmgBonus'].sort(),
+    '属性伤害合集 → 4 个专用增伤字段各一条',
+  )
+  assert.ok(
+    damage.every((effect) => JSON.stringify(effect.layerC?.scope) === JSON.stringify(['general'])),
+    '落专用字段时 scope 用默认（[general]）',
+  )
 
   // ② 属性暴击率 → 2 条（异常 / 异放）
   const critRate = keywordEffects(simplifyText({ text: '属性暴击率提升10%', origin: 'test' }))

@@ -160,6 +160,7 @@ export const STAT_LABELS = {
   anomalyReleaseDmgBonus: '异放增伤',
   disorderDmgBonus: '紊乱增伤',
   turbulenceDmgBonus: '乱流增伤',
+  radianceDmgBonus: '耀变增伤',
   directVulnerable: '直伤易伤',
   anomalyVulnerable: '异常易伤',
   pierce: '穿透值',
@@ -1302,6 +1303,38 @@ export function buildCollectionFanOutRulesTable() {
   }))
 }
 
+/**
+ * **子类专用字段**（用户 2026-10-16 口径）：工具里**有专用字段**的子类就落专用字段，
+ * **不要**「共用字段 + scope」（例：「异放伤害」→ `anomalyReleaseDmgBonus`，不是 `dmgBonus` + `scope:['anomalyRelease']`）。
+ *
+ * `scope` 只用于**没有专用字段**的场合（例：限定某子类的暴击 —— 等第 3 项把
+ * `turbulence/radiance/disorder Crit*` 建好后，暴击类也一律落专用字段）。
+ *
+ * 判定：属性槽位是「增伤 / 异常增伤」这一族 + 本句或作用域槽出现子类词。
+ */
+const SUBKIND_DEDICATED_DAMAGE = [
+  { label: '异放', re: /异放/, stat: '异放增伤' },
+  { label: '乱流', re: /乱流/, stat: '乱流增伤' },
+  { label: '耀变', re: /耀变/, stat: '耀变增伤' },
+  { label: '紊乱', re: /紊乱/, stat: '紊乱增伤' },
+  // 「异常」放最后（最泛）：它本身就落在 anomalyDmgBonus 这个专用字段上
+  { label: '属性异常（强击）', re: /强击|属性异常|异常/, stat: '异常增伤' },
+]
+
+/** 「增伤」这一族（只有这一族才有子类专用字段） */
+const DAMAGE_FAMILY_STATS = new Set(['增伤', '异常增伤', '全属性伤害'])
+
+/** 命中子类专用字段（返回规则；不命中返回 null） */
+export function detectSubkindDedicatedField({ statKeyword, scopeText = '' }) {
+  if (!DAMAGE_FAMILY_STATS.has(String(statKeyword ?? ''))) return null
+  // 只看**作用域槽位**（它由本句解析而来）；绝不用整块原文，否则会误伤同一块里的其它句
+  const haystack = String(scopeText ?? '')
+  for (const rule of SUBKIND_DEDICATED_DAMAGE) {
+    if (rule.re.test(haystack)) return rule
+  }
+  return null
+}
+
 export function buildRulesTable() {
   const items = (game, slot, field, note = '') => ({ game, slot, field, note })
   const reText = (value) => String(value)
@@ -2230,6 +2263,10 @@ const STAT_TABLE = {
   全属性伤害: { '%': 'dmgBonus', 点: 'dmgBonus' },
   招式增伤: { '%': 'skillDmgBonus', 点: 'skillDmgBonus' },
   异常增伤: { '%': 'anomalyDmgBonus', 点: 'anomalyDmgBonus' },
+  异放增伤: { '%': 'anomalyReleaseDmgBonus', 点: 'anomalyReleaseDmgBonus' },
+  乱流增伤: { '%': 'turbulenceDmgBonus', 点: 'turbulenceDmgBonus' },
+  耀变增伤: { '%': 'radianceDmgBonus', 点: 'radianceDmgBonus' },
+  紊乱增伤: { '%': 'disorderDmgBonus', 点: 'disorderDmgBonus' },
   异常暴击率: { '%': 'anomalyCritRate', 点: 'anomalyCritRate' },
   异常暴击伤害: { '%': 'anomalyCritDmg', 点: 'anomalyCritDmg' },
   异常精通: { 点: 'mastery', '%': 'mastery' },
@@ -2506,10 +2543,23 @@ export function mapKeywordsToEffect(keyword = {}) {
     }
   }
 
+  // —— **子类专用字段**（用户 2026-10-16）：有专用字段就落专用字段，
+  //    不要「共用字段 + scope」（「异放伤害」→ anomalyReleaseDmgBonus，而不是 dmgBonus + scope:['anomalyRelease']）。
+  const subkindDedicated = detectSubkindDedicatedField({
+    statKeyword,
+    scopeText: String(slotValue('scope') ?? '').trim(),
+  })
+  const statKeywordForLookup = subkindDedicated ? subkindDedicated.stat : statKeyword
+  if (subkindDedicated) {
+    steps.push(
+      `子类专用字段：属性=${statKeyword} + 子类（${subkindDedicated.label}）→ 属性=${subkindDedicated.stat}（有专用字段就不用 scope 兜）`,
+    )
+  }
+
   // —— 属性 + 动作 → stat（与阶段1 预检 `checkKeywordMappable` 同一个查表函数）
   const override = ACTION_STAT_OVERRIDES[statKeyword]?.[action]
   const stat = resolveStatField({
-    stat: statKeyword,
+    stat: statKeywordForLookup,
     action,
     unit,
     conditions,
@@ -2591,7 +2641,7 @@ export function mapKeywordsToEffect(keyword = {}) {
     keyword.sources?.target === 'default-team-enemy-status' ? ENEMY_STATUS_TARGET_NOTE : ''
 
   // —— 作用域（`scope`，编辑器同名字段）→ `scope`；`无` = 通用（不写 scope 之外的值）
-  const scopeSlot = String(slotValue('scope') ?? NONE).trim()
+  const scopeSlot = subkindDedicated ? NONE : String(slotValue('scope') ?? NONE).trim()
   const scopeId = SCOPE_SLOT_TO_ID[scopeSlot] ?? ''
   let scope = 'general'
   if (scopeId) {
