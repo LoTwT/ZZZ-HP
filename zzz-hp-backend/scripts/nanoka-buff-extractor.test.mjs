@@ -844,28 +844,32 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   const items = itemsOf(result)
 
   // 核心被动：限定 [普通攻击] / [冲刺攻击] → **作用域=招式** + 锚点（只回落大类）；
-  // 「触发[火力镇压]时」落不到工具字段 → 条件=无法提取（阻断自动映射，等人补）
+  // 「触发[火力镇压]时」落不到工具字段 → 条件=无法提取（**软槽位：不阻断**，按「无」处理 → 可写）
   const core = keywordEffects(items.get('core'))[0]
   assert.equal(core.slots.stat, '招式增伤')
   assert.equal(core.slots.value, 70)
   assert.equal(core.slots.scope, '招式')
   assert.deepEqual(core.slots.conditions, [UNABLE])
-  assert.equal(core.blocked, true, '条件标了无法提取 → 阻断自动映射')
-  assert.equal(core.layerC, null)
-  assert.deepEqual(core.anchors.skillTargets, [
+  assert.equal(core.blocked, false, '条件标了无法提取 → 按「无」处理，不阻断')
+  assert.equal(core.layerC.stat, 'skillDmgBonus')
+  assert.equal(core.layerC.value, 70)
+  assert.equal(core.layerC.applySituation, 'global', '条件按无处理 → 常驻生效')
+  assert.ok(!/触发|火力镇压/.test(core.layerC.note), '不许把条件原文写进 note 冒充条件')
+  assert.equal(core.layerC.scope, 'skill', '作用域=招式 → scope=skill')
+  assert.deepEqual(core.layerC.skillTargets, [
     { category: 'basic', subcategoryId: null },
     { category: 'dodge', subcategoryId: null },
   ])
-  // 人补完条件后重解析：作用域=招式 → scope=skill + skillTargets
+  // 人补上条件后重解析：条件生效（失衡 → applySituation=stagger）
   const coreFixed = mapKeywordsToEffect({
-    slots: { ...core.slots, conditions: [NONE] },
+    slots: { ...core.slots, conditions: ['攻击处于失衡状态下的敌人时'] },
     anchors: core.anchors,
     id: core.id,
     origin: core.origin,
   })
   assert.equal(coreFixed.ok, true)
+  assert.equal(coreFixed.effect.applySituation, 'stagger', '补上的条件要生效')
   assert.equal(coreFixed.effect.scope, 'skill')
-  assert.equal(coreFixed.effect.stat, 'skillDmgBonus')
   assert.deepEqual(coreFixed.effect.skillTargets, [
     { category: 'basic', subcategoryId: null },
     { category: 'dodge', subcategoryId: null },
@@ -877,20 +881,15 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   assert.ok(items.get('talent-1').waste.length > 0)
   for (const entry of items.get('talent-1').waste) assert.ok(entry.reason, '废原文必须带原因')
 
-  // 影画 2：叠层 → kind=stacked / 12 层，时长 15 秒只进 note（条件同样待补）
+  // 影画 2：叠层 → kind=stacked / 12 层，时长 15 秒只进 note（条件=无法提取 → 按无处理，可写）
   const talent2 = keywordEffects(items.get('talent-2'))[0]
   assert.equal(talent2.slots.duration, '15 秒')
   assert.deepEqual(talent2.slots.conditions, [UNABLE])
-  const talent2Fixed = mapKeywordsToEffect({
-    slots: { ...talent2.slots, conditions: [NONE] },
-    stackMax: talent2.stackMax,
-    id: talent2.id,
-    origin: talent2.origin,
-  })
-  assert.equal(talent2Fixed.effect.kind, 'stacked')
-  assert.equal(talent2Fixed.effect.maxStacks, 12)
-  assert.equal(talent2Fixed.effect.valuePerStack, 3)
-  assert.match(talent2Fixed.effect.note, /15 秒/)
+  assert.equal(talent2.blocked, false, '软槽位（条件）不阻断')
+  assert.equal(talent2.layerC.kind, 'stacked')
+  assert.equal(talent2.layerC.maxStacks, 12)
+  assert.equal(talent2.layerC.valuePerStack, 3)
+  assert.match(talent2.layerC.note, /15 秒/)
 
   // 影画 3 / 5：「技能等级+2」在阶段2 词表里没有对应字段 → 阶段1 结束时整条废原文
   for (const slot of ['talent-3', 'talent-5']) {
@@ -905,14 +904,10 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
   assert.equal(talent6.slots.target, '全队')
   // 原文写了「无视目标…」→ 目标来源是 literal；**没写明给谁**时才是 default-team（界面标「默认」）
   assert.ok(['literal', 'default-team'].includes(talent6.sources.target))
-  const talent6Fixed = mapKeywordsToEffect({
-    slots: { ...talent6.slots, conditions: [NONE] },
-    id: talent6.id,
-    origin: talent6.origin,
-  })
-  assert.equal(talent6Fixed.effect.stat, 'resPen')
-  assert.equal(talent6Fixed.effect.value, 25)
-  assert.equal(talent6Fixed.effect.applyTarget, 'team')
+  assert.equal(talent6.blocked, false, '软槽位（条件）不阻断')
+  assert.equal(talent6.layerC.stat, 'resPen')
+  assert.equal(talent6.layerC.value, 25)
+  assert.equal(talent6.layerC.applyTarget, 'team')
 
   // 影画 4：抗打断 / 无敌 / 我方减伤 → 整条废原文（不入库）
   assert.equal(items.get('talent-4').verdict, 'waste')
@@ -1142,6 +1137,69 @@ test('解析规则对照表：从词表自动导出（分组 + 条目）', () =>
   for (const required of ['stat', 'action', 'literal', 'anomaly', 'convert', 'scope', 'target', 'condition', 'waste']) {
     assert.ok(ids.includes(required), `缺少分组 ${required}`)
   }
+})
+
+test('`无法提取` 分软硬：条件 / 作用域 / 目标等按「无」处理，属性 / 动作 / 数值仍阻断', () => {
+  // ① 条件=无法提取 → 映射成功、无 condition（常驻生效），不写进 note
+  const softCondition = mapKeywordsToEffect({
+    slots: { stat: '增伤', action: '提升', value: 10, unit: '%', conditions: [UNABLE] },
+    id: 's1',
+    origin: 'test',
+  })
+  assert.equal(softCondition.ok, true)
+  assert.equal(softCondition.blocked, false)
+  assert.equal(softCondition.effect.applySituation, 'global')
+  assert.equal(softCondition.effect.stat, 'dmgBonus')
+  assert.equal(softCondition.effect.value, 10)
+  assert.ok(!/无法提取/.test(softCondition.effect.note), 'note 不许出现「无法提取」冒充条件')
+
+  // ② 属性=无法提取 → 阻断
+  const hardStat = mapKeywordsToEffect({
+    slots: { stat: UNABLE, action: '提升', value: 10, unit: '%', conditions: [NONE] },
+    id: 's2',
+    origin: 'test',
+  })
+  assert.equal(hardStat.blocked, true)
+  assert.equal(hardStat.effect, null)
+  assert.match(hardStat.reason, /属性/)
+  // 动作 / 数值 同样阻断
+  assert.equal(
+    mapKeywordsToEffect({ slots: { stat: '增伤', action: UNABLE, value: 10, unit: '%' } }).blocked,
+    true,
+  )
+  assert.equal(
+    mapKeywordsToEffect({ slots: { stat: '增伤', action: '提升', value: UNABLE, unit: '%' } }).blocked,
+    true,
+  )
+
+  // ③ 用户补上条件 → 条件生效（失衡 → applySituation=stagger）
+  const fixedCondition = mapKeywordsToEffect({
+    slots: {
+      stat: '增伤',
+      action: '提升',
+      value: 10,
+      unit: '%',
+      conditions: ['攻击处于失衡状态下的敌人时'],
+    },
+    id: 's3',
+    origin: 'test',
+  })
+  assert.equal(fixedCondition.effect.applySituation, 'stagger')
+
+  // 软槽位其他成员：作用域 / 目标 / 元素 / 层数 / 时长 / 对象 都不阻断
+  for (const slot of ['scope', 'target', 'stacks', 'duration', 'object']) {
+    const mapped = mapKeywordsToEffect({
+      slots: { stat: '增伤', action: '提升', value: 10, unit: '%', [slot]: UNABLE },
+      id: `s-${slot}`,
+      origin: 'test',
+    })
+    assert.equal(mapped.blocked, false, `${slot}=无法提取 不该阻断`)
+    assert.equal(mapped.effect.stat, 'dmgBonus')
+  }
+  const softScope = mapKeywordsToEffect({
+    slots: { stat: '增伤', action: '提升', value: 10, unit: '%', scope: UNABLE },
+  })
+  assert.equal(softScope.effect.scope, 'general', '作用域=无法提取 → 通用')
 })
 
 // ================================================================== 8. 写入计划（假对象，不碰库）

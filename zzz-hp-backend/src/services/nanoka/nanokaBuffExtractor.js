@@ -2155,27 +2155,64 @@ function unableConvertSlots(convert) {
  * @returns {{ ok:boolean, blocked:boolean, unableSlots:string[], unmapped:string[], notices:string[],
  *   steps:string[], stat:string, statLabel:string, effect:object|null, reason:string }}
  */
+/**
+ * **`无法提取` 分两类**（用户 2026-10-16 定稿）：
+ *   - **硬槽位**：`属性` / `动作` / `数值`（+ 转模的读取属性 / 折算比例）—— 没有它们就**没有增益可写**、
+ *     也没法查表 → **仍然阻断**（标红待补、不进「写入（准备）」）。
+ *   - **软槽位**：条件 / 作用域 / 元素 / 目标 / 层数 / 时长 / 对象 —— 缺了只是**少个限定**
+ *     → **不阻断**，按 `无` 处理继续映射（条件 → 常驻生效、不写条件、不写进 note），界面上给
+ *     红字提示 + 淡色「按无处理」。
+ */
+export const HARD_UNABLE_SLOTS = ['stat', 'action', 'value']
+export const SOFT_UNABLE_SLOTS = SLOT_IDS.filter((id) => !HARD_UNABLE_SLOTS.includes(id))
+
+/**
+ * 阶段2 映射（纯函数，**不联网不写库**）。
+ *
+ * 关键词槽位 → 增益块字段；`无` = 该维度没出现（按默认值落），`无法提取` 按上面分硬 / 软两类处理。
+ */
 export function mapKeywordsToEffect(keyword = {}) {
   const slots = isPlainObject(keyword.slots) ? keyword.slots : {}
   const steps = []
   const unmapped = []
   const notices = []
   const unableSlots = SLOT_IDS.filter((id) => isUnable(slots[id]))
+  const hardUnable = unableSlots.filter((id) => HARD_UNABLE_SLOTS.includes(id))
+  const softUnable = unableSlots.filter((id) => SOFT_UNABLE_SLOTS.includes(id))
 
-  // 硬规则 7：`无法提取` 阻断该条自动映射（界面标红待补）
-  if (unableSlots.length) {
+  // 硬槽位标了「无法提取」→ 阻断该条自动映射（界面标红待补）
+  if (hardUnable.length) {
     return {
       ok: false,
       blocked: true,
       unableSlots,
+      hardUnable,
+      softUnable,
       unmapped: [],
       notices,
       steps,
       stat: '',
       statLabel: '',
       effect: null,
-      reason: `有 ${unableSlots.map((id) => SLOT_LABELS[id]).join(' / ')} 标了「${UNABLE}」，已阻断自动映射（补齐后重试）`,
+      reason: `有 ${hardUnable.map((id) => SLOT_LABELS[id]).join(' / ')} 标了「${UNABLE}」，已阻断自动映射（补齐后重试）`,
     }
+  }
+  // 软槽位标了「无法提取」→ 只提示，按 `无` 继续映射（不算 blocked）
+  for (const id of softUnable) {
+    steps.push(`${SLOT_LABELS[id]}=${UNABLE} → 不阻断，按「${NONE}」处理（少一个限定，继续映射）`)
+    notices.push(`${SLOT_LABELS[id]} 标了「${UNABLE}」→ 按「${NONE}」处理（要限定就补上再 [解析]）`)
+  }
+  const softUnableSet = new Set(softUnable)
+  /** 取槽位值时把软槽位的 `无法提取` 当 `无` */
+  const slotValue = (id) => {
+    const value = slots[id]
+    if (softUnableSet.has(id)) {
+      if (Array.isArray(value)) return value.filter((item) => item !== UNABLE).length
+        ? value.filter((item) => item !== UNABLE)
+        : [NONE]
+      return NONE
+    }
+    return value
   }
 
   // v3 招式锚点：关联不上 → 这条不录（不新建挂载点、不动 schema）
@@ -2197,11 +2234,17 @@ export function mapKeywordsToEffect(keyword = {}) {
   const statKeyword = String(slots.stat ?? '').trim()
   const action = String(slots.action ?? '').trim()
   const unit = String(slots.unit ?? '').trim()
-  const target = String(slots.target ?? '').trim()
-  const object = String(slots.object ?? '').trim()
-  const stacks = String(slots.stacks ?? '').trim()
-  const duration = String(slots.duration ?? '').trim()
-  const conditions = Array.isArray(slots.conditions) && slots.conditions.length ? slots.conditions : [NONE]
+  // 软槽位读值：`无法提取` 一律当 `无`（用户 2026-10-16：不阻断，按各自默认走）
+  const targetRaw = slotValue('target')
+  const objectRaw = slotValue('object')
+  const stacksRaw = slotValue('stacks')
+  const durationRaw = slotValue('duration')
+  const conditionsRaw = slotValue('conditions')
+  const target = String(targetRaw ?? '').trim()
+  const object = String(objectRaw ?? '').trim()
+  const stacks = String(stacksRaw ?? '').trim()
+  const duration = String(durationRaw ?? '').trim()
+  const conditions = Array.isArray(conditionsRaw) && conditionsRaw.length ? conditionsRaw : [NONE]
   const value = Number(slots.value)
   const isConvert = action === '转化'
 
@@ -2245,8 +2288,9 @@ export function mapKeywordsToEffect(keyword = {}) {
   }
 
   // —— 元素过滤：`元素` 槽位（**允许复数**）优先；没有该槽位时由属性里的 `<元素>属性伤害` 拆
-  const elementSlot = Array.isArray(slots.elements)
-    ? slots.elements.filter((item) => item && item !== NONE && item !== UNABLE)
+  const elementSlotRaw = slotValue('elements')
+  const elementSlot = Array.isArray(elementSlotRaw)
+    ? elementSlotRaw.filter((item) => item && item !== NONE && item !== UNABLE)
     : []
   let elementFilter = 'all'
   if (elementSlot.length) {
@@ -2293,7 +2337,7 @@ export function mapKeywordsToEffect(keyword = {}) {
   }
 
   // —— 作用域（`scope`，编辑器同名字段）→ `scope`；`无` = 通用（不写 scope 之外的值）
-  const scopeSlot = String(slots.scope ?? NONE).trim()
+  const scopeSlot = String(slotValue('scope') ?? NONE).trim()
   const scopeId = SCOPE_SLOT_TO_ID[scopeSlot] ?? ''
   let scope = 'general'
   if (scopeId) {

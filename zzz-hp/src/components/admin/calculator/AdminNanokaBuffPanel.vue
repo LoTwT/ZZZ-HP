@@ -154,15 +154,7 @@ interface GainFields {
   } | null
 }
 
-/** 底部「废原文」区的一行 = **一句**（整句都抽不出关键字；只改显示，不改入库） */
-interface WasteSentenceRow {
-  itemKey: string
-  sourceLabel: string
-  title: string
-  sentenceIndex: number
-  rawSentence: string
-  reasons: string[]
-}
+/** 底部「废原文」区（按来源块 · 整段原文；解析不出的句子只做淡色/下划线标记） */
 
 // ---------------------------------------------------------------- 顶部选择 / 状态
 
@@ -415,6 +407,21 @@ function isUnableValue(value: unknown): boolean {
   return String(value ?? '').trim() === UNABLE
 }
 
+/**
+ * `无法提取` 分软硬（用户 2026-10-16）：`属性 / 动作 / 数值` 缺失 → **阻断待补**；
+ * 其余槽位缺失 → **按「无」处理**（红字提示 + 淡色「按无处理」，不阻断）。
+ */
+const HARD_UNABLE_SLOT_IDS = ['stat', 'action', 'value']
+
+function isHardUnable(slotId: string): boolean {
+  return HARD_UNABLE_SLOT_IDS.includes(slotId)
+}
+
+/** 该条有没有「软」的无法提取（有的话显示「按无处理」提示，但不影响可写） */
+function softUnableSlotsOf(row: KeywordRow): string[] {
+  return (row.unableSlots ?? []).filter((id) => !isHardUnable(id))
+}
+
 /** 详情里某槽位的展示文本（元素 / 条件是复数，逐个列出） */
 function slotText(row: KeywordRow, slotId: string): string {
   const value = (row.slots as unknown as Record<string, unknown>)[slotId]
@@ -493,23 +500,60 @@ const originalSentences = computed<NanokaBuffSentence[]>(() =>
   originalItem.value ? keywordSentences(originalItem.value) : [],
 )
 
-// ---------------------------------------------------------------- Row 组装
-const wasteSentences = computed<WasteSentenceRow[]>(() => {
-  const out: WasteSentenceRow[] = []
+// ---------------------------------------------------------------- 废原文（按来源块 · 整段原文）
+
+/**
+ * 底部「废原文」区（用户 2026-10-16 改造）：**按来源块展示原封不动的整块原文**，
+ * 不删字、不逐句拆条；解析不出的句子只做**淡色 / 下划线**标记，可切「整段 / 仅废句」。
+ * 排序与主视图一致（核心被动 → 额外能力 → 招式文本 → 影画 1..6；音擎：基础 → 精炼 1..5）。
+ */
+const wasteOnlySentences = ref(false) // false = 整段（默认）；true = 只看废句
+
+interface WasteBlockRow {
+  itemKey: string
+  sourceTag: string
+  rawText: string
+  wasteSentences: { sentenceIndex: number; text: string; reasons: string[] }[]
+  segments: { text: string; waste: boolean }[]
+}
+
+const wasteBlocks = computed<WasteBlockRow[]>(() => {
+  const blocks: WasteBlockRow[] = []
   for (const item of items.value) {
-    for (const sentence of item.sentences ?? []) {
-      if (sentence.hasKeywords) continue
-      out.push({
-        itemKey: item.slot,
-        sourceLabel: item.slotLabel,
-        title: item.title,
+    const wasteSentences = (item.sentences ?? [])
+      .filter((sentence) => !sentence.hasKeywords)
+      .map((sentence) => ({
         sentenceIndex: sentence.sentenceIndex,
-        rawSentence: sentence.rawSentence,
+        text: sentence.rawSentence,
         reasons: [...new Set(sentence.waste.map((entry) => entry.reason))],
-      })
+      }))
+    if (!wasteSentences.length) continue
+    // 在整块原文里给「废句」打标（顺序扫描，避免重复文本错位）
+    const segments: { text: string; waste: boolean }[] = []
+    let cursor = 0
+    for (const sentence of wasteSentences) {
+      const index = item.rawText.indexOf(sentence.text, cursor)
+      if (index < 0) continue
+      if (index > cursor) segments.push({ text: item.rawText.slice(cursor, index), waste: false })
+      segments.push({ text: sentence.text, waste: true })
+      cursor = index + sentence.text.length
     }
+    if (cursor < item.rawText.length) segments.push({ text: item.rawText.slice(cursor), waste: false })
+    blocks.push({
+      itemKey: item.slot,
+      sourceTag: item.title ? `${item.slotLabel} · ${item.title}` : item.slotLabel,
+      rawText: item.rawText,
+      wasteSentences,
+      segments: segments.length ? segments : [{ text: item.rawText, waste: false }],
+    })
   }
-  return out
+  return blocks.sort((left, right) => {
+    const a = slotSortKey(left.itemKey)
+    const b = slotSortKey(right.itemKey)
+    if (a[0] !== b[0]) return a[0] - b[0]
+    if (a[1] !== b[1]) return a[1] - b[1]
+    return a[2].localeCompare(b[2])
+  })
 })
 
 // ---------------------------------------------------------------- Row 组装
@@ -1151,10 +1195,62 @@ function resolveConflict(row: KeywordRow, conflict: NanokaParseConflict, choice:
 /** 阶段二当前选中的关键字（右侧**只**显示这一条的实际增益） */
 const selectedKey = ref('')
 
+/**
+ * **清单排序**（用户 2026-10-16）：`核心被动 → 额外能力 → 招式文本（按类别 / 招式）→ 影画 1..6`；
+ * 音擎 = `基础(fixed) → 精炼 1..5`。**影画固定最后**，不许混在中间。下拉选项顺序与清单一致。
+ */
+const SLOT_SORT_GROUPS: Record<string, number> = { core: 0, extra: 1, fixed: 0 }
+const SKILL_CATEGORY_ORDER = ['basic', 'dodge', 'assist', 'special', 'chain', 'ultimate']
+
+function slotSortKey(slot: string): [number, number, string] {
+  if (slot in SLOT_SORT_GROUPS) return [SLOT_SORT_GROUPS[slot] ?? 0, 0, slot]
+  if (slot.startsWith('skill-')) {
+    const category = slot.split('-')[1] ?? ''
+    const index = SKILL_CATEGORY_ORDER.indexOf(category)
+    return [2, index < 0 ? 99 : index, slot]
+  }
+  const talent = /^talent-(\d+)$/.exec(slot)
+  if (talent) return [3, Number(talent[1]), slot] // 影画 1..6 固定最后
+  const refinement = /^refinement-(\d+)$/.exec(slot)
+  if (refinement) return [1, Number(refinement[1]), slot] // 音擎：基础 → 精炼 1..5
+  return [9, 0, slot]
+}
+
+/** 阶段二清单 / 下拉都用这个顺序（影画最后） */
+const orderedRows = computed(() =>
+  [...rows.value].sort((left, right) => {
+    const a = slotSortKey(left.itemSlot)
+    const b = slotSortKey(right.itemSlot)
+    if (a[0] !== b[0]) return a[0] - b[0]
+    if (a[1] !== b[1]) return a[1] - b[1]
+    if (a[2] !== b[2]) return a[2].localeCompare(b[2])
+    return left.sentenceIndex - right.sentenceIndex || left.key.localeCompare(right.key)
+  }),
+)
+
 const activeRow = computed<KeywordRow | null>(() => {
   const row = rows.value.find((item) => item.key === selectedKey.value)
-  return row ?? rows.value[0] ?? null
+  return row ?? orderedRows.value[0] ?? null
 })
+
+/** 清单条目的展示结构（用户 2026-10-16：两行结构化，别一大坨换行文本） */
+function rowSourceTag(row: KeywordRow): string {
+  return `${row.itemSlotLabel} · 第 ${row.sentenceIndex + 1} 句`
+}
+
+function rowValueTag(row: KeywordRow): string {
+  if (row.slots.action === '转化') return '转模'
+  const unit = row.slots.unit === '无' ? '' : row.slots.unit
+  return `${row.slots.value}${unit}`
+}
+
+function rowMetaTag(row: KeywordRow): string {
+  const parts = [row.slots.action]
+  if (row.slots.scope && row.slots.scope !== NONE) parts.push(`作用域=${row.slots.scope}`)
+  const condition = conditionText(row.slots.conditions)
+  if (condition && condition !== NONE) parts.push(`条件=${condition}`)
+  return parts.join(' · ')
+}
 
 /** 勾选了「加入」的条目（未勾选的不参与写入准备） */
 const includedRows = computed(() => rows.value.filter((row) => row.included))
@@ -1269,7 +1365,9 @@ const confirmMessage = computed(() => {
 const canWrite = computed(() => writableRows.value.length > 0 && !busy.value)
 
 const wasteOpen = ref(true)
-const wasteCount = computed(() => wasteSentences.value.length)
+const wasteCount = computed(() =>
+  wasteBlocks.value.reduce((total, block) => total + block.wasteSentences.length, 0),
+)
 </script>
 
 <template>
@@ -1444,6 +1542,9 @@ const wasteCount = computed(() => wasteSentences.value.length)
                   <!-- 无法提取：⚠X + [补] -->
                   <div v-for="entry in slotBuckets(row).unable" :key="`u-${entry.id}`" class="nbf-slot nbf-slot-unable">
                     <span class="nbf-slot-label">⚠X {{ entry.label }}</span>
+                    <em class="nbf-unable-tag" :class="isHardUnable(entry.id) ? 'is-hard' : 'is-soft'">
+                      {{ isHardUnable(entry.id) ? '待补（阻断）' : '按无处理' }}
+                    </em>
                     <button
                       v-if="row.patchSlot !== entry.id"
                       type="button"
@@ -1557,19 +1658,62 @@ const wasteCount = computed(() => wasteSentences.value.length)
 
       <section class="nbf-waste">
         <header class="nbf-stage-head">
-          <h3>废原文（{{ wasteCount }} 句 · 带丢弃原因 · 不入库）</h3>
-          <button type="button" class="nbf-mini-btn" @click="wasteOpen = !wasteOpen">
-            {{ wasteOpen ? '收起' : '展开' }}
-          </button>
+          <h3>废原文（{{ wasteCount }} 句解析不出 · 按来源块整段展示 · 不入库）</h3>
+          <div class="nbf-waste-actions">
+            <div class="nbf-toggle">
+              <button
+                type="button"
+                class="nbf-mini-btn"
+                :class="{ active: !wasteOnlySentences }"
+                @click="wasteOnlySentences = false"
+              >
+                整段
+              </button>
+              <button
+                type="button"
+                class="nbf-mini-btn"
+                :class="{ active: wasteOnlySentences }"
+                @click="wasteOnlySentences = true"
+              >
+                只看废句
+              </button>
+            </div>
+            <button type="button" class="nbf-mini-btn" @click="wasteOpen = !wasteOpen">
+              {{ wasteOpen ? '收起' : '展开' }}
+            </button>
+          </div>
         </header>
-        <ul v-if="wasteOpen" class="nbf-waste-list">
-          <li v-for="entry in wasteSentences" :key="`w-${entry.itemKey}-${entry.sentenceIndex}`">
-            <span class="nbf-chip">{{ entry.sourceLabel }} · 第 {{ entry.sentenceIndex + 1 }} 句</span>
-            <span class="nbf-waste-text">{{ entry.rawSentence }}</span>
-            <span class="nbf-waste-reason">{{ entry.reasons.join(' / ') || '没抓到可量的增益' }}</span>
-          </li>
-        </ul>
-        <p v-if="wasteOpen && !wasteSentences.length" class="empty-hint">没有废原文。</p>
+        <div v-if="wasteOpen" class="nbf-waste-blocks">
+          <article v-for="block in wasteBlocks" :key="`wb-${block.itemKey}`" class="nbf-waste-block">
+            <header class="nbf-waste-block-head">
+              <span class="nbf-chip">{{ block.sourceTag }}</span>
+              <span class="nbf-sub">{{ block.wasteSentences.length }} 句解析不出</span>
+            </header>
+            <!-- 整段：原封不动；解析不出的句子只做淡色 + 下划线标记（不删字、不拆条） -->
+            <p v-if="!wasteOnlySentences" class="nbf-waste-raw">
+              <template v-for="(segment, index) in block.segments" :key="`seg-${index}`">
+                <span :class="{ 'nbf-waste-mark': segment.waste }">{{ segment.text }}</span>
+              </template>
+            </p>
+            <!-- 只看废句：逐句列出（默认折叠原因） -->
+            <ul v-else class="nbf-waste-lines">
+              <li v-for="sentence in block.wasteSentences" :key="`wl-${sentence.sentenceIndex}`">
+                <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
+                <span class="nbf-waste-mark">{{ sentence.text }}</span>
+              </li>
+            </ul>
+            <details v-if="block.wasteSentences.some((sentence) => sentence.reasons.length)" class="nbf-waste-reasons">
+              <summary>丢弃原因（{{ block.wasteSentences.length }} 句）</summary>
+              <ul>
+                <li v-for="sentence in block.wasteSentences" :key="`wr-${sentence.sentenceIndex}`">
+                  <span class="nbf-sub">第 {{ sentence.sentenceIndex + 1 }} 句</span>
+                  <span class="nbf-waste-reason">{{ sentence.reasons.join(' / ') || '没抓到可量的增益' }}</span>
+                </li>
+              </ul>
+            </details>
+          </article>
+        </div>
+        <p v-if="wasteOpen && !wasteBlocks.length" class="empty-hint">没有废原文。</p>
       </section>
 
       <!-- 「整块原文」弹窗：剔除完全解析不出来的句子，并高亮当前句。
@@ -1651,7 +1795,7 @@ const wasteCount = computed(() => wasteSentences.value.length)
         <section class="nbf-master-left">
           <h4 class="nbf-col-title">选一条关键字</h4>
           <select v-model="selectedKey" class="field-input nbf-master-select">
-            <option v-for="row in rows" :key="`opt-${row.key}`" :value="row.key">
+            <option v-for="row in orderedRows" :key="`opt-${row.key}`" :value="row.key">
               {{ rowLabel(row) }}
             </option>
           </select>
@@ -1696,23 +1840,50 @@ const wasteCount = computed(() => wasteSentences.value.length)
               </ul>
               <p class="nbf-sub">
                 招式锚点：{{ activeRow.anchors.labels.length ? activeRow.anchors.labels.join(' + ') : '无' }} ·
-                状态：{{ activeRow.recorded ? (activeRow.blocked ? '待补（无法提取）' : '可写') : '不录' }}
+                状态：{{
+                  activeRow.recorded
+                    ? activeRow.blocked
+                      ? '待补（属性 / 动作 / 数值 标了无法提取 → 阻断）'
+                      : softUnableSlotsOf(activeRow).length
+                        ? `可写（${softUnableSlotsOf(activeRow).map((id) => slotLabel(id)).join(' / ')} 按「无」处理）`
+                        : '可写'
+                    : '不录'
+                }}
               </p>
             </div>
           </template>
 
-          <h5 class="nbf-col-title nbf-include-title">全部关键字（勾选 = 是否加入）</h5>
+          <h5 class="nbf-col-title nbf-include-title">
+            全部关键字（勾选 = 是否加入 · 影画在最后）
+          </h5>
           <ul class="nbf-include-list">
-            <li v-for="row in rows" :key="`inc-${row.key}`" :class="{ 'nbf-include-off': !row.included }">
-              <label>
+            <li
+              v-for="row in orderedRows"
+              :key="`inc-${row.key}`"
+              class="nbf-list-item"
+              :class="{
+                'is-current': row.key === activeRow?.key,
+                'nbf-include-off': !row.included,
+              }"
+            >
+              <label class="nbf-list-label">
                 <input
                   type="checkbox"
                   :checked="row.included"
                   @change="toggleIncluded(row, ($event.target as HTMLInputElement).checked)"
                 />
-                <button type="button" class="nbf-link-btn" @click="selectedKey = row.key">
-                  {{ rowLabel(row) }}
-                </button>
+                <span class="nbf-list-body" @click="selectedKey = row.key">
+                  <span class="nbf-list-line1">
+                    <span class="nbf-list-source">{{ rowSourceTag(row) }}</span>
+                    <span v-if="row.key === activeRow?.key" class="nbf-list-current">当前</span>
+                    <span v-if="!row.included" class="nbf-list-off-tag">不加入</span>
+                  </span>
+                  <span class="nbf-list-line2">
+                    <span class="nbf-chip nbf-chip-stat">{{ displaySlotValue('stat', row.slots.stat) }}</span>
+                    <span class="nbf-chip nbf-chip-value">{{ rowValueTag(row) }}</span>
+                  </span>
+                  <span class="nbf-list-line3" :title="rowMetaTag(row)">{{ rowMetaTag(row) }}</span>
+                </span>
               </label>
             </li>
           </ul>
@@ -2352,21 +2523,127 @@ const wasteCount = computed(() => wasteSentences.value.length)
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  max-height: 22rem;
+  gap: 0.3rem;
+  max-height: 24rem;
   overflow: auto;
   font-size: 0.78rem;
 }
 
-.nbf-include-list label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.35rem;
+/* 条目：统一行高 / 缩进 / 分隔；三种状态各不一样（选中 / hover / 不加入） */
+.nbf-list-item {
+  padding: 0.35rem 0.45rem 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: var(--color-background-mute, rgba(232, 229, 218, 0.45));
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.nbf-include-off {
-  opacity: 0.55;
+.nbf-list-item + .nbf-list-item {
+  margin-top: 0.1rem;
+}
+
+.nbf-list-item:hover {
+  background: var(--color-background-mute, rgba(232, 229, 218, 0.75));
+}
+
+/* 选中态：左边框强调色 + 底色 + 加粗（与 hover / 不加入都区分得开） */
+.nbf-list-item.is-current {
+  border-color: var(--color-border-hover);
+  border-left-color: #b8860b;
+  background: rgba(184, 134, 11, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(184, 134, 11, 0.18);
+}
+
+.nbf-list-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.nbf-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.nbf-list-line1 {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.nbf-list-item.is-current .nbf-list-line1 {
+  opacity: 1;
+  font-weight: 700;
+}
+
+.nbf-list-current {
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: #b8860b;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.nbf-list-off-tag {
+  padding: 0 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.66rem;
+}
+
+.nbf-list-line2 {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.nbf-chip-stat,
+.nbf-chip-value {
+  padding: 0.05rem 0.3rem;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.nbf-chip-stat {
+  background: rgba(60, 90, 150, 0.16);
+  color: #2f4c86;
+}
+
+.nbf-chip-value {
+  background: rgba(30, 120, 80, 0.16);
+  color: #1f6b4a;
+}
+
+/* 第三行：动作 / 作用域 / 条件，超长省略号 + 悬浮显示全文 */
+.nbf-list-line3 {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+/* 不加入：文字标灰划掉（与「选中」并存时仍保留强调色左边框） */
+.nbf-include-off .nbf-list-body {
+  opacity: 0.5;
   text-decoration: line-through;
+}
+
+.nbf-include-off .nbf-chip-stat,
+.nbf-include-off .nbf-chip-value {
+  filter: grayscale(1);
+  opacity: 0.75;
 }
 
 .nbf-link-btn {
@@ -2438,6 +2715,106 @@ const wasteCount = computed(() => wasteSentences.value.length)
 .nbf-badge-inherit {
   border-color: rgba(150, 110, 30, 0.45);
   color: #8a5a12;
+}
+
+/* 废原文：按来源块整段展示（解析不出的句子只做淡色 + 下划线标记，不删字不拆条） */
+.nbf-waste-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.nbf-toggle {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.nbf-toggle .nbf-mini-btn.active {
+  border-color: #b8860b;
+  color: #8a5a12;
+  font-weight: 700;
+}
+
+.nbf-waste-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.nbf-waste-block {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft, rgba(250, 248, 242, 0.6));
+}
+
+.nbf-waste-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.nbf-waste-raw {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.nbf-waste-mark {
+  color: var(--color-text);
+  opacity: 0.55;
+  text-decoration: underline dotted;
+}
+
+.nbf-waste-lines {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.nbf-waste-reasons {
+  margin-top: 0.35rem;
+  font-size: 0.76rem;
+}
+
+.nbf-waste-reasons summary {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.nbf-waste-reasons ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* 无法提取的两种状态：软（按无处理）vs 硬（待补 · 阻断） */
+.nbf-unable-tag {
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  font-size: 0.66rem;
+  font-style: normal;
+}
+
+.nbf-unable-tag.is-soft {
+  background: rgba(120, 120, 100, 0.16);
+  color: var(--color-text);
+  opacity: 0.85;
+}
+
+.nbf-unable-tag.is-hard {
+  background: rgba(178, 59, 46, 0.16);
+  color: #b23b2e;
+  font-weight: 700;
 }
 
 /* 淡色「默认」标记：目标值是按规则兜底的（敌人削弱族 → 全队），一眼能改 */
