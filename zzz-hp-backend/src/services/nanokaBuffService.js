@@ -967,16 +967,25 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
       blockHint: sample?.blockHint,
     })
 
-    // 原文 + `[关键字]` 行：按行追加（同一段原文只追加一次）
+    // 原文 + `[关键字]` 行：**同一段原文只写一次**，该段的所有关键字行逐条列在后面（用户 2026-10-17：
+    // 之前是按行追加，一段原文下 6 条关键字就把同一段原文重复贴了 6 遍，块备注全变成复读）。
     let noteState = { note: merged.blocks[merged.blockIndex].note, appended: false, duplicate: false }
     const sourceTexts = []
+    const rowsByText = new Map()
     for (const item of group.effects) {
-      const sourceText = item.row?.rawText
+      const text = String(item.row?.rawText ?? item.row?.sourceText ?? '').trim()
+      if (!text) continue
+      const list = rowsByText.get(text) ?? []
+      list.push(item)
+      rowsByText.set(text, list)
+    }
+    for (const [text, items] of rowsByText) {
+      const sourceText = items[0].row?.rawText
         ? formatSourceBlock({
-            rawText: item.row.rawText,
-            effects: [{ slots: item.row.keywordSlots, convert: item.row.convert }],
+            rawText: text,
+            effects: items.map((item) => ({ slots: item.row.keywordSlots, convert: item.row.convert })),
           })
-        : String(item.row?.sourceText ?? '')
+        : text
       if (!sourceText) continue
       sourceTexts.push(sourceText)
       const next = appendSourceText(noteState.note, sourceText)
