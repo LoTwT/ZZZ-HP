@@ -7,12 +7,15 @@
 
 export const AFFIX_EFFECT_TEMPLATE_VERSION = 1
 
+import { normalizeBuffScopes } from '../services/calculatorBuffService.js'
+
 const PERCENT_OF_BASE_FIELDS = new Set(['anomalyControl', 'energyRegen'])
 
 function conditionsFromEntry(entry) {
   const conditions = {}
   if (entry.applySituation) conditions.applySituation = entry.applySituation
-  if (entry.scope) conditions.scope = entry.scope
+  // 作用域**数组口径**（读时兼容单值字符串；含 general 只留 general）
+  if (entry.scope) conditions.scope = normalizeBuffScopes(entry.scope)
   if (entry.skillCategory) {
     conditions.skillTargets = [
       { category: entry.skillCategory, subcategoryId: entry.skillSubcategoryId ?? null },

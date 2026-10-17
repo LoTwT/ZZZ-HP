@@ -7,13 +7,13 @@ import type {
   BuffStatKey,
 } from '@/types/calculator'
 import {
-  BUFF_SCOPE_OPTIONS,
   BUFF_SKILL_TARGET_OPTIONS,
 } from '@/types/calculator'
 import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
 import type { AffixEffectTemplate } from '@/utils/affixEffectTemplate'
+import { buffScopeLabel, normalizeBuffScopes } from '@/utils/buffScope'
 
 /**
  * 词条库（Affix Library）
@@ -341,14 +341,17 @@ export function extraGainFromLibraryEntry(
   if (!isGainTarget(entry.target) || rolls <= 0) return null
   const field = gainFieldOfTarget(entry.target)
   if (!field) return null
-  const scoped = Boolean(entry.skillCategory) || entry.scope === 'skill'
+  const scopeList = normalizeBuffScopes(entry.scope)
+  const scoped = Boolean(entry.skillCategory) || scopeList.includes('skill')
   return {
     id: `${AFFIX_GAIN_SOURCE_ID_PREFIX}${entry.id}`,
     name: entry.label,
     stat: field,
     value: rolls * entry.perRoll,
     applySituation: entry.applySituation ?? 'global',
-    scope: entry.scope ?? (scoped ? 'skill' : 'general'),
+    scope: scoped && scopeList.length === 1 && scopeList[0] === 'general'
+      ? normalizeBuffScopes('skill')
+      : scopeList,
     applyTarget: 'self',
     applySlot: 0,
     skillCategory: entry.skillCategory,
@@ -370,12 +373,12 @@ export function affixEntryConditionSummary(entry: AffixLibraryEntry): string {
   if (situation && situation !== 'global') {
     parts.push(SITUATION_SUMMARY[situation] ?? situation)
   }
-  if (entry.scope === 'skill' && entry.skillCategory) {
+  const entryScopes = normalizeBuffScopes(entry.scope)
+  if (entryScopes.includes('skill') && entry.skillCategory) {
     const skill = BUFF_SKILL_TARGET_OPTIONS.find((item) => item.id === entry.skillCategory)
     parts.push(skill?.label ?? entry.skillCategory)
-  } else if (entry.scope && entry.scope !== 'general') {
-    const scope = BUFF_SCOPE_OPTIONS.find((item) => item.id === entry.scope)
-    parts.push(scope?.label ?? entry.scope)
+  } else if (!(entryScopes.length === 1 && entryScopes[0] === 'general')) {
+    parts.push(buffScopeLabel(entryScopes))
   }
   if (entry.appliesToAnomaly) parts.push('异常也生效')
   return parts.join(' · ')
@@ -436,7 +439,13 @@ export interface AffixLibraryEntry {
    * 旧存档没有这些键，`migrateCustomEntry` 读成 undefined，不升存储版本。
    */
   applySituation?: BuffApplySituation
-  scope?: BuffScope
+  /** 作用域（**数组**口径；读时兼容单值字符串） */
+  scope?: BuffScope[]
+  /**
+   * 表单保存作用域：**未改动** → 原样保留整个数组（多值数组不会被压成首个成员）；
+   * **显式改动** → 写成该单元素数组。避免"单选表单静默压扁多值"导致的数据丢失。
+   */
+  scopeTouched?: boolean
   skillCategory?: BuffSkillTargetId
   skillSubcategoryId?: string | null
   appliesToAnomaly?: boolean
@@ -711,8 +720,36 @@ const serverAffixPreset = ref<{
 /** 服务端条目里被跳过的条数（target 不是本版本认识的字段）—— 供界面/测试读出 */
 export const skippedServerPresetEntries = ref(0)
 
+/**
+ * 表单保存作用域（**防数据丢失**）：
+ * - 用户没改过 scope → 原样回写整个数组（`['anomaly','anomalyRelease']` 仍是多值）；
+ * - 用户显式改成某个值 → 写成 `[该值]`。
+ */
+export function resolveAffixScopeForSave(
+  original: unknown,
+  draftScope: BuffScope | undefined,
+  touched: boolean,
+): BuffScope[] {
+  return touched ? normalizeBuffScopes(draftScope) : normalizeBuffScopes(original)
+}
+
 function readPresetConditionString(value: unknown, allowed: ReadonlySet<string>): string | undefined {
   return typeof value === 'string' && allowed.has(value) ? value : undefined
+}
+
+/**
+ * 作用域条件读取（**数组口径**）：兼容单值字符串 / 数组 / 缺省；
+ * 一个合法成员都没有 → `undefined`（= 该条目没写作用域条件）。
+ */
+function readPresetConditionScopes(...values: unknown[]): BuffScope[] | undefined {
+  for (const value of values) {
+    const raw = Array.isArray(value) ? value : value == null ? [] : [value]
+    const valid = raw.filter(
+      (item): item is string => typeof item === 'string' && AFFIX_BUFF_SCOPES.has(item),
+    )
+    if (valid.length) return normalizeBuffScopes(valid)
+  }
+  return undefined
 }
 
 /**
@@ -730,9 +767,7 @@ function hoistPresetConditionFields(item: Record<string, unknown>): Partial<Affi
   const applySituation =
     readPresetConditionString(item.applySituation, AFFIX_APPLY_SITUATIONS) ??
     readPresetConditionString(specCond.applySituation, AFFIX_APPLY_SITUATIONS)
-  const scope =
-    readPresetConditionString(item.scope, AFFIX_BUFF_SCOPES) ??
-    readPresetConditionString(specCond.scope, AFFIX_BUFF_SCOPES)
+  const scope = readPresetConditionScopes(item.scope, specCond.scope)
   const skillCategory =
     (typeof item.skillCategory === 'string' && item.skillCategory
       ? (item.skillCategory as BuffSkillTargetId)
@@ -760,7 +795,7 @@ function hoistPresetConditionFields(item: Record<string, unknown>): Partial<Affi
       : undefined
   return {
     ...(applySituation ? { applySituation: applySituation as BuffApplySituation } : {}),
-    ...(scope ? { scope: scope as BuffScope } : {}),
+    ...(scope ? { scope } : {}),
     ...(skillCategory ? { skillCategory } : {}),
     ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
     ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
@@ -1118,10 +1153,7 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
     typeof item.applySituation === 'string' && AFFIX_APPLY_SITUATIONS.has(item.applySituation)
       ? (item.applySituation as BuffApplySituation)
       : undefined
-  const scope =
-    typeof item.scope === 'string' && AFFIX_BUFF_SCOPES.has(item.scope)
-      ? (item.scope as BuffScope)
-      : undefined
+  const scope = readPresetConditionScopes(item.scope)
   const skillCategory =
     typeof item.skillCategory === 'string' && item.skillCategory
       ? (item.skillCategory as BuffSkillTargetId)
@@ -1700,7 +1732,7 @@ export function updateAffixLibraryEntry(
     ...state,
     overrides: {
       ...state.overrides,
-      [entryId]: { ...(state.overrides[entryId] ?? {}), ...patch },
+      [entryId]: { ...state.overrides[entryId], ...patch },
     },
   }
 }

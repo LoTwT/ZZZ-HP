@@ -6,6 +6,7 @@ import type {
 } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import { collectEffectsFromPack, getEffectSkillTargets } from '@/utils/buffEffect'
+import { hasBuffScope } from '@/utils/buffScope'
 import {
   defaultAnomalyMultByElement,
   defaultDisorderStats,
@@ -96,7 +97,7 @@ export function resolveAnchorSkillBoundMultPercent(options: {
   for (const pack of agent.mindscapeBuffs ?? []) {
     for (const effect of collectEffectsFromPack(pack)) {
       if (effect.stat !== stat) continue
-      if (effect.scope !== 'skill') continue
+      if (!hasBuffScope(effect.scope, 'skill')) continue
       const value = Number(effect.value)
       if (unsetSkillMult(value)) continue
       const targets = getEffectSkillTargets(effect)

@@ -209,7 +209,8 @@ type ValueTipsKey =
   | 'anomalyCritZone'
   | 'anomalyReleaseCombinedDmgBonusZone'
   | 'anomalyReleaseMultZone'
-  | 'anomalyCombinedCritZone'
+  // 「异常综合暴击区」已删除 → 异放用自己的暴击区（用户 2026-10-16）
+  | 'anomalyReleaseCritZone'
   | 'disorderBaseMult'
   | 'anomalyDuration'
   | 'disorderCompMult'
@@ -995,22 +996,21 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         `= ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
       ],
     ),
-    anomalyCombinedCritZone: withTotal(
+    // 「异常综合暴击区」已删除（用户 2026-10-16：暴击按子类拆开，异放只吃自己的暴击字段）
+    anomalyReleaseCritZone: withTotal(
       buildStatSourceGroups({
-        keys: ['anomalyCritRate', 'anomalyCritDmg', 'anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
+        keys: ['anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
         externalPanel: bonusExternal,
         sources: bonusSources,
         finalValues: {
-          anomalyCritRate: bonusPanel.anomalyCritRate,
-          anomalyCritDmg: bonusPanel.anomalyCritDmg,
           anomalyReleaseCritRate: bonusPanel.anomalyReleaseCritRate,
           anomalyReleaseCritDmg: bonusPanel.anomalyReleaseCritDmg,
         },
       }),
       [
-        `暴击率=0：异常综合暴击区 = 1`,
-        `暴击率=1：异常综合暴击区 = 1 + ${formatFormulaNumber(p.anomalyCombinedCritDmgRatio)} = ${formatFormulaNumber(p.anomalyCombinedFullCritZone)}`,
-        `实际期望：1 + ${formatFormulaNumber(p.anomalyCombinedCritRateRatio)} × ${formatFormulaNumber(p.anomalyCombinedCritDmgRatio)} = ${formatFormulaNumber(p.anomalyCombinedCritZone)}`,
+        `暴击率=0：异放暴击区 = 1`,
+        `暴击率=1：异放暴击区 = 1 + ${formatFormulaNumber(p.anomalyReleaseCritDmgRatio ?? 0)} = ${formatFormulaNumber(p.anomalyReleaseFullCritZone)}`,
+        `实际期望：1 + ${formatFormulaNumber(p.anomalyReleaseCritRateRatio ?? 0)} × ${formatFormulaNumber(p.anomalyReleaseCritDmgRatio ?? 0)} = ${formatFormulaNumber(p.anomalyReleaseCritZone)}`,
       ].join('；'),
     ),
     anomalyCritZone: withTotal(
@@ -1293,9 +1293,10 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
           `异放综合增伤区 ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}（异放增伤+异常增伤）`,
           `异放倍率区 ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
-          `异常综合暴击区 = 1 + (${formatFormulaNumber(p.anomalyCombinedCritRateRatio)} × ${formatFormulaNumber(p.anomalyCombinedCritDmgRatio)})`,
+          // 异放只吃自己的暴击字段（用户 2026-10-16；「异常综合暴击区」已删）
+          `异放暴击区 = 1 + (${formatFormulaNumber(p.anomalyReleaseCritRateRatio ?? 0)} × ${formatFormulaNumber(p.anomalyReleaseCritDmgRatio ?? 0)})`,
           `暴击率=0 → ${formatNumber(p.anomalyReleaseExpectedNoCrit)}`,
-          `暴击率=1（区 ${formatFormulaNumber(p.anomalyCombinedFullCritZone)}）→ ${formatNumber(p.anomalyReleaseExpectedFullCrit)}`,
+          `暴击率=1（区 ${formatFormulaNumber(p.anomalyReleaseFullCritZone)}）→ ${formatNumber(p.anomalyReleaseExpectedFullCrit)}`,
         ],
       },
     ],
@@ -1614,15 +1615,15 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           />
         </p>
         <p>
-          异常综合暴击区公式：1 + ({{ formatFormulaNumber(calcParts.anomalyCombinedCritRateRatio) }})
-          × ({{ formatFormulaNumber(calcParts.anomalyCombinedCritDmgRatio) }})
+          异放暴击区公式：1 + ({{ formatFormulaNumber(calcParts.anomalyReleaseCritRateRatio ?? 0) }})
+          × ({{ formatFormulaNumber(calcParts.anomalyReleaseCritDmgRatio ?? 0) }})
         </p>
-        <p>异常综合暴击区（暴击率=0）：1</p>
+        <p>异放暴击区（暴击率=0）：1</p>
         <p>
-          异常综合暴击区（暴击率=1）：
+          异放暴击区（暴击率=1）：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.anomalyCombinedFullCritZone)"
-            :groups="valueTips.anomalyCombinedCritZone"
+            :value="formatFormulaNumber(calcParts.anomalyReleaseFullCritZone)"
+            :groups="valueTips.anomalyReleaseCritZone"
           />
         </p>
         <p class="result-total">

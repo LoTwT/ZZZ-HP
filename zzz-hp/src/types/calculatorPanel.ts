@@ -28,6 +28,12 @@ export interface PanelStats {
   energyRegen: number
   anomalyCritRate: number
   anomalyCritDmg: number
+  turbulenceCritRate: number
+  turbulenceCritDmg: number
+  radianceCritRate: number
+  radianceCritDmg: number
+  disorderCritRate: number
+  disorderCritDmg: number
   anomalyDmgBonus: number
   /** 异放暴击% */
   anomalyReleaseCritRate: number
@@ -204,6 +210,8 @@ const DEFAULT_EXTERNAL_PANEL: PanelStats = {
   hp: 9873, atk: 4008, def: 0, critRate: 48.2, critDmg: 186, sharpenCritDmgBonus: 0, dmgBonus: 10,
   ignoreDefense: 0, reduceDefense: 0, penRate: 0, pen: 90, resPen: 0, mastery: 0,
   anomalyControl: 0, energyRegen: 0, impact: 0, anomalyCritRate: 0, anomalyCritDmg: 0,
+    turbulenceCritRate: 0, turbulenceCritDmg: 0, radianceCritRate: 0, radianceCritDmg: 0,
+    disorderCritRate: 0, disorderCritDmg: 0,
   anomalyDmgBonus: 0, anomalyReleaseCritRate: 0, anomalyReleaseCritDmg: 0,
   anomalyReleaseMult: 0, anomalyReleaseDmgBonus: 0, directDmgMult: 100,
   settlementDmgMult: 0, anomalyMult: 0, disorderBaseMult: 0, anomalyDuration: 0,
@@ -330,7 +338,7 @@ export function resolveExternalPanelDraft(
 
 /** 读盘 / 队友槽面板可能缺键；用默认值补齐后再进乘区。 */
 export function fillPanelStatsDefaults(panel?: Partial<PanelStats> | null): PanelStats {
-  return { ...DEFAULT_EXTERNAL_PANEL, ...(panel ?? {}) }
+  return { ...DEFAULT_EXTERNAL_PANEL, ...panel }
 }
 
 /** 方案快照里把内部乘区入口重置为默认，而不是 delete（delete 会让后续加法得到 NaN）。 */

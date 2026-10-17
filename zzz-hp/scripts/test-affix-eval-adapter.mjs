@@ -3,6 +3,12 @@
  * 运行：npx vite-node scripts/test-affix-eval-adapter.mjs
  */
 import { createEmptyAffixCounts, createDefaultAffixDriveDiscMainStats, createEmptyExternalPanel } from '../src/types/calculatorPanel.ts'
+/** 读时兼容：单值字符串与数组都算（scope 数组改造期间的容错比较，不比数值） */
+function sameScopes(value, expected) {
+  const list = Array.isArray(value) ? value : value == null || value === '' ? [] : [value]
+  return list.length === expected.length && list.every((item, index) => item === expected[index])
+}
+
 import { createEmptyAgentBasePanel } from '../src/utils/calculatorUi.ts'
 import {
   createDefaultAffixLibrary,
@@ -198,7 +204,7 @@ console.log('\n[5] 普攻 +15% 增伤：只改普攻，终结技不变')
   }
   const input = entryRollsToEvalInput([entry], { 'basic-dmg': 1 })
   const gain = extraGainFromLibraryEntry(entry, 1)
-  check('条件写进 extraGain', gain?.scope === 'skill' && gain.skillCategory === 'basic')
+  check('条件写进 extraGain', sameScopes(gain?.scope, ['skill']) && gain.skillCategory === 'basic')
   check('适配器带招式条件', sameEvalInput(input, entryRollsToEffectEvalInput([entry], { 'basic-dmg': 1 })))
 
   const ctxBasic = makeCtx({ skillContext: skillCtx('basic') })

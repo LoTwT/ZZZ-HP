@@ -188,10 +188,11 @@ export function buildAlignedAnomalyFormulaGroups(
         value: formatFormulaNumber(p.anomalyReleaseMultZone),
         tipsKey: 'anomalyReleaseMultZone',
       },
+      // 「异常综合暴击区」已删除（用户 2026-10-16：暴击按子类拆开，异放只吃自己的暴击字段）
       {
-        label: '异常综合暴击区',
-        value: `1 / ${formatFormulaNumber(p.anomalyCombinedFullCritZone)}`,
-        tipsKey: 'anomalyCombinedCritZone',
+        label: '异放暴击区',
+        value: formatFormulaNumber(p.anomalyReleaseCritZone),
+        tipsKey: 'anomalyReleaseCritZone',
       },
     ],
     result: formatNumber(p.anomalyReleaseExpected),

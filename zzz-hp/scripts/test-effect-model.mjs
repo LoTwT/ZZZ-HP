@@ -39,14 +39,18 @@ check('panel: 阶段是 external', stageForAffixTarget('panel:penRate') === 'ext
 console.log('\n[2] BuffEffect 适配')
 {
   const fx = fixedEffect('a', 'dmgBonus', 12, {
-    scope: 'skill',
+    scope: ['skill'],
     skillTargets: [{ category: 'basic', subcategoryId: null }],
   })
   const spec = adaptBuffEffect(fx)
   check('固定效果 stage=combatPreConvert', spec.stage === 'combatPreConvert')
   check('stat 保留 dmgBonus', spec.stat === 'dmgBonus')
   check('招式条件带上', spec.conditions.skillTargets?.[0]?.category === 'basic')
-  check('scope 招式进 conditions', spec.conditions.scope === 'skill')
+  // scope 数组口径（2026-10-16 改造）：读时兼容单值，写出去是数组
+  check(
+    'scope 招式进 conditions（数组口径）',
+    Array.isArray(spec.conditions.scope) && spec.conditions.scope.length === 1 && spec.conditions.scope[0] === 'skill',
+  )
 
   const cv = convertEffect('c', 'atk', { from: 'mastery', panelSource: 'final', ratioPercent: 80 })
   const cvSpec = adaptBuffEffect(cv)

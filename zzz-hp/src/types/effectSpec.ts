@@ -29,7 +29,8 @@ export type EffectBeneficiary = 'self' | 'team' | { slot: number }
 
 export interface EffectConditions {
   applySituation?: BuffApplySituation
-  scope?: BuffScope
+  /** 作用域（**数组**口径；读时兼容单值字符串） */
+  scope?: BuffScope[]
   skillTargets?: BuffSkillTarget[]
   elementFilter?: 'all' | string[]
   appliesToAnomaly?: boolean
