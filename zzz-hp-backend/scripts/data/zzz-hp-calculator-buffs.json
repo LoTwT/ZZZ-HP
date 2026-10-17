@@ -1508,7 +1508,7 @@
         "mastery": 92,
         "anomalyControl": 93,
         "energyRegen": 120,
-        "penRate": 14.4,
+        "penRate": 16,
         "dmgBonus": 0,
         "pen": 0,
         "anomalyCritRate": 0,
@@ -23163,8 +23163,80 @@
           }
         },
         {
-          "effectBlocks": [],
-          "effects": [],
+          "effectBlocks": [
+            {
+              "id": "blk-mv3hn8f5-yeu3yh",
+              "name": "影画1",
+              "note": "[强化特殊技]造成的伤害和累积的属性异常积蓄值提升16%；发动[强化特殊技]时，每多蓄力0.1秒，在目标处生成的能量场持续时间提升0.15秒。",
+              "effects": [
+                {
+                  "id": "eff-mv3hn8f5-v1ohda",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "special",
+                  "skillSubcategoryId": "all-special-ms0fcqv7",
+                  "skillTargets": [
+                    {
+                      "category": "special",
+                      "subcategoryId": "all-special-ms0fcqv7"
+                    }
+                  ],
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 16,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
+              "enabledDefault": true
+            }
+          ],
+          "effects": [
+            {
+              "id": "eff-mv3hn8f5-v1ohda",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "special",
+              "skillSubcategoryId": "all-special-ms0fcqv7",
+              "skillTargets": [
+                {
+                  "category": "special",
+                  "subcategoryId": "all-special-ms0fcqv7"
+                }
+              ],
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 16,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -39233,7 +39305,7 @@
       "element": "火",
       "basePanel": {
         "hp": 8577,
-        "atk": 653,
+        "atk": 1232,
         "def": 724,
         "critRate": 5,
         "critDmg": 50,
@@ -44276,7 +44348,7 @@
                     "from": "anomalyControl",
                     "panelSource": "final",
                     "ratioPercent": 20,
-                    "cap": 40,
+                    "cap": 20,
                     "defaultBase": 201,
                     "initialBase": 100
                   },
@@ -44309,7 +44381,7 @@
                     "from": "anomalyControl",
                     "panelSource": "external",
                     "ratioPercent": 20,
-                    "cap": 40,
+                    "cap": 20,
                     "defaultBase": 201,
                     "initialBase": 100
                   },
@@ -44403,7 +44475,7 @@
                 "from": "anomalyControl",
                 "panelSource": "final",
                 "ratioPercent": 20,
-                "cap": 40,
+                "cap": 20,
                 "defaultBase": 201,
                 "initialBase": 100
               },
@@ -44436,7 +44508,7 @@
                 "from": "anomalyControl",
                 "panelSource": "external",
                 "ratioPercent": 20,
-                "cap": 40,
+                "cap": 20,
                 "defaultBase": 201,
                 "initialBase": 100
               },
@@ -44652,7 +44724,7 @@
                     "from": "anomalyControl",
                     "panelSource": "final",
                     "ratioPercent": 6,
-                    "cap": 12,
+                    "cap": 6,
                     "defaultBase": 201,
                     "initialBase": 100
                   },
@@ -44685,7 +44757,7 @@
                     "from": "anomalyControl",
                     "panelSource": "final",
                     "ratioPercent": 6,
-                    "cap": 12,
+                    "cap": 6,
                     "defaultBase": 201,
                     "initialBase": 100
                   },
@@ -44748,7 +44820,7 @@
                 "from": "anomalyControl",
                 "panelSource": "final",
                 "ratioPercent": 6,
-                "cap": 12,
+                "cap": 6,
                 "defaultBase": 201,
                 "initialBase": 100
               },
@@ -44781,7 +44853,7 @@
                 "from": "anomalyControl",
                 "panelSource": "final",
                 "ratioPercent": 6,
-                "cap": 12,
+                "cap": 6,
                 "defaultBase": 201,
                 "initialBase": 100
               },
@@ -76143,7 +76215,7 @@
         "critDmg": 50,
         "sharpenCritDmgBonus": 0,
         "mastery": 92,
-        "anomalyControl": 93,
+        "anomalyControl": 92,
         "energyRegen": 156,
         "penRate": 0,
         "dmgBonus": 0,
@@ -85955,7 +86027,7 @@
             {
               "id": "blk-mindscapeBuffs-0-1",
               "name": "核心被动",
-              "note": "原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常精通 元素=无 动作=提升 数值=85 单位=点 目标=自身 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击率 元素=无 动作=提升 数值=30 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=25 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击率 元素=无 动作=转化 数值=无 单位=无 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无 读取属性=anomalyControl 取哪一层=external 折算比例=0.7 基础值=155 上限=无\n原文：队伍中存在其他[异常]角色或同阵营角色时触发：\n状态下的敌人受到属性异常伤害的暴击伤害提升15%。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=15 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：足够时，消耗90点[燔焰]，长按 发动：\n菲欧妮掷出武器，对前方范围的敌人造成大量火属性伤害；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n招式发动期间拥有无敌效果。\n[关键字] 属性=异放暴击伤害 元素=无 动作=提升 数值=40 单位=% 目标=无 条件=无 作用域=无 层数=无 时长=无 对象=无",
+              "note": "核心被动：涅槃\n菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 Icon_Special 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n额外能力：黑枝王牌\n队伍中存在其他[异常]角色或同阵营角色时触发：\n[灼蚀]状态下的敌人受到属性异常伤害的暴击伤害提升15%。",
               "effects": [
                 {
                   "id": "eff-0",
@@ -85970,7 +86042,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "mastery",
@@ -85996,7 +86067,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "anomalyCritRate",
@@ -86022,7 +86092,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "anomalyCritDmg",
@@ -86048,7 +86117,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "convert",
                   "stat": "anomalyCritRate",
@@ -86063,7 +86131,7 @@
                     "ratioPercent": 0.7,
                     "cap": null,
                     "defaultBase": 155,
-                    "initialBase": 0
+                    "initialBase": 155
                   },
                   "appliesToAnomaly": false,
                   "enabledDefault": true,
@@ -86082,7 +86150,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "anomalyCritDmg",
@@ -86108,7 +86175,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "anomalyReleaseCritDmg",
@@ -86118,6 +86184,88 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "appliesToAnomaly": false,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
+              "enabledDefault": true
+            },
+            {
+              "id": "blk-mvcdmyj4-z6zhs8",
+              "name": "普通攻击：焚罪",
+              "note": "[燔焰]足够时，消耗90点[燔焰]，长按 Icon_Normal 发动：\n菲欧妮掷出武器，对前方范围的敌人造成大量火属性伤害；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算445.0%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n招式发动期间拥有无敌效果。",
+              "effects": [
+                {
+                  "id": "eff-mvcdmyj4-defh1u",
+                  "origin": "",
+                  "scope": [
+                    "skill",
+                    "anomalyRelease"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": "pheony-basic-mvcdonw3",
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": "pheony-basic-mvcdonw3"
+                    }
+                  ],
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "anomalyReleaseMult",
+                  "value": 445,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "appliesToAnomaly": true,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
+              "enabledDefault": true
+            },
+            {
+              "id": "blk-mvcdtts4-xf9685",
+              "name": "烬火追魂",
+              "note": "当菲欧妮处于[生竭]状态时，下一次普通换入、快速支援、招架支援换入前场时发动：\n周身环绕火焰，对周围敌人造成火属性伤害，视为[终结技]伤害，并退出[生竭]状态，回复[终结技：万死重明]消耗的所有生命值，并额外回复自身10%生命值上限的生命值；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算597.0%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n当处于[生竭]状态的菲欧妮通过[连携技：绝处逢生]、[终结技：万死重明]入场时，也会触发上述生命值回复与[异放]效果；\n招式发动期间拥有无敌效果，点按 Icon_Normal 可衔接第三段[普通攻击]。",
+              "effects": [
+                {
+                  "id": "eff-mvcdtts4-7lksfs",
+                  "origin": "",
+                  "scope": [
+                    "skill",
+                    "anomalyRelease"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "ultimate",
+                  "skillSubcategoryId": "pheony-ultimate-mvcdqvzi",
+                  "skillTargets": [
+                    {
+                      "category": "ultimate",
+                      "subcategoryId": "pheony-ultimate-mvcdqvzi"
+                    }
+                  ],
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "anomalyReleaseMult",
+                  "value": 597,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 }
@@ -86139,7 +86287,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "mastery",
@@ -86165,7 +86312,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "anomalyCritRate",
@@ -86191,7 +86337,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "anomalyCritDmg",
@@ -86217,7 +86362,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "convert",
               "stat": "anomalyCritRate",
@@ -86232,7 +86376,7 @@
                 "ratioPercent": 0.7,
                 "cap": null,
                 "defaultBase": 155,
-                "initialBase": 0
+                "initialBase": 155
               },
               "appliesToAnomaly": false,
               "enabledDefault": true,
@@ -86251,7 +86395,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "anomalyCritDmg",
@@ -86277,7 +86420,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "anomalyReleaseCritDmg",
@@ -86287,6 +86429,72 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "appliesToAnomaly": false,
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
+              "id": "eff-mvcdmyj4-defh1u",
+              "origin": "",
+              "scope": [
+                "skill",
+                "anomalyRelease"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": "pheony-basic-mvcdonw3",
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": "pheony-basic-mvcdonw3"
+                }
+              ],
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "anomalyReleaseMult",
+              "value": 445,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "appliesToAnomaly": true,
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
+              "id": "eff-mvcdtts4-7lksfs",
+              "origin": "",
+              "scope": [
+                "skill",
+                "anomalyRelease"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "ultimate",
+              "skillSubcategoryId": "pheony-ultimate-mvcdqvzi",
+              "skillTargets": [
+                {
+                  "category": "ultimate",
+                  "subcategoryId": "pheony-ultimate-mvcdqvzi"
+                }
+              ],
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "anomalyReleaseMult",
+              "value": 597,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -86447,7 +86655,7 @@
             {
               "id": "blk-mindscapeBuffs-1-1",
               "name": "1 影",
-              "note": "原文：进入战场时，菲欧妮获得1点[升变]，在勘域模式中此效果180秒内最多触发一次；\n[灼蚀]状态下的敌人受到属性异常伤害的暴击伤害额外提升25%；\n[燃烧攻击]造成伤害时，[燔焰]的获取效率提升15%。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=25 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无",
+              "note": "原文：进入战场时，菲欧妮获得1点[升变]，在勘域模式中此效果180秒内最多触发一次；\n[灼蚀]状态下的敌人受到属性异常伤害的暴击伤害额外提升25%；\n[燃烧攻击]造成伤害时，[燔焰]的获取效率提升15%。",
               "effects": [
                 {
                   "id": "eff-5",
@@ -86462,7 +86670,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "anomalyCritDmg",
@@ -86493,7 +86700,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "anomalyCritDmg",
@@ -86663,7 +86869,7 @@
             {
               "id": "blk-mindscapeBuffs-2-1",
               "name": "2 影",
-              "note": "原文：菲欧妮对敌人施加[灼烧]效果时，该效果的持续时间提升2秒；\n菲欧妮对[灼蚀]状态下的敌人造成的伤害提升30%。\n[关键字] 属性=增伤 元素=无 动作=提升 数值=30 单位=% 目标=自身 条件=无 作用域=无 层数=无 时长=无 对象=无",
+              "note": "原文：菲欧妮对敌人施加[灼烧]效果时，该效果的持续时间提升2秒；\n菲欧妮对[灼蚀]状态下的敌人造成的伤害提升30%。",
               "effects": [
                 {
                   "id": "eff-6",
@@ -86678,7 +86884,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "dmgBonus",
@@ -86688,6 +86893,32 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "appliesToAnomaly": false,
+                  "enabledDefault": true,
+                  "note": ""
+                },
+                {
+                  "id": "eff-mvcdl5bb-xdjwmk",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "team",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": [
+                    "火"
+                  ],
+                  "kind": "fixed",
+                  "stat": "anomalyDuration",
+                  "value": 2,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
                 }
@@ -86709,7 +86940,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "dmgBonus",
@@ -86719,6 +86949,32 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "appliesToAnomaly": false,
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
+              "id": "eff-mvcdl5bb-xdjwmk",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "team",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": [
+                "火"
+              ],
+              "kind": "fixed",
+              "stat": "anomalyDuration",
+              "value": 2,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
             }
@@ -86851,7 +87107,7 @@
             "settlementDmgMult": 0,
             "anomalyMult": 0,
             "disorderBaseMult": 0,
-            "anomalyDuration": 0,
+            "anomalyDuration": 2,
             "disorderCompMult": 0,
             "turbulenceBaseMult": 0,
             "turbulenceCompMult": 0,
@@ -87356,7 +87612,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "resPen",
@@ -87382,7 +87637,6 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "skillTargets": [],
                   "elementFilter": "all",
                   "kind": "fixed",
                   "stat": "reduceDefense",
@@ -87413,7 +87667,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "resPen",
@@ -87439,7 +87692,6 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "skillTargets": [],
               "elementFilter": "all",
               "kind": "fixed",
               "stat": "reduceDefense",
@@ -87606,13 +87858,13 @@
         }
       ],
       "mindscapeNotes": [
-        "原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常精通 元素=无 动作=提升 数值=85 单位=点 目标=自身 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击率 元素=无 动作=提升 数值=30 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=25 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：菲欧妮的异常精通提升85点；\n队伍中任意角色对敌人造成属性异常伤害时，会使其陷入[灼蚀]状态，持续20秒，重复触发刷新持续时间；[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%，若菲欧妮的初始异常掌控大于155点，每点超过的异常掌控会使得该效果的暴击率额外提升0.7%；\n当菲欧妮的初始异常掌控达到255点时，[灼蚀]状态下的敌人受到属性异常伤害的暴击率达到最大值；\n[灼蚀]状态下的敌人每8秒受到菲欧妮50%攻击力的火属性伤害，该伤害视为[强化特殊技]伤害；\n[燃烧攻击]发动期间，抗打断等级提升，造成伤害时，会回复[燔焰]，菲欧妮最多拥有120点[燔焰]；\n[燃烧攻击]发动后，点按 可跳过[特殊技：掠火]以及[强化特殊技：燎斩]的后撤动作，直接衔接上挑攻击；\n菲欧妮受到致命伤害时不会战败退场，可触发[重明]效果，下一次普通换入、快速支援、招架支援换入前场时会回复50%最大生命值，在勘域模式中此效果1200秒内最多触发一次；\n菲欧妮触发完美格挡效果时，获得5点[燔焰]，10秒内最多触发一次；\n菲欧妮发动[强化特殊技]时，进入[枯荣]状态，持续20秒，[燃烧攻击]命中敌人或重复施加时刷新持续时间；\n[枯荣]状态下，发动[强化特殊技：眩焰]后，下次发动[强化特殊技：眩焰]会替换为发动[强化特殊技：坠阳]。\n[关键字] 属性=异常暴击率 元素=无 动作=转化 数值=无 单位=无 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无 读取属性=anomalyControl 取哪一层=external 折算比例=0.7 基础值=155 上限=无\n原文：队伍中存在其他[异常]角色或同阵营角色时触发：\n状态下的敌人受到属性异常伤害的暴击伤害提升15%。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=15 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无\n原文：足够时，消耗90点[燔焰]，长按 发动：\n菲欧妮掷出武器，对前方范围的敌人造成大量火属性伤害；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n招式发动期间拥有无敌效果。\n[关键字] 属性=异放暴击伤害 元素=无 动作=提升 数值=40 单位=% 目标=无 条件=无 作用域=无 层数=无 时长=无 对象=无",
-        "原文：进入战场时，菲欧妮获得1点[升变]，在勘域模式中此效果180秒内最多触发一次；\n[灼蚀]状态下的敌人受到属性异常伤害的暴击伤害额外提升25%；\n[燃烧攻击]造成伤害时，[燔焰]的获取效率提升15%。\n[关键字] 属性=异常暴击伤害 元素=无 动作=提升 数值=25 单位=% 目标=全队 条件=无 作用域=无 层数=无 时长=无 对象=无",
-        "原文：菲欧妮对敌人施加[灼烧]效果时，该效果的持续时间提升2秒；\n菲欧妮对[灼蚀]状态下的敌人造成的伤害提升30%。\n[关键字] 属性=增伤 元素=无 动作=提升 数值=30 单位=% 目标=自身 条件=无 作用域=无 层数=无 时长=无 对象=无",
         "",
         "",
         "",
-        "原文：菲欧妮无视目标15%全属性伤害抗性；\n菲欧妮发动[强化特殊技：眩焰]时，获得1点[升变]；\n菲欧妮触发的[异放]效果无视敌人40%防御力。\n[关键字] 属性=抗性穿透 元素=无 动作=无视 数值=15 单位=% 目标=自身 条件=无 作用域=无 层数=无 时长=无 对象=敌人\n原文：菲欧妮无视目标15%全属性伤害抗性；\n菲欧妮发动[强化特殊技：眩焰]时，获得1点[升变]；\n菲欧妮触发的[异放]效果无视敌人40%防御力。\n[关键字] 属性=减防 元素=无 动作=无视 数值=40 单位=% 目标=自身 条件=无 作用域=异放 层数=无 时长=无 对象=敌人"
+        "",
+        "",
+        "",
+        ""
       ]
     },
     {
@@ -96162,38 +96414,6 @@
               "note": "[连携技：命运戏法]命中敌人或雨果的攻击使敌人失衡时，雨果获得[暗渊回响]状态，持续6秒，重复触发时刷新持续时间，该状态下雨果的暴击率提升12%，暴击伤害提升25%；\n队伍中存在其他1/2名[击破]角色时，雨果的攻击力提升300/900点；\n[强化特殊技：魂狩·惩戒]或[终结技：渎神者]的终结一击命中敌人时，若敌人处于失衡状态，会对其触发[决算]效果，使得招式的终结一击伤害倍率提升1000%，此外[决算]效果会根据触发时敌人剩余的失衡时间，使得该招式伤害倍率进一步提升：敌人失衡时间小于等于5秒的部分，每剩余1秒，招式伤害倍率提升280%，5秒到15秒的部分，每剩余1秒，招式伤害倍率提升100%，总共最多可以提升3400%的招式伤害倍率；",
               "effects": [
                 {
-                  "id": "legacy-self-atk",
-                  "origin": "",
-                  "scope": [
-                    "general"
-                  ],
-                  "applyTarget": "self",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillSubcategoryId": null,
-                  "elementFilter": "all",
-                  "kind": "stacked",
-                  "stat": "atk",
-                  "value": 0,
-                  "stackable": false,
-                  "maxStacks": 3,
-                  "valuePerStack": 300,
-                  "defaultStacks": 3,
-                  "convert": {
-                    "from": "atk",
-                    "panelSource": "external",
-                    "ratioPercent": 0,
-                    "cap": null,
-                    "defaultBase": null,
-                    "initialBase": 0
-                  },
-                  "enabledDefault": true,
-                  "note": ""
-                },
-                {
                   "id": "legacy-self-critRate",
                   "origin": "",
                   "scope": [
@@ -96345,6 +96565,62 @@
                   "defaultStacks": 10,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3i5kzj-9tpr5c",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": "击破",
+                  "teamProfessionValues": [
+                    0,
+                    null,
+                    null
+                  ],
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "atk",
+                  "value": 300,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                },
+                {
+                  "id": "eff-mv3i68sv-97l5hb",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": "击破",
+                  "teamProfessionValues": [
+                    null,
+                    0,
+                    null
+                  ],
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "atk",
+                  "value": 900,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -96456,38 +96732,6 @@
             }
           ],
           "effects": [
-            {
-              "id": "legacy-self-atk",
-              "origin": "",
-              "scope": [
-                "general"
-              ],
-              "applyTarget": "self",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillSubcategoryId": null,
-              "elementFilter": "all",
-              "kind": "stacked",
-              "stat": "atk",
-              "value": 0,
-              "stackable": false,
-              "maxStacks": 3,
-              "valuePerStack": 300,
-              "defaultStacks": 3,
-              "convert": {
-                "from": "atk",
-                "panelSource": "external",
-                "ratioPercent": 0,
-                "cap": null,
-                "defaultBase": null,
-                "initialBase": 0
-              },
-              "enabledDefault": true,
-              "note": ""
-            },
             {
               "id": "legacy-self-critRate",
               "origin": "",
@@ -96642,6 +96886,62 @@
               "note": ""
             },
             {
+              "id": "eff-mv3i5kzj-9tpr5c",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": "击破",
+              "teamProfessionValues": [
+                0,
+                null,
+                null
+              ],
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "atk",
+              "value": 300,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
+              "id": "eff-mv3i68sv-97l5hb",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": "击破",
+              "teamProfessionValues": [
+                null,
+                0,
+                null
+              ],
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "atk",
+              "value": 900,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
               "id": "eff-ms4itkj9-dm9l27",
               "origin": "",
               "scope": [
@@ -96747,7 +97047,7 @@
             "externalHpPercent": 0,
             "externalAtkPercent": 0,
             "externalDefPercent": 0,
-            "atk": 0,
+            "atk": 1200,
             "def": 0,
             "dmgBonus": 0,
             "critRate": 12,
@@ -99986,7 +100286,7 @@
       "basePanel": {
         "hp": 8025,
         "atk": 658,
-        "def": 612,
+        "def": 6112,
         "critRate": 5,
         "critDmg": 50,
         "sharpenCritDmgBonus": 0,
@@ -101457,6 +101757,45 @@
                 }
               ],
               "enabledDefault": true
+            },
+            {
+              "id": "blk-mv3hkg7g-zshzh0",
+              "name": "闪络",
+              "note": "青衣发动招式造成电属性伤害时，会累积[闪络电压]，当[闪络电压]累积至75%时，青衣将进入[闪络]状态。\n发动[普通攻击：醉花月云转]时，青衣会消耗所有[闪络电压]并退出[闪络]状态，所消耗的[闪络电压]中超过75%的部分，每1%能够使本次招式造成的伤害/失衡值额外提升1%/0.5%。[普通攻击：醉花月云转]本身不会累积[闪络电压]。",
+              "effects": [
+                {
+                  "id": "eff-mv3hkg7g-ga6q6j",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": "qingyi-basic-ms4bcr00",
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": "qingyi-basic-ms4bcr00"
+                    }
+                  ],
+                  "elementFilter": "all",
+                  "kind": "stacked",
+                  "stat": "skillDmgBonus",
+                  "value": 0,
+                  "stackable": false,
+                  "maxStacks": 25,
+                  "valuePerStack": 1,
+                  "defaultStacks": 25,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
+              "enabledDefault": true
             }
           ],
           "effects": [
@@ -101544,6 +101883,37 @@
                 "defaultBase": null,
                 "initialBase": 120
               },
+              "enabledDefault": true,
+              "note": ""
+            },
+            {
+              "id": "eff-mv3hkg7g-ga6q6j",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": "qingyi-basic-ms4bcr00",
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": "qingyi-basic-ms4bcr00"
+                }
+              ],
+              "elementFilter": "all",
+              "kind": "stacked",
+              "stat": "skillDmgBonus",
+              "value": 0,
+              "stackable": false,
+              "maxStacks": 25,
+              "valuePerStack": 1,
+              "defaultStacks": 25,
               "enabledDefault": true,
               "note": ""
             }
@@ -102937,7 +103307,7 @@
         "mastery": 0,
         "externalAtkPercent": 0,
         "externalHpPercent": 0,
-        "externalDefPercent": 32,
+        "externalDefPercent": 0,
         "penRate": 0
       },
       "fixedBuffs": {
@@ -103924,7 +104294,7 @@
         "mastery": 0,
         "externalAtkPercent": 0,
         "externalHpPercent": 0,
-        "externalDefPercent": 32,
+        "externalDefPercent": 0,
         "penRate": 0
       },
       "fixedBuffs": {
@@ -121214,7 +121584,7 @@
     },
     {
       "id": "cloudcleave-radiance",
-      "name": "云霓孤光",
+      "name": "云霓弧光",
       "profession": "强攻",
       "rarity": "S",
       "avatar_image": "/wengine/cloudcleave-radiance.webp",
@@ -126191,7 +126561,7 @@
         "mastery": 0,
         "externalAtkPercent": 0,
         "externalHpPercent": 0,
-        "externalDefPercent": 40,
+        "externalDefPercent": 0,
         "penRate": 0
       },
       "fixedBuffs": {
@@ -131700,7 +132070,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "冰"
+                  ],
                   "kind": "fixed",
                   "stat": "reduceDefense",
                   "value": 40,
@@ -131753,7 +132125,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "冰"
+              ],
               "kind": "fixed",
               "stat": "reduceDefense",
               "value": 40,
@@ -141078,7 +141452,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -141107,7 +141481,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -141290,7 +141664,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -141319,7 +141693,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -141502,7 +141876,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -141531,7 +141905,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -141714,7 +142088,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -141743,7 +142117,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -141926,7 +142300,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -141955,7 +142329,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -142337,7 +142711,7 @@
                   "id": "legacy-self-reduceDefense",
                   "origin": "",
                   "scope": [
-                    "skill"
+                    "general"
                   ],
                   "applyTarget": "self",
                   "applySituation": "global",
@@ -142361,7 +142735,7 @@
                   "value": 0,
                   "stackable": false,
                   "maxStacks": 2,
-                  "valuePerStack": 16,
+                  "valuePerStack": 15,
                   "defaultStacks": 2,
                   "enabledDefault": true,
                   "note": ""
@@ -142399,7 +142773,7 @@
               "id": "legacy-self-reduceDefense",
               "origin": "",
               "scope": [
-                "skill"
+                "general"
               ],
               "applyTarget": "self",
               "applySituation": "global",
@@ -142423,7 +142797,7 @@
               "value": 0,
               "stackable": false,
               "maxStacks": 2,
-              "valuePerStack": 16,
+              "valuePerStack": 15,
               "defaultStacks": 2,
               "enabledDefault": true,
               "note": ""
@@ -142615,7 +142989,7 @@
                   "id": "legacy-self-reduceDefense",
                   "origin": "",
                   "scope": [
-                    "skill"
+                    "general"
                   ],
                   "applyTarget": "self",
                   "applySituation": "global",
@@ -142677,7 +143051,7 @@
               "id": "legacy-self-reduceDefense",
               "origin": "",
               "scope": [
-                "skill"
+                "general"
               ],
               "applyTarget": "self",
               "applySituation": "global",
@@ -142893,7 +143267,7 @@
                   "id": "legacy-self-reduceDefense",
                   "origin": "",
                   "scope": [
-                    "skill"
+                    "general"
                   ],
                   "applyTarget": "self",
                   "applySituation": "global",
@@ -142955,7 +143329,7 @@
               "id": "legacy-self-reduceDefense",
               "origin": "",
               "scope": [
-                "skill"
+                "general"
               ],
               "applyTarget": "self",
               "applySituation": "global",
@@ -143171,7 +143545,7 @@
                   "id": "legacy-self-reduceDefense",
                   "origin": "",
                   "scope": [
-                    "skill"
+                    "general"
                   ],
                   "applyTarget": "self",
                   "applySituation": "global",
@@ -143233,7 +143607,7 @@
               "id": "legacy-self-reduceDefense",
               "origin": "",
               "scope": [
-                "skill"
+                "general"
               ],
               "applyTarget": "self",
               "applySituation": "global",
@@ -143449,7 +143823,7 @@
                   "id": "legacy-self-reduceDefense",
                   "origin": "",
                   "scope": [
-                    "skill"
+                    "general"
                   ],
                   "applyTarget": "self",
                   "applySituation": "global",
@@ -143511,7 +143885,7 @@
               "id": "legacy-self-reduceDefense",
               "origin": "",
               "scope": [
-                "skill"
+                "general"
               ],
               "applyTarget": "self",
               "applySituation": "global",
@@ -163087,11 +163461,11 @@
       ]
     },
     {
-      "id": "Drill_Rig_Red_Axis",
+      "id": "Drill_Rig_Red-Axis",
       "name": "旋钻机-赤轴",
       "profession": "强攻",
       "rarity": "A",
-      "avatar_image": "/wengine/Drill_Rig_Red_Axis.webp",
+      "avatar_image": "/wengine/Drill_Rig_Red-Axis.webp",
       "note": "",
       "baseAtk": 624,
       "baseDef": 0,
@@ -163103,7 +163477,7 @@
         "mastery": 0,
         "externalAtkPercent": 0,
         "externalHpPercent": 0,
-        "externalDefPercent": 32,
+        "externalDefPercent": 0,
         "penRate": 0
       },
       "fixedBuffs": {
@@ -163264,14 +163638,90 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-7523a0f1-d2f946",
+              "id": "blk-mv3hz56a-noc5nc",
               "name": "精1",
               "note": "发动[强化特殊技]或[连携技]时，[普通攻击]和[冲刺攻击]造成的电属性伤害提升50%，持续10秒，15秒内最多触发一次。",
-              "effects": [],
+              "effects": [
+                {
+                  "id": "eff-mv3hz56a-anai9l",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": null,
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": null
+                    },
+                    {
+                      "category": "dodge",
+                      "subcategoryId": "all-dodge-ms0dnpmr"
+                    }
+                  ],
+                  "elementFilter": [
+                    "电"
+                  ],
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 50,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
               "enabledDefault": true
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "id": "eff-mv3hz56a-anai9l",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": null,
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": null
+                },
+                {
+                  "category": "dodge",
+                  "subcategoryId": "all-dodge-ms0dnpmr"
+                }
+              ],
+              "elementFilter": [
+                "电"
+              ],
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 50,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -163426,14 +163876,90 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-e380768a-b295fc",
+              "id": "blk-mv3hz56a-noc5nc",
               "name": "精2",
               "note": "发动[强化特殊技]或[连携技]时，[普通攻击]和[冲刺攻击]造成的电属性伤害提升57.5%，持续10秒，15秒内最多触发一次。",
-              "effects": [],
+              "effects": [
+                {
+                  "id": "eff-mv3hz56a-anai9l",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": null,
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": null
+                    },
+                    {
+                      "category": "dodge",
+                      "subcategoryId": "all-dodge-ms0dnpmr"
+                    }
+                  ],
+                  "elementFilter": [
+                    "电"
+                  ],
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 57.5,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
               "enabledDefault": true
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "id": "eff-mv3hz56a-anai9l",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": null,
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": null
+                },
+                {
+                  "category": "dodge",
+                  "subcategoryId": "all-dodge-ms0dnpmr"
+                }
+              ],
+              "elementFilter": [
+                "电"
+              ],
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 57.5,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -163588,14 +164114,90 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-03a0b36a-d0bad9",
+              "id": "blk-mv3hz56a-noc5nc",
               "name": "精3",
               "note": "发动[强化特殊技]或[连携技]时，[普通攻击]和[冲刺攻击]造成的电属性伤害提升65%，持续10秒，15秒内最多触发一次。",
-              "effects": [],
+              "effects": [
+                {
+                  "id": "eff-mv3hz56a-anai9l",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": null,
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": null
+                    },
+                    {
+                      "category": "dodge",
+                      "subcategoryId": "all-dodge-ms0dnpmr"
+                    }
+                  ],
+                  "elementFilter": [
+                    "电"
+                  ],
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 65,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
               "enabledDefault": true
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "id": "eff-mv3hz56a-anai9l",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": null,
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": null
+                },
+                {
+                  "category": "dodge",
+                  "subcategoryId": "all-dodge-ms0dnpmr"
+                }
+              ],
+              "elementFilter": [
+                "电"
+              ],
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 65,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -163750,14 +164352,90 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-e0576ee4-ae1758",
+              "id": "blk-mv3hz56a-noc5nc",
               "name": "精4",
               "note": "发动[强化特殊技]或[连携技]时，[普通攻击]和[冲刺攻击]造成的电属性伤害提升72.5%，持续10秒，15秒内最多触发一次。",
-              "effects": [],
+              "effects": [
+                {
+                  "id": "eff-mv3hz56a-anai9l",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": null,
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": null
+                    },
+                    {
+                      "category": "dodge",
+                      "subcategoryId": "all-dodge-ms0dnpmr"
+                    }
+                  ],
+                  "elementFilter": [
+                    "电"
+                  ],
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 72.5,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
               "enabledDefault": true
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "id": "eff-mv3hz56a-anai9l",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": null,
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": null
+                },
+                {
+                  "category": "dodge",
+                  "subcategoryId": "all-dodge-ms0dnpmr"
+                }
+              ],
+              "elementFilter": [
+                "电"
+              ],
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 72.5,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -163912,14 +164590,90 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-dc7ebb26-4e0b63",
+              "id": "blk-mv3hz56a-noc5nc",
               "name": "精5",
               "note": "发动[强化特殊技]或[连携技]时，[普通攻击]和[冲刺攻击]造成的电属性伤害提升80%，持续10秒，15秒内最多触发一次。",
-              "effects": [],
+              "effects": [
+                {
+                  "id": "eff-mv3hz56a-anai9l",
+                  "origin": "",
+                  "scope": [
+                    "skill"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillCategory": "basic",
+                  "skillSubcategoryId": null,
+                  "skillTargets": [
+                    {
+                      "category": "basic",
+                      "subcategoryId": null
+                    },
+                    {
+                      "category": "dodge",
+                      "subcategoryId": "all-dodge-ms0dnpmr"
+                    }
+                  ],
+                  "elementFilter": [
+                    "电"
+                  ],
+                  "kind": "fixed",
+                  "stat": "skillDmgBonus",
+                  "value": 80,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
+                }
+              ],
               "enabledDefault": true
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "id": "eff-mv3hz56a-anai9l",
+              "origin": "",
+              "scope": [
+                "skill"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillCategory": "basic",
+              "skillSubcategoryId": null,
+              "skillTargets": [
+                {
+                  "category": "basic",
+                  "subcategoryId": null
+                },
+                {
+                  "category": "dodge",
+                  "subcategoryId": "all-dodge-ms0dnpmr"
+                }
+              ],
+              "elementFilter": [
+                "电"
+              ],
+              "kind": "fixed",
+              "stat": "skillDmgBonus",
+              "value": 80,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
           "selfMods": {
             "hp": 0,
             "inCombatHpPercent": 0,
@@ -173107,6 +173861,953 @@
       ]
     },
     {
+      "id": "none",
+      "name": "未选择",
+      "profession": "强攻",
+      "rarity": "S",
+      "avatar_image": null,
+      "note": "",
+      "baseAtk": 0,
+      "baseDef": 0,
+      "advancedStats": {
+        "critRate": 0,
+        "critDmg": 0,
+        "anomalyControlPercent": 0,
+        "energyRegen": 0,
+        "mastery": 0,
+        "externalAtkPercent": 0,
+        "externalHpPercent": 0,
+        "externalDefPercent": 0,
+        "penRate": 0
+      },
+      "fixedBuffs": {
+        "effectBlocks": [],
+        "effects": [],
+        "selfMods": {
+          "hp": 0,
+          "inCombatHpPercent": 0,
+          "inCombatAtkPercent": 0,
+          "inCombatDefPercent": 0,
+          "externalHpPercent": 0,
+          "externalAtkPercent": 0,
+          "externalDefPercent": 0,
+          "atk": 0,
+          "def": 0,
+          "dmgBonus": 0,
+          "critRate": 0,
+          "critDmg": 0,
+          "penRate": 0,
+          "reduceDefense": 0,
+          "resPen": 0,
+          "mastery": 0,
+          "anomalyControl": 0,
+          "anomalyControlPercent": 0,
+          "energyRegen": 0,
+          "energyRegenFlat": 0,
+          "pierce": 0,
+          "pierceDmgBonus": 0,
+          "sharpenDmgBonus": 0,
+          "sharpenCritDmgBonus": 0,
+          "dmgPenalty": 0,
+          "vulnerable": 0,
+          "directVulnerable": 0,
+          "anomalyVulnerable": 0,
+          "dmgReduction": 0,
+          "directDmgReduction": 0,
+          "anomalyDmgReduction": 0,
+          "globalStaggerVulnerable": 0,
+          "staggerVulnerable": 0,
+          "staggerVulnerableOnly": 0,
+          "special": 0,
+          "anomalyCritRate": 0,
+          "anomalyCritDmg": 0,
+          "anomalyDmgBonus": 0,
+          "anomalyReleaseDmgBonus": 0,
+          "anomalyReleaseCritRate": 0,
+          "anomalyReleaseCritDmg": 0,
+          "turbulenceCritRate": 0,
+          "turbulenceCritDmg": 0,
+          "radianceCritRate": 0,
+          "radianceCritDmg": 0,
+          "disorderCritRate": 0,
+          "disorderCritDmg": 0,
+          "anomalyReleaseMult": 0,
+          "directDmgMult": 0,
+          "settlementDmgMult": 0,
+          "anomalyMult": 0,
+          "disorderBaseMult": 0,
+          "anomalyDuration": 0,
+          "disorderCompMult": 0,
+          "turbulenceBaseMult": 0,
+          "turbulenceCompMult": 0,
+          "disorderDmgBonus": 0,
+          "turbulenceDmgBonus": 0,
+          "radianceMult": 0,
+          "radianceDmgBonus": 0,
+          "radianceResPen": 0,
+          "specialMult": 0,
+          "mutationCoeff": 0,
+          "skillDmgBonus": 0,
+          "skillMultiplierBonus": 0,
+          "directDmgMultFactor": 0,
+          "anomalyMultFactor": 0,
+          "anomalyReleaseMultFactor": 0,
+          "disorderBaseMultFactor": 0,
+          "turbulenceBaseMultFactor": 0,
+          "radianceMultFactor": 0,
+          "specialMultFactor": 0,
+          "mutationCoeffFactor": 0
+        },
+        "teamMods": {
+          "hp": 0,
+          "inCombatHpPercent": 0,
+          "inCombatAtkPercent": 0,
+          "inCombatDefPercent": 0,
+          "externalHpPercent": 0,
+          "externalAtkPercent": 0,
+          "externalDefPercent": 0,
+          "atk": 0,
+          "def": 0,
+          "dmgBonus": 0,
+          "critRate": 0,
+          "critDmg": 0,
+          "penRate": 0,
+          "reduceDefense": 0,
+          "resPen": 0,
+          "mastery": 0,
+          "anomalyControl": 0,
+          "anomalyControlPercent": 0,
+          "energyRegen": 0,
+          "energyRegenFlat": 0,
+          "pierce": 0,
+          "pierceDmgBonus": 0,
+          "sharpenDmgBonus": 0,
+          "sharpenCritDmgBonus": 0,
+          "dmgPenalty": 0,
+          "vulnerable": 0,
+          "directVulnerable": 0,
+          "anomalyVulnerable": 0,
+          "dmgReduction": 0,
+          "directDmgReduction": 0,
+          "anomalyDmgReduction": 0,
+          "globalStaggerVulnerable": 0,
+          "staggerVulnerable": 0,
+          "staggerVulnerableOnly": 0,
+          "special": 0,
+          "anomalyCritRate": 0,
+          "anomalyCritDmg": 0,
+          "anomalyDmgBonus": 0,
+          "anomalyReleaseDmgBonus": 0,
+          "anomalyReleaseCritRate": 0,
+          "anomalyReleaseCritDmg": 0,
+          "turbulenceCritRate": 0,
+          "turbulenceCritDmg": 0,
+          "radianceCritRate": 0,
+          "radianceCritDmg": 0,
+          "disorderCritRate": 0,
+          "disorderCritDmg": 0,
+          "anomalyReleaseMult": 0,
+          "directDmgMult": 0,
+          "settlementDmgMult": 0,
+          "anomalyMult": 0,
+          "disorderBaseMult": 0,
+          "anomalyDuration": 0,
+          "disorderCompMult": 0,
+          "turbulenceBaseMult": 0,
+          "turbulenceCompMult": 0,
+          "disorderDmgBonus": 0,
+          "turbulenceDmgBonus": 0,
+          "radianceMult": 0,
+          "radianceDmgBonus": 0,
+          "radianceResPen": 0,
+          "specialMult": 0,
+          "mutationCoeff": 0,
+          "skillDmgBonus": 0,
+          "skillMultiplierBonus": 0,
+          "directDmgMultFactor": 0,
+          "anomalyMultFactor": 0,
+          "anomalyReleaseMultFactor": 0,
+          "disorderBaseMultFactor": 0,
+          "turbulenceBaseMultFactor": 0,
+          "radianceMultFactor": 0,
+          "specialMultFactor": 0,
+          "mutationCoeffFactor": 0
+        }
+      },
+      "refinementBuffs": [
+        {
+          "effectBlocks": [],
+          "effects": [],
+          "selfMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          },
+          "teamMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          }
+        },
+        {
+          "effectBlocks": [],
+          "effects": [],
+          "selfMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          },
+          "teamMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          }
+        },
+        {
+          "effectBlocks": [],
+          "effects": [],
+          "selfMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          },
+          "teamMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          }
+        },
+        {
+          "effectBlocks": [],
+          "effects": [],
+          "selfMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          },
+          "teamMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          }
+        },
+        {
+          "effectBlocks": [],
+          "effects": [],
+          "selfMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          },
+          "teamMods": {
+            "hp": 0,
+            "inCombatHpPercent": 0,
+            "inCombatAtkPercent": 0,
+            "inCombatDefPercent": 0,
+            "externalHpPercent": 0,
+            "externalAtkPercent": 0,
+            "externalDefPercent": 0,
+            "atk": 0,
+            "def": 0,
+            "dmgBonus": 0,
+            "critRate": 0,
+            "critDmg": 0,
+            "penRate": 0,
+            "reduceDefense": 0,
+            "resPen": 0,
+            "mastery": 0,
+            "anomalyControl": 0,
+            "anomalyControlPercent": 0,
+            "energyRegen": 0,
+            "energyRegenFlat": 0,
+            "pierce": 0,
+            "pierceDmgBonus": 0,
+            "sharpenDmgBonus": 0,
+            "sharpenCritDmgBonus": 0,
+            "dmgPenalty": 0,
+            "vulnerable": 0,
+            "directVulnerable": 0,
+            "anomalyVulnerable": 0,
+            "dmgReduction": 0,
+            "directDmgReduction": 0,
+            "anomalyDmgReduction": 0,
+            "globalStaggerVulnerable": 0,
+            "staggerVulnerable": 0,
+            "staggerVulnerableOnly": 0,
+            "special": 0,
+            "anomalyCritRate": 0,
+            "anomalyCritDmg": 0,
+            "anomalyDmgBonus": 0,
+            "anomalyReleaseDmgBonus": 0,
+            "anomalyReleaseCritRate": 0,
+            "anomalyReleaseCritDmg": 0,
+            "turbulenceCritRate": 0,
+            "turbulenceCritDmg": 0,
+            "radianceCritRate": 0,
+            "radianceCritDmg": 0,
+            "disorderCritRate": 0,
+            "disorderCritDmg": 0,
+            "anomalyReleaseMult": 0,
+            "directDmgMult": 0,
+            "settlementDmgMult": 0,
+            "anomalyMult": 0,
+            "disorderBaseMult": 0,
+            "anomalyDuration": 0,
+            "disorderCompMult": 0,
+            "turbulenceBaseMult": 0,
+            "turbulenceCompMult": 0,
+            "disorderDmgBonus": 0,
+            "turbulenceDmgBonus": 0,
+            "radianceMult": 0,
+            "radianceDmgBonus": 0,
+            "radianceResPen": 0,
+            "specialMult": 0,
+            "mutationCoeff": 0,
+            "skillDmgBonus": 0,
+            "skillMultiplierBonus": 0,
+            "directDmgMultFactor": 0,
+            "anomalyMultFactor": 0,
+            "anomalyReleaseMultFactor": 0,
+            "disorderBaseMultFactor": 0,
+            "turbulenceBaseMultFactor": 0,
+            "radianceMultFactor": 0,
+            "specialMultFactor": 0,
+            "mutationCoeffFactor": 0
+          }
+        }
+      ]
+    },
+    {
       "id": "Cordis_Germina",
       "name": "机巧心种",
       "profession": "强攻",
@@ -177814,7 +179515,7 @@
         "mastery": 0,
         "externalAtkPercent": 0,
         "externalHpPercent": 0,
-        "externalDefPercent": 40,
+        "externalDefPercent": 0,
         "penRate": 0
       },
       "fixedBuffs": {
@@ -195859,15 +197560,7 @@
         "penRate": 0
       },
       "fixedBuffs": {
-        "effectBlocks": [
-          {
-            "id": "blk-mtsesns0-xacw5k",
-            "name": "效果块 1",
-            "note": "",
-            "effects": [],
-            "enabledDefault": true
-          }
-        ],
+        "effectBlocks": [],
         "effects": [],
         "selfMods": {
           "hp": 0,
@@ -196024,12 +197717,12 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-mtsekp31-ybbcgj",
-              "name": "暴击率",
-              "note": "",
+              "id": "blk-mv3h4q1t-3m3v1q",
+              "name": "精1",
+              "note": "装备者暴击率提升25%；电属性伤害提升15%；装备者发动[强化特殊技]或触发[毁伤]时，造成的电属性锐化伤害提升10%，持续40秒，重复触发时刷新持续时间。",
               "effects": [
                 {
-                  "id": "eff-mtsekp31-f1g9l2",
+                  "id": "eff-mv3h4q1t-4jb1zr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196051,17 +197744,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsemp5m-ywlze6",
-              "name": "电增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsemp5m-q1jh4f",
+                  "id": "eff-mv3h4zop-e2ecfr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196073,7 +197758,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "dmgBonus",
                   "value": 15,
@@ -196083,17 +197770,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsenpok-3njiz7",
-              "name": "锐化增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsenpok-prx4yj",
+                  "id": "eff-mv3h5g2r-zj4y8t",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196105,7 +197784,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "sharpenDmgBonus",
                   "value": 10,
@@ -196122,7 +197803,7 @@
           ],
           "effects": [
             {
-              "id": "eff-mtsekp31-f1g9l2",
+              "id": "eff-mv3h4q1t-4jb1zr",
               "origin": "",
               "scope": [
                 "general"
@@ -196146,7 +197827,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsemp5m-q1jh4f",
+              "id": "eff-mv3h4zop-e2ecfr",
               "origin": "",
               "scope": [
                 "general"
@@ -196158,7 +197839,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "dmgBonus",
               "value": 15,
@@ -196170,7 +197853,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsenpok-prx4yj",
+              "id": "eff-mv3h5g2r-zj4y8t",
               "origin": "",
               "scope": [
                 "general"
@@ -196182,7 +197865,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "sharpenDmgBonus",
               "value": 10,
@@ -196348,12 +198033,12 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-mtsekp31-ybbcgj",
-              "name": "暴击率",
-              "note": "",
+              "id": "blk-mv3h4q1t-3m3v1q",
+              "name": "精1",
+              "note": "装备者暴击率提升27.5%；电属性伤害提升17.5%；装备者发动[强化特殊技]或触发[毁伤]时，造成的电属性锐化伤害提升11.5%，持续40秒，重复触发时刷新持续时间。",
               "effects": [
                 {
-                  "id": "eff-mtsekp31-f1g9l2",
+                  "id": "eff-mv3h4q1t-4jb1zr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196375,17 +198060,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsemp5m-ywlze6",
-              "name": "电增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsemp5m-q1jh4f",
+                  "id": "eff-mv3h4zop-e2ecfr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196397,7 +198074,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "dmgBonus",
                   "value": 17.5,
@@ -196407,17 +198086,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsenpok-3njiz7",
-              "name": "锐化增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsenpok-prx4yj",
+                  "id": "eff-mv3h5g2r-zj4y8t",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196429,7 +198100,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "sharpenDmgBonus",
                   "value": 11.5,
@@ -196446,7 +198119,7 @@
           ],
           "effects": [
             {
-              "id": "eff-mtsekp31-f1g9l2",
+              "id": "eff-mv3h4q1t-4jb1zr",
               "origin": "",
               "scope": [
                 "general"
@@ -196470,7 +198143,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsemp5m-q1jh4f",
+              "id": "eff-mv3h4zop-e2ecfr",
               "origin": "",
               "scope": [
                 "general"
@@ -196482,7 +198155,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "dmgBonus",
               "value": 17.5,
@@ -196494,7 +198169,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsenpok-prx4yj",
+              "id": "eff-mv3h5g2r-zj4y8t",
               "origin": "",
               "scope": [
                 "general"
@@ -196506,7 +198181,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "sharpenDmgBonus",
               "value": 11.5,
@@ -196672,12 +198349,12 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-mtsekp31-ybbcgj",
-              "name": "暴击率",
-              "note": "",
+              "id": "blk-mv3h4q1t-3m3v1q",
+              "name": "精1",
+              "note": "装备者暴击率提升30%；电属性伤害提升20%；装备者发动[强化特殊技]或触发[毁伤]时，造成的电属性锐化伤害提升13%，持续40秒，重复触发时刷新持续时间。",
               "effects": [
                 {
-                  "id": "eff-mtsekp31-f1g9l2",
+                  "id": "eff-mv3h4q1t-4jb1zr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196699,17 +198376,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsemp5m-ywlze6",
-              "name": "电增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsemp5m-q1jh4f",
+                  "id": "eff-mv3h4zop-e2ecfr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196721,7 +198390,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "dmgBonus",
                   "value": 20,
@@ -196731,17 +198402,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsenpok-3njiz7",
-              "name": "锐化增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsenpok-prx4yj",
+                  "id": "eff-mv3h5g2r-zj4y8t",
                   "origin": "",
                   "scope": [
                     "general"
@@ -196753,7 +198416,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "sharpenDmgBonus",
                   "value": 13,
@@ -196770,7 +198435,7 @@
           ],
           "effects": [
             {
-              "id": "eff-mtsekp31-f1g9l2",
+              "id": "eff-mv3h4q1t-4jb1zr",
               "origin": "",
               "scope": [
                 "general"
@@ -196794,7 +198459,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsemp5m-q1jh4f",
+              "id": "eff-mv3h4zop-e2ecfr",
               "origin": "",
               "scope": [
                 "general"
@@ -196806,7 +198471,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "dmgBonus",
               "value": 20,
@@ -196818,7 +198485,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsenpok-prx4yj",
+              "id": "eff-mv3h5g2r-zj4y8t",
               "origin": "",
               "scope": [
                 "general"
@@ -196830,7 +198497,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "sharpenDmgBonus",
               "value": 13,
@@ -196996,12 +198665,12 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-mtsekp31-ybbcgj",
-              "name": "暴击率",
-              "note": "",
+              "id": "blk-mv3h4q1t-3m3v1q",
+              "name": "精1",
+              "note": "装备者暴击率提升32.5%；电属性伤害提升22.5%；装备者发动[强化特殊技]或触发[毁伤]时，造成的电属性锐化伤害提升14.5%，持续40秒，重复触发时刷新持续时间。",
               "effects": [
                 {
-                  "id": "eff-mtsekp31-f1g9l2",
+                  "id": "eff-mv3h4q1t-4jb1zr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197023,17 +198692,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsemp5m-ywlze6",
-              "name": "电增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsemp5m-q1jh4f",
+                  "id": "eff-mv3h4zop-e2ecfr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197045,7 +198706,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "dmgBonus",
                   "value": 22.5,
@@ -197055,17 +198718,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsenpok-3njiz7",
-              "name": "锐化增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsenpok-prx4yj",
+                  "id": "eff-mv3h5g2r-zj4y8t",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197077,7 +198732,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "sharpenDmgBonus",
                   "value": 14.5,
@@ -197094,7 +198751,7 @@
           ],
           "effects": [
             {
-              "id": "eff-mtsekp31-f1g9l2",
+              "id": "eff-mv3h4q1t-4jb1zr",
               "origin": "",
               "scope": [
                 "general"
@@ -197118,7 +198775,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsemp5m-q1jh4f",
+              "id": "eff-mv3h4zop-e2ecfr",
               "origin": "",
               "scope": [
                 "general"
@@ -197130,7 +198787,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "dmgBonus",
               "value": 22.5,
@@ -197142,7 +198801,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsenpok-prx4yj",
+              "id": "eff-mv3h5g2r-zj4y8t",
               "origin": "",
               "scope": [
                 "general"
@@ -197154,7 +198813,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "sharpenDmgBonus",
               "value": 14.5,
@@ -197320,12 +198981,12 @@
         {
           "effectBlocks": [
             {
-              "id": "blk-mtsekp31-ybbcgj",
-              "name": "暴击率",
-              "note": "",
+              "id": "blk-mv3h4q1t-3m3v1q",
+              "name": "精1",
+              "note": "装备者暴击率提升35%；电属性伤害提升25%；装备者发动[强化特殊技]或触发[毁伤]时，造成的电属性锐化伤害提升16%，持续40秒，重复触发时刷新持续时间。",
               "effects": [
                 {
-                  "id": "eff-mtsekp31-f1g9l2",
+                  "id": "eff-mv3h4q1t-4jb1zr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197347,17 +199008,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsemp5m-ywlze6",
-              "name": "电增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsemp5m-q1jh4f",
+                  "id": "eff-mv3h4zop-e2ecfr",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197369,7 +199022,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "dmgBonus",
                   "value": 25,
@@ -197379,17 +199034,9 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mtsenpok-3njiz7",
-              "name": "锐化增伤",
-              "note": "",
-              "effects": [
+                },
                 {
-                  "id": "eff-mtsenpok-prx4yj",
+                  "id": "eff-mv3h5g2r-zj4y8t",
                   "origin": "",
                   "scope": [
                     "general"
@@ -197401,7 +199048,9 @@
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null,
                   "skillSubcategoryId": null,
-                  "elementFilter": "all",
+                  "elementFilter": [
+                    "电"
+                  ],
                   "kind": "fixed",
                   "stat": "sharpenDmgBonus",
                   "value": 16,
@@ -197418,7 +199067,7 @@
           ],
           "effects": [
             {
-              "id": "eff-mtsekp31-f1g9l2",
+              "id": "eff-mv3h4q1t-4jb1zr",
               "origin": "",
               "scope": [
                 "general"
@@ -197442,7 +199091,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsemp5m-q1jh4f",
+              "id": "eff-mv3h4zop-e2ecfr",
               "origin": "",
               "scope": [
                 "general"
@@ -197454,7 +199103,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "dmgBonus",
               "value": 25,
@@ -197466,7 +199117,7 @@
               "note": ""
             },
             {
-              "id": "eff-mtsenpok-prx4yj",
+              "id": "eff-mv3h5g2r-zj4y8t",
               "origin": "",
               "scope": [
                 "general"
@@ -197478,7 +199129,9 @@
               "teamProfessionValues": null,
               "teamProfessionMinCount": null,
               "skillSubcategoryId": null,
-              "elementFilter": "all",
+              "elementFilter": [
+                "电"
+              ],
               "kind": "fixed",
               "stat": "sharpenDmgBonus",
               "value": 16,
@@ -210104,7 +211757,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -210147,6 +211800,30 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3gyasf-xhg50h",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "dmgBonus",
+                  "value": -20,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -210183,7 +211860,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -210226,6 +211903,30 @@
               "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mv3gyasf-xhg50h",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "dmgBonus",
+              "value": -20,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
             }
           ],
           "selfMods": {
@@ -210238,12 +211939,12 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": -20,
             "critRate": 24,
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 0,
+            "resPen": 15,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -210318,7 +212019,7 @@
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 15,
+            "resPen": 0,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -210416,7 +212117,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -210459,6 +212160,30 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3gynto-znf5ed",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "dmgBonus",
+                  "value": -23,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -210495,7 +212220,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -210538,6 +212263,30 @@
               "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mv3gynto-znf5ed",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "dmgBonus",
+              "value": -23,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
             }
           ],
           "selfMods": {
@@ -210550,12 +212299,12 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": -23,
             "critRate": 26,
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 0,
+            "resPen": 17.3,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -210630,7 +212379,7 @@
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 17.3,
+            "resPen": 0,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -210728,7 +212477,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -210771,6 +212520,30 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3gz08q-54eubp",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "dmgBonus",
+                  "value": -26,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -210807,7 +212580,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -210850,6 +212623,30 @@
               "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mv3gz08q-54eubp",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "dmgBonus",
+              "value": -26,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
             }
           ],
           "selfMods": {
@@ -210862,12 +212659,12 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": -26,
             "critRate": 28,
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 0,
+            "resPen": 19.5,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -210942,7 +212739,7 @@
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 19.5,
+            "resPen": 0,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -211040,7 +212837,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -211083,6 +212880,30 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3gz8ua-3gr7fu",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "dmgBonus",
+                  "value": -29,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -211119,7 +212940,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -211162,6 +212983,30 @@
               "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mv3gz8ua-3gr7fu",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "dmgBonus",
+              "value": -29,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
             }
           ],
           "selfMods": {
@@ -211174,12 +213019,12 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": -29,
             "critRate": 30,
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 0,
+            "resPen": 21.8,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -211254,7 +213099,7 @@
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 21.8,
+            "resPen": 0,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -211352,7 +213197,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "team",
+                  "applyTarget": "self",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -211395,6 +213240,30 @@
                   "defaultStacks": 1,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mv3gzfmo-vn2h6t",
+                  "origin": "",
+                  "scope": [
+                    "general"
+                  ],
+                  "applyTarget": "self",
+                  "applySituation": "global",
+                  "applyProfession": null,
+                  "teamProfession": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null,
+                  "skillSubcategoryId": null,
+                  "elementFilter": "all",
+                  "kind": "fixed",
+                  "stat": "dmgBonus",
+                  "value": -32,
+                  "stackable": false,
+                  "maxStacks": 1,
+                  "valuePerStack": 0,
+                  "defaultStacks": 1,
+                  "enabledDefault": true,
+                  "note": ""
                 }
               ],
               "enabledDefault": true
@@ -211431,7 +213300,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "team",
+              "applyTarget": "self",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -211474,6 +213343,30 @@
               "defaultStacks": 1,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mv3gzfmo-vn2h6t",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "dmgBonus",
+              "value": -32,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
             }
           ],
           "selfMods": {
@@ -211486,12 +213379,12 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": -32,
             "critRate": 32,
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 0,
+            "resPen": 24,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -211566,7 +213459,7 @@
             "critDmg": 0,
             "penRate": 0,
             "reduceDefense": 0,
-            "resPen": 24,
+            "resPen": 0,
             "mastery": 0,
             "anomalyControl": 0,
             "anomalyControlPercent": 0,
@@ -213054,7 +214947,7 @@
                   "scope": [
                     "general"
                   ],
-                  "applyTarget": "self",
+                  "applyTarget": "team",
                   "applySituation": "global",
                   "applyProfession": null,
                   "teamProfession": null,
@@ -213108,7 +215001,7 @@
               "scope": [
                 "general"
               ],
-              "applyTarget": "self",
+              "applyTarget": "team",
               "applySituation": "global",
               "applyProfession": null,
               "teamProfession": null,
@@ -213162,7 +215055,7 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 15,
+            "dmgBonus": 0,
             "critRate": 0,
             "critDmg": 0,
             "penRate": 0,
@@ -213237,7 +215130,7 @@
             "externalDefPercent": 0,
             "atk": 0,
             "def": 0,
-            "dmgBonus": 0,
+            "dmgBonus": 15,
             "critRate": 0,
             "critDmg": 0,
             "penRate": 0,
@@ -234033,7 +235926,7 @@
       "advancedStats": {
         "critRate": 0,
         "critDmg": 0,
-        "anomalyControlPercent": 30,
+        "anomalyControlPercent": 0,
         "energyRegen": 0,
         "mastery": 0,
         "externalAtkPercent": 0,
@@ -256215,7 +258108,7 @@
                   "general"
                 ],
                 "applyTarget": "self",
-                "applySituation": "stagger",
+                "applySituation": "global",
                 "applyProfession": null,
                 "teamProfession": null,
                 "teamProfessionValues": null,
@@ -256270,7 +258163,7 @@
               "general"
             ],
             "applyTarget": "self",
-            "applySituation": "stagger",
+            "applySituation": "global",
             "applyProfession": null,
             "teamProfession": null,
             "teamProfessionValues": null,
@@ -257733,7 +259626,66 @@
       "avatar_image": "/drive_disc/SuitSoulRock.webp",
       "twoPieceNote": "",
       "fourPieceNote": "",
-      "twoPieceEffects": [],
+      "twoPieceEffectBlocks": [
+        {
+          "id": "blk-mv3i1wyi-nygskk",
+          "name": "2件套",
+          "note": "防御力+16%。",
+          "effects": [
+            {
+              "id": "eff-mv3i1wyi-deimph",
+              "origin": "",
+              "scope": [
+                "general"
+              ],
+              "applyTarget": "self",
+              "applySituation": "global",
+              "applyProfession": null,
+              "teamProfession": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null,
+              "skillSubcategoryId": null,
+              "elementFilter": "all",
+              "kind": "fixed",
+              "stat": "externalDefPercent",
+              "value": 16,
+              "stackable": false,
+              "maxStacks": 1,
+              "valuePerStack": 0,
+              "defaultStacks": 1,
+              "enabledDefault": true,
+              "note": ""
+            }
+          ],
+          "enabledDefault": true
+        }
+      ],
+      "twoPieceEffects": [
+        {
+          "id": "eff-mv3i1wyi-deimph",
+          "origin": "",
+          "scope": [
+            "general"
+          ],
+          "applyTarget": "self",
+          "applySituation": "global",
+          "applyProfession": null,
+          "teamProfession": null,
+          "teamProfessionValues": null,
+          "teamProfessionMinCount": null,
+          "skillSubcategoryId": null,
+          "elementFilter": "all",
+          "kind": "fixed",
+          "stat": "externalDefPercent",
+          "value": 16,
+          "stackable": false,
+          "maxStacks": 1,
+          "valuePerStack": 0,
+          "defaultStacks": 1,
+          "enabledDefault": true,
+          "note": ""
+        }
+      ],
       "twoPieceMods": {
         "hp": 0,
         "inCombatHpPercent": 0,
@@ -257741,7 +259693,7 @@
         "inCombatDefPercent": 0,
         "externalHpPercent": 0,
         "externalAtkPercent": 0,
-        "externalDefPercent": 0,
+        "externalDefPercent": 16,
         "atk": 0,
         "def": 0,
         "dmgBonus": 0,
@@ -261965,6 +263917,34 @@
       "name": "蚀光一闪",
       "countsAsFollowUp": false,
       "directDmgMult": 100,
+      "settlementDmgMult": 0,
+      "anomalyReleaseMult": 0,
+      "disorderMult": 0,
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
+    },
+    {
+      "id": "pheony-basic-mvcdonw3",
+      "agentId": "pheony",
+      "categoryId": "basic",
+      "name": "普通攻击：焚罪",
+      "countsAsFollowUp": false,
+      "directDmgMult": 0,
+      "settlementDmgMult": 0,
+      "anomalyReleaseMult": 0,
+      "disorderMult": 0,
+      "directDmgMultFactor": 100,
+      "anomalyReleaseMultFactor": 100,
+      "disorderMultFactor": 100
+    },
+    {
+      "id": "pheony-ultimate-mvcdqvzi",
+      "agentId": "pheony",
+      "categoryId": "ultimate",
+      "name": "烬火追魂",
+      "countsAsFollowUp": false,
+      "directDmgMult": 0,
       "settlementDmgMult": 0,
       "anomalyReleaseMult": 0,
       "disorderMult": 0,
