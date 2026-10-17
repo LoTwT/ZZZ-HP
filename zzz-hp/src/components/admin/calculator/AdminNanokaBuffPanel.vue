@@ -600,9 +600,13 @@ function closeOriginal() {
   originalItem.value = null
 }
 
-/** 弹窗里显示的句子：**同样剔除**完全解析不出来的句子（那些只在底部废原文区） */
+/**
+ * 弹窗里显示的句子：**这一段（整块）的完整原文**，一句都不删（用户 2026-10-17：
+ * 之前只列「产出过关键字」的句子，块里只有一句时弹窗与左侧那句一模一样 → 没意义）。
+ * 没抽出关键字的句子照样列出，标淡色 + 「无关键字」（它们同时也在底部废原文区）。
+ */
 const originalSentences = computed<NanokaBuffSentence[]>(() =>
-  originalItem.value ? keywordSentences(originalItem.value) : [],
+  originalItem.value ? originalItem.value.sentences : [],
 )
 
 // ---------------------------------------------------------------- 废原文（按来源块 · 整段原文）
@@ -1616,7 +1620,7 @@ const wasteCount = computed(() =>
                 class="nbf-mini-btn"
                 @click="openOriginal(item, sentence.sentenceIndex)"
               >
-                整块里看
+                整块原文
               </button>
             </div>
             <p class="nbf-raw-text">{{ sentence.rawSentence }}</p>
@@ -1852,7 +1856,8 @@ const wasteCount = computed(() =>
         <p v-if="wasteOpen && !wasteBlocks.length" class="empty-hint">没有废原文。</p>
       </section>
 
-      <!-- 「整块原文」弹窗：剔除完全解析不出来的句子，并高亮当前句。
+      <!-- 「整块原文」弹窗：这一段（整块）的完整原文，一句不删，并高亮当前句。
+           没抽出关键字的句子标淡色（用户 2026-10-17）。
            **Teleport 到 body**：面板外层容器可能有 transform / overflow，会裁掉 position:fixed 的弹窗 -->
       <Teleport to="body">
         <div v-if="originalVisible && originalItem" class="nbf-modal-mask" @click.self="closeOriginal">
@@ -1863,17 +1868,22 @@ const wasteCount = computed(() =>
             </header>
             <p class="nbf-sub">
               写入槽位：{{ originalItem.landing?.label ?? '—' }} ·
-              这里只列产出过关键字的句子（完全解析不出来的句子属废原文，只在底部废原文区出现）
+              这一段共 {{ originalSentences.length }} 句，原文一句不删；淡色句 = 没抽出关键字（同属废原文）
             </p>
             <ol class="nbf-original-list">
               <li
                 v-for="sentence in originalSentences"
                 :key="`o-${sentence.sentenceIndex}`"
-                :class="{ 'nbf-original-current': sentence.sentenceIndex === originalHighlight }"
+                :class="{
+                  'nbf-original-current': sentence.sentenceIndex === originalHighlight,
+                  'nbf-original-nokw': !sentence.hasKeywords,
+                }"
               >
                 <span class="nbf-chip">第 {{ sentence.sentenceIndex + 1 }} 句</span>
                 <span class="nbf-original-text">{{ sentence.rawSentence }}</span>
-                <span class="nbf-sub">{{ sentence.keywords.length }} 条关键字</span>
+                <span class="nbf-sub">
+                  {{ sentence.hasKeywords ? `${sentence.keywords.length} 条关键字` : '无关键字' }}
+                </span>
               </li>
             </ol>
           </div>
@@ -2658,6 +2668,11 @@ const wasteCount = computed(() =>
 
 .nbf-original-text {
   margin: 0 0.4rem;
+}
+
+/* 没抽出关键字的句子：淡色（仍要显示 —— 用户 2026-10-17：整块原文一句不删） */
+.nbf-original-nokw > .nbf-original-text {
+  color: var(--color-text-muted, rgba(90, 88, 78, 0.62));
 }
 
 /* 阶段二：左选右看（左侧窄 = 选择器 + 详情，右侧宽 = 当前这条的实际增益） */
