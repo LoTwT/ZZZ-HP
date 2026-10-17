@@ -902,17 +902,16 @@ test('1041「11号」：关键字 → 增益（招式限定 / 叠层 / 无视抗
     assert.ok(items.get(slot).waste.some((item) => /没有对应字段/.test(item.reason)))
   }
 
-  // 影画 6：无视目标 25% 抗性 → resPen；敌人削弱族没写明给谁 → **目标默认全队**（source=default-team）
+  // 影画 6：无视目标 25% 抗性 → resPen；动作=无视 = 施放者自己的穿透 → **目标自身**（用户 2026-10-17 修正）
   const talent6 = keywordEffects(items.get('talent-6'))[0]
   assert.equal(talent6.slots.stat, '抗性穿透')
   assert.equal(talent6.slots.action, '无视')
-  assert.equal(talent6.slots.target, '全队')
-  // 原文写了「无视目标…」→ 目标来源是 literal；**没写明给谁**时才是 default-team（界面标「默认」）
-  assert.ok(['literal', 'default-team'].includes(talent6.sources.target))
+  assert.equal(talent6.slots.target, '自身')
+  assert.equal(talent6.sources.target, 'literal')
   assert.equal(talent6.blocked, false, '软槽位（条件）不阻断')
   assert.equal(talent6.layerC.stat, 'resPen')
   assert.equal(talent6.layerC.value, 25)
-  assert.equal(talent6.layerC.applyTarget, 'team')
+  assert.equal(talent6.layerC.applyTarget, 'self')
 
   // 影画 4：抗打断 / 无敌 / 我方减伤 → 整条废原文（不入库）
   assert.equal(items.get('talent-4').verdict, 'waste')
@@ -1082,13 +1081,14 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
   assert.equal(effect.slots.action, '无视')
   assert.equal(effect.slots.value, 40)
   assert.equal(effect.slots.scope, '异放')
-  assert.equal(effect.slots.target, '全队')
+  // 「无视…防御力」= 施放者自己的穿透 → 自身（用户 2026-10-17 修正；旧口径是全队）
+  assert.equal(effect.slots.target, '自身')
   const mapped = mapKeywordsToEffect({ slots: effect.slots, id: 'x', origin: 'test' })
   assert.equal(mapped.ok, true)
   assert.equal(mapped.effect.stat, 'reduceDefense')
   assert.equal(mapped.effect.value, 40)
   assert.deepEqual(mapped.effect.scope, ['anomalyRelease'])
-  assert.equal(mapped.effect.applyTarget, 'team')
+  assert.equal(mapped.effect.applyTarget, 'self')
 
   // 对照：普通（无作用域）减防 → 通用
   const plain = firstEffect('无视敌人40%防御力')
@@ -1127,15 +1127,38 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
   }
 })
 
-test('目标默认值：敌人削弱族没写明给谁 → 全队（source=default-team）；写明自身才是自身', () => {
-  const defaulted = firstEffect('无视25%火属性伤害抗性')
-  assert.equal(defaulted.effect.slots.stat, '抗性穿透')
-  assert.equal(defaulted.effect.slots.target, '全队')
-  assert.equal(defaulted.effect.sources.target, 'default-team', '界面据此标淡色「默认」')
+test('敌人削弱族按动作分目标：无视 → 自身（穿透是施放者的属性）；降低 → 全队（对敌削弱）', () => {
+  // 动作 = 无视：「无视…抗性 / 防御」写在谁的句子里就只作用在谁身上（用户 2026-10-17 修正）
+  const pierced = firstEffect('无视25%火属性伤害抗性')
+  assert.equal(pierced.effect.slots.stat, '抗性穿透')
+  assert.equal(pierced.effect.slots.action, '无视')
+  assert.equal(pierced.effect.slots.target, '自身')
+  assert.equal(pierced.effect.sources.target, 'literal')
   assert.equal(
-    mapKeywordsToEffect({ slots: defaulted.effect.slots, id: 't1', origin: 'test' }).effect.applyTarget,
+    mapKeywordsToEffect({ slots: pierced.effect.slots, id: 't1', origin: 'test' }).effect.applyTarget,
+    'self',
+  )
+
+  // 点名角色 + 无视 → 仍是自身（用户判例：「菲欧妮无视目标15%全属性伤害抗性」）
+  const namedPierce = firstEffect('菲欧妮无视目标15%全属性伤害抗性', { selfNames: ['菲欧妮'] })
+  assert.equal(namedPierce.effect.slots.stat, '抗性穿透')
+  assert.equal(namedPierce.effect.slots.target, '自身')
+  assert.equal(namedPierce.effect.sources.target, 'literal')
+
+  // 动作 = 降低：挂在敌人身上的削弱，队友同样受益 → 全队（原文没写明给谁时标「默认」）
+  const reduced = firstEffect('使目标抗性降低15%')
+  assert.equal(reduced.effect.slots.target, '全队')
+  assert.equal(reduced.effect.sources.target, 'literal', '原文写了「目标」→ literal')
+  assert.equal(
+    mapKeywordsToEffect({ slots: reduced.effect.slots, id: 't2', origin: 'test' }).effect.applyTarget,
     'team',
   )
+
+  // 动作=降低 且原文没写「敌人 / 目标 / 对方」→ 走 default-team（界面标淡色「默认」）
+  const reducedPlain = firstEffect('抗性降低15%')
+  assert.equal(reducedPlain.effect.slots.stat, '抗性穿透')
+  assert.equal(reducedPlain.effect.slots.target, '全队')
+  assert.equal(reducedPlain.effect.sources.target, 'default-team', '界面据此标淡色「默认」')
 
   // 明确写「装备者 / 自身」→ 自身（不是默认兜底）
   const self = firstEffect('装备者的防御力降低10%')
@@ -1193,8 +1216,13 @@ test('目标判定以主语为准：点名角色 → 自身；无主语 + 敌人
   assert.equal(named11.effect.sources.target, 'literal')
   assert.equal(mapped(named11.effect).effect.applyTarget, 'self')
 
-  // ⑤ 减防 / 抗穿 / 易伤族既有规则不受影响
-  const debuff = firstEffect('招式造成伤害时，无视敌人40%防御力', { selfNames: names })
+  // ⑤ 减防 / 抗穿：动作=无视 → 自身（施放者的穿透）；动作=降低 → 全队
+  const pierced = firstEffect('招式造成伤害时，无视敌人40%防御力', { selfNames: names })
+  assert.equal(pierced.effect.slots.stat, '减防')
+  assert.equal(pierced.effect.slots.target, '自身')
+  assert.equal(pierced.effect.sources.target, 'literal')
+
+  const debuff = firstEffect('招式造成伤害时，使敌人防御力降低40%', { selfNames: names })
   assert.equal(debuff.effect.slots.stat, '减防')
   assert.equal(debuff.effect.slots.target, '全队')
   assert.equal(debuff.effect.sources.target, 'literal', '原文写了「敌人」→ literal')

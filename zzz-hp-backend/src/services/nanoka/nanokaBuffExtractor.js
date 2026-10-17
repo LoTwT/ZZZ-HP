@@ -1501,10 +1501,21 @@ export function buildRulesTable() {
           '指回前句回落：不因为句中出现「…状态下的敌人」就翻成全队（条件仍用 applySituation 表达）',
         ),
         items('句中有指回词但**前一条没有自身增益可回落**', '按规则②判（无主语 + 敌人状态 → 全队）', '', '边界'),
-        // 规则⑤ 敌人削弱族不受影响
-        ...ENEMY_DEBUFF_STATS_LIST.map((stat) =>
-          items(`属性=${stat} 且原文没写明给谁`, '全队', 'applyTarget=team', '敌人削弱族既有规则，不受"以主语为准"影响；界面标淡色「默认」'),
-        ),
+        // 规则⑤ 敌人削弱族：按动作分（用户 2026-10-17）
+        ...ENEMY_DEBUFF_STATS_LIST.flatMap((stat) => [
+          items(
+            `属性=${stat} + 动作=**无视**（形如「无视目标15%抗性 / 无视敌人40%防御力」）`,
+            '自身',
+            'applyTarget=self',
+            '穿透是**施放者自己**的属性（2026-10-17 修正）；判成全队会让队友都吃这份穿透',
+          ),
+          items(
+            `属性=${stat} + 动作=**降低 / 减少**（形如「防御力降低20%」）`,
+            '全队',
+            'applyTarget=team',
+            '对敌削弱，队友同样受益；原文没写明给谁时界面标淡色「默认」',
+          ),
+        ]),
         items('原文明确写「全队 / 我方全体 / 队伍中所有…」', '全队', 'applyTarget=team', '字面写明的全队（最先判）'),
         items('其他属性没写明给谁', NONE, 'applyTarget=self', ''),
       ],
@@ -1638,7 +1649,8 @@ export function classifyConditions({ conditions = [], statValue = '', isConvert 
  * 2. 句子里**没有主语（泛指）**且带**敌人状态限定**（「[X]状态下的敌人受到…」「对[X]状态下的敌人造成…」）
  *    → `全队`（note 写固定短语；**增伤与暴击族都适用**）；
  * 3. 无主语、也不带敌人状态（例：「造成的伤害提升 20%」）→ **沿用既有默认**（不动）；
- * 4. 减防 / 抗穿 / 易伤族既有规则（敌人削弱族默认全队）**不受影响**（先判，见下）；
+ * 4. 减防 / 抗穿 / 易伤族先按**动作**分（用户 2026-10-17 修正，见下「敌人削弱族」）：
+ *    「无视…抗性 / 防御」= 施放者自己的穿透 → `自身`；「降低 / 减少…」= 敌人侧削弱 → `全队`。
  * 5. 原文明确写「全队 / 我方…」→ 字面 `全队`（最先判）。
  *
  * `unitText` = 整句：**敌人状态句式常写在抬头**（被 `，` 切成子句后子句里没有它）→ 这条看整句；
@@ -1655,10 +1667,16 @@ function detectTarget(clauseText, selfNames, inherited, statValue = '', unitText
   const text = String(clauseText ?? '')
   const sentence = String(unitText ?? '') || text
   if (TEAM_RE.test(text)) return { value: '全队', source: 'literal' }
-  // 敌人削弱族（减防 / 抗穿 / 易伤家族）：作用对象是敌人 → **默认全队**；
-  // 只有原文明确写「自身 / 自己 / 装备者」才算自身（用户 2026-10-16；这条不受"以主语为准"影响）
+  // 敌人削弱族（减防 / 抗穿 / 易伤家族）：先分**动作**再定目标（用户 2026-10-17 修正）——
+  //   ① 明确写「自身 / 自己 / 装备者」→ 自身；
+  //   ② **「无视…抗性 / 无视…防御」= 施放者自己的穿透属性**（动作是无视，不是给敌人挂 debuff）
+  //      → 自身。例：「菲欧妮无视目标15%全属性伤害抗性」主语是她自己，不能算全队；
+  //   ③ 「降低 / 减少 / 下降 / 削减…」= 挂在敌人身上的削弱 → 默认全队（原文没写明给谁时标「默认」）。
   if (ENEMY_DEBUFF_STATS.has(String(statValue ?? ''))) {
     if (/自身|自己|装备者/.test(text)) return { value: '自身', source: 'literal' }
+    if (PENETRATION_RE.test(text) && !DEBUFF_ACTION_RE.test(text)) {
+      return { value: '自身', source: 'literal' }
+    }
     return { value: '全队', source: /敌人|敌方|目标|对方/.test(text) ? 'literal' : 'default-team' }
   }
   // ① 点名角色 / 自身类主语 → 自身（最高优先，压过「敌人状态 → 全队」）
@@ -1679,6 +1697,16 @@ function detectTarget(clauseText, selfNames, inherited, statValue = '', unitText
 
 /** 指回前文的词（用户 2026-10-16：这类句子沿用被指向那条的目标，不按敌人状态翻全队） */
 const BACKREF_RE = /该增益效果|该效果|该增益|上述效果|此增益效果/
+
+/**
+ * **穿透类动作**（用户 2026-10-17）：「无视…抗性 / 无视…防御 / …穿透」是**施放者自己**的属性，
+ * 写在谁的句子里就只作用在谁身上 → 目标 `自身`。
+ * 与之相对的是 `DEBUFF_ACTION_RE`（降低 / 减少 / 下降 / 削减）—— 那是给敌人挂的削弱，默认全队。
+ */
+const PENETRATION_RE = /无视|穿透/
+
+/** **对敌削弱动作**：降低 / 减少 / 下降 / 削减 → 敌人侧 debuff，默认全队 */
+const DEBUFF_ACTION_RE = /降低|减少|下降|削减/
 
 /**
  * **敌人状态（泛指）→ 目标默认全队**（用户 2026-10-16 定稿）：
@@ -1703,11 +1731,20 @@ const SELF_MARKER_RE = /自身|自己|装备者|该代理人|本角色/
 const ENEMY_STATUS_TARGET_NOTE = '目标默认：条件为敌人状态、未限定施放者'
 
 /**
- * **敌人削弱族**（用户 2026-10-16）：作用在敌人身上的削弱类，原文**没写明给谁**时
- * 默认 `目标=全队`（不是自身）。依据（全库人工记录）：
- *   `staggerVulnerable` team=13/self=0、`globalStaggerVulnerable` team=2/self=0、
- *   `reduceDefense` team=19/self=26、`resPen` team=23/self=51（减防 / 抗穿人工不统一，但**易伤族一致用全队**）。
- * 只有原文明确写「自身 / 自己 / 装备者」时才用 `自身`（那时 `detectTarget` 已经判成 literal）。
+ * **敌人削弱族**（用户 2026-10-16 定族、2026-10-17 修判定）：
+ *
+ * 这族属性的目标**按动作分**，不按「属性名」一刀切：
+ *   - 动作 = **无视**（`PENETRATION_RE`，「无视目标15%抗性 / 无视敌人40%防御力」）→ **自身**。
+ *     语义：穿透是**施放者自己**打出去的属性，判成 team 会让三个队友都吃这份穿透（数值高估）。
+ *     用户 2026-10-17 判例：「菲欧妮无视目标15%全属性伤害抗性」主语是菲欧妮自己 → 自身。
+ *   - 动作 = **降低 / 减少 / 下降 / 削减**（`DEBUFF_ACTION_RE`）→ 挂在敌人身上的削弱，
+ *     队友同样受益 → **默认全队**（原文没写明给谁时 `source=default-team`，界面标「默认」）。
+ *   - 易伤族（失衡易伤 / 易伤）不受影响：人工记录一致用全队。
+ *
+ * 依据（全库人工记录）：`staggerVulnerable` team=13/self=0、`globalStaggerVulnerable` team=2/self=0、
+ * `reduceDefense` team=19/self=26、`resPen` team=23/self=51 —— 减防 / 抗穿本来就是**多数自身**，
+ * 旧规则「一律全队」把这些拧成了全队。
+ * 只有原文明确写「自身 / 自己 / 装备者」时才走 literal 自身（那时 `detectTarget` 已判成 literal）。
  */
 const ENEMY_DEBUFF_STATS = new Set([
   '减防',
