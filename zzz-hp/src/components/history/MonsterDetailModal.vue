@@ -53,7 +53,7 @@ const hpMode = ref<CrisisHpChartMode>('normal')
 
 const chartRoomType = computed<CrisisBossRoomType>(() => (props.enemy?.isHardRoom ? 'hard' : 'normal'))
 
-/** 详情数据块按共享数据行形状组装（与单独怪物对比、后续防卫战详情同构） */
+/** 详情数据块按共享数据行形状组装（与怪物数据库、后续防卫战详情同构） */
 const detailRecord = computed<MonsterDetailRecord | null>(() => {
   const enemy = props.enemy
   if (!enemy) return null

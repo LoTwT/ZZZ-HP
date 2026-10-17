@@ -258,7 +258,7 @@ export interface HpChartPoint {
   totalHp: number
   /** 换算到 953 防御的总血量 */
   totalHpConverted953?: number
-  /** 危局血量系数整数百分比（单独怪物对比用） */
+  /** 危局血量系数整数百分比（怪物数据库用） */
   hpCoeffPercent?: number | null
   version?: string
   phase?: string

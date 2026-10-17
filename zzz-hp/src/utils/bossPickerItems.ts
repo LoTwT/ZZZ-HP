@@ -1,7 +1,7 @@
 import type { BossInfoRecord } from '@/api/bossInfo'
 import type { BossOption } from '@/api/crisisAssault'
 
-/** 单独怪物对比选择卡片的展示条目：在 BossOption 之上补充 boss_info 基础库字段 */
+/** 怪物数据库选择卡片的展示条目：在 BossOption 之上补充 boss_info 基础库字段 */
 export interface BossPickerItem {
   bossName: string
   bossImage: string | null

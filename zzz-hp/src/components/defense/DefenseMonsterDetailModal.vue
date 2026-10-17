@@ -42,7 +42,7 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 折线图与「单独怪物对比」同口径：按「怪物类别 + 名称」取点。
+ * 折线图与「怪物数据库」同口径：按「怪物类别 + 名称」取点。
  * 类别由怪物 ID 解码，旧数据回退 `isBoss`；小怪推不出类别（图表 API 只支持精英/Boss），该区块整体不渲染。
  */
 const chartCategory = computed(() =>
