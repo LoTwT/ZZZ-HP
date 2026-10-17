@@ -1307,6 +1307,17 @@ async function runParse(targetKeys?: string[]) {
   }
 }
 
+/**
+ * 切页（用户 2026-10-17）：切到阶段二时**自动重算**，不再单独放一个「全部解析」按钮 ——
+ * 这点计算量不值得多按一次。只有关键字被改过（`keywordDirty`）才重算，没改就是纯切页。
+ */
+async function switchPage(next: Page) {
+  page.value = next
+  if (next !== 'stage2') return
+  if (!rows.value.some((row) => row.keywordDirty)) return
+  await runParse()
+}
+
 function resolveConflict(row: KeywordRow, conflict: NanokaParseConflict, choice: 'mine' | 'theirs') {
   if (!row.gain) return
   if (choice === 'theirs') {
@@ -1568,7 +1579,7 @@ const wasteCount = computed(() =>
         type="button"
         class="nbf-tab"
         :class="{ active: page === 'stage1' }"
-        @click="page = 'stage1'"
+        @click="switchPage('stage1')"
       >
         阶段一 · 原文 → 关键字
       </button>
@@ -1576,7 +1587,7 @@ const wasteCount = computed(() =>
         type="button"
         class="nbf-tab"
         :class="{ active: page === 'stage2' }"
-        @click="page = 'stage2'"
+        @click="switchPage('stage2')"
       >
         阶段二 · 关键字 → 增益
       </button>
@@ -1988,10 +1999,7 @@ const wasteCount = computed(() =>
       <header class="nbf-stage-head">
         <h3>阶段二 · 关键字 → 实际增益</h3>
         <div class="nbf-stage-actions">
-          <button type="button" class="secondary-btn" @click="page = 'stage1'">← 退回阶段一</button>
-          <button type="button" class="secondary-btn" :disabled="busy || !rows.length" @click="runParse()">
-            {{ parsing ? '解析中…' : '全部解析' }}
-          </button>
+          <button type="button" class="secondary-btn" @click="switchPage('stage1')">← 退回阶段一</button>
           <button type="button" class="primary-btn" :disabled="!canWrite" @click="runApply(true)">
             {{ writing ? '准备中…' : '写入（准备）' }}
           </button>
