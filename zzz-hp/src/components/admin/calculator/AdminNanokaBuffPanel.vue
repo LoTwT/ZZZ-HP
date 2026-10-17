@@ -242,7 +242,7 @@ const FALLBACK_SLOT_OPTIONS: Record<string, string[]> = {
   action: ['提升', '降低', '无视', '转化', UNABLE],
   unit: ['%', '点', NONE],
   target: ['自身', '全队', '指定职业', '指定阵营', NONE, UNABLE],
-  conditions: [NONE, '攻击失衡敌人时', '攻击非失衡敌人时', '发动强化特殊技时', '发动连携技或终结技时', UNABLE],
+  conditions: [NONE, '攻击失衡敌人时', '攻击非失衡敌人时', '队伍中存在与自身属性或阵营相同的角色时', '队伍中存在其他异常角色或同阵营角色时', UNABLE],
   scope: [NONE, '招式', '异常', '紊乱', '乱流', '异放', '耀变', '异化系数'],
   stacks: [NONE, UNABLE],
   duration: [NONE, UNABLE],
@@ -1086,9 +1086,25 @@ async function simplifyAll() {
 
 // ---------------------------------------------------------------- 关键字编辑
 
+/**
+ * 关键字一改就**自动重算这一行的阶段二**（用户 2026-10-17：不该再有「点 [解析]」这一步）。
+ * 控件都是离散的（下拉 / 按钮 / change），一次改动触发一次；250ms 合并连点。
+ */
+let autoParseTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleAutoParse(row: KeywordRow) {
+  const key = row.key
+  if (autoParseTimer) clearTimeout(autoParseTimer)
+  autoParseTimer = setTimeout(() => {
+    autoParseTimer = undefined
+    if (!rows.value.some((item) => item.key === key)) return
+    void runParse([key])
+  }, 250)
+}
+
 function markKeywordDirty(row: KeywordRow) {
   row.keywordDirty = true
   row.writeLabel = ''
+  scheduleAutoParse(row)
 }
 
 function setSlot(row: KeywordRow, slotId: string, value: unknown) {
@@ -1661,7 +1677,7 @@ const wasteCount = computed(() =>
                   <span v-if="!row.recorded" class="nbf-badge nbf-badge-drop">
                     这条不录 · {{ row.dropReason }}
                   </span>
-                  <span v-if="row.keywordDirty" class="nbf-badge nbf-badge-warn">关键字已改，点 [解析]</span>
+                  <span v-if="row.keywordDirty" class="nbf-badge nbf-badge-warn">已改，正在按新关键字重算…</span>
                   <button type="button" class="nbf-mini-btn" @click="row.detailOpen = !row.detailOpen">
                     {{ row.detailOpen ? '收起' : '详情' }}
                   </button>
@@ -1749,8 +1765,8 @@ const wasteCount = computed(() =>
                             ×
                           </button>
                         </div>
-                        <button type="button" class="nbf-mini-btn" @click="addMulti(row, entry.id)">
-                          + {{ entry.label }}
+                        <button type="button" class="nbf-multi-add" @click="addMulti(row, entry.id)">
+                          ＋ 再加一条{{ entry.label }}（{{ entry.label }}可多选）
                         </button>
                       </div>
                     </template>
@@ -3285,6 +3301,24 @@ const wasteCount = computed(() =>
 .nbf-condition {
   display: flex;
   gap: 0.2rem;
+}
+
+/* 条件 / 元素：多选入口做成整行虚线按钮，一眼能看出"还能再加"（用户 2026-10-17） */
+.nbf-multi-add {
+  margin-top: 0.15rem;
+  width: 100%;
+  border: 1px dashed var(--color-border-hover, #c9c4b6);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted, rgba(90, 88, 78, 0.75));
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  text-align: left;
+}
+.nbf-multi-add:hover {
+  color: var(--color-heading);
+  border-color: var(--color-heading);
 }
 
 .nbf-mini-btn {

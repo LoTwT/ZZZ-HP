@@ -22,6 +22,7 @@ import {
   CONVERT_FROM_OPTIONS,
   CONVERT_PANEL_SOURCE_OPTIONS,
   CONVERT_SLOT_HINTS,
+  CONDITION_OPTIONS,
   CONVERT_SLOT_IDS,
   CONVERT_SLOT_LABELS,
   GAME_LITERAL_REWRITES,
@@ -1047,6 +1048,14 @@ test('条件白名单硬校验：原句片段一律改写成「无法提取」�
   assert.equal(direct.slots.scope, UNABLE)
   assert.ok(direct.violations.some((item) => item.slot === 'stat' && item.reason === 'unmappable-condition'))
   assert.ok(direct.violations.some((item) => item.slot === 'scope'))
+  // 条件下拉只给阶段2能落地的选项（用户 2026-10-17）：每个选项过白名单都不该被打回「无法提取」，
+  // 否则界面上就是个"选了就失效"的按钮。
+  for (const option of CONDITION_OPTIONS) {
+    if (option === NONE || option === UNABLE) continue
+    const out = enforceSlotWhitelist({ conditions: [option] })
+    assert.deepEqual(out.slots.conditions, [option], `条件下拉选项「${option}」过不了白名单，不该出现在下拉里`)
+    assert.equal(out.violations.length, 0, `条件下拉选项「${option}」被判成无法提取`)
+  }
   // 全量断言：任何槽位都不许等于原句片段（长文本 / 含句读）
   for (const effect of effects) {
     for (const id of SLOT_IDS) {
