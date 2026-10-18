@@ -33,8 +33,10 @@ import {
   effectMatchesContext,
   effectMatchesElement,
   effectMatchesTeamProfessionGate,
+  effectTargetsSkill,
   expandBuffOverrideToEffectIds,
   flatModsToEffects,
+  getEffectSkillTargets,
   isEffectEnabled,
   resolveEffectsToMods,
 } from '@/utils/buffEffect'
@@ -2543,27 +2545,36 @@ function effectMatchesReleaseMultElement(effect: BuffEffect, triggerElement?: st
   return filter.includes(triggerElement)
 }
 
-/**
- * 按异放结算上下文汇总异放倍率 / 倍率乘算修正，写到给定局外面板上。
- * 调用方应传入触发者面板（非主 C、非强度提供者）。
- */
-export function resolveAnomalyReleaseMultFields(
-  externalPanel: PanelStats,
+/** 异放结算用技能上下文：子类固定异放，元素取触发者 */
+function buildReleaseMultSkillContext(
   ctx: PanelCalcContext,
   triggerElement?: string,
-): Pick<PanelStats, 'anomalyReleaseMult' | 'anomalyReleaseMultFactor'> {
-  const skillCtx: SkillCalcContext = {
+): SkillCalcContext {
+  return {
     ...(ctx.skillContext ?? defaultSkillContext('anomaly', triggerElement)),
     damageKind: 'anomaly',
     anomalySubKind: 'anomalyRelease',
     element: triggerElement,
   }
+}
 
+function collectReleaseMultEntries(
+  ctx: PanelCalcContext,
+  skillCtx: SkillCalcContext,
+  triggerElement: string | undefined,
+  options?: { requireSkillTarget?: boolean },
+): CollectedEffect[] {
   const collected = collectAllBuffEffects({ ...ctx, skillContext: skillCtx })
   const releaseMultEntries: CollectedEffect[] = []
   for (const item of collected) {
     const effect = item.effect
     if (!RELEASE_MULT_STATS.has(effect.stat)) continue
+    // 行级增量必须限定到本招式：只用 anomalyRelease 作用域会让同角色的多个异放块互相串味。
+    // 无招式限定（skillTargets 为空）的通用转模对每条异放都生效，不因「没有目标」被丢掉。
+    if (options?.requireSkillTarget) {
+      const targets = getEffectSkillTargets(effect)
+      if (targets.length && !effectTargetsSkill(effect, skillCtx)) continue
+    }
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
     if (!effectMatchesContext(effect, skillCtx)) continue
     if (!effectMatchesReleaseMultElement(effect, triggerElement)) continue
@@ -2574,10 +2585,18 @@ export function resolveAnomalyReleaseMultFields(
     }
     releaseMultEntries.push(item)
   }
+  return releaseMultEntries
+}
 
+function resolveReleaseMultMods(
+  entries: CollectedEffect[],
+  ctx: PanelCalcContext,
+  skillCtx: SkillCalcContext,
+  triggerElement?: string,
+): BuffStatModifiers {
   // 等级转模按「效果来源角色」取等级：按提供者槽位分组，各组带各自的技能等级表
   const effectsByProviderSlot = new Map<number | null, BuffEffect[]>()
-  for (const item of releaseMultEntries) {
+  for (const item of entries) {
     const list = effectsByProviderSlot.get(item.providerSlot)
     if (list) list.push(item.effect)
     else effectsByProviderSlot.set(item.providerSlot, [item.effect])
@@ -2609,6 +2628,25 @@ export function resolveAnomalyReleaseMultFields(
       }),
     )
   }
+  return mods
+}
+
+/**
+ * 按异放结算上下文汇总异放倍率 / 倍率乘算修正，写到给定局外面板上。
+ * 调用方应传入触发者面板（非主 C、非强度提供者）。
+ */
+export function resolveAnomalyReleaseMultFields(
+  externalPanel: PanelStats,
+  ctx: PanelCalcContext,
+  triggerElement?: string,
+): Pick<PanelStats, 'anomalyReleaseMult' | 'anomalyReleaseMultFactor'> {
+  const skillCtx = buildReleaseMultSkillContext(ctx, triggerElement)
+  const mods = resolveReleaseMultMods(
+    collectReleaseMultEntries(ctx, skillCtx, triggerElement),
+    ctx,
+    skillCtx,
+    triggerElement,
+  )
 
   return {
     anomalyReleaseMult: externalPanel.anomalyReleaseMult + mods.anomalyReleaseMult,
@@ -2617,6 +2655,21 @@ export function resolveAnomalyReleaseMultFields(
       mods.anomalyReleaseMultFactor,
     ),
   }
+}
+
+/**
+ * 行级异放倍率覆盖（招式自带基础倍率）之外要补的「技能等级转模」增量。
+ * 只取 `kind === 'convert'` 且限定到本招式的效果；固定值视为与招式基础倍率重复，不计。
+ */
+export function resolveAnomalyReleaseSkillConvertMods(
+  ctx: PanelCalcContext,
+  triggerElement?: string,
+): BuffStatModifiers {
+  const skillCtx = buildReleaseMultSkillContext(ctx, triggerElement)
+  const entries = collectReleaseMultEntries(ctx, skillCtx, triggerElement, {
+    requireSkillTarget: true,
+  }).filter((item) => item.effect.kind === 'convert')
+  return resolveReleaseMultMods(entries, ctx, skillCtx, triggerElement)
 }
 
 export function computePanelStages(

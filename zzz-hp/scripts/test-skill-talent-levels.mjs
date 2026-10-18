@@ -96,6 +96,23 @@ check(
   50,
 )
 check(
+  '异放按等级缩放（CAL：225+20*(L-1)）',
+  resolveEffectiveBaseMult(
+    {
+      ...nanokaSkill,
+      damageType: 'anomalyRelease',
+      skillTypes: [],
+      radianceTalentKey: 'basic',
+      damagePercentage: 22500,
+      damagePercentageGrowth: 2000,
+      baseMult: 445,
+    },
+    { ...levels, basic: 14 },
+    3,
+  ).baseMult,
+  485,
+)
+check(
   '仅 followUp 不缩放',
   resolveEffectiveBaseMult(
     { ...nanokaSkill, skillTypes: ['followUp'], baseMult: 40 },

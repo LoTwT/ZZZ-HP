@@ -4,7 +4,7 @@
  */
 import { createDefaultExternalPanel } from '../src/types/calculatorPanel.ts'
 import { createEmptySelfTeamBuffs } from '../src/utils/calculatorUi.ts'
-import { resolveAnomalyReleaseMultFields } from '../src/utils/panelBuffCalc.ts'
+import { resolveAnomalyReleaseMultFields, resolveAnomalyReleaseSkillConvertMods } from '../src/utils/panelBuffCalc.ts'
 
 const mainAgentId = 'main-ether'
 const external = createDefaultExternalPanel()
@@ -151,6 +151,97 @@ if (convertResult.anomalyReleaseMult !== expectedConvert) {
   failed = true
 } else {
   console.log(`PASS 等级转模: 异放倍率% = ${convertResult.anomalyReleaseMult}`)
+}
+
+// 行级增量（方案 A）：只补「限定到本招式」的 convert，固定值不计，两块异放互不串味
+const basicSub = 'sub-basic'
+const ultSub = 'sub-ultimate'
+const rowFixed = {
+  id: 'row-fixed',
+  scope: ['skill', 'anomalyRelease'],
+  applyTarget: 'self',
+  kind: 'fixed',
+  stat: 'anomalyReleaseMult',
+  value: 205,
+  skillCategory: 'basic',
+  skillSubcategoryId: basicSub,
+  appliesToAnomaly: true,
+}
+const rowBasicConvert = {
+  id: 'row-basic-convert',
+  scope: ['skill', 'anomalyRelease'],
+  applyTarget: 'self',
+  kind: 'convert',
+  stat: 'anomalyReleaseMult',
+  value: 0,
+  skillCategory: 'basic',
+  skillSubcategoryId: basicSub,
+  appliesToAnomaly: true,
+  convert: {
+    from: 'skillLevelBasic',
+    panelSource: 'external',
+    ratioPercent: 2000,
+    defaultBase: null,
+    initialBase: 0,
+    cap: null,
+  },
+}
+const rowUltConvert = {
+  ...rowBasicConvert,
+  id: 'row-ult-convert',
+  skillCategory: 'ultimate',
+  skillSubcategoryId: ultSub,
+  convert: {
+    from: 'skillLevelChainUltimate',
+    panelSource: 'external',
+    ratioPercent: 2700,
+    defaultBase: null,
+    initialBase: 0,
+    cap: null,
+  },
+}
+const rowAgent = {
+  ...agent,
+  id: 'row-agent',
+  mindscapeBuffs: [
+    { ...createEmptySelfTeamBuffs(), effects: [rowFixed, rowBasicConvert, rowUltConvert] },
+  ],
+}
+const rowCtx = {
+  ...ctx,
+  teamSlots: [
+    { agentId: 'row-agent', rank: 0, wengineId: 'none', wengineRefine: 1, twoPieceDriveDiscId: 'none', fourPieceDriveDiscId: 'none' },
+  ],
+  agents: [rowAgent],
+  skillTalentLevelsByAgent: { 'row-agent': { basic: 12, chainUltimate: 12 } },
+}
+const basicCoords = {
+  damageKind: 'anomaly',
+  anomalySubKind: 'anomalyRelease',
+  element: '以太',
+  categoryId: 'basic',
+  subcategoryId: basicSub,
+  coords: [{ category: 'basic', subcategoryId: basicSub }],
+}
+const ultCoords = {
+  ...basicCoords,
+  categoryId: 'ultimate',
+  subcategoryId: ultSub,
+  coords: [{ category: 'ultimate', subcategoryId: ultSub }],
+}
+const basicOnly = resolveAnomalyReleaseSkillConvertMods(
+  { ...rowCtx, skillContext: basicCoords },
+  '以太',
+).anomalyReleaseMult
+const ultOnly = resolveAnomalyReleaseSkillConvertMods(
+  { ...rowCtx, skillContext: ultCoords },
+  '以太',
+).anomalyReleaseMult
+if (basicOnly !== 240 || ultOnly !== 324) {
+  console.error(`FAIL 行级等级转模: 期望 240 / 324，实际 ${basicOnly} / ${ultOnly}`)
+  failed = true
+} else {
+  console.log(`PASS 行级等级转模: 焚罪 +${basicOnly} / 烬火 +${ultOnly}`)
 }
 
 process.exit(failed ? 1 : 0)

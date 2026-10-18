@@ -77,6 +77,7 @@ import {
   hasExternalPanelForSlot,
   parseSourceKeySlotIndex,
   resolveAnomalyReleaseMultFields,
+  resolveAnomalyReleaseSkillConvertMods,
   type BuffSelectionState,
   type MultiSlotBuffSelection,
   type PanelCalcContext,
@@ -962,7 +963,7 @@ export function evaluateOptimalEventDetail(
 
   const sub = ctx.resolveSubcategory?.(hit.skill.buffAnchorId ?? null) ?? null
   // 倍率修正只写面板，避免与 resolveSkillMults 双重相乘
-  const effectiveSub =
+  let effectiveSub =
     sub && panelOverrides ? mergeSkillSubcategoryMultOverrides(sub, panelOverrides) : sub
 
   const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainPanel, includeDetails)
@@ -1043,11 +1044,24 @@ export function evaluateOptimalEventDetail(
         trigPanelCtx,
         evtPowerElement,
       )
+      // 行级覆盖来自招式基础倍率：固定值与基础倍率重复，只把「技能等级转模」增量补上去。
+      // 行级异放倍率也会被写进招式小类（小类非 0 时优先于面板），所以增量要同时补到
+      // 小类与面板：倍率区按小类算，结果明细的提示按面板显示。
+      const rowConvertMult = needReleaseMult
+        ? 0
+        : (resolveAnomalyReleaseSkillConvertMods(trigPanelCtx, evtPowerElement)
+            .anomalyReleaseMult ?? 0)
+      if (rowConvertMult && effectiveSub) {
+        effectiveSub = {
+          ...effectiveSub,
+          anomalyReleaseMult: effectiveSub.anomalyReleaseMult + rowConvertMult,
+        }
+      }
       anomalyTriggerPanel = {
         ...anomalyTriggerPanel,
         anomalyReleaseMult: needReleaseMult
           ? releaseFields.anomalyReleaseMult
-          : anomalyTriggerPanel.anomalyReleaseMult,
+          : anomalyTriggerPanel.anomalyReleaseMult + rowConvertMult,
         anomalyReleaseMultFactor: needReleaseFactor
           ? releaseFields.anomalyReleaseMultFactor
           : anomalyTriggerPanel.anomalyReleaseMultFactor,
@@ -1658,6 +1672,11 @@ function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
     JSON.stringify(ctx.driveDiscSelection),
     JSON.stringify(ctx.enemyInput),
     JSON.stringify(ctx.panelContext.skillContext),
+    /**
+     * 技能等级表必须入签名：异放「技能等级转模」按等级折算，改等级后签名不变会命中旧缓存，
+     * 表现为「改了普攻/连携等级，伤害一动不动」（`dev-docs/convert-from-skill-level.md`）。
+     */
+    JSON.stringify(ctx.panelContext.skillTalentLevelsByAgent ?? {}),
     JSON.stringify(ctx.extraGains ?? []),
     JSON.stringify(ctx.panelContext.activeSlotPanels ?? {}),
     JSON.stringify(ctx.panelContext.convertSlotPanels ?? {}),

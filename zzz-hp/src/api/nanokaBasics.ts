@@ -330,6 +330,8 @@ export interface NanokaSkillPlanCreate {
   note: string
   damagePercentage: number
   damagePercentageGrowth: number
+  /** 异放/耀变等按技能等级缩放时的大类键 */
+  radianceTalentKey?: string | null
 }
 
 /** 计划里「可覆盖倍率」的一条：只改倍率字段，其余（元素 / 类型 / 锚点 / 备注）保留 */
@@ -362,10 +364,20 @@ export interface NanokaSkillPlanUnmatched {
   baseMult: number
 }
 
+/** 计划里「人工建/手调的异常类招式」：不覆盖，只提示 */
+export interface NanokaSkillPlanManual {
+  id: string
+  name: string
+  damageType: string
+  localBaseMult: number
+  importedBaseMult: number
+}
+
 export interface NanokaSkillPlan {
   create: NanokaSkillPlanCreate[]
   overwrite: NanokaSkillPlanOverwrite[]
   skipSame: NanokaSkillPlanSame[]
+  existingManual: NanokaSkillPlanManual[]
   unmatchedLocal: NanokaSkillPlanUnmatched[]
 }
 

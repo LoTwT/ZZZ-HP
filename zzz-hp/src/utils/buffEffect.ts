@@ -558,13 +558,26 @@ function singleScopeMatchesContext(
   if (scope === 'general') return true
 
   if (scope === 'skill') {
-    if (ctx.damageKind === 'anomaly' && effect.appliesToAnomaly !== true) return false
-    const targets = getEffectSkillTargets(effect)
-    if (!targets.length) return false
-    return targets.some((target) => skillTargetMatchesContext(target, ctx))
+    return effectTargetsSkill(effect, ctx)
   }
 
   return false
+}
+
+/**
+ * 招式限定判定：效果的 `skillTargets` 是否命中当前结算招式。
+ * 与 `effectMatchesContext` 的区别是**不看 scope 数组**——用于「必须限定到本招式」的调用方
+ * （例如行级异放倍率只补本招式对应的技能等级转模，避免同角色多个块互相串味）。
+ */
+export function effectTargetsSkill(
+  effect: BuffEffect,
+  ctx: SkillCalcContext | null | undefined,
+): boolean {
+  if (!ctx) return false
+  if (ctx.damageKind === 'anomaly' && effect.appliesToAnomaly !== true) return false
+  const targets = getEffectSkillTargets(effect)
+  if (!targets.length) return false
+  return targets.some((target) => skillTargetMatchesContext(target, ctx))
 }
 
 /**

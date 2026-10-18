@@ -26,7 +26,9 @@ import {
   extractDamageSegments,
   mapSkillTypes,
   normalizeSkillName,
+  parseCalFormula,
   planAgentSkillImport,
+  resolveParamDamageType,
   sameOptionalNumber,
   sameSkillTypes,
   shortParamLabel,
@@ -124,6 +126,133 @@ test('sameSkillTypes / sameOptionalNumber：忽略顺序，空值等价', () => 
   assert.equal(sameOptionalNumber(1, 2), false)
 })
 
+// ---------------------------------------------------------------- 异常类倍率（CAL 模板）
+
+test('resolveParamDamageType：异放/耀变/紊乱/乱流 → 对应异常类型', () => {
+  assert.equal(resolveParamDamageType('伤害倍率'), 'direct')
+  assert.equal(resolveParamDamageType('一段伤害倍率'), 'direct')
+  assert.equal(resolveParamDamageType('失衡倍率'), null)
+  assert.equal(resolveParamDamageType('异放倍率'), 'anomalyRelease')
+  assert.equal(resolveParamDamageType('耀变倍率'), 'radiance')
+  assert.equal(resolveParamDamageType('紊乱倍率'), 'disorder')
+  assert.equal(resolveParamDamageType('乱流倍率'), 'turbulence')
+  assert.equal(resolveParamDamageType('异放伤害倍率'), 'anomalyRelease')
+  assert.equal(resolveParamDamageType('能量消耗'), null)
+  assert.equal(resolveParamDamageType(''), null)
+  // 未识别的异常类参数不能当直伤导入
+  assert.equal(resolveParamDamageType('属性异常伤害倍率'), null)
+})
+
+test('parseCalFormula：只解析 {CAL:...}，拒绝非四则运算', () => {
+  // 菲欧妮「焚罪」异放：225+20*(L-1) → L1 225 / L12 445
+  const release = parseCalFormula('{CAL:225+20*(AvatarSkillLevel(0)-1),1,2}%')
+  assert.equal(release.evaluate(1), 225)
+  assert.equal(release.evaluate(12), 445)
+  assert.equal(release.evaluate(14), 485)
+  // 蕾米埃尔「垂虹」耀变：200+L*10 → L12 320
+  const radiance = parseCalFormula('{CAL:200+AvatarSkillLevel(0)*10,1,2}%')
+  assert.equal(radiance.evaluate(1), 210)
+  assert.equal(radiance.evaluate(12), 320)
+  // 非 CAL / 非法字符
+  assert.equal(parseCalFormula('40点'), null)
+  assert.equal(parseCalFormula('{CAL:alert(1),1,2}'), null)
+})
+
+test('extractDamageSegments：直伤 + 异放双段，异常段沿用招式名并带 talentKey', () => {
+  const detail = {
+    skill: {
+      basic: {
+        description: [
+          {
+            name: '普通攻击：焚罪',
+            param: [
+              {
+                name: '伤害倍率',
+                desc: '{Skill:1641005, Prop:1001}',
+                param: {
+                  1641005: { damage_percentage: 54730, damage_percentage_growth: 4980 },
+                },
+              },
+              {
+                name: '失衡倍率',
+                desc: '{Skill:1641005, Prop:1002}',
+                param: { 1641005: { main: 27500, growth: 1250 } },
+              },
+              { name: '异放倍率', desc: '{CAL:225+20*(AvatarSkillLevel(0)-1),1,2}%', param: {} },
+            ],
+          },
+        ],
+      },
+    },
+  }
+  const segments = extractDamageSegments(detail, { level: 12 })
+  assert.equal(segments.length, 2)
+  const direct = segments.find((s) => s.damageType === 'direct')
+  assert.equal(direct.displayName, '普通攻击：焚罪')
+  assert.equal(direct.baseMult, 1095.1)
+  assert.deepEqual(direct.skillTypes, ['basic'])
+  const release = segments.find((s) => s.damageType === 'anomalyRelease')
+  assert.equal(release.displayName, '普通攻击：焚罪')
+  assert.equal(release.baseMult, 445)
+  assert.equal(release.damagePercentage, 22500)
+  assert.equal(release.damagePercentageGrowth, 2000)
+  assert.deepEqual(release.skillTypes, [])
+  assert.equal(release.talentKey, 'basic')
+  assert.equal(release.calExpression, '225+20*(AvatarSkillLevel(0)-1)')
+})
+
+test('planAgentSkillImport：异常段不覆盖人工行；缺失时按类型新建', () => {
+  const detail = {
+    skill: {
+      basic: {
+        description: [
+          {
+            name: '普通攻击：焚罪',
+            param: [
+              { name: '异放倍率', desc: '{CAL:225+20*(AvatarSkillLevel(0)-1),1,2}%', param: {} },
+            ],
+          },
+        ],
+      },
+    },
+  }
+  const subcategories = [{ id: 'sub-basic', agentId: 'pheony', name: '普通攻击：焚罪' }]
+  const manual = {
+    id: 'manual-rel',
+    agentId: 'pheony',
+    name: '普通攻击：焚罪·异放',
+    damageType: 'anomalyRelease',
+    buffAnchorId: 'sub-basic',
+    baseMult: 205,
+    multSource: null,
+  }
+  const withManual = planAgentSkillImport({
+    agent: { id: 'pheony', element: '火' },
+    detail,
+    existingSkills: [manual],
+    subcategories,
+  })
+  assert.equal(withManual.create.length, 0)
+  assert.equal(withManual.overwrite.length, 0)
+  assert.equal(withManual.existingManual.length, 1)
+  assert.equal(withManual.existingManual[0].id, 'manual-rel')
+  assert.equal(withManual.existingManual[0].importedBaseMult, 445)
+
+  const created = planAgentSkillImport({
+    agent: { id: 'pheony', element: '火' },
+    detail,
+    existingSkills: [],
+    subcategories,
+  })
+  assert.equal(created.create.length, 1)
+  const doc = created.create[0]
+  assert.equal(doc.damageType, 'anomalyRelease')
+  assert.equal(doc.name, '普通攻击：焚罪')
+  assert.equal(doc.baseMult, 445)
+  assert.equal(doc.buffAnchorId, 'sub-basic')
+  assert.equal(doc.radianceTalentKey, 'basic')
+})
+
 // ---------------------------------------------------------------- 段抽取（本地缓存夹具）
 
 test('extractDamageSegments：1041「11号」21 段，倍率与 CLI dry-run 逐条对齐', { skip: SKIP }, () => {
@@ -175,7 +304,7 @@ test('extractDamageSegments：1611 克拉蕾 25 段（与 CLI dry-run 一致）'
   assert.equal(byName.get('支援突击：血华誓·琢形'), 1713.2)
 })
 
-test('extractDamageSegments：1631 赛维里安 / 1641 菲欧妮 各 17 段', { skip: SKIP }, () => {
+test('extractDamageSegments：赛维里安 17 段 / 菲欧妮 19 段（含 2 条异放）', { skip: SKIP }, () => {
   const severian = extractDamageSegments(readFixture('char', '1631'), { level: 12 })
   assert.equal(severian.length, 17)
   const sevByName = baseMultByName(severian)
@@ -185,11 +314,17 @@ test('extractDamageSegments：1631 赛维里安 / 1641 菲欧妮 各 17 段', { 
   assert.equal(sevByName.get('登场技：清场时刻'), 309.2)
 
   const pheony = extractDamageSegments(readFixture('char', '1641'), { level: 12 })
-  assert.equal(pheony.length, 17)
+  assert.equal(pheony.length, 19)
   const pheByName = baseMultByName(pheony)
   assert.equal(pheByName.get('普通攻击：裁生·一段'), 32.1)
   assert.equal(pheByName.get('终结技：万死重明'), 3627.8)
   assert.equal(pheByName.get('支援突击：再生疗法'), 853.3)
+  // 异常类段：异放倍率来自 desc 的 CAL 模板（L12：焚罪 445 / 烬火追魂 597）
+  const release = pheony.filter((seg) => seg.damageType === 'anomalyRelease')
+  assert.equal(release.length, 2)
+  assert.deepEqual(release.map((seg) => seg.baseMult).sort((a, b) => a - b), [445, 597])
+  assert.ok(release.every((seg) => seg.skillTypes.length === 0))
+  assert.ok(release.every((seg) => seg.talentKey === 'basic' || seg.talentKey === 'chainUltimate'))
 })
 
 test('extractDamageSegments：detail 缺失 / 空对象返回空数组（不抛）', () => {
