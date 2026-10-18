@@ -2406,10 +2406,14 @@ export function applyBuffModsToPanel(
     // 冲击力不进乘区、也没有任何增益改它：原样带过去，局内转模（青衣）才读得到
     impact: externalPanel.impact ?? 0,
     mastery: externalPanel.mastery + mods.mastery,
-    anomalyControl:
+    // 异常掌控是**唯一保留整数**的属性：局外已是整数，加上固定值/百分比后再舍弃小数
+    //（游戏口径是「舍弃」不是四舍五入）。不 floor 的话小数会流进转模，
+    // 算出 (209.76 − 155) × 0.7 = 38.332 这种暴击率（2026-10-18 用户指出）。
+    anomalyControl: Math.floor(
       externalPanel.anomalyControl +
-      mods.anomalyControl +
-      (baseAnomalyControl * mods.anomalyControlPercent) / 100,
+        mods.anomalyControl +
+        (baseAnomalyControl * mods.anomalyControlPercent) / 100,
+    ),
     energyRegen:
       externalPanel.energyRegen +
       (baseEnergyRegen * mods.energyRegen) / 100 +

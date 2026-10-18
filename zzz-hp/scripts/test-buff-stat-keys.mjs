@@ -22,9 +22,17 @@ import {
 } from '../src/utils/buffEffect.ts'
 import {
   BUFF_STAT_FIELDS,
+  createEmptyAgentBasePanel,
   createEmptyBuffStatModifiers,
   mergeBuffStatModifiers,
 } from '../src/utils/calculatorUi.ts'
+import {
+  createEmptyAffixCounts,
+  createEmptyAffixDriveDiscMainStats,
+} from '../src/types/calculatorPanel.ts'
+import {
+  computeExternalPanelFromAffixes,
+} from '../src/utils/affixPanelCalc.ts'
 import { computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
 import { computeDamageResult } from '../src/utils/damageCalc.ts'
 import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDisplay.ts'
@@ -347,6 +355,81 @@ console.log('\n[8] 子类暴击互相独立：异常暴击不是父类，不会�
   check('只有异常暴击 → 紊乱暴击区 = 1', byKind('disorder').disorderFullCritZone === 1, `${byKind('disorder').disorderFullCritZone}`)
   const anomalyHit = byKind('anomaly')
   check('只有异常暴击 → 异常暴击区 = 1 + 100% = 2（自己的生效）', anomalyHit.anomalyFullCritZone === 2, `${anomalyHit.anomalyFullCritZone}`)
+}
+
+console.log('\n[9] 异常掌控是唯一保留整数的属性（舍弃小数，不是四舍五入）')
+{
+  // 局外：94 × (1 + 8%) = 101.52 → 101（floor，不是 round 到 101.52）
+  const externalFromAffixes = computeExternalPanelFromAffixes({
+    agentBase: { ...createEmptyAgentBasePanel(), anomalyControl: 94, energyRegen: 1.2 },
+    wengineBaseAtk: 0,
+    wengineAdvanced: {
+      critRate: 0,
+      critDmg: 0,
+      anomalyControlPercent: 8,
+      energyRegen: 8,
+      mastery: 0,
+      externalAtkPercent: 0,
+      externalHpPercent: 0,
+      externalDefPercent: 0,
+      penRate: 0,
+    },
+    affixCounts: createEmptyAffixCounts(),
+    driveDiscSelection: { twoPieceDriveDiscId: 'none', fourPieceDriveDiscId: 'none' },
+    driveDiscMainStats: createEmptyAffixDriveDiscMainStats(),
+    driveDiscs: [],
+  })
+  check(
+    '局外 94 × 1.08 = 101.52 → 异常掌控 101',
+    externalFromAffixes.anomalyControl === 101,
+    `${externalFromAffixes.anomalyControl}`,
+  )
+  check(
+    '局外 异常掌控 是整数（Number.isInteger）',
+    Number.isInteger(externalFromAffixes.anomalyControl),
+    `${externalFromAffixes.anomalyControl}`,
+  )
+  // 对照：能量回复效率**不**取整（只有异常掌控保留整数）；1.2 + 1.2×8% = 1.296 → 两位 1.3
+  check(
+    '能量回复效率不取整（1.296 → 1.3，而不是 1）',
+    Math.abs(externalFromAffixes.energyRegen - 1.3) < 1e-9,
+    `${externalFromAffixes.energyRegen}`,
+  )
+
+  // 局内：182 + 94×8% = 189.52 → 189
+  const ctxPercent = makePanelCtx({
+    agents: [testAgent('a', { mindscapeBuffs: mindscapeWithEffects([fixedEffect('eff-acp', 'anomalyControlPercent', 8)]) })],
+  })
+  const buffed = computeFinalPanel(makePanel({ anomalyControl: 182 }), ctxPercent).finalPanel
+  check('局内 182 + 94×8% = 189.52 → 189', buffed.anomalyControl === 189, `${buffed.anomalyControl}`)
+  check('局内 异常掌控 是整数', Number.isInteger(buffed.anomalyControl), `${buffed.anomalyControl}`)
+
+  // 固定值 + 百分比：182 + 7 + 94×8% = 196.52 → 196
+  const ctxBoth = makePanelCtx({
+    agents: [
+      testAgent('a', {
+        mindscapeBuffs: mindscapeWithEffects([
+          fixedEffect('eff-acf', 'anomalyControl', 7),
+          fixedEffect('eff-acp', 'anomalyControlPercent', 8),
+        ]),
+      }),
+    ],
+  })
+  const both = computeFinalPanel(makePanel({ anomalyControl: 182 }), ctxBoth).finalPanel
+  check('局内 182+7+7.52 = 196.52 → 196', both.anomalyControl === 196, `${both.anomalyControl}`)
+
+  // 本来就是整数时不受影响
+  const plain = computeFinalPanel(makePanel({ anomalyControl: 255 }), makePanelCtx()).finalPanel
+  check('本来就是整数 255 → 仍 255', plain.anomalyControl === 255, `${plain.anomalyControl}`)
+
+  // 转模输入因此永远是整数：209.76 这种值不可能再出现
+  const dirty = 209.76
+  const clean = Math.floor(dirty)
+  check(
+    '转模输入不再带小数（209.76 → 209，输出 0.7 倍后只有一位小数）',
+    Number.isInteger(clean) && Math.abs(((clean - 155) * 70) / 100 - 37.8) < 1e-9,
+    `${clean} → ${((clean - 155) * 70) / 100}`,
+  )
 }
 
 console.log(`\n${failed ? `❌ ${failed} failed, ${passed} passed` : `✅ all passed（${passed}）`}`)
