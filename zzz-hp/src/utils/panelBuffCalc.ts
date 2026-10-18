@@ -2560,7 +2560,7 @@ export function resolveAnomalyReleaseMultFields(
   }
 
   const collected = collectAllBuffEffects({ ...ctx, skillContext: skillCtx })
-  const releaseMultEffects: BuffEffect[] = []
+  const releaseMultEntries: CollectedEffect[] = []
   for (const item of collected) {
     const effect = item.effect
     if (!RELEASE_MULT_STATS.has(effect.stat)) continue
@@ -2572,11 +2572,19 @@ export function resolveAnomalyReleaseMultFields(
       const count = countTeamProfession(ctx.teamSlots, ctx.agents, effect.teamProfession.trim())
       if (!effectMatchesTeamProfessionGate(effect, count)) continue
     }
-    releaseMultEffects.push(effect)
+    releaseMultEntries.push(item)
+  }
+
+  // 等级转模按「效果来源角色」取等级：按提供者槽位分组，各组带各自的技能等级表
+  const effectsByProviderSlot = new Map<number | null, BuffEffect[]>()
+  for (const item of releaseMultEntries) {
+    const list = effectsByProviderSlot.get(item.providerSlot)
+    if (list) list.push(item.effect)
+    else effectsByProviderSlot.set(item.providerSlot, [item.effect])
   }
 
   const releaseRowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
-  const mods = resolveEffectsToMods(releaseMultEffects, {
+  const effectOptions = {
     ctx: skillCtx,
     element: triggerElement,
     stacksByEffectId:
@@ -2586,7 +2594,21 @@ export function resolveAnomalyReleaseMultFields(
     panelSourceValues: ctx.panelSourceValues,
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
-  })
+  }
+  let mods = createEmptyBuffStatModifiers()
+  for (const [providerSlot, effects] of effectsByProviderSlot) {
+    const slotAgentId =
+      providerSlot != null ? ctx.teamSlots[providerSlot]?.agentId : undefined
+    mods = mergeBuffStatModifiers(
+      mods,
+      resolveEffectsToMods(effects, {
+        ...effectOptions,
+        skillTalentLevels: slotAgentId
+          ? ctx.skillTalentLevelsByAgent?.[slotAgentId]
+          : undefined,
+      }),
+    )
+  }
 
   return {
     anomalyReleaseMult: externalPanel.anomalyReleaseMult + mods.anomalyReleaseMult,
