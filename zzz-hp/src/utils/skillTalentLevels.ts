@@ -190,7 +190,11 @@ export function resolveEffectiveBaseMult(
     skill.multSource === 'nanoka' &&
     (skill.damageType === 'direct' ||
       skill.damageType === 'sharpen' ||
-      skill.damageType === 'radiance') &&
+      skill.damageType === 'radiance' ||
+      // 异放 / 紊乱 / 乱流：nanoka 的 CAL 模板按技能等级给倍率（属性异常仍不缩放）
+      skill.damageType === 'anomalyRelease' ||
+      skill.damageType === 'disorder' ||
+      skill.damageType === 'turbulence') &&
     talentKey != null &&
     Number.isFinite(Number(skill.damagePercentage))
 

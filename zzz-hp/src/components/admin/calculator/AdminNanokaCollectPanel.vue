@@ -1028,7 +1028,7 @@ async function collectSkillRow(row: SkillGapRow, signal: AbortSignal) {
     const payload = { nanokaId: row.nanokaId, meta: row.meta, detail }
     if (skillPreviewOnly.value) {
       const { result } = await collectNanokaSkills(payload)
-      row.result = `将新建 ${result.plan.create.length} / 覆盖倍率 ${result.plan.overwrite.length} / 已一致 ${result.plan.skipSame.length}（未写入）`
+      row.result = `将新建 ${result.plan.create.length} / 覆盖倍率 ${result.plan.overwrite.length} / 已一致 ${result.plan.skipSame.length} / 人工异常招式未覆盖 ${result.plan.existingManual.length}（未写入）`
       row.status = 'done'
     } else {
       const { result } = await applyNanokaSkills(payload)
