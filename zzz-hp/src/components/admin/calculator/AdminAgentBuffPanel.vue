@@ -5,6 +5,7 @@ import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffect
 import AdminCalculatorAvatarField from '@/components/admin/calculator/AdminCalculatorAvatarField.vue'
 import AdminNumericStatFieldGrid from '@/components/admin/calculator/AdminNumericStatFieldGrid.vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import { isStaleWriteError } from '@/api/calculatorBuffs'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type { AgentBasePanel, AgentBuffDoc, AgentMindscapeRankBuffs, SupportStatNeed } from '@/types/calculator'
 import type { AgentBuffEditSectionId } from '@/constants/agentBuffEditNav'
@@ -34,6 +35,11 @@ const selectedId = ref(agents.value[0]?.id ?? '')
 const message = ref('')
 const error = ref('')
 const saving = ref(false)
+const refreshing = ref(false)
+/** 本次保存被并发保护拦下（库里这行已变）：提示刷新，而不是假装保存成功 */
+const staleConflict = ref(false)
+/** 加载表单时该行库里的 updated_at：保存时作为乐观锁基准发给后端 */
+const formUpdatedAt = ref<string | undefined>(undefined)
 const activeMindscapeRank = ref(0)
 const avatarFieldRef = ref<InstanceType<typeof AdminCalculatorAvatarField> | null>(null)
 
@@ -107,6 +113,8 @@ function loadForm(agent: AgentBuffDoc) {
     mindscapeForm: loadMindscapeForm(agent.mindscapeBuffs),
     mindscapeNotes: normalizeMindscapeNotes(agent.mindscapeNotes),
   }
+  // 记住这份副本是「哪一版」：保存时据此判断库里有没有被别的东西改过
+  formUpdatedAt.value = agent.updatedAt
   activeMindscapeRank.value = 0
   void nextTick(() => {
     avatarFieldRef.value?.setAvatarImage(agent.avatar_image)
@@ -125,6 +133,7 @@ function resetForm() {
     mindscapeForm: createEmptyMindscapeBuffs(),
     mindscapeNotes: createEmptyMindscapeNotes(),
   }
+  formUpdatedAt.value = undefined
   activeMindscapeRank.value = 0
   selectedId.value = ''
   avatarFieldRef.value?.clearAvatarImage()
@@ -170,6 +179,7 @@ function buildMindscapeBuffs(): AgentMindscapeRankBuffs[] {
 async function saveAgent() {
   message.value = ''
   error.value = ''
+  staleConflict.value = false
 
   const id = form.value.id.trim()
   const name = form.value.name.trim()
@@ -206,19 +216,64 @@ async function saveAgent() {
       basePanel: { ...form.value.basePanel } as AgentBasePanel,
       mindscapeNotes: form.value.mindscapeNotes.map((item) => item.trim()),
       mindscapeBuffs: buildMindscapeBuffs(),
+      // 乐观锁基准：这份表单是从哪一版加载的（新建时为空，后端不校验）
+      ...(formUpdatedAt.value ? { updatedAt: formUpdatedAt.value } : {}),
     }
 
-    if (isEditing && selectedId.value !== id) {
+    const saved = await store.upsertAgent(doc)
+    // 改 ID 的场景：**保存成功之后**才删旧行。顺序不能反 —— 反了会被 409 拦下时
+    // 已经把旧行删掉，整条角色数据就没了。
+    if (isEditing && selectedId.value !== id && selectedId.value) {
       await store.deleteAgent(selectedId.value)
     }
-
-    await store.upsertAgent(doc)
     selectedId.value = id
+    formUpdatedAt.value = saved.updatedAt
     message.value = isEditing ? `已保存角色「${name}」` : `已新增角色「${name}」`
   } catch (err) {
+    if (isStaleWriteError(err)) {
+      // 并发保护命中：库里的行已经被别的东西改过，本次整份覆盖被拒绝。
+      // 千万不要提示「保存成功」，也不要假装本地已是最新。
+      error.value = '这条数据已被其它操作更新，本次保存已取消。请刷新后重试。'
+      staleConflict.value = true
+      message.value = ''
+      return
+    }
     error.value = err instanceof Error ? err.message : '保存失败'
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 强制重新拉取（loadAll(true) 绕开缓存）→ 用最新数据重填表单。
+ * 这是「刷新」入口的唯一实现：面板顶部按钮和并发提示里的按钮都走这里。
+ */
+async function refreshFromServer() {
+  refreshing.value = true
+  try {
+    await store.loadAll(true)
+    const targetId = selectedId.value || form.value.id
+    const latest = targetId ? agents.value.find((item) => item.id === targetId) : agents.value[0]
+    error.value = ''
+    staleConflict.value = false
+    if (latest) {
+      selectedId.value = latest.id
+      loadForm(latest)
+      message.value = `已刷新角色「${latest.name}」的最新数据`
+      return
+    }
+    if (targetId) {
+      // 这行已经在库里被删掉了，表单里留着也没有可写回的目标
+      resetForm()
+      message.value = ''
+      error.value = '这条数据已在库里被删除，无法继续编辑。'
+      return
+    }
+    message.value = '已刷新'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '刷新失败'
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -272,6 +327,17 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
     <header class="panel-header">
       <h1 class="panel-title">编辑角色增益</h1>
       <p class="panel-desc">影画增益使用固定数值条目，主副定位在伤害计算时选择。</p>
+      <div class="panel-refresh">
+        <button
+          type="button"
+          class="secondary-btn"
+          :disabled="refreshing || saving"
+          title="从数据库强制重新拉取（丢弃表单里未保存的改动）"
+          @click="refreshFromServer"
+        >
+          {{ refreshing ? '刷新中...' : '刷新数据' }}
+        </button>
+      </div>
     </header>
 
     <div class="editor-layout">
@@ -421,7 +487,18 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
           />
         </section>
 
-        <p v-if="error" class="form-error">{{ error }}</p>
+        <p v-if="error" class="form-error">
+          {{ error }}
+          <button
+            v-if="staleConflict"
+            type="button"
+            class="secondary-btn inline-refresh-btn"
+            :disabled="refreshing"
+            @click="refreshFromServer"
+          >
+            {{ refreshing ? '刷新中...' : '刷新' }}
+          </button>
+        </p>
         <p v-if="message" class="form-success">{{ message }}</p>
 
         <div class="actions">
@@ -441,5 +518,17 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
 <style scoped>
 .editor-anchor {
   scroll-margin-top: 1rem;
+}
+
+.panel-refresh {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+
+.inline-refresh-btn {
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
 }
 </style>
