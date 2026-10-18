@@ -86189,88 +86189,6 @@
                 }
               ],
               "enabledDefault": true
-            },
-            {
-              "id": "blk-mvcdmyj4-z6zhs8",
-              "name": "普通攻击：焚罪",
-              "note": "[燔焰]足够时，消耗90点[燔焰]，长按 Icon_Normal 发动：\n菲欧妮掷出武器，对前方范围的敌人造成大量火属性伤害；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算445.0%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n招式发动期间拥有无敌效果。",
-              "effects": [
-                {
-                  "id": "eff-mvcdmyj4-defh1u",
-                  "origin": "",
-                  "scope": [
-                    "skill",
-                    "anomalyRelease"
-                  ],
-                  "applyTarget": "self",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillCategory": "basic",
-                  "skillSubcategoryId": "pheony-basic-mvcdonw3",
-                  "skillTargets": [
-                    {
-                      "category": "basic",
-                      "subcategoryId": "pheony-basic-mvcdonw3"
-                    }
-                  ],
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "anomalyReleaseMult",
-                  "value": 445,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                }
-              ],
-              "enabledDefault": true
-            },
-            {
-              "id": "blk-mvcdtts4-xf9685",
-              "name": "烬火追魂",
-              "note": "当菲欧妮处于[生竭]状态时，下一次普通换入、快速支援、招架支援换入前场时发动：\n周身环绕火焰，对周围敌人造成火属性伤害，视为[终结技]伤害，并退出[生竭]状态，回复[终结技：万死重明]消耗的所有生命值，并额外回复自身10%生命值上限的生命值；\n终结一击命中处于冰属性异常状态、以太异常状态、电属性异常状态、火属性异常状态、物理属性异常状态、风属性异常状态的敌人时，触发1次[异放]效果，结算597.0%倍率的对应属性的属性异常伤害；\n该次[异放]效果触发暴击时，其暴击伤害额外提升40%；\n当处于[生竭]状态的菲欧妮通过[连携技：绝处逢生]、[终结技：万死重明]入场时，也会触发上述生命值回复与[异放]效果；\n招式发动期间拥有无敌效果，点按 Icon_Normal 可衔接第三段[普通攻击]。",
-              "effects": [
-                {
-                  "id": "eff-mvcdtts4-7lksfs",
-                  "origin": "",
-                  "scope": [
-                    "skill",
-                    "anomalyRelease"
-                  ],
-                  "applyTarget": "self",
-                  "applySituation": "global",
-                  "applyProfession": null,
-                  "teamProfession": null,
-                  "teamProfessionValues": null,
-                  "teamProfessionMinCount": null,
-                  "skillCategory": "ultimate",
-                  "skillSubcategoryId": "pheony-ultimate-mvcdqvzi",
-                  "skillTargets": [
-                    {
-                      "category": "ultimate",
-                      "subcategoryId": "pheony-ultimate-mvcdqvzi"
-                    }
-                  ],
-                  "elementFilter": "all",
-                  "kind": "fixed",
-                  "stat": "anomalyReleaseMult",
-                  "value": 597,
-                  "stackable": false,
-                  "maxStacks": 1,
-                  "valuePerStack": 0,
-                  "defaultStacks": 1,
-                  "appliesToAnomaly": true,
-                  "enabledDefault": true,
-                  "note": ""
-                }
-              ],
-              "enabledDefault": true
             }
           ],
           "effects": [
@@ -86429,72 +86347,6 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "appliesToAnomaly": false,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-mvcdmyj4-defh1u",
-              "origin": "",
-              "scope": [
-                "skill",
-                "anomalyRelease"
-              ],
-              "applyTarget": "self",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillCategory": "basic",
-              "skillSubcategoryId": "pheony-basic-mvcdonw3",
-              "skillTargets": [
-                {
-                  "category": "basic",
-                  "subcategoryId": "pheony-basic-mvcdonw3"
-                }
-              ],
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "anomalyReleaseMult",
-              "value": 445,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
-              "enabledDefault": true,
-              "note": ""
-            },
-            {
-              "id": "eff-mvcdtts4-7lksfs",
-              "origin": "",
-              "scope": [
-                "skill",
-                "anomalyRelease"
-              ],
-              "applyTarget": "self",
-              "applySituation": "global",
-              "applyProfession": null,
-              "teamProfession": null,
-              "teamProfessionValues": null,
-              "teamProfessionMinCount": null,
-              "skillCategory": "ultimate",
-              "skillSubcategoryId": "pheony-ultimate-mvcdqvzi",
-              "skillTargets": [
-                {
-                  "category": "ultimate",
-                  "subcategoryId": "pheony-ultimate-mvcdqvzi"
-                }
-              ],
-              "elementFilter": "all",
-              "kind": "fixed",
-              "stat": "anomalyReleaseMult",
-              "value": 597,
-              "stackable": false,
-              "maxStacks": 1,
-              "valuePerStack": 0,
-              "defaultStacks": 1,
-              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -279113,6 +278965,44 @@
       "settlementMult": 0,
       "multSource": null,
       "element": "",
+      "ownerGroupId": null,
+      "note": ""
+    },
+    {
+      "id": "sk-pheony-nk-1641005-异放倍率",
+      "agentId": "pheony",
+      "name": "普通攻击：焚罪",
+      "source": "preset",
+      "damageType": "anomalyRelease",
+      "skillTypes": [],
+      "buffAnchorId": "pheony-basic-mvcdonw3",
+      "baseMult": 445,
+      "baseMultFactor": 100,
+      "settlementMult": 0,
+      "multSource": "nanoka",
+      "damagePercentage": 22500,
+      "damagePercentageGrowth": 2000,
+      "radianceTalentKey": "basic",
+      "element": "火",
+      "ownerGroupId": null,
+      "note": ""
+    },
+    {
+      "id": "sk-pheony-nk-1641019-异放倍率",
+      "agentId": "pheony",
+      "name": "烬火追魂",
+      "source": "preset",
+      "damageType": "anomalyRelease",
+      "skillTypes": [],
+      "buffAnchorId": "pheony-ultimate-mvcdqvzi",
+      "baseMult": 597,
+      "baseMultFactor": 100,
+      "settlementMult": 0,
+      "multSource": "nanoka",
+      "damagePercentage": 30000,
+      "damagePercentageGrowth": 2700,
+      "radianceTalentKey": "chainUltimate",
+      "element": "火",
       "ownerGroupId": null,
       "note": ""
     },
