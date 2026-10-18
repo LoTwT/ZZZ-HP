@@ -88,7 +88,11 @@ export function pickEventDamage(
     if (critMode === 'fullCrit') return result.anomalyExpectedFullCrit
     return result.anomalyExpected
   }
-  if (kind === 'disorder') return result.disorderExpected
+  if (kind === 'disorder') {
+    if (critMode === 'noCrit') return result.disorderExpectedNoCrit
+    if (critMode === 'fullCrit') return result.disorderExpectedFullCrit
+    return result.disorderExpected
+  }
   if (kind === 'anomalyRelease') {
     if (critMode === 'noCrit') return result.anomalyReleaseExpectedNoCrit
     if (critMode === 'fullCrit') return result.anomalyReleaseExpectedFullCrit
@@ -106,7 +110,8 @@ export function pickEventDamage(
 
 /**
  * 流程卡外侧汇总用暴击模式：
- * 异常 / 乱流 / 异放固定必暴击；直伤、紊乱、耀变仍跟随条目 critMode。
+ * 异常 / 紊乱 / 乱流 / 异放 / 耀变固定必暴击（五类异常都有各自的暴击区）；
+ * 只有直伤仍跟随条目 critMode。
  */
 export function resolveFlowHitCritMode(
   damageType: DamageEventKind,
@@ -114,8 +119,10 @@ export function resolveFlowHitCritMode(
 ): DamageEventCritMode {
   if (
     damageType === 'anomaly' ||
+    damageType === 'disorder' ||
     damageType === 'turbulence' ||
-    damageType === 'anomalyRelease'
+    damageType === 'anomalyRelease' ||
+    damageType === 'radiance'
   ) {
     return 'fullCrit'
   }

@@ -145,8 +145,18 @@ export function buildAlignedAnomalyFormulaGroups(
       { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       { label: '紊乱倍率区', value: formatFormulaNumber(p.disorderZone), tipsKey: 'disorderZone' },
       { label: '紊乱增伤区', value: formatFormulaNumber(p.disorderDmgBonusZone), tipsKey: 'disorderDmgBonusZone' },
+      // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
+      {
+        label: '紊乱暴击区',
+        value: `1 / ${formatFormulaNumber(p.disorderFullCritZone)}`,
+        tipsKey: 'disorderCritZone',
+      },
     ],
     result: formatNumber(p.disorderExpected),
+    dualResults: [
+      { label: '暴击率=0', value: formatNumber(p.disorderExpectedNoCrit) },
+      { label: '暴击率=1', value: formatNumber(p.disorderExpectedFullCrit) },
+    ],
   }
   const turbulence: AlignedAnomalyFormulaGroup = {
     key: 'turbulenceExpected',
@@ -253,6 +263,12 @@ export function buildAlignedAnomalyFormulaGroups(
             value: formatFormulaNumber(p.specialMultiplier),
             tipsKey: 'specialMultiplier',
           },
+          {
+            // 耀变的触发者无论是蕾米还是其他人都允许暴击（游戏规则）
+            label: '耀变暴击区',
+            value: `1 / ${formatFormulaNumber(p.radianceFullCritZone)}`,
+            tipsKey: 'radianceCritZone',
+          },
         ]
       : [
           { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
@@ -266,8 +282,17 @@ export function buildAlignedAnomalyFormulaGroups(
             value: formatFormulaNumber(p.radianceMultZone),
             tipsKey: 'radianceMultZone',
           },
+          {
+            label: '耀变暴击区',
+            value: `1 / ${formatFormulaNumber(p.radianceFullCritZone)}`,
+            tipsKey: 'radianceCritZone',
+          },
         ],
     result: formatNumber(p.radianceExpected),
+    dualResults: [
+      { label: '暴击率=0', value: formatNumber(p.radianceExpectedNoCrit) },
+      { label: '暴击率=1', value: formatNumber(p.radianceExpectedFullCrit) },
+    ],
   }
 
   if (sub === 'disorder') return [base, disorder]

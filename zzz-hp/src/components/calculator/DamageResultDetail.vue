@@ -179,6 +179,8 @@ const disorderFormulaParts = computed(() => {
     formatNumber(anomalyBaseWithMutation.value),
     formatFormulaNumber(p.disorderZone),
     formatFormulaNumber(p.disorderDmgBonusZone),
+    // 紊乱补暴击区后，加减过程必须把暴击区乘进去，否则乘式不等于期望值
+    formatFormulaNumber(p.disorderCritZone),
   ]
 })
 
@@ -216,6 +218,8 @@ type ValueTipsKey =
   | 'disorderCompMult'
   | 'disorderDmgBonusZone'
   | 'disorderZone'
+  // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
+  | 'disorderCritZone'
   | 'disorderExpected'
   | 'turbulenceBaseMult'
   | 'turbulenceCompMult'
@@ -231,6 +235,8 @@ type ValueTipsKey =
   | 'radianceMutation'
   | 'radianceCombinedDmgBonusZone'
   | 'radianceMultZone'
+  // 耀变只吃自己的暴击字段（耀变暴击率/爆伤）
+  | 'radianceCritZone'
   | 'mutationZone'
   | 'pierceDmgMultiplier'
   | 'sharpenDmgMultiplier'
@@ -1185,6 +1191,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         ],
       },
     ],
+    // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
+    disorderCritZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['disorderCritRate', 'disorderCritDmg'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          disorderCritRate: bonusPanel.disorderCritRate,
+          disorderCritDmg: bonusPanel.disorderCritDmg,
+        },
+      }),
+      [
+        `暴击率=0：紊乱暴击区 = 1`,
+        `暴击率=1：紊乱暴击区 = 1 + ${formatFormulaNumber(bonusPanel.disorderCritDmg / 100)} = ${formatFormulaNumber(p.disorderFullCritZone)}`,
+        `实际期望：1 + ${formatFormulaNumber(bonusPanel.disorderCritRate / 100)} × ${formatFormulaNumber(bonusPanel.disorderCritDmg / 100)} = ${formatFormulaNumber(p.disorderCritZone)}`,
+      ].join('；'),
+    ),
     disorderExpected: [
       {
         label: '乘区组成',
@@ -1192,6 +1215,9 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
           `紊乱倍率区 ${formatFormulaNumber(p.disorderZone)}`,
           `紊乱增伤区 ${formatFormulaNumber(p.disorderDmgBonusZone)}`,
+          // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
+          `紊乱暴击区（暴击率=0）1 → ${formatNumber(p.disorderExpectedNoCrit)}`,
+          `紊乱暴击区（暴击率=1）${formatFormulaNumber(p.disorderFullCritZone)} → ${formatNumber(p.disorderExpectedFullCrit)}`,
           `合计 ${formatNumber(p.disorderExpected)}`,
         ],
       },
@@ -1322,23 +1348,28 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
     radianceExpected: [
       {
         label: '乘区组成',
-        items: props.calcParts.remielSelfRadianceActive
-          ? [
-              `蕾米埃尔异常基础 ${formatNumber(anomalyBaseWithMutation.value)}`,
-              `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}`,
-              `抗性区 ${formatFormulaNumber(p.remielSelfResistanceMultiplier ?? 1)}`,
-              `易伤区 ${formatFormulaNumber(p.anomalyVulnerableMultiplier)}`,
-              `失衡易伤区 ${formatFormulaNumber(p.staggerMultiplier)}`,
-              `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
-              `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
-              `特殊倍率乘区 ${formatFormulaNumber(p.specialMultZone)}`,
-              `特殊乘区 ${formatFormulaNumber(p.specialMultiplier)}`,
-            ]
-          : [
-              `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
-              `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
-              `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
-            ],
+        items: [
+          ...(props.calcParts.remielSelfRadianceActive
+            ? [
+                `蕾米埃尔异常基础 ${formatNumber(anomalyBaseWithMutation.value)}`,
+                `防御区 ${formatFormulaNumber(p.remielSelfDefenseMultiplier ?? 1)}`,
+                `抗性区 ${formatFormulaNumber(p.remielSelfResistanceMultiplier ?? 1)}`,
+                `易伤区 ${formatFormulaNumber(p.anomalyVulnerableMultiplier)}`,
+                `失衡易伤区 ${formatFormulaNumber(p.staggerMultiplier)}`,
+                `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+                `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
+                `特殊倍率乘区 ${formatFormulaNumber(p.specialMultZone)}`,
+                `特殊乘区 ${formatFormulaNumber(p.specialMultiplier)}`,
+              ]
+            : [
+                `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
+                `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+                `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
+              ]),
+          // 耀变触发者无论是蕾米还是其他人都允许暴击（游戏规则）；两条链路同乘一个暴击区
+          `耀变暴击区（暴击率=0）1 → ${formatNumber(p.radianceExpectedNoCrit)}`,
+          `耀变暴击区（暴击率=1）${formatFormulaNumber(p.radianceFullCritZone)} → ${formatNumber(p.radianceExpectedFullCrit)}`,
+        ],
       },
     ],
     radianceMutation: [
@@ -1399,6 +1430,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         `倍率修正 ${formatFormulaNumber(bonusPanel.radianceMultFactor ?? 100, 2)}% → ×${formatFormulaNumber((bonusPanel.radianceMultFactor ?? 100) / 100)}`,
         `= ${formatFormulaNumber(p.radianceMultZone)}`,
       ],
+    ),
+    // 耀变只吃自己的暴击字段（耀变暴击率/爆伤）；触发者无论是蕾米还是其他人都允许暴击
+    radianceCritZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['radianceCritRate', 'radianceCritDmg'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          radianceCritRate: bonusPanel.radianceCritRate,
+          radianceCritDmg: bonusPanel.radianceCritDmg,
+        },
+      }),
+      [
+        `暴击率=0：耀变暴击区 = 1`,
+        `暴击率=1：耀变暴击区 = 1 + ${formatFormulaNumber(bonusPanel.radianceCritDmg / 100)} = ${formatFormulaNumber(p.radianceFullCritZone)}`,
+        `实际期望：1 + ${formatFormulaNumber(bonusPanel.radianceCritRate / 100)} × ${formatFormulaNumber(bonusPanel.radianceCritDmg / 100)} = ${formatFormulaNumber(p.radianceCritZone)}`,
+      ].join('；'),
     ),
     mutationZone: buildMutationZoneTipGroups({
       zone: p.remielSelfRadianceActive
@@ -1596,6 +1644,10 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         <p>紊乱补偿倍率：<StatValueWithSources :value="calcParts.disorderCompMultRatio" :groups="valueTips.disorderCompMult" /></p>
         <p>紊乱倍率区：<StatValueWithSources :value="calcParts.disorderZone" :groups="valueTips.disorderZone" /></p>
         <p>紊乱增伤区：<StatValueWithSources :value="calcParts.disorderDmgBonusZone" :groups="valueTips.disorderDmgBonusZone" /></p>
+        <p>紊乱暴击区（暴击率=0）：1</p>
+        <p>紊乱暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.disorderFullCritZone" :groups="valueTips.disorderCritZone" /></p>
+        <p class="result-total">紊乱伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.disorderExpectedNoCrit)" :groups="valueTips.disorderExpected" /></p>
+        <p class="result-total">紊乱伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.disorderExpectedFullCrit)" :groups="valueTips.disorderExpected" /></p>
         <p class="result-total">紊乱期望伤害：<StatValueWithSources :value="Math.round(calcParts.disorderExpected).toLocaleString('en-US')" :groups="valueTips.disorderExpected" /></p>
         </template>
 
@@ -1675,6 +1727,28 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           <StatValueWithSources
             :value="formatFormulaNumber(calcParts.radianceMultZone)"
             :groups="valueTips.radianceMultZone"
+          />
+        </p>
+        <p>耀变暴击区（暴击率=0）：1</p>
+        <p>
+          耀变暴击区（暴击率=1）：
+          <StatValueWithSources
+            :value="calcParts.radianceFullCritZone"
+            :groups="valueTips.radianceCritZone"
+          />
+        </p>
+        <p class="result-total">
+          耀变伤害（暴击率=0）：
+          <StatValueWithSources
+            :value="formatNumber(calcParts.radianceExpectedNoCrit)"
+            :groups="valueTips.radianceExpected"
+          />
+        </p>
+        <p class="result-total">
+          耀变伤害（暴击率=1）：
+          <StatValueWithSources
+            :value="formatNumber(calcParts.radianceExpectedFullCrit)"
+            :groups="valueTips.radianceExpected"
           />
         </p>
         <p class="result-total">
