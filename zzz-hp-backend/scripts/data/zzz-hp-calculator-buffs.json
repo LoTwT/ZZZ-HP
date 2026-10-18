@@ -86060,10 +86060,10 @@
                   "convert": {
                     "from": "anomalyControl",
                     "panelSource": "external",
-                    "ratioPercent": 0.7,
-                    "cap": null,
+                    "ratioPercent": 70,
+                    "cap": 70,
                     "defaultBase": 155,
-                    "initialBase": 0
+                    "initialBase": 155
                   },
                   "appliesToAnomaly": false,
                   "enabledDefault": true,
@@ -86229,10 +86229,10 @@
               "convert": {
                 "from": "anomalyControl",
                 "panelSource": "external",
-                "ratioPercent": 0.7,
-                "cap": null,
+                "ratioPercent": 70,
+                "cap": 70,
                 "defaultBase": 155,
-                "initialBase": 0
+                "initialBase": 155
               },
               "appliesToAnomaly": false,
               "enabledDefault": true,
