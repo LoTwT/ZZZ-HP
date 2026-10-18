@@ -85979,7 +85979,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -86304,7 +86304,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -86999,7 +86999,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 }
@@ -87030,7 +87030,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             }
@@ -87677,7 +87677,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -87703,7 +87703,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "作用域：异放"
                 }
@@ -87734,7 +87734,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -87760,7 +87760,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "作用域：异放"
             }
@@ -180807,7 +180807,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -180835,7 +180835,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "时长：20 秒"
                 }
@@ -180866,7 +180866,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -180894,7 +180894,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "时长：20 秒"
             }
@@ -181079,7 +181079,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -181107,7 +181107,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "时长：20 秒"
                 }
@@ -181138,7 +181138,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -181166,7 +181166,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "时长：20 秒"
             }
@@ -181351,7 +181351,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -181379,7 +181379,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "时长：20 秒"
                 }
@@ -181410,7 +181410,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -181438,7 +181438,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "时长：20 秒"
             }
@@ -181623,7 +181623,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -181651,7 +181651,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "时长：20 秒"
                 }
@@ -181682,7 +181682,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -181710,7 +181710,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "时长：20 秒"
             }
@@ -181895,7 +181895,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
                 },
@@ -181923,7 +181923,7 @@
                   "maxStacks": 1,
                   "valuePerStack": 0,
                   "defaultStacks": 1,
-                  "appliesToAnomaly": false,
+                  "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": "时长：20 秒"
                 }
@@ -181954,7 +181954,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
             },
@@ -181982,7 +181982,7 @@
               "maxStacks": 1,
               "valuePerStack": 0,
               "defaultStacks": 1,
-              "appliesToAnomaly": false,
+              "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": "时长：20 秒"
             }
