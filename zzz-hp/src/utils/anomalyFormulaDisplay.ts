@@ -161,9 +161,10 @@ export function buildAlignedAnomalyFormulaGroups(
         tipsKey: 'turbulenceCombinedDmgBonusZone',
       },
       {
-        label: '异常暴击区',
-        value: `1 / ${formatFormulaNumber(p.anomalyFullCritZone)}`,
-        tipsKey: 'anomalyCritZone',
+        // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用异常暴击区
+        label: '乱流暴击区',
+        value: `1 / ${formatFormulaNumber(p.turbulenceFullCritZone)}`,
+        tipsKey: 'turbulenceCritZone',
       },
     ],
     result: formatNumber(p.turbulenceExpected),

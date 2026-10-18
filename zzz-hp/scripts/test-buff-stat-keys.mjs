@@ -27,6 +27,7 @@ import {
 } from '../src/utils/calculatorUi.ts'
 import { computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
 import { computeDamageResult } from '../src/utils/damageCalc.ts'
+import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDisplay.ts'
 
 let passed = 0
 let failed = 0
@@ -202,6 +203,69 @@ console.log('\n[6] 乱流暴击区：没爆伤时 = 1（不展示），有爆伤
     Math.abs(withCrit.turbulenceExpected - withCrit.turbulenceExpectedNoCrit * 1.5) < 1,
     `${withCrit.turbulenceExpected} vs ${withCrit.turbulenceExpectedNoCrit}`,
   )
+}
+
+console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，不是异常暴击区')
+{
+  const enemy = {
+    level: 60,
+    defense: 953,
+    resistanceType: 'normal',
+    vulnerableMultiplier: 1,
+    staggerMultiplier: 1,
+    specialMultiplier: 1,
+  }
+  const panel = makePanel({
+    atk: 2000,
+    mastery: 100,
+    turbulenceBaseMult: 800,
+    turbulenceCompMult: 7.5,
+    anomalyDuration: 10,
+    anomalyCritRate: 30,
+    anomalyCritDmg: 90,
+    turbulenceCritRate: 100,
+    turbulenceCritDmg: 50,
+  })
+  const input = {
+    finalPanel: panel,
+    piercePower: 0,
+    baseDamageSource: 'atk',
+    isMbMainAgent: false,
+    enemyInput: enemy,
+    combatVulnerable: 0,
+    combatStaggerVulnerable: 0,
+    combatSpecial: 0,
+    staggerPhase: 'normal',
+    ownerAgentLevel: 60,
+    triggerFinalPanel: panel,
+    triggerAgentLevel: 60,
+    anomalyTriggerPanel: panel,
+  }
+  const fmt = (v) => String(Math.round(v * 1000) / 1000)
+  const turbulence = computeDamageResult({ ...input, anomalySubKind: 'turbulence' })
+  const [, turbulenceGroup] = buildAlignedAnomalyFormulaGroups(
+    turbulence,
+    'turbulence',
+    '紊乱',
+    fmt,
+    (v) => String(v),
+  )
+  const critTerm = turbulenceGroup.terms.find((term) => term.tipsKey === 'turbulenceCritZone')
+  check('乱流公式里有「乱流暴击区」这一项', Boolean(critTerm), critTerm?.label ?? '缺失')
+  check('乱流暴击区标签不是「异常暴击区」', critTerm?.label === '乱流暴击区', critTerm?.label)
+  check('乱流暴击区取 turbulenceFullCritZone（1.5）', critTerm?.value === '1 / 1.5', critTerm?.value)
+
+  const anomaly = computeDamageResult({ ...input, anomalySubKind: 'anomaly' })
+  const [, anomalyGroup] = buildAlignedAnomalyFormulaGroups(
+    anomaly,
+    'anomaly',
+    '紊乱',
+    fmt,
+    (v) => String(v),
+  )
+  const anomalyTerm = anomalyGroup.terms.find((term) => term.tipsKey === 'anomalyCritZone')
+  check('属性异常仍用「异常暴击区」', anomalyTerm?.label === '异常暴击区', anomalyTerm?.label)
+  check('属性异常取 anomalyFullCritZone（1.9）', anomalyTerm?.value === '1 / 1.9', anomalyTerm?.value)
 }
 
 console.log(`\n${failed ? `❌ ${failed} failed, ${passed} passed` : `✅ all passed（${passed}）`}`)

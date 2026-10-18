@@ -222,6 +222,8 @@ type ValueTipsKey =
   | 'turbulenceDmgBonusZone'
   | 'turbulenceZone'
   | 'turbulenceCombinedDmgBonusZone'
+  // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用了异常暴击区
+  | 'turbulenceCritZone'
   | 'turbulenceExpected'
   | 'anomalyExpected'
   | 'anomalyReleaseExpected'
@@ -1274,6 +1276,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
       ],
     ),
+    // 乱流只吃自己的暴击字段（用户 2026-10-16）。此前这里错用异常暴击区 → 配了乱流暴击也显示 1
+    turbulenceCritZone: withTotal(
+      buildStatSourceGroups({
+        keys: ['turbulenceCritRate', 'turbulenceCritDmg'],
+        externalPanel: bonusExternal,
+        sources: bonusSources,
+        finalValues: {
+          turbulenceCritRate: bonusPanel.turbulenceCritRate,
+          turbulenceCritDmg: bonusPanel.turbulenceCritDmg,
+        },
+      }),
+      [
+        `暴击率=0：乱流暴击区 = 1`,
+        `暴击率=1：乱流暴击区 = 1 + ${formatFormulaNumber(bonusPanel.turbulenceCritDmg / 100)} = ${formatFormulaNumber(p.turbulenceFullCritZone)}`,
+        `实际期望：1 + ${formatFormulaNumber(bonusPanel.turbulenceCritRate / 100)} × ${formatFormulaNumber(bonusPanel.turbulenceCritDmg / 100)} = ${formatFormulaNumber(p.turbulenceCritZone)}`,
+      ].join('；'),
+    ),
     turbulenceExpected: [
       {
         label: '乘区组成',
@@ -1281,8 +1300,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           `异常基础期望 ${formatNumber(anomalyBaseWithMutation.value)}`,
           `乱流倍率区 ${formatFormulaNumber(p.turbulenceZone)}`,
           `乱流增伤区+异常增伤区 ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-          `异常暴击区（暴击率=0）1 → ${formatNumber(p.turbulenceExpectedNoCrit)}`,
-          `异常暴击区（暴击率=1）${formatFormulaNumber(p.anomalyFullCritZone)} → ${formatNumber(p.turbulenceExpectedFullCrit)}`,
+          `乱流暴击区（暴击率=0）1 → ${formatNumber(p.turbulenceExpectedNoCrit)}`,
+          `乱流暴击区（暴击率=1）${formatFormulaNumber(p.turbulenceFullCritZone)} → ${formatNumber(p.turbulenceExpectedFullCrit)}`,
         ],
       },
     ],
@@ -1592,8 +1611,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
             :groups="valueTips.turbulenceCombinedDmgBonusZone"
           />
         </p>
-        <p>异常暴击区（暴击率=0）：1</p>
-        <p>异常暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.anomalyFullCritZone" :groups="valueTips.anomalyCritZone" /></p>
+        <p>乱流暴击区（暴击率=0）：1</p>
+        <p>乱流暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.turbulenceFullCritZone" :groups="valueTips.turbulenceCritZone" /></p>
         <p class="result-total">乱流伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.turbulenceExpectedNoCrit)" :groups="valueTips.turbulenceExpected" /></p>
         <p class="result-total">乱流伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.turbulenceExpectedFullCrit)" :groups="valueTips.turbulenceExpected" /></p>
         </template>
