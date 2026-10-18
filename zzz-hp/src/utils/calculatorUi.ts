@@ -752,7 +752,10 @@ export function mergeBuffStatModifiers(
       // 增益倍率修正为百分点增量，直接加算
       if (Number.isFinite(src)) result[field.key] += src
     } else {
-      result[field.key] += source[field.key]
+      // 源对象可能来自别处造的「零表」，键不全。`0 + undefined` 是 NaN、会污染整条伤害链，
+      // 缺失一律按 0 处理（2026-10-18：乱流被 turbulenceCrit* 缺键打成 NaN）。
+      const src = Number(source[field.key])
+      result[field.key] += Number.isFinite(src) ? src : 0
     }
   }
   return result

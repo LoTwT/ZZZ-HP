@@ -92,6 +92,15 @@ const BUFF_STAT_KEYS: BuffStatKey[] = [
   'anomalyReleaseDmgBonus',
   'anomalyReleaseCritRate',
   'anomalyReleaseCritDmg',
+  // 子类专用暴击（2026-10-16「各子类只吃自己的暴击」）。本清单是「造零」与「扁平↔效果」
+  // 的字段来源，漏掉就会造出缺键的 mods，与 BUFF_STAT_FIELDS 合并时 `0 + undefined` → NaN。
+  // 乱流公式真的读 turbulenceCrit*，漏了会让乱流伤害整条变 NaN（2026-10-18 修）。
+  'turbulenceCritRate',
+  'turbulenceCritDmg',
+  'radianceCritRate',
+  'radianceCritDmg',
+  'disorderCritRate',
+  'disorderCritDmg',
   'anomalyReleaseMult',
   'directDmgMult',
   'settlementDmgMult',
@@ -407,7 +416,9 @@ export function addStat(
   stat: BuffStatKey,
   amount: number,
 ): BuffStatModifiers {
-  return { ...mods, [stat]: mods[stat] + amount }
+  // 同上：缺键不能当 undefined 用，否则 `undefined + n` 是 NaN
+  const base = Number(mods[stat])
+  return { ...mods, [stat]: (Number.isFinite(base) ? base : 0) + amount }
 }
 
 export function resolveEffectBaseValue(effect: BuffEffect, stacks: number): number {
