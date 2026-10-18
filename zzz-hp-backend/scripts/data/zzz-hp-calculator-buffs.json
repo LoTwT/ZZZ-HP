@@ -87518,6 +87518,32 @@
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
                   "note": ""
+                },
+                {
+                  "id": "eff-mvdz21so-s2au9j",
+                  "kind": "fixed",
+                  "note": "",
+                  "stat": "anomalyDuration",
+                  "scope": [
+                    "turbulence"
+                  ],
+                  "value": 2,
+                  "origin": "",
+                  "maxStacks": 1,
+                  "stackable": false,
+                  "applyTarget": "team",
+                  "defaultStacks": 1,
+                  "elementFilter": [
+                    "火"
+                  ],
+                  "valuePerStack": 0,
+                  "applySituation": "global",
+                  "enabledDefault": true,
+                  "teamProfession": null,
+                  "applyProfession": null,
+                  "skillSubcategoryId": null,
+                  "teamProfessionValues": null,
+                  "teamProfessionMinCount": null
                 }
               ],
               "enabledDefault": true
@@ -87549,6 +87575,32 @@
               "appliesToAnomaly": true,
               "enabledDefault": true,
               "note": ""
+            },
+            {
+              "id": "eff-mvdz21so-s2au9j",
+              "kind": "fixed",
+              "note": "",
+              "stat": "anomalyDuration",
+              "scope": [
+                "turbulence"
+              ],
+              "value": 2,
+              "origin": "",
+              "maxStacks": 1,
+              "stackable": false,
+              "applyTarget": "team",
+              "defaultStacks": 1,
+              "elementFilter": [
+                "火"
+              ],
+              "valuePerStack": 0,
+              "applySituation": "global",
+              "enabledDefault": true,
+              "teamProfession": null,
+              "applyProfession": null,
+              "skillSubcategoryId": null,
+              "teamProfessionValues": null,
+              "teamProfessionMinCount": null
             }
           ],
           "selfMods": {
