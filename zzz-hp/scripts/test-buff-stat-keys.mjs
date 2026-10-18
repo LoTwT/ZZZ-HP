@@ -261,7 +261,8 @@ console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，�
   const critTerm = turbulenceGroup.terms.find((term) => term.tipsKey === 'turbulenceCritZone')
   check('乱流公式里有「乱流暴击区」这一项', Boolean(critTerm), critTerm?.label ?? '缺失')
   check('乱流暴击区标签不是「异常暴击区」', critTerm?.label === '乱流暴击区', critTerm?.label)
-  check('乱流暴击区取 turbulenceFullCritZone（1.5）', critTerm?.value === '1 / 1.5', critTerm?.value)
+  // 2026-10-18：乘区显示**期望区**（1 + 率×爆伤），不再是「1 / 满暴击区」两档
+  check('乱流暴击区取期望 turbulenceCritZone（1.5）', critTerm?.value === '1.5', critTerm?.value)
 
   const anomaly = computeDamageResult({ ...input, anomalySubKind: 'anomaly' })
   const [, anomalyGroup] = buildAlignedAnomalyFormulaGroups(
@@ -273,7 +274,7 @@ console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，�
   )
   const anomalyTerm = anomalyGroup.terms.find((term) => term.tipsKey === 'anomalyCritZone')
   check('属性异常仍用「异常暴击区」', anomalyTerm?.label === '异常暴击区', anomalyTerm?.label)
-  check('属性异常取 anomalyFullCritZone（1.9）', anomalyTerm?.value === '1 / 1.9', anomalyTerm?.value)
+  check('属性异常取期望 anomalyCritZone（1.27）', anomalyTerm?.value === '1.27', anomalyTerm?.value)
 }
 
 console.log('\n[8] 子类暴击互相独立：异常暴击不是父类，不会串到异放/乱流/耀变/紊乱')

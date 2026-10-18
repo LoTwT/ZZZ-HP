@@ -54,6 +54,25 @@ export interface AlignedAnomalyFormulaGroup {
   dualResults?: { label: string; value: string }[]
 }
 
+/**
+ * 结果区展示三档：**期望 / 不暴击 / 暴击**（用户 2026-10-18 口径）。
+ *
+ * 期望是主口径，后两个是"如果这次没暴击 / 必定暴击"的边界值。
+ * 之前这里只有后两档，且乘区里写死 `1 / 满暴击区`，导致看起来"不显示期望"。
+ */
+function expectedTriple(
+  expected: number,
+  noCrit: number,
+  fullCrit: number,
+  formatNumber: (v: number) => string,
+): { label: string; value: string }[] {
+  return [
+    { label: '期望', value: formatNumber(expected) },
+    { label: '不暴击', value: formatNumber(noCrit) },
+    { label: '暴击', value: formatNumber(fullCrit) },
+  ]
+}
+
 export function buildAlignedAnomalyFormulaGroups(
   p: DamageCalcResult,
   sub: AnomalyDamageSubKind,
@@ -127,15 +146,12 @@ export function buildAlignedAnomalyFormulaGroups(
       { label: '异常倍率区', value: formatFormulaNumber(p.anomalyMultZone), tipsKey: 'anomalyMultZone' },
       {
         label: '异常暴击区',
-        value: `1 / ${formatFormulaNumber(p.anomalyFullCritZone)}`,
+        value: formatFormulaNumber(p.anomalyCritZone),
         tipsKey: 'anomalyCritZone',
       },
     ],
     result: formatNumber(p.anomalyExpected),
-    dualResults: [
-      { label: '暴击率=0', value: formatNumber(p.anomalyExpectedNoCrit) },
-      { label: '暴击率=1', value: formatNumber(p.anomalyExpectedFullCrit) },
-    ],
+    dualResults: expectedTriple(p.anomalyExpected, p.anomalyExpectedNoCrit, p.anomalyExpectedFullCrit, formatNumber),
   }
   const disorder: AlignedAnomalyFormulaGroup = {
     key: 'disorderExpected',
@@ -148,15 +164,12 @@ export function buildAlignedAnomalyFormulaGroups(
       // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
       {
         label: '紊乱暴击区',
-        value: `1 / ${formatFormulaNumber(p.disorderFullCritZone)}`,
+        value: formatFormulaNumber(p.disorderCritZone),
         tipsKey: 'disorderCritZone',
       },
     ],
     result: formatNumber(p.disorderExpected),
-    dualResults: [
-      { label: '暴击率=0', value: formatNumber(p.disorderExpectedNoCrit) },
-      { label: '暴击率=1', value: formatNumber(p.disorderExpectedFullCrit) },
-    ],
+    dualResults: expectedTriple(p.disorderExpected, p.disorderExpectedNoCrit, p.disorderExpectedFullCrit, formatNumber),
   }
   const turbulence: AlignedAnomalyFormulaGroup = {
     key: 'turbulenceExpected',
@@ -173,15 +186,12 @@ export function buildAlignedAnomalyFormulaGroups(
       {
         // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用异常暴击区
         label: '乱流暴击区',
-        value: `1 / ${formatFormulaNumber(p.turbulenceFullCritZone)}`,
+        value: formatFormulaNumber(p.turbulenceCritZone),
         tipsKey: 'turbulenceCritZone',
       },
     ],
     result: formatNumber(p.turbulenceExpected),
-    dualResults: [
-      { label: '暴击率=0', value: formatNumber(p.turbulenceExpectedNoCrit) },
-      { label: '暴击率=1', value: formatNumber(p.turbulenceExpectedFullCrit) },
-    ],
+    dualResults: expectedTriple(p.turbulenceExpected, p.turbulenceExpectedNoCrit, p.turbulenceExpectedFullCrit, formatNumber),
   }
   const release: AlignedAnomalyFormulaGroup = {
     key: 'anomalyReleaseExpected',
@@ -207,10 +217,12 @@ export function buildAlignedAnomalyFormulaGroups(
       },
     ],
     result: formatNumber(p.anomalyReleaseExpected),
-    dualResults: [
-      { label: '暴击率=0', value: formatNumber(p.anomalyReleaseExpectedNoCrit) },
-      { label: '暴击率=1', value: formatNumber(p.anomalyReleaseExpectedFullCrit) },
-    ],
+    dualResults: expectedTriple(
+      p.anomalyReleaseExpected,
+      p.anomalyReleaseExpectedNoCrit,
+      p.anomalyReleaseExpectedFullCrit,
+      formatNumber,
+    ),
   }
   const radianceChain: AlignedAnomalyFormulaGroup = {
     key: 'radianceExpected',
@@ -266,7 +278,7 @@ export function buildAlignedAnomalyFormulaGroups(
           {
             // 耀变的触发者无论是蕾米还是其他人都允许暴击（游戏规则）
             label: '耀变暴击区',
-            value: `1 / ${formatFormulaNumber(p.radianceFullCritZone)}`,
+            value: formatFormulaNumber(p.radianceCritZone),
             tipsKey: 'radianceCritZone',
           },
         ]
@@ -284,15 +296,12 @@ export function buildAlignedAnomalyFormulaGroups(
           },
           {
             label: '耀变暴击区',
-            value: `1 / ${formatFormulaNumber(p.radianceFullCritZone)}`,
+            value: formatFormulaNumber(p.radianceCritZone),
             tipsKey: 'radianceCritZone',
           },
         ],
     result: formatNumber(p.radianceExpected),
-    dualResults: [
-      { label: '暴击率=0', value: formatNumber(p.radianceExpectedNoCrit) },
-      { label: '暴击率=1', value: formatNumber(p.radianceExpectedFullCrit) },
-    ],
+    dualResults: expectedTriple(p.radianceExpected, p.radianceExpectedNoCrit, p.radianceExpectedFullCrit, formatNumber),
   }
 
   if (sub === 'disorder') return [base, disorder]

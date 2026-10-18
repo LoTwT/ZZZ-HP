@@ -341,7 +341,7 @@ console.log('\n[8] 招式详情「计算过程」出现暴击区行，且带三�
   check('本人链耀变暴击区取值 1.5', remielRow?.value === '1.5', remielRow?.value)
 }
 
-console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击区」一项 + 双档结果')
+console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击区」一项 + 期望/不暴击/暴击三档')
 {
   const fmt = (v) => String(Math.round(v * 1000) / 1000)
   const num = (v) => String(v)
@@ -351,13 +351,21 @@ console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击�
   const disorderTerm = disorderGroup.terms.find((term) => term.tipsKey === 'disorderCritZone')
   check('紊乱公式有「紊乱暴击区」一项', Boolean(disorderTerm), disorderTerm?.label ?? '缺失')
   check('紊乱暴击区标签正确', disorderTerm?.label === '紊乱暴击区', disorderTerm?.label)
-  check('紊乱暴击区取值 1 / 1.5', disorderTerm?.value === '1 / 1.5', disorderTerm?.value)
+  // 2026-10-18：乘区显示**期望**（暴击率 100% × 爆伤 50% → 1 + 0.5 = 1.5），不再是「1 / 1.5」两档
+  check('紊乱暴击区取值 = 期望 1.5', disorderTerm?.value === '1.5', disorderTerm?.value)
   check(
-    '紊乱公式有双档结果（暴击率=0/1）',
-    disorderGroup.dualResults?.length === 2 &&
-      disorderGroup.dualResults[0].label === '暴击率=0' &&
-      disorderGroup.dualResults[1].label === '暴击率=1',
+    '紊乱结果区三档：期望 / 不暴击 / 暴击',
+    disorderGroup.dualResults?.length === 3 &&
+      disorderGroup.dualResults[0].label === '期望' &&
+      disorderGroup.dualResults[1].label === '不暴击' &&
+      disorderGroup.dualResults[2].label === '暴击',
     (disorderGroup.dualResults ?? []).map((item) => `${item.label}=${item.value}`).join(' / '),
+  )
+  check(
+    '紊乱三档数值与 result 对得上（期望=result，不暴击<暴击）',
+    disorderGroup.dualResults?.[0].value === disorderGroup.result &&
+      Number(disorderGroup.dualResults?.[1].value) < Number(disorderGroup.dualResults?.[2].value),
+    `${disorderGroup.result} | ${(disorderGroup.dualResults ?? []).map((i) => i.value).join(' / ')}`,
   )
 
   for (const [label, extra] of [
@@ -368,10 +376,13 @@ console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击�
     const [, group] = buildAlignedAnomalyFormulaGroups(radiance, 'radiance', '紊乱伤害', fmt, num)
     const term = group.terms.find((item) => item.tipsKey === 'radianceCritZone')
     check(`${label}：公式有「耀变暴击区」一项`, Boolean(term), term?.label ?? '缺失')
-    check(`${label}：耀变暴击区取值 1 / 1.5`, term?.value === '1 / 1.5', term?.value)
+    check(`${label}：耀变暴击区取值 = 期望 1.5`, term?.value === '1.5', term?.value)
     check(
-      `${label}：有双档结果（暴击率=0/1）`,
-      group.dualResults?.length === 2,
+      `${label}：结果区三档（期望 / 不暴击 / 暴击）`,
+      group.dualResults?.length === 3 &&
+        group.dualResults[0].label === '期望' &&
+        group.dualResults[1].label === '不暴击' &&
+        group.dualResults[2].label === '暴击',
       (group.dualResults ?? []).map((item) => `${item.label}=${item.value}`).join(' / '),
     )
   }
