@@ -1650,6 +1650,19 @@ const skillFlowContextFingerprint = computed(() =>
     convert: props.convertSlotPanels ?? {},
     anomaly: props.activeSlotPanels ?? {},
     participants: props.activeSlotPanels ?? {},
+    /**
+     * 槽位配置必须入指纹：换音擎 / 改精炼 / 换驱动盘 / 改影画只改这里，
+     * 不改 activeSlotPanels。漏掉它 → 流程伤害不重算，表现为「改完没反应，
+     * 切一下别的角色才更新」。
+     */
+    slots: props.teamSlots.map((slot) => [
+      slot.agentId,
+      slot.rank,
+      slot.wengineId,
+      slot.wengineRefine,
+      slot.twoPieceDriveDiscId,
+      slot.fourPieceDriveDiscId,
+    ]),
     env: (props.environmentBuffs ?? []).map((item) => item.id),
     bangboo: [props.selectedBangbooId, props.bangbooRefine],
     mains: { ...activeDriveDiscMainStats.value },
