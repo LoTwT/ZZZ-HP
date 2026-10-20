@@ -70,7 +70,7 @@ const modes: ModeCard[] = [
       <header class="hero">
         <span class="hero-tag">非官方 · 玩家自制工具站</span>
         <h1 class="hero-title zzz-display">
-          <span class="hero-title-name">HP数据站</span>
+          <span class="hero-title-name">HP<span class="hero-title-cn">数据站</span></span>
         </h1>
         <p class="hero-cn">
           <span>数据查询与伤害计算站</span>
@@ -204,6 +204,12 @@ const modes: ModeCard[] = [
   background: var(--zzz-yellow);
   color: #0a0a0a;
   transform: skew(-8deg);
+}
+
+/* 中文字形回落到系统字体后比 Archivo Black 细；补描边把字重拉齐 */
+.hero-title-cn {
+  font-weight: 900;
+  -webkit-text-stroke: 0.02em currentColor;
 }
 
 .hero-cn {
