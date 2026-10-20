@@ -60,6 +60,22 @@ console.log('\n[1] runPanelPipeline 与 computeFinalPanel 逐字段')
   const pipe = runPanelPipeline(panel, ctx)
   const diffs = diffSnapshots(snapshotPanel(legacy.finalPanel), snapshotPanel(pipe.finalBreakdown.finalPanel))
   check('final 面板一致', diffs.length === 0, diffs.join('; ') || 'ok')
+  // 各异常子类自己的暴击字段必须是有限数：BUFF_STAT_KEYS 缺键时会是 NaN，
+  // 进而让乱流倍率区的暴击区变 NaN、期望伤害显示「—」。
+  const subtypeCritKeys = [
+    'turbulenceCritRate',
+    'turbulenceCritDmg',
+    'radianceCritRate',
+    'radianceCritDmg',
+    'disorderCritRate',
+    'disorderCritDmg',
+  ]
+  const badCritKeys = subtypeCritKeys.filter((key) => !Number.isFinite(legacy.finalPanel[key]))
+  check(
+    '乱流/耀变/紊乱暴击字段为有限数',
+    badCritKeys.length === 0,
+    badCritKeys.length ? badCritKeys.map((key) => `${key}=${legacy.finalPanel[key]}`).join(', ') : 'ok',
+  )
   check(
     'totalMods 一致',
     JSON.stringify(legacy.totalMods) === JSON.stringify(pipe.finalBreakdown.totalMods),

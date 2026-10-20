@@ -76,6 +76,13 @@ const BUFF_STAT_KEYS: BuffStatKey[] = [
   'special',
   'anomalyCritRate',
   'anomalyCritDmg',
+  // 各异常子类自己的暴击：与后端 BUFF_STAT_KEYS 对齐；缺了会让面板的 turbulence/radiance/disorder 暴击字段变成 NaN
+  'turbulenceCritRate',
+  'turbulenceCritDmg',
+  'radianceCritRate',
+  'radianceCritDmg',
+  'disorderCritRate',
+  'disorderCritDmg',
   'anomalyDmgBonus',
   'anomalyReleaseDmgBonus',
   'anomalyReleaseCritRate',
