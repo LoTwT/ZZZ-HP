@@ -36,6 +36,7 @@ export const ADMIN_CALCULATOR_PANELS: readonly AdminCalculatorPanel[] = [
   'skill-subcategory',
   'skill-library',
   'affix-preset',
+  'shared-schemes',
   'import-export',
   'nanoka',
   'nanoka-buffs',
