@@ -4,6 +4,7 @@ import { fetchBossInfoList, lookupBossInfo, type BossInfoRecord } from '@/api/bo
 import { searchBossRecords, type BossRecord } from '@/api/admin'
 import { fetchCrisisAssaultPhases } from '@/api/crisisAssault'
 import { fetchDefenseSeasons } from '@/api/defense'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { DamageEnemyInput } from '@/utils/enemyResistance'
 import {
   mapBossInfoToDamageEnemyInput,
@@ -291,11 +292,20 @@ async function applyRecord(record: BossRecord) {
 function close() {
   emit('close')
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="boss-picker-overlay" role="presentation" @click.self="close">
+    <div
+      v-if="open"
+      class="boss-picker-overlay"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="boss-picker-modal" role="dialog" aria-modal="true" :aria-label="modalTitle">
         <header class="boss-picker-header">
           <div>

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AgentBuffDoc } from '@/types/calculator'
 import type { DamageCalcHistoryEntry, DamageCalcHistoryImportResult } from '@/types/damageCalcHistory'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
+import { useMaskClose } from '@/composables/useMaskClose'
 import { isCustomSkillGroup } from '@/utils/skillGroup'
 import {
   batchDeleteSchemes,
@@ -119,6 +120,9 @@ function confirmAlways(opts: Omit<PendingConfirm, 'onConfirm'>, action: () => vo
 function closeConfirm() {
   pendingConfirm.value = null
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(closeConfirm)
 
 function runConfirm() {
   const fn = pendingConfirm.value?.onConfirm
@@ -1127,7 +1131,8 @@ defineExpose({
     <div
       v-if="pendingConfirm"
       class="scheme-confirm-overlay"
-      @click.self="closeConfirm"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
     >
       <div class="scheme-confirm" :class="{ danger: pendingConfirm.danger }">
         <div v-if="pendingConfirm.title" class="scheme-confirm-title">{{ pendingConfirm.title }}</div>

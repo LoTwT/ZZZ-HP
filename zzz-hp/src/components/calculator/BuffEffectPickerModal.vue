@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import NumberStepper from '@/components/common/NumberStepper.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { CharacterAttrKey, SkillSubcategory } from '@/types/calculator'
 import type {
   CollectedEffect,
@@ -469,11 +470,20 @@ function removeCurrentList() {
 function close() {
   open.value = false
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="buff-picker-overlay" role="presentation" @click.self="close">
+    <div
+      v-if="open"
+      class="buff-picker-overlay"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="buff-picker-modal" role="dialog" aria-modal="true" aria-label="选择 Buff">
         <header class="buff-picker-header">
           <div class="buff-picker-header-main">

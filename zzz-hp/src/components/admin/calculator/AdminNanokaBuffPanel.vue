@@ -30,6 +30,7 @@ import {
 } from '@/api/nanokaBuffs'
 import AdminConfirmDialog from '@/components/admin/AdminConfirmDialog.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
+import { useMaskClose } from '@/composables/useMaskClose'
 import { clearAdminAuthenticated } from '@/utils/adminAuth'
 import { AGENT_ELEMENTS, AGENT_ROLES, BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import {
@@ -599,6 +600,20 @@ function closeOriginal() {
   originalVisible.value = false
   originalItem.value = null
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关。
+// 本组件有三个遮罩弹窗，各用一个独立实例，按下态不会互相串。
+const { onMaskPointerDown, onMaskClick } = useMaskClose(closeOriginal)
+const { onMaskPointerDown: onRulesMaskPointerDown, onMaskClick: onRulesMaskClick } = useMaskClose(
+  () => {
+    rulesVisible.value = false
+  },
+)
+const { onMaskPointerDown: onEmptyMaskPointerDown, onMaskClick: onEmptyMaskClick } = useMaskClose(
+  () => {
+    emptyVisible.value = false
+  },
+)
 
 /**
  * 弹窗里显示的句子：**这一段（整块）的完整原文**，一句都不删（用户 2026-10-17：
@@ -1887,7 +1902,12 @@ const wasteCount = computed(() =>
            没抽出关键字的句子标淡色（用户 2026-10-17）。
            **Teleport 到 body**：面板外层容器可能有 transform / overflow，会裁掉 position:fixed 的弹窗 -->
       <Teleport to="body">
-        <div v-if="originalVisible && originalItem" class="nbf-modal-mask" @click.self="closeOriginal">
+        <div
+          v-if="originalVisible && originalItem"
+          class="nbf-modal-mask"
+          @pointerdown="onMaskPointerDown"
+          @click="onMaskClick"
+        >
           <div class="nbf-modal">
             <header class="nbf-modal-head">
               <h4>{{ originalItem.slotLabel }} · {{ originalItem.title || '（无标题）' }} · 整块原文</h4>
@@ -1917,7 +1937,12 @@ const wasteCount = computed(() =>
         </div>
 
         <!-- 「解析规则」弹窗：数据全部来自后端 `/rules`（抽取器词表自动导出），界面不手写 -->
-        <div v-if="rulesVisible" class="nbf-modal-mask" @click.self="rulesVisible = false">
+        <div
+          v-if="rulesVisible"
+          class="nbf-modal-mask"
+          @pointerdown="onRulesMaskPointerDown"
+          @click="onRulesMaskClick"
+        >
           <div class="nbf-modal nbf-rules-modal">
             <header class="nbf-modal-head">
               <h4>解析规则对照表{{ rules ? ` · v${rules.version}` : '' }}</h4>
@@ -1947,7 +1972,12 @@ const wasteCount = computed(() =>
         </div>
 
         <!-- 「找空活干」弹窗：0 增益的角色 / 音擎；点一项 = 直接选中（不自动抓取） -->
-        <div v-if="emptyVisible" class="nbf-modal-mask" @click.self="emptyVisible = false">
+        <div
+          v-if="emptyVisible"
+          class="nbf-modal-mask"
+          @pointerdown="onEmptyMaskPointerDown"
+          @click="onEmptyMaskClick"
+        >
           <div class="nbf-modal nbf-empty-modal">
             <header class="nbf-modal-head">
               <h4>0 增益的{{ kindLabel }}（{{ emptyRows.length }} / {{ emptyData?.empty.length ?? localEmptyTargets.length }}）</h4>

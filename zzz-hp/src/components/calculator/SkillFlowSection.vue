@@ -85,6 +85,7 @@ import {
 } from '@/utils/panelBuffCalc'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 import SkillBuffOverrideModal from '@/components/calculator/SkillBuffOverrideModal.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import FlowBuffTableModal from '@/components/calculator/FlowBuffTableModal.vue'
 import {
   buildFlowBuffTableColumns,
@@ -2435,6 +2436,21 @@ function closeFlowGroupTune() {
   flowGroupTuneId.value = null
 }
 
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关。
+// 本组件有五个遮罩弹窗（细调 / 招式详情 / 新建招式 / 新建技能组 / 确认框），
+// 各用一个独立实例，按下态不会互相串。
+const { onMaskPointerDown, onMaskClick } = useMaskClose(closeFlowGroupTune)
+const { onMaskPointerDown: onDetailMaskPointerDown, onMaskClick: onDetailMaskClick } =
+  useMaskClose(closeDetail)
+const { onMaskPointerDown: onCustomFormMaskPointerDown, onMaskClick: onCustomFormMaskClick } =
+  useMaskClose(closeCustomForm)
+const {
+  onMaskPointerDown: onCustomGroupFormMaskPointerDown,
+  onMaskClick: onCustomGroupFormMaskClick,
+} = useMaskClose(closeCustomGroupForm)
+const { onMaskPointerDown: onConfirmMaskPointerDown, onMaskClick: onConfirmMaskClick } =
+  useMaskClose(closeConfirm)
+
 /** 细调里看招式详情：叠在细调之上，关闭后仍回细调；带上流程段 id 以便展示计算过程 */
 function openTuneMemberDetail(
   member: { order: number; skillId: string },
@@ -3475,7 +3491,8 @@ const showcaseTitle = computed(() => {
       <div
         v-if="tuningFlowEntry && tuningGroup"
         class="skill-detail-overlay"
-        @click.self="closeFlowGroupTune"
+        @pointerdown="onMaskPointerDown"
+        @click="onMaskClick"
       >
         <div class="skill-detail-panel group-tune-panel" role="dialog" aria-modal="true">
           <header class="skill-detail-head">
@@ -3632,7 +3649,12 @@ const showcaseTitle = computed(() => {
     </Teleport>
 
     <Teleport to="body">
-        <div v-if="detail" class="skill-detail-overlay" @click.self="closeDetail">
+        <div
+          v-if="detail"
+          class="skill-detail-overlay"
+          @pointerdown="onDetailMaskPointerDown"
+          @click="onDetailMaskClick"
+        >
           <div class="skill-detail-panel" role="dialog" aria-modal="true" :aria-label="detailTitle">
             <header class="skill-detail-head">
               <h3>
@@ -4030,7 +4052,12 @@ const showcaseTitle = computed(() => {
         </Teleport>
 
         <Teleport to="body">
-        <div v-if="showCustomForm" class="skill-detail-overlay" @click.self="closeCustomForm">
+        <div
+          v-if="showCustomForm"
+          class="skill-detail-overlay"
+          @pointerdown="onCustomFormMaskPointerDown"
+          @click="onCustomFormMaskClick"
+        >
           <div class="skill-detail-panel" role="dialog" aria-modal="true" aria-label="新建招式">
             <header class="skill-detail-head">
               <h3>{{ customFormOwnerGroupId ? '组内新建招式' : '新建招式' }}</h3>
@@ -4054,7 +4081,12 @@ const showcaseTitle = computed(() => {
         </Teleport>
 
         <Teleport to="body">
-        <div v-if="showCustomGroupForm" class="skill-detail-overlay" @click.self="closeCustomGroupForm">
+        <div
+          v-if="showCustomGroupForm"
+          class="skill-detail-overlay"
+          @pointerdown="onCustomGroupFormMaskPointerDown"
+          @click="onCustomGroupFormMaskClick"
+        >
           <div class="skill-detail-panel" role="dialog" aria-modal="true" aria-label="新建技能组">
             <header class="skill-detail-head">
               <h3>新建技能组</h3>
@@ -4081,7 +4113,8 @@ const showcaseTitle = computed(() => {
           <div
             v-if="pendingConfirm"
             class="scheme-confirm-overlay"
-            @click.self="closeConfirm"
+            @pointerdown="onConfirmMaskPointerDown"
+            @click="onConfirmMaskClick"
           >
             <div class="scheme-confirm" :class="{ danger: pendingConfirm.danger }">
               <div class="scheme-confirm-title">{{ pendingConfirm.title }}</div>

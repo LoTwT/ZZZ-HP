@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import SkillDefinitionForm from '@/components/calculator/SkillDefinitionForm.vue'
 import AgentFuzzySelect from '@/components/admin/calculator/AgentFuzzySelect.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type {
   Skill,
   SkillDamageType,
@@ -75,6 +76,18 @@ const privateSkillDraft = ref({
   baseMult: 0,
   settlementMult: 0,
   note: '',
+})
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关。
+// 本组件有两个遮罩弹窗，各用一个独立实例，按下态不会互相串。
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  memberModalOpen.value = false
+})
+const {
+  onMaskPointerDown: onPrivateSkillFormMaskPointerDown,
+  onMaskClick: onPrivateSkillFormMaskClick,
+} = useMaskClose(() => {
+  privateSkillFormOpen.value = false
 })
 
 const sortedList = computed(() => {
@@ -878,7 +891,12 @@ defineExpose({
       </form>
     </div>
 
-    <div v-if="memberModalOpen" class="modal-mask" @click.self="memberModalOpen = false">
+    <div
+      v-if="memberModalOpen"
+      class="modal-mask"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="modal-card member-picker" role="dialog" aria-label="编辑技能组成员">
         <header class="modal-head">
           <h3>编辑成员 · {{ groupForm.name || '未命名组' }}</h3>
@@ -1017,7 +1035,8 @@ defineExpose({
     <div
       v-if="privateSkillFormOpen"
       class="modal-mask"
-      @click.self="privateSkillFormOpen = false"
+      @pointerdown="onPrivateSkillFormMaskPointerDown"
+      @click="onPrivateSkillFormMaskClick"
     >
       <div class="modal-card" role="dialog" aria-label="组内新建招式">
         <header class="modal-head">

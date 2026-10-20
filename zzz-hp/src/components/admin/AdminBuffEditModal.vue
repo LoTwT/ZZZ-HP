@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AdminBuffPanel from '@/components/admin/AdminBuffPanel.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { AdminBuffSlotContext, AdminScope } from '@/types/admin'
 
 const props = defineProps<{
@@ -36,6 +37,9 @@ function close() {
   open.value = false
 }
 
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
+
 function onSaved() {
   emit('saved')
   close()
@@ -48,7 +52,8 @@ function onSaved() {
       v-if="open && context"
       class="admin-buff-modal-overlay"
       role="presentation"
-      @click.self="close"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
     >
       <div class="admin-buff-modal" role="dialog" aria-modal="true" :aria-label="title">
         <header class="admin-buff-modal-header">
