@@ -162,6 +162,7 @@ const openedForEventSave = ref(false)
 const libraryTab = ref<'mine' | 'presets'>('mine')
 const sharedSchemes = ref<SharedSchemeDoc[]>([])
 const sharedSearch = ref('')
+const sharedCurrentFolder = ref('')
 const sharedLoading = ref(false)
 const sharedError = ref('')
 let sharedLoaded = false
@@ -238,6 +239,8 @@ function openModal() {
   formMessage.value = ''
   openedForEventSave.value = false
   libraryTab.value = 'mine'
+  sharedCurrentFolder.value = ''
+  sharedSearch.value = ''
   void loadSharedSchemes()
 }
 
@@ -259,16 +262,67 @@ async function loadSharedSchemes(force = false) {
 
 function openPresetTab() {
   libraryTab.value = 'presets'
+  sharedCurrentFolder.value = ''
   void loadSharedSchemes()
 }
 
-const filteredSharedSchemes = computed(() => {
-  const q = sharedSearch.value.trim().toLowerCase()
-  if (!q) return sharedSchemes.value
-  return sharedSchemes.value.filter((preset) =>
-    `${preset.name} ${preset.folder} ${preset.description}`.toLowerCase().includes(q),
-  )
+const sharedFolderIndex = computed(() => {
+  const dirs = new Set<string>()
+  const byFolder = new Map<string, SharedSchemeDoc[]>()
+  for (const preset of sharedSchemes.value) {
+    const folder = normFolder(preset.folder || '')
+    const list = byFolder.get(folder) ?? []
+    list.push(preset)
+    byFolder.set(folder, list)
+    let current = folder
+    while (current) {
+      dirs.add(current)
+      current = parentFolder(current)
+    }
+  }
+  return { dirs, byFolder }
 })
+
+const sharedSubFolders = computed(() => {
+  const folder = sharedCurrentFolder.value
+  const prefix = folder === '' ? '/' : `${folder}/`
+  const children = new Set<string>()
+  for (const dir of sharedFolderIndex.value.dirs) {
+    if (!dir.startsWith(prefix)) continue
+    const rest = dir.slice(prefix.length)
+    const segment = rest.split('/')[0]
+    if (segment) children.add(folder === '' ? `/${segment}` : `${folder}/${segment}`)
+  }
+  return [...children].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
+
+const sharedEntriesInFolder = computed(() => {
+  const q = sharedSearch.value.trim().toLowerCase()
+  const list = sharedFolderIndex.value.byFolder.get(sharedCurrentFolder.value) ?? []
+  return list
+    .filter((preset) => !q || `${preset.name} ${preset.description}`.toLowerCase().includes(q))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'zh-CN'))
+})
+
+const sharedBreadcrumbSegments = computed(() => {
+  const parts = sharedCurrentFolder.value.split('/').filter(Boolean)
+  return parts.map((name, index) => ({
+    name,
+    path: `/${parts.slice(0, index + 1).join('/')}`,
+  }))
+})
+
+function sharedFolderCount(folder: string): number {
+  let count = 0
+  for (const [path, list] of sharedFolderIndex.value.byFolder) {
+    if (path === folder || path.startsWith(`${folder}/`)) count += list.length
+  }
+  return count
+}
+
+function enterSharedFolder(path: string) {
+  sharedCurrentFolder.value = path
+}
 
 /**
  * 使用预设：把它复制进本机方案库（必要时合并自建招式 / 技能组），再交给父组件加载。
@@ -1255,7 +1309,7 @@ defineExpose({
               v-model="sharedSearch"
               type="text"
               class="field-input scheme-search"
-              placeholder="搜索预设方案"
+              placeholder="搜索当前目录预设"
             />
             <button
               type="button"
@@ -1266,16 +1320,70 @@ defineExpose({
               {{ sharedLoading ? '刷新中…' : '刷新' }}
             </button>
           </div>
+
+          <nav class="scheme-breadcrumb" aria-label="预设目录路径">
+            <button
+              type="button"
+              class="bc-seg"
+              :class="{ current: sharedCurrentFolder === '' }"
+              @click="enterSharedFolder('')"
+            >
+              全部预设
+            </button>
+            <template v-for="seg in sharedBreadcrumbSegments" :key="seg.path">
+              <span class="bc-sep">/</span>
+              <button
+                type="button"
+                class="bc-seg"
+                :class="{ current: sharedCurrentFolder === seg.path }"
+                @click="enterSharedFolder(seg.path)"
+              >
+                {{ seg.name }}
+              </button>
+            </template>
+            <span class="bc-count">
+              {{ sharedSubFolders.length + sharedEntriesInFolder.length }} 项
+            </span>
+          </nav>
+
           <p v-if="sharedError" class="history-warn">{{ sharedError }}</p>
           <p v-else-if="sharedLoading && !sharedSchemes.length" class="history-empty">
             正在读取预设方案…
           </p>
-          <div v-else-if="!filteredSharedSchemes.length" class="history-empty">
-            {{ sharedSchemes.length ? '没有匹配的预设方案。' : '管理员暂未发布预设方案。' }}
+          <div
+            v-else-if="!sharedSubFolders.length && !sharedEntriesInFolder.length"
+            class="history-empty"
+          >
+            {{
+              sharedSearch.trim()
+                ? '当前目录没有匹配的预设方案。'
+                : sharedSchemes.length
+                  ? '此目录暂无预设方案。'
+                  : '管理员暂未发布预设方案。'
+            }}
           </div>
           <ul v-else class="scheme-list shared-scheme-list" role="list">
             <li
-              v-for="preset in filteredSharedSchemes"
+              v-for="dir in sharedSubFolders"
+              :key="dir"
+              class="scheme-dir-card"
+            >
+              <div class="scheme-card-main">
+                <div class="scheme-meta dir-meta" @click="enterSharedFolder(dir)">
+                  <div class="dir-head">
+                    <span class="dir-icon">📁</span>
+                    <div class="dir-title">
+                      <span class="dir-tag">目录</span>
+                      <span class="scheme-name" :title="baseName(dir)">{{ baseName(dir) }}</span>
+                    </div>
+                  </div>
+                  <div class="scheme-time placeholder-line">&nbsp;</div>
+                  <span class="scheme-stats">{{ sharedFolderCount(dir) }} 个预设</span>
+                </div>
+              </div>
+            </li>
+            <li
+              v-for="preset in sharedEntriesInFolder"
               :key="preset.id"
               class="scheme-card shared-scheme-card"
             >
