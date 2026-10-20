@@ -198,20 +198,21 @@ const modes: ModeCard[] = [
 }
 
 .hero-title-name {
-  display: inline-block;
-  padding: 0.04em 0.14em 0.06em;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05em 0.14em 0.05em 0.06em;
   font-size: clamp(3.2rem, 9.5vw, 6.8rem);
   background: var(--zzz-yellow);
   color: #0a0a0a;
   transform: skew(-8deg);
+  line-height: 1;
 }
 
-/* 中文比 HP 略小并居中，四周留出与 HP 相近的呼吸空间 */
+/* 中文比 HP 略小，四周留出与 HP 相近的呼吸空间 */
 .hero-title-cn {
   display: inline-block;
   font-size: 0.8em;
   line-height: 1;
-  vertical-align: middle;
   margin-left: 0.12em;
   font-weight: 900;
   -webkit-text-stroke: 0.02em currentColor;
