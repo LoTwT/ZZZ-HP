@@ -300,7 +300,7 @@ export async function fetchDeductionHpChart(): Promise<HpChartPoint[]> {
   return fetchDeductionNodeHpChart()
 }
 
-/** 推演终局 Boss 列表（单独怪物对比用） */
+/** 推演终局 Boss 列表（怪物数据库用） */
 export async function fetchDeductionBossList(): Promise<BossOption[]> {
   const periods = await fetchDeductionPhases()
   const byName = new Map<string, { image: string | null }>()

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import ExtraBuffGainEditor, {
   type ExtraBuffGain,
 } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { SkillCategoryId } from '@/types/calculator'
 import type { AgentBuffDoc } from '@/types/calculator'
 
@@ -25,11 +26,20 @@ const gainCount = computed(() => gains.value.length)
 function close() {
   open.value = false
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="buff-picker-overlay" role="presentation" @click.self="close">
+    <div
+      v-if="open"
+      class="buff-picker-overlay"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div
         class="buff-picker-modal extra-buff-modal"
         role="dialog"

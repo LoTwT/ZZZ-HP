@@ -428,7 +428,25 @@ const comparePanel = readFileSync(
   new URL('../src/components/history/MonsterComparePanel.vue', import.meta.url),
   'utf8',
 )
-check('单独怪物对比页不开启该表（保持两列）', !comparePanel.includes('show-resistance-table'))
+check('怪物数据库页开启该表（与怪物详情弹窗同款三列）', comparePanel.includes(':show-resistance-table="true"'))
+check(
+  '数据库页按模式补表所需类别（危局 / 推演按首领，防卫按「怪物类型」选择器）',
+  comparePanel.includes('monster_category: detailMonsterCategory.value') &&
+    /isDefenseMode\.value \? selectedCategory\.value : 'boss'/.test(comparePanel),
+)
+check(
+  '数据库页的版本取图上最新一期（不依赖 points 顺序）',
+  comparePanel.includes('version: chartLatestVersion.value') &&
+    comparePanel.includes('isVersionAtLeast') &&
+    /latest === null \|\| isVersionAtLeast\(version, latest\)/.test(comparePanel),
+)
+check(
+  '数据库页判「2.1 前已存在」按图上出现的版本（isVersionAtMost + 起算版本常量）',
+  comparePanel.includes(
+    'boss_existed_by_multiplier_version: bossExistedByMultiplierVersion.value',
+  ) &&
+    /isVersionAtMost\(point\.version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM\)/.test(comparePanel),
+)
 
 console.log('[9] 异常条系数兜底：值只来自数据侧，前端只按 1 兜底')
 const tableSource = readFileSync(

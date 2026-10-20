@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AdminMonsterPanel from '@/components/admin/AdminMonsterPanel.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { AdminMonsterSlotContext, AdminScope } from '@/types/admin'
 
 const props = defineProps<{
@@ -37,6 +38,9 @@ function close() {
   open.value = false
 }
 
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
+
 function onSaved() {
   emit('saved')
   close()
@@ -49,7 +53,8 @@ function onSaved() {
       v-if="open && context"
       class="admin-monster-modal-overlay"
       role="presentation"
-      @click.self="close"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
     >
       <div class="admin-monster-modal" role="dialog" aria-modal="true" :aria-label="title">
         <header class="admin-monster-modal-header">

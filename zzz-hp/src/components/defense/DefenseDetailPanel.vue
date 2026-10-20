@@ -28,6 +28,7 @@ import {
 } from '@/utils/panelUrlState'
 import ElementTraitIcons from '@/components/shared/ElementTraitIcons.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import DefenseMonsterDetailModal from '@/components/defense/DefenseMonsterDetailModal.vue'
 
 const props = defineProps<{
@@ -60,6 +61,11 @@ const loadError = ref('')
 const currentIndex = ref(0)
 const roomHpIndex = ref(0)
 const showPicker = ref(false)
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  showPicker.value = false
+})
 
 function defaultPublicSeasonIndex(list: DefenseSeason[]): number {
   if (!list.length) return 0
@@ -725,7 +731,12 @@ function formatEnemyResistance(value?: string) {
           </div>
 
           <Teleport to="body">
-            <div v-if="showPicker" class="phase-modal-overlay" @click.self="showPicker = false">
+            <div
+              v-if="showPicker"
+              class="phase-modal-overlay"
+              @pointerdown="onMaskPointerDown"
+              @click="onMaskClick"
+            >
               <div class="phase-modal">
                 <button
                   type="button"

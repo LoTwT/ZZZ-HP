@@ -33,6 +33,9 @@ import {
 } from '../src/services/nanoka/nanokaCharacterClient.js'
 import { listSkills, upsertSkill } from '../src/services/skillLibraryService.js'
 import { listSkillSubcategories } from '../src/services/skillSubcategoryService.js'
+import {
+  extractDamageSegments as extractDamageSegmentsFromMapper,
+} from '../src/services/nanoka/nanokaSkillMapper.js'
 
 dotenv.config()
 
@@ -41,14 +44,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /** 可选硬编码覆盖（自动匹配失败或需钉死 nanokaId 时用） */
 const AGENT_NANOKA_LOOKUP = {
   claret: { code: 'Claret', zh: '克拉蕾', nanokaId: '1611' },
-}
-
-const NANOKA_CATEGORY_TO_SKILL_TYPES = {
-  basic: ['basic'],
-  dodge: ['dodge'],
-  special: ['special'],
-  chain: ['chain'],
-  assist: ['assist'],
 }
 
 function hasFlag(name) {
@@ -87,15 +82,7 @@ function shortParamLabel(paramName) {
   return raw.replace(/伤害倍率$/, '').trim()
 }
 
-function buildDisplayName(skillName, paramName) {
-  const short = shortParamLabel(paramName)
-  if (!short) return skillName
-  return `${skillName}·${short}`
-}
-
-/**
- * 稳定 id，便于反复导入：sk-{agent}-nk-{nanokaSkillId}-{slug}
- */
+/** 稳定 id，便于反复导入：sk-{agent}-nk-{nanokaSkillId}-{slug} */
 function stableSkillId(agentId, nanokaSkillId, paramName) {
   const slug = shortParamLabel(paramName) || 'main'
   const safeSlug = slug
@@ -104,31 +91,6 @@ function stableSkillId(agentId, nanokaSkillId, paramName) {
     .slice(0, 24)
   const id = `sk-${agentId}-nk-${nanokaSkillId}-${safeSlug || 'main'}`
   return id.slice(0, 64)
-}
-
-/**
- * 大类 + 小类一并写入（管理端勾选要看得见）。
- * nanoka 把终结技挂在 chain 下，按名称纠正为 ultimate。
- */
-function mapSkillTypes(category, skillName) {
-  const name = String(skillName ?? '')
-  if (/终结技/.test(name)) return ['ultimate']
-  if (/连携技/.test(name)) return ['chain']
-  if (/强化特殊技/.test(name) || (category === 'special' && /强化/.test(name))) {
-    return ['special', 'specialEnhanced']
-  }
-  if (category === 'special' || /^特殊技/.test(name)) {
-    return ['special', 'specialBasic']
-  }
-  if (/闪避反击/.test(name) || (category === 'dodge' && /反击/.test(name))) {
-    return ['dodge', 'dodgeCounter']
-  }
-  if (/冲刺攻击/.test(name)) return ['dodge', 'dash']
-  if (category === 'basic' || /普通攻击/.test(name)) return ['basic']
-  if (category === 'assist') return ['assist']
-  if (category === 'dodge') return ['dodge']
-  if (category === 'chain') return ['chain']
-  return [...(NANOKA_CATEGORY_TO_SKILL_TYPES[category] ?? ['basic'])]
 }
 
 /**
@@ -144,54 +106,13 @@ export function computeBaseMultPercent(damagePercentage, growth, level = 12) {
 }
 
 /**
- * 从角色详情拆出伤害倍率候选段（同 displayName 去重，保留首条）。
+ * 从角色详情拆出倍率候选段（含异常类：异放 / 耀变 / 紊乱 / 乱流）。
+ *
+ * 口径与 `src/services/nanoka/nanokaSkillMapper.js` 的 `extractDamageSegments` 同源，
+ * 这里只做转出，避免 CLI 与管理端两套解析各改一半。
  */
 export function extractDamageSegments(detail, { level = 12 } = {}) {
-  const skillRoot = detail?.skill ?? {}
-  const segments = []
-  const seenNorm = new Set()
-  for (const [category, block] of Object.entries(skillRoot)) {
-    const descriptions = Array.isArray(block?.description) ? block.description : []
-    for (const entry of descriptions) {
-      const skillName = String(entry?.name ?? '').trim()
-      if (!skillName) continue
-      const params = Array.isArray(entry?.param) ? entry.param : []
-      for (const p of params) {
-        const paramName = String(p?.name ?? '').trim()
-        if (!paramName.includes('伤害倍率')) continue
-        if (paramName.includes('失衡')) continue
-
-        const paramMap = p?.param && typeof p.param === 'object' ? p.param : {}
-        const nanokaSkillId = Object.keys(paramMap)[0]
-        if (!nanokaSkillId) continue
-        const stats = paramMap[nanokaSkillId] ?? {}
-        const damagePercentage = Number(stats.damage_percentage ?? stats.main) || 0
-        const damagePercentageGrowth = Number(stats.damage_percentage_growth ?? stats.growth) || 0
-        const baseMult = computeBaseMultPercent(
-          damagePercentage,
-          damagePercentageGrowth,
-          level,
-        )
-        const displayName = buildDisplayName(skillName, paramName)
-        const norm = normalizeSkillName(displayName)
-        if (seenNorm.has(norm)) continue
-        seenNorm.add(norm)
-        segments.push({
-          category,
-          skillName,
-          paramName,
-          nanokaSkillId: String(nanokaSkillId),
-          displayName,
-          baseMult,
-          damagePercentage,
-          damagePercentageGrowth,
-          skillTypes: mapSkillTypes(category, skillName),
-          titleCore: stripSkillTitlePrefix(skillName),
-        })
-      }
-    }
-  }
-  return segments
+  return extractDamageSegmentsFromMapper(detail, { level })
 }
 
 /** 去掉本库备注括号，便于对 nanoka 中文名 */
@@ -279,25 +200,41 @@ function planAgentImport({
   subcategories,
 }) {
   const agentSkills = existingSkills.filter((s) => String(s.agentId ?? '') === agentId)
-  const byNormName = new Map()
-  for (const skill of agentSkills) {
-    byNormName.set(normalizeSkillName(skill.name), skill)
-  }
 
   const report = {
     create: [],
     overwrite: [],
     skipSame: [],
+    existingManual: [],
     unmatchedLocal: [],
   }
   const planned = []
+  const matchedIds = new Set()
+
+  const byTypeAndName = new Map()
+  const byTypeAndAnchor = new Map()
+  for (const skill of agentSkills) {
+    const type = String(skill.damageType ?? 'direct')
+    const nameKey = `${type}|${normalizeSkillName(skill.name)}`
+    if (!byTypeAndName.has(nameKey)) byTypeAndName.set(nameKey, skill)
+    const anchor = String(skill.buffAnchorId ?? '')
+    if (anchor) {
+      const anchorKey = `${type}|${anchor}`
+      if (!byTypeAndAnchor.has(anchorKey)) byTypeAndAnchor.set(anchorKey, skill)
+    }
+  }
 
   for (const seg of segments) {
+    const type = seg.damageType ?? 'direct'
     const norm = normalizeSkillName(seg.displayName)
-    const existing = byNormName.get(norm)
     const resolvedAnchor = resolveBuffAnchorId(subcategories, agentId, seg)
+    let existing = byTypeAndName.get(`${type}|${norm}`)
+    if (!existing && type !== 'direct' && resolvedAnchor) {
+      existing = byTypeAndAnchor.get(`${type}|${resolvedAnchor}`)
+    }
     const buffAnchorId = resolvedAnchor ?? existing?.buffAnchorId ?? null
     const id = existing?.id ?? stableSkillId(agentId, seg.nanokaSkillId, seg.paramName)
+    if (existing) matchedIds.add(existing.id)
     const skillTypes = seg.skillTypes
     const element = agentElement
     const multFields = {
@@ -308,6 +245,17 @@ function planAgentImport({
     }
 
     if (existing) {
+      // 人工建/手工调过的异常类招式不覆盖（固定值 + 等级转模那类手工建模）
+      if (type !== 'direct' && String(existing.multSource ?? '') !== 'nanoka') {
+        report.existingManual.push({
+          id,
+          name: existing.name,
+          damageType: type,
+          localBaseMult: existing.baseMult,
+          importedBaseMult: seg.baseMult,
+        })
+        continue
+      }
       const sameMult = sameOptionalNumber(existing.baseMult, seg.baseMult)
       const samePercentage = sameOptionalNumber(existing.damagePercentage, seg.damagePercentage)
       const sameGrowth = sameOptionalNumber(
@@ -343,35 +291,34 @@ function planAgentImport({
         })
       }
     } else {
+      const doc = {
+        id,
+        agentId,
+        name: seg.displayName,
+        damageType: type,
+        skillTypes,
+        buffAnchorId,
+        ...multFields,
+        baseMultFactor: 100,
+        settlementMult: 0,
+        element,
+      }
+      if (seg.talentKey) doc.radianceTalentKey = seg.talentKey
       report.create.push({
         id,
         name: seg.displayName,
+        damageType: type,
         baseMult: seg.baseMult,
         skillTypes,
         buffAnchorId,
         element,
       })
-      planned.push({
-        action: 'create',
-        doc: {
-          id,
-          agentId,
-          name: seg.displayName,
-          damageType: 'direct',
-          skillTypes,
-          buffAnchorId,
-          ...multFields,
-          baseMultFactor: 100,
-          settlementMult: 0,
-          element,
-        },
-      })
+      planned.push({ action: 'create', doc })
     }
   }
 
-  const matchedNorms = new Set(segments.map((s) => normalizeSkillName(s.displayName)))
   for (const skill of agentSkills) {
-    if (!matchedNorms.has(normalizeSkillName(skill.name))) {
+    if (!matchedIds.has(skill.id)) {
       report.unmatchedLocal.push({
         id: skill.id,
         name: skill.name,
@@ -397,7 +344,7 @@ function printDetailReport(report, { verbose }) {
     '新建',
     report.create,
     (r) =>
-      `  + ${r.name}  baseMult=${r.baseMult}  types=${(r.skillTypes || []).join('+')}  el=${r.element || '-'}  anchor=${r.buffAnchorId || '-'}  id=${r.id}`,
+      `  + ${r.name}  damageType=${r.damageType || 'direct'}  baseMult=${r.baseMult}  types=${(r.skillTypes || []).join('+')}  el=${r.element || '-'}  anchor=${r.buffAnchorId || '-'}  id=${r.id}`,
   )
   printRows(
     '覆盖',
@@ -409,6 +356,12 @@ function printDetailReport(report, { verbose }) {
         .join(',') || 'none'}  id=${r.id}`,
   )
   printRows('跳过(同值)', report.skipSame, (r) => `  = ${r.name}  ${r.baseMult}`)
+  printRows(
+    '跳过(人工异常招式，未覆盖)',
+    report.existingManual,
+    (r) =>
+      `  = ${r.name}  damageType=${r.damageType}  本库=${r.localBaseMult}  nanoka=${r.importedBaseMult}  id=${r.id}`,
+  )
   printRows(
     '本库未匹配残留(不删)',
     report.unmatchedLocal,

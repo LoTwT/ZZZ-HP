@@ -241,7 +241,12 @@ async function onUploadTencentOcrJson(event: Event) {
   >
     <header class="section-header">
       <div>
-        <h2>{{ embedded ? '截图 / OCR 识别' : '图片录入' }}</h2>
+        <h2>
+          {{ embedded ? '截图 / OCR 识别' : '图片录入' }}
+          <span v-if="embedded" class="section-title-note">
+            （请使用米游社面板分享时导出的图片）
+          </span>
+        </h2>
         <p class="section-desc">
           {{
             embedded
@@ -323,6 +328,14 @@ async function onUploadTencentOcrJson(event: Event) {
   margin: 0;
   font-size: 1.05rem;
   color: #f0f2f6;
+}
+
+/* 标题后的提示：说明该用哪种截图，弱化展示避免抢过标题 */
+.section-title-note {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #9aa3b0;
+  white-space: normal;
 }
 
 .section-desc {

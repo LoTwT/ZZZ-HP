@@ -28,6 +28,7 @@ import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
 import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
 import BuffEffectBlocksDisplay from '@/components/calculator/BuffEffectBlocksDisplay.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import { uploadBossImage, uploadBuffImage, type BuffNameTemplate } from '@/api/admin'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type { BuffEffectBlock } from '@/types/calculator'
@@ -822,6 +823,11 @@ const activeNodeIndex = ref(0)
 const loading = ref(false)
 const loadError = ref('')
 const showPicker = ref(false)
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  showPicker.value = false
+})
 
 const currentPeriod = computed<DeductionPeriod | null>(
   () => periods.value[currentIndex.value] ?? null,
@@ -1628,7 +1634,12 @@ onMounted(() => {
 
       <!-- 期数选择 -->
       <Teleport to="body">
-        <div v-if="showPicker" class="dd-picker-mask" @click.self="showPicker = false">
+        <div
+          v-if="showPicker"
+          class="dd-picker-mask"
+          @pointerdown="onMaskPointerDown"
+          @click="onMaskClick"
+        >
           <div class="dd-picker">
             <h4 class="dd-picker-title">选择推演期数</h4>
             <button

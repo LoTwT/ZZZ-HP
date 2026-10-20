@@ -89,10 +89,11 @@ console.log('\n[1] 往返不读 legacyBuffEffect')
   const back = effectInstanceToBuffEffect(inst)
   check('往返仍是 12', back.value === 12, `${back.value}`)
   check('id 保留', back.id === 'keep')
-  check('scope 招式', JSON.stringify(back.scope) === JSON.stringify(['skill']))
+  check('scope 不再写', back.scope === undefined)
   check('招式大类普通攻击', back.skillTargets?.[0]?.category === 'basic')
   const spec = adaptBuffEffect(fixedEffect('s', 'dmgBonus', 1, { scope: 'skill', skillTargets: [{ category: 'basic', subcategoryId: null }] }))
-  check('adapt 抄上 scope', JSON.stringify(spec.conditions.scope) === JSON.stringify(['skill']))
+  check('adapt 抄上 skillTargets', spec.conditions.skillTargets?.[0]?.category === 'basic')
+  check('scope=skill 不产 damageTypes', spec.conditions.damageTypes?.length === 0)
 }
 
 console.log('\n[2] 通用 / 招式 / 失衡 / 默认关')

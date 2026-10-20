@@ -105,6 +105,7 @@ import {
 import { buildGenericPanelSkillContext } from '@/utils/resolvedHit'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import {
+  buildSkillFlowHitContextSignature,
   buildSkillFlowPageSignature,
   formatAffixCountsSummary,
   type SkillFlowDisplayOption,
@@ -1640,22 +1641,33 @@ const skillFlowHitMapState = ref<{
 
 let pendingSkillFlowEmit = false
 
+/**
+ * 流程命中的上下文指纹：`hitEvalCache` 的令牌来源，也是 `skillFlowHitFingerprint` 的一半。
+ *
+ * **字段表已抽到 `buildSkillFlowHitContextSignature`**（单点维护，测试直接盯它）：
+ * 这里只负责从**响应式来源**逐字段取值 —— 读 props / ref 才会建立依赖；
+ * 若改成从 `evalCtx` 取（深解包后的原始对象），配置变了签名也不变，会命中过期结果。
+ */
 const skillFlowContextFingerprint = computed(() =>
-  JSON.stringify({
+  buildSkillFlowHitContextSignature({
     enemy: enemyInput.value,
     extraGains: extraGains.value,
-    sourceExtraGains: props.skillFlowSourceExtraGains ?? [],
+    sourceExtraGains: props.skillFlowSourceExtraGains,
     buffSelection: props.buffSelection,
     slotBuffSelections: props.slotBuffSelections,
-    convert: props.convertSlotPanels ?? {},
-    anomaly: props.activeSlotPanels ?? {},
-    participants: props.activeSlotPanels ?? {},
-    env: (props.environmentBuffs ?? []).map((item) => item.id),
-    bangboo: [props.selectedBangbooId, props.bangbooRefine],
-    mains: { ...activeDriveDiscMainStats.value },
+    convertSlotPanels: props.convertSlotPanels,
+    activeSlotPanels: props.activeSlotPanels,
+    environmentBuffIds: (props.environmentBuffs ?? []).map((item) => item.id),
+    bangbooId: props.selectedBangbooId,
+    bangbooRefine: props.bangbooRefine,
+    driveDiscMainStats: activeDriveDiscMainStats.value,
     baseDamageSource: baseDamageSource.value,
     damageKind: sweepDamageKind.value,
-    stagger: props.staggerPhase,
+    staggerPhase: props.staggerPhase,
+    // 队伍档位（影画 / 精炼 / 装备）与编辑槽位、技能等级：改它们必须换令牌
+    teamSlots: props.teamSlots,
+    mainSlotIndex: mainSlotIndex.value,
+    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
   }),
 )
 

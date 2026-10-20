@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import PanelScreenshotUploadSection from '@/components/calculator/PanelScreenshotUploadSection.vue'
 import SlotPanelEntryForm from '@/components/calculator/SlotPanelEntryForm.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
@@ -609,6 +610,11 @@ function confirm() {
 }
 
 const canConfirm = computed(() => !!selected.value.agentId)
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  open.value = false
+})
 </script>
 
 <template>
@@ -624,7 +630,8 @@ const canConfirm = computed(() => !!selected.value.agentId)
       v-if="open"
       class="unified-overlay"
       role="presentation"
-      @click.self="open = false"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
     >
       <div class="unified-modal" role="dialog" aria-modal="true" aria-label="导入预设">
         <!-- Header -->

@@ -1,9 +1,11 @@
 /**
- * 单独怪物对比：BossOption × boss_info 基础库联表归一化 + 选择器/数据块接线守卫
+ * 怪物数据库：面板命名（含三模式全名）+ BossOption × boss_info 基础库联表归一化
+ * + 选择器/数据块/「弱点与抗性」表接线守卫
  *
  * 运行：npx vite-node scripts/test-monster-compare.mjs
  */
 import { readFileSync } from 'node:fs'
+import { getModePanelLabel, MODE_PANEL_DEFINITIONS } from '../src/config/modePanels.ts'
 import { joinBossOptionsWithInfo } from '../src/utils/bossPickerItems.ts'
 
 let passed = 0
@@ -93,7 +95,17 @@ check(
 )
 check('空列表输入返回空数组', joinBossOptionsWithInfo([], []).length === 0)
 
-console.log('[4] 源码守卫：面板接线')
+console.log('[4] 面板命名：侧栏 / 移动端副标题都走 getModePanelLabel')
+const monsterPanel = MODE_PANEL_DEFINITIONS.find((definition) => definition.id === 'monster-compare')
+check('兜底 label 为「怪物数据库」', monsterPanel?.label === '怪物数据库')
+check(
+  '三模式全名：危局 / 防卫战 / 临界推演',
+  getModePanelLabel('crisis-assault', 'monster-compare') === '危局怪物数据库' &&
+    getModePanelLabel('defense', 'monster-compare') === '防卫战怪物数据库' &&
+    getModePanelLabel('deduction', 'monster-compare') === '临界推演怪物数据库',
+)
+
+console.log('[5] 源码守卫：面板接线')
 const panel = readFileSync(
   new URL('../src/components/history/MonsterComparePanel.vue', import.meta.url),
   'utf8',
@@ -108,6 +120,8 @@ check(
     panel.includes('image-clickable') &&
     panel.includes('@image-click="pickerModalOpen = true"'),
 )
+check('数据块开启「弱点与抗性」表（与怪物详情弹窗同款三列）', panel.includes(':show-resistance-table="true"'))
+check('页面标题用「怪物数据库」', panel.includes('{{ pageTitle }} · 怪物数据库'))
 check('图表 v-model:hp-mode 仍耦合 crisisRoomType', panel.includes('v-model:hp-mode="crisisRoomType"'))
 check('防卫战怪物类型 select 保留', panel.includes('v-model="selectedCategory"'))
 check('原有 epoch 守卫保留', panel.includes('bossListLoadEpoch.isCurrent(token)') && panel.includes('bossChartLoadEpoch.isCurrent(token)'))
@@ -118,7 +132,14 @@ const pickerModal = readFileSync(
 )
 check('弹窗 select 事件只上抛 bossName', pickerModal.includes("emit('select', item.bossName)"))
 check('弹窗卡片抗性带 40% 档（resistanceHigh）', pickerModal.includes('formatTraitTextWithPercent(item.resistance, item.resistanceHigh)'))
-check('弹窗取消只 close，不改选中', pickerModal.includes("@click.self=\"emit('close')\""))
+check(
+  '弹窗取消只 close，不改选中',
+  // 遮罩不再用 @click.self（会把「弹窗里按下、拖到遮罩上松手」误判成点遮罩），
+  // 改成 pointerdown/click 落点双判定；这里的契约不变：关窗只 emit('close')，不碰选中。
+  pickerModal.includes('@pointerdown="onMaskPointerDown"') &&
+    pickerModal.includes('@click="onMaskClick"') &&
+    pickerModal.includes("useMaskClose(() => emit('close'))"),
+)
 
 const stats = readFileSync(
   new URL('../src/components/history/MonsterDetailStats.vue', import.meta.url),

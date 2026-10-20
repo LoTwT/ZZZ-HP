@@ -127,6 +127,84 @@ export function buildSkillFlowPageSignature(input: {
 }
 
 /**
+ * 招式流程「命中求值上下文」的输入。
+ *
+ * 与上面的 `buildSkillFlowPageSignature` 同类（都由**响应式来源**逐字段取，不由 ctx 取），
+ * 但用途不同：这份是 `hitEvalCache` 的**上下文令牌**来源 —— 它一变，流程命中必须重算、
+ * 旧命中条目不得复用。两处缺一不可：只改 watch 依赖不换令牌会命中旧值；
+ * 只换令牌不改 watch 则根本不会触发重算。
+ */
+export interface SkillFlowHitContextInput {
+  enemy: unknown
+  /** 页级额外 Buff */
+  extraGains: unknown
+  /** 选 ②③ 时该次分配的 `gain:`（不在局外面板上） */
+  sourceExtraGains: unknown
+  /** 主槽已解析的勾选状态（`resolveBuffSelectionForSlot`） */
+  buffSelection: unknown
+  slotBuffSelections: unknown
+  convertSlotPanels: unknown
+  /** 已解析的激活局外面板（每人一份） */
+  activeSlotPanels: unknown
+  environmentBuffIds: readonly string[]
+  bangbooId: string
+  bangbooRefine: number
+  driveDiscMainStats: unknown
+  baseDamageSource: string
+  damageKind: string | null
+  staggerPhase: string | null | undefined
+  /**
+   * 队伍槽位 —— **必须进签名**（2026-10-20 修复）：
+   * 影画档位 / 音擎精炼只体现在这里，而它们会改变命中结果。
+   * 漏掉的症状：页内改影画或精炼后流程数字不动，要 F5；有的档位「碰巧」会刷新
+   * （勾选表被剪、或技能等级跨 3/5 影档），有的不会（team 目标影画、精炼全档同 id）。
+   */
+  teamSlots: readonly TeamSlot[]
+  /** 当前编辑槽位（= 上下文 `mainSlotIndex`）：决定哪些「自身」增益算给谁 */
+  mainSlotIndex: number
+  /** 按角色 id 的五大类技能等级：技能等级转模 / 倍率的来源 */
+  skillTalentLevelsByAgent: unknown
+}
+
+/**
+ * 招式流程命中求值上下文的指纹（`internHitEvalContext` 的输入）。
+ *
+ * **刻意不进签名**：`agents` / `wengines` / `driveDiscs` 文档本体（MB 级、页面加载后不变；
+ * 若将来支持数据热更，要同时清 `hitEvalCache`，不能只靠这里）。逐条招式的差异由
+ * `buildHitEvalFingerprint(hit)` 承担，不在这里重复。
+ */
+export function buildSkillFlowHitContextSignature(input: SkillFlowHitContextInput): string {
+  return serializeSignatureFields({
+    v: 1,
+    src: input.baseDamageSource ?? null,
+    enemy: input.enemy,
+    extra: input.extraGains,
+    sourceExtra: input.sourceExtraGains ?? [],
+    // 原文里同一份「激活面板」写了两次（anomaly / participants），合并为一个字段
+    panels: input.activeSlotPanels ?? null,
+    convert: input.convertSlotPanels ?? null,
+    buffs: input.buffSelection ?? null,
+    slotBuffs: input.slotBuffSelections ?? null,
+    env: [...input.environmentBuffIds],
+    bangboo: [input.bangbooId, input.bangbooRefine],
+    mains: input.driveDiscMainStats ?? null,
+    kind: input.damageKind ?? null,
+    stagger: input.staggerPhase ?? null,
+    // 队伍档位：六项都影响结果（换人 / 改影画 / 换音擎 / 改精炼 / 换两件套或四件套）
+    slots: input.teamSlots.map((slot) => [
+      slot.agentId,
+      slot.rank,
+      slot.wengineId,
+      slot.wengineRefine,
+      slot.twoPieceDriveDiscId,
+      slot.fourPieceDriveDiscId,
+    ]),
+    main: input.mainSlotIndex,
+    levels: input.skillTalentLevelsByAgent ?? null,
+  })
+}
+
+/**
  * 逐字段序列化：任何一个字段序列化失败（最常见的是**误传了 ref 而不是 `.value`** ——
  * ref 内部有 `dep` → `ReactiveEffect`，会成环）都直接抛出并把字段名带出来。
  *

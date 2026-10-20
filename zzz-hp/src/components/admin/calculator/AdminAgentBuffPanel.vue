@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
+import AdminBuffOwnerSwitcher from '@/components/admin/calculator/AdminBuffOwnerSwitcher.vue'
 import AdminCalculatorAvatarField from '@/components/admin/calculator/AdminCalculatorAvatarField.vue'
 import AdminNumericStatFieldGrid from '@/components/admin/calculator/AdminNumericStatFieldGrid.vue'
-import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import { isStaleWriteError } from '@/api/calculatorBuffs'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type { AgentBasePanel, AgentBuffDoc, AgentMindscapeRankBuffs, SupportStatNeed } from '@/types/calculator'
@@ -29,8 +29,6 @@ import {
 const store = useCalculatorBuffStore()
 const { agents } = storeToRefs(store)
 
-const search = ref('')
-const roleFilter = ref('')
 const selectedId = ref(agents.value[0]?.id ?? '')
 const message = ref('')
 const error = ref('')
@@ -55,14 +53,15 @@ const form = ref({
   mindscapeNotes: createEmptyMindscapeNotes(),
 })
 
-const filteredAgents = computed(() => {
-  const keyword = search.value.trim()
-  return agents.value.filter((item) => {
-    const bySearch = !keyword || `${item.name}${item.profession}${item.element}${item.id}`.includes(keyword)
-    const byRole = !roleFilter.value || item.profession === roleFilter.value
-    return bySearch && byRole
-  })
-})
+/** 工具条「当前编辑 ▾」下拉里的角色条目（搜索/职业筛选在 AdminBuffOwnerSwitcher 里） */
+const ownerItems = computed(() =>
+  agents.value.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    meta: [agent.profession, agent.element].filter(Boolean).join(' · ') || undefined,
+    profession: agent.profession,
+  })),
+)
 
 const activeMindscapeForm = computed(() => form.value.mindscapeForm[activeMindscapeRank.value]!)
 const activeMindscapeNote = computed({
@@ -118,6 +117,8 @@ function loadForm(agent: AgentBuffDoc) {
   activeMindscapeRank.value = 0
   void nextTick(() => {
     avatarFieldRef.value?.setAvatarImage(agent.avatar_image)
+    // 切人 = 载入已保存的数据，工具条回到「无改动」
+    effectEditorRef.value?.markSaved?.()
   })
 }
 
@@ -137,12 +138,26 @@ function resetForm() {
   activeMindscapeRank.value = 0
   selectedId.value = ''
   avatarFieldRef.value?.clearAvatarImage()
+  void nextTick(() => {
+    effectEditorRef.value?.markSaved?.()
+  })
 }
 
 function selectAgent(id: string) {
   selectedId.value = id
   const agent = agents.value.find((item) => item.id === id)
   if (agent) loadForm(agent)
+}
+
+/** 工具条下拉里选中：切人并收起下拉 */
+function switchOwner(id: string, close?: () => void) {
+  selectAgent(id)
+  close?.()
+}
+
+function createOwner(close?: () => void) {
+  createNew()
+  close?.()
 }
 
 function createNew() {
@@ -228,6 +243,7 @@ async function saveAgent() {
     }
     selectedId.value = id
     formUpdatedAt.value = saved.updatedAt
+    effectEditorRef.value?.markSaved?.()
     message.value = isEditing ? `已保存角色「${name}」` : `已新增角色「${name}」`
   } catch (err) {
     if (isStaleWriteError(err)) {
@@ -312,6 +328,7 @@ watch(
 )
 
 const panelRootRef = ref<HTMLElement | null>(null)
+const effectEditorRef = ref<{ markSaved?: () => void } | null>(null)
 
 async function scrollToSection(sectionId: AgentBuffEditSectionId) {
   await nextTick()
@@ -323,7 +340,7 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
 </script>
 
 <template>
-  <div ref="panelRootRef" class="editor-panel">
+  <div ref="panelRootRef" class="editor-panel editor-panel--wide">
     <header class="panel-header">
       <h1 class="panel-title">编辑角色增益</h1>
       <p class="panel-desc">影画增益使用固定数值条目，主副定位在伤害计算时选择。</p>
@@ -340,41 +357,72 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
       </div>
     </header>
 
-    <div class="editor-layout">
-      <aside id="admin-agent-picker" class="item-list editor-anchor">
-        <label class="field">
-          <span class="field-label">搜索角色</span>
-          <input v-model="search" type="text" class="field-input" placeholder="名称 / 职业 / 属性" />
+    <form class="editor-form editor-form--solo" @submit.prevent="saveAgent">
+      <!-- 顶部工具条 + 三列工作区（切人只在「当前编辑 ▾」下拉里） -->
+      <section id="admin-agent-picker" class="workspace editor-anchor">
+        <AdminBuffEffectEditor
+          :key="`agent-mindscape-${activeMindscapeRank}`"
+          ref="effectEditorRef"
+          v-model="activeMindscapeForm.effectBlocks"
+          :agent-id="form.id || undefined"
+          owner-kind="agent"
+          :owner-label="form.name || '新角色'"
+          :owner-id="form.id || undefined"
+          :owners="ownerItems"
+          :save-state="saving ? 'saving' : undefined"
+          @switch-owner="selectAgent"
+        >
+          <template #toolbar-extra>
+            <div class="mindscape-tabs toolbar-tabs">
+              <button
+                v-for="rank in AGENT_MINDSCAPE_RANKS"
+                :key="rank"
+                type="button"
+                class="mindscape-tab"
+                :class="{ active: activeMindscapeRank === rank }"
+                @click="activeMindscapeRank = rank"
+              >
+                {{ rank }}影
+              </button>
+            </div>
+          </template>
+          <template #owner-switcher="{ close }">
+            <AdminBuffOwnerSwitcher
+              :items="ownerItems"
+              :selected-id="selectedId"
+              :role-options="AGENT_ROLES"
+              placeholder="搜索角色（名称 / 职业 / 属性）"
+              create-label="＋ 新增角色"
+              @select="(id) => switchOwner(id, close)"
+              @create="createOwner(close)"
+            />
+          </template>
+        </AdminBuffEffectEditor>
+      </section>
+
+      <!-- 当前影画的注释（仍按影画阶切换） -->
+      <section id="admin-agent-mindscape" class="mindscape-section editor-anchor">
+        <header class="mindscape-header">
+          <h3>{{ activeMindscapeRank }} 影 · 注释</h3>
+          <p>该影画阶的机制说明、触发条件等；效果块在顶部工作区里编辑。</p>
+        </header>
+        <label class="field note-field">
+          <span class="field-label">{{ activeMindscapeRank }} 影注释</span>
+          <textarea
+            v-model="activeMindscapeNote"
+            class="field-textarea"
+            rows="3"
+            placeholder="该影画阶的机制说明、触发条件等"
+          />
         </label>
-        <label class="field">
-          <span class="field-label">职业筛选</span>
-          <select v-model="roleFilter" class="field-input">
-            <option value="">全部职业</option>
-            <option v-for="profession in AGENT_ROLES" :key="profession" :value="profession">
-              {{ profession }}
-            </option>
-          </select>
-        </label>
+      </section>
 
-        <button type="button" class="secondary-btn" @click="createNew">+ 新增角色</button>
-
-        <div class="list-scroll">
-          <button
-            v-for="agent in filteredAgents"
-            :key="agent.id"
-            type="button"
-            class="list-item"
-            :class="{ active: selectedId === agent.id }"
-            @click="selectAgent(agent.id)"
-          >
-            <CalculatorAvatar :avatar-image="agent.avatar_image" :name="agent.name" />
-            <span class="list-name">{{ agent.name }}</span>
-            <span class="list-meta">{{ agent.profession }} · {{ agent.element }}</span>
-          </button>
-        </div>
-      </aside>
-
-      <form class="editor-form" @submit.prevent="saveAgent">
+      <!-- 角色资料（低频字段，收在工作区下面） -->
+      <section class="doc-card">
+        <header class="mindscape-header">
+          <h3>角色资料</h3>
+          <p>ID / 名称 / 职业 / 属性 / 辅助需求 / 注释 / 头像 / 基础面板。</p>
+        </header>
         <div id="admin-agent-basic" class="editor-anchor">
         <div class="field-row">
           <label class="field">
@@ -449,43 +497,7 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
           </header>
           <AdminNumericStatFieldGrid v-model="form.basePanel" :fields="AGENT_BASE_PANEL_FIELDS" />
         </section>
-
-        <section id="admin-agent-mindscape" class="mindscape-section editor-anchor">
-          <header class="mindscape-header">
-            <h3>影画增益</h3>
-            <p>各影画填写该阶新增增益；高阶影画自动叠加低阶（如 1 影含 0 影）。</p>
-          </header>
-
-          <div class="mindscape-tabs">
-            <button
-              v-for="rank in AGENT_MINDSCAPE_RANKS"
-              :key="rank"
-              type="button"
-              class="mindscape-tab"
-              :class="{ active: activeMindscapeRank === rank }"
-              @click="activeMindscapeRank = rank"
-            >
-              {{ rank }}影
-            </button>
-          </div>
-
-          <label class="field note-field">
-            <span class="field-label">{{ activeMindscapeRank }} 影注释</span>
-            <textarea
-              v-model="activeMindscapeNote"
-              class="field-textarea"
-              rows="3"
-              placeholder="该影画阶的机制说明、触发条件等"
-            />
-          </label>
-
-          <p class="mods-section-title">{{ activeMindscapeRank }} 影 · 效果块</p>
-          <AdminBuffEffectEditor
-            :key="`agent-mindscape-${activeMindscapeRank}`"
-            v-model="activeMindscapeForm.effectBlocks"
-            :agent-id="form.id || undefined"
-          />
-        </section>
+      </section>
 
         <p v-if="error" class="form-error">
           {{ error }}
@@ -510,7 +522,6 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
           </button>
         </div>
       </form>
-    </div>
   </div>
 </template>
 
@@ -520,6 +531,44 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
   scroll-margin-top: 1rem;
 }
 
+/* 页面 = 顶部工具条 + 三列工作区（左侧不再有搜索/列表）；宽屏铺满 */
+.editor-panel--wide {
+  max-width: none;
+}
+
+.editor-form--solo {
+  border: none;
+  background: transparent;
+  padding: 0;
+  gap: 0.7rem;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toolbar-tabs {
+  flex: 0 0 auto;
+}
+
+.toolbar-tabs .mindscape-tab {
+  padding: 0.16rem 0.55rem;
+  font-size: 0.74rem;
+}
+
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background-soft);
+  padding: 0.85rem;
+}
+
+/* 乐观锁：顶部「刷新数据」与 stale 提示里的「刷新」 */
 .panel-refresh {
   display: flex;
   justify-content: center;

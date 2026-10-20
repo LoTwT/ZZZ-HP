@@ -25,6 +25,11 @@ import { modeTitles, type ModeKey } from '@/types/history'
 import type { DefenseCompareMonsterCategory } from '@/utils/defenseCompare'
 import { joinBossOptionsWithInfo } from '@/utils/bossPickerItems'
 import { resolveAssetUrl } from '@/utils/gameData'
+import {
+  ANOMALY_BAR_VERSION_MULTIPLIER_FROM,
+  isVersionAtLeast,
+  isVersionAtMost,
+} from '@/utils/monsterResistanceTable'
 import { createRequestEpoch } from '@/utils/requestEpoch'
 
 const props = defineProps<{
@@ -78,10 +83,56 @@ const selectedBossItem = computed(() =>
 
 const selectedBossImageUrl = computed(() => resolveAssetUrl(selectedBossItem.value?.bossImage))
 
-/** 名称已在数据块上方单独展示，数据行不再重复 boss_name */
-const detailRecord = computed<MonsterDetailRecord | null>(() =>
-  selectedBossDetail.value ? { ...selectedBossDetail.value, boss_name: null } : null,
+/** 基础异常条按敌人类别取：危局按首领、推演只选终局 Boss 也按首领，防卫战直接映射页面上的「怪物类型」 */
+const detailMonsterCategory = computed<DefenseCompareMonsterCategory>(() =>
+  isDefenseMode.value ? selectedCategory.value : 'boss',
 )
+
+/** 版本号是否可解析：`isVersionAtLeast` 对缺失 / 非法 / 不可比一律返回 false，自比成立即格式可解析 */
+function isParseableVersion(version: string | null | undefined): version is string {
+  if (!version) return false
+  return isVersionAtLeast(version, version)
+}
+
+/**
+ * 数据行的版本：**本页没有「当期」概念，取图上最新版本作为现状口径**，
+ * 供「弱点与抗性」表判「该版本 ≥ 2.1 才乘版本系数」。
+ * 不依赖 `points` 顺序（逐点用 `isVersionAtLeast` 比较取最大）；版本缺失 / 解析不出的点跳过，
+ * 全都解析不出时保持 null（表侧保守按不乘版本系数处理）。
+ */
+const chartLatestVersion = computed<string | null>(() => {
+  let latest: string | null = null
+  for (const point of points.value) {
+    const version = point.version
+    if (!isParseableVersion(version)) continue
+    if (latest === null || isVersionAtLeast(version, latest)) latest = version
+  }
+  return latest
+})
+
+/**
+ * 该 Boss 是否在 2.1（含）之前就已存在（版本系数的另一个条件）：
+ * 本页图表只画这一只 Boss，图上任一期版本 ≤ 2.1 即为真，无「出现过的期数」可筛选；
+ * 版本解析不出的点不算出现（与 `isVersionAtMost` 同口径）。
+ */
+const bossExistedByMultiplierVersion = computed(() =>
+  points.value.some((point) => isVersionAtMost(point.version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM)),
+)
+
+/**
+ * 名称已在数据块上方单独展示，数据行不再重复 boss_name；
+ * 类别 / 版本 / 「2.1 前已存在」三项基础库不带，由本页按图表与选择器算出后补进数据行。
+ */
+const detailRecord = computed<MonsterDetailRecord | null>(() => {
+  if (!selectedBossDetail.value) return null
+  return {
+    ...selectedBossDetail.value,
+    boss_name: null,
+    monster_category: detailMonsterCategory.value,
+    version: chartLatestVersion.value,
+    boss_existed_by_multiplier_version: bossExistedByMultiplierVersion.value,
+  }
+})
 
 /** 换怪入口改为点击图片后必须显式提示；空态（未选择 / 无图）同样展示，避免无从下手 */
 const monsterImageChangeHint = '点击怪物图片可更换怪物'
@@ -239,7 +290,7 @@ watch(selectedBoss, () => {
 <template>
   <div class="monster-compare-panel">
     <header class="panel-header">
-      <h1 class="page-title">{{ pageTitle }} · 单独怪物对比</h1>
+      <h1 class="page-title">{{ pageTitle }} · 怪物数据库</h1>
       <p class="panel-desc">{{ panelDesc }}</p>
     </header>
 
@@ -267,6 +318,7 @@ watch(selectedBoss, () => {
         :image-url="selectedBossImageUrl"
         :image-alt="selectedBoss"
         image-clickable
+        :show-resistance-table="true"
         :image-hint="monsterImageChangeHint"
         @image-click="pickerModalOpen = true"
       />
@@ -414,7 +466,9 @@ watch(selectedBoss, () => {
 
 .monster-compare-stats {
   flex-shrink: 0;
-  width: min(640px, 100%);
+  /* 与怪物详情弹窗同宽（弹窗是 min(1100px, 88vw)）：三列布局（图 21% / 数据 / 表 53%）
+     需要这个宽度才不挤，640px 会把数据列压到 ~110px */
+  width: min(1100px, 100%);
   margin: 0 auto 0.85rem;
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-border);

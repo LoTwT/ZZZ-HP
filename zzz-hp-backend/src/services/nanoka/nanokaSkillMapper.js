@@ -95,6 +95,134 @@ export function mapSkillTypes(category, skillName) {
   return [...(NANOKA_CATEGORY_TO_SKILL_TYPES[category] ?? ['basic'])]
 }
 
+/** 大类 → 技能等级表键（异放/耀变的等级转模按本招所属大类取） */
+const CATEGORY_TO_TALENT_KEY = {
+  basic: 'basic',
+  dodge: 'dodge',
+  assist: 'assist',
+  special: 'special',
+  chain: 'chainUltimate',
+}
+
+/** 异常类倍率参数名 → 本库 damageType（值可能不在 param 里，而在 desc 的 `{CAL:...}` 模板） */
+const ANOMALY_PARAM_DAMAGE_TYPES = [
+  { pattern: /异放.*倍率/, damageType: 'anomalyRelease' },
+  { pattern: /耀变.*倍率/, damageType: 'radiance' },
+  { pattern: /紊乱.*倍率/, damageType: 'disorder' },
+  { pattern: /乱流.*倍率/, damageType: 'turbulence' },
+]
+
+/**
+ * 参数名 → damageType：
+ * - `xx伤害倍率`（非失衡）→ `direct`
+ * - `异放/耀变/紊乱/乱流倍率` → 对应异常类
+ * - 其它（能量消耗等）→ `null`（不采集）
+ */
+export function resolveParamDamageType(paramName) {
+  const name = String(paramName ?? '').trim()
+  if (!name) return null
+  for (const rule of ANOMALY_PARAM_DAMAGE_TYPES) {
+    if (rule.pattern.test(name)) return rule.damageType
+  }
+  if (name.includes('伤害倍率') && !name.includes('失衡')) {
+    // 未识别的异常类参数不能当直伤导入（否则异常数值会被挂到直伤行）
+    if (name.includes('异常')) return null
+    return 'direct'
+  }
+  return null
+}
+
+const CAL_EXPRESSION_PATTERN = /\{CAL:([^{}]+)\}/
+
+/**
+ * 解析 nanoka 的运行时模板 `{CAL:225+20*(AvatarSkillLevel(0)-1),1,2}%`。
+ * 返回 `{ expression, evaluate(level) }`；不是 CAL 或含非法字符时返回 null。
+ *
+ * 等级占位（`AvatarSkillLevel(n)`）统一按**本招所属大类**的等级代入——各招式段的
+ * CAL 角标与所在大类一致，用大类取等级比猜 n 的含义更稳。
+ */
+export function parseCalFormula(desc) {
+  const text = String(desc ?? '')
+  const match = text.match(CAL_EXPRESSION_PATTERN)
+  if (!match) return null
+  // `{CAL:<expr>,<精度>,<模式>}`：只取第一段算式，后面是格式化参数
+  const expression = match[1].split(',')[0].trim()
+  if (!expression) return null
+  const staticExpression = expression.replace(/AvatarSkillLevel\(\s*\d+\s*\)/g, '0')
+  // 只允许数字、小数点、四则运算与括号；远程数据不接受其它写法
+  if (!/^[\d.\s+\-*/()]+$/.test(staticExpression)) return null
+  return {
+    expression,
+    evaluate(level) {
+      const filled = expression.replace(
+        /AvatarSkillLevel\(\s*\d+\s*\)/g,
+        String(Math.max(0, Number(level) || 0)),
+      )
+      return evaluateArithmeticExpression(filled)
+    },
+  }
+}
+
+/** 安全的四则运算求值（递归下降；不 eval） */
+function evaluateArithmeticExpression(expression) {
+  const source = String(expression ?? '').replace(/\s+/g, '')
+  let index = 0
+  const peek = () => source[index]
+  const parseNumber = () => {
+    const start = index
+    while (index < source.length && /[0-9.]/.test(source[index])) index += 1
+    if (start === index) return null
+    const value = Number(source.slice(start, index))
+    return Number.isFinite(value) ? value : null
+  }
+  const parseFactor = () => {
+    if (peek() === '+') {
+      index += 1
+      return parseFactor()
+    }
+    if (peek() === '-') {
+      index += 1
+      const value = parseFactor()
+      return value == null ? null : -value
+    }
+    if (peek() === '(') {
+      index += 1
+      const value = parseSum()
+      if (value == null || peek() !== ')') return null
+      index += 1
+      return value
+    }
+    return parseNumber()
+  }
+  const parseProduct = () => {
+    let value = parseFactor()
+    if (value == null) return null
+    while (peek() === '*' || peek() === '/') {
+      const operator = source[index]
+      index += 1
+      const right = parseFactor()
+      if (right == null) return null
+      value = operator === '*' ? value * right : value / right
+    }
+    return value
+  }
+  const parseSum = () => {
+    let value = parseProduct()
+    if (value == null) return null
+    while (peek() === '+' || peek() === '-') {
+      const operator = source[index]
+      index += 1
+      const right = parseProduct()
+      if (right == null) return null
+      value = operator === '+' ? value + right : value - right
+    }
+    return value
+  }
+  const result = parseSum()
+  if (result == null || index !== source.length || !Number.isFinite(result)) return null
+  return result
+}
+
 /**
  * 技能等级 L 时的伤害倍率%（本库 baseMult）。
  * nanoka 存万分比整数：3120 → 31.20% at L1；每级 +growth。
@@ -108,7 +236,14 @@ export function computeBaseMultPercent(damagePercentage, growth, level = 12) {
 }
 
 /**
- * 从角色详情拆出伤害倍率候选段（同 displayName 去重，保留首条）。
+ * 从角色详情拆出倍率候选段（同名同类型去重，保留首条）。
+ *
+ * - 直伤：`xx伤害倍率`（非失衡），数值取 `param` 里的 `damage_percentage` / `growth`
+ * - 异常类（异放 / 耀变 / 紊乱 / 乱流）：参数名命中后，数值优先取 `param`；
+ *   没有 `param` 时解析 `desc` 里的 `{CAL:...}` 模板（nanoka 的异放/耀变只写在 desc）
+ *
+ * 异常类段的 `displayName` 直接沿用直伤招式名（用户口径：命名可以一致），
+ * 由 `damageType` 区分；`talentKey` 用于按等级缩放（写入 `radianceTalentKey`）。
  *
  * @param {Record<string, any>} detail `zh/character/<id>.json` 原文
  * @param {{ level?: number }} [options] 技能等级，默认 12
@@ -123,33 +258,67 @@ export function extractDamageSegments(detail, { level = 12 } = {}) {
       const skillName = String(entry?.name ?? '').trim()
       if (!skillName) continue
       const params = Array.isArray(entry?.param) ? entry.param : []
+      let parentParamId = null
+      for (const p of params) {
+        const paramMap = p?.param && typeof p.param === 'object' ? p.param : {}
+        const paramId = Object.keys(paramMap)[0]
+        if (paramId) {
+          parentParamId = paramId
+          break
+        }
+      }
       for (const p of params) {
         const paramName = String(p?.name ?? '').trim()
-        if (!paramName.includes('伤害倍率')) continue
-        if (paramName.includes('失衡')) continue
+        const damageType = resolveParamDamageType(paramName)
+        if (!damageType) continue
 
         const paramMap = p?.param && typeof p.param === 'object' ? p.param : {}
         const nanokaSkillId = Object.keys(paramMap)[0]
-        if (!nanokaSkillId) continue
-        const stats = paramMap[nanokaSkillId] ?? {}
-        const damagePercentage = Number(stats.damage_percentage ?? stats.main) || 0
-        const damagePercentageGrowth = Number(stats.damage_percentage_growth ?? stats.growth) || 0
-        const baseMult = computeBaseMultPercent(damagePercentage, damagePercentageGrowth, level)
-        const displayName = buildDisplayName(skillName, paramName)
-        const norm = normalizeSkillName(displayName)
+        let damagePercentage
+        let damagePercentageGrowth
+        let baseMult
+        let calExpression = null
+        if (nanokaSkillId) {
+          const stats = paramMap[nanokaSkillId] ?? {}
+          damagePercentage = Number(stats.damage_percentage ?? stats.main) || 0
+          damagePercentageGrowth =
+            Number(stats.damage_percentage_growth ?? stats.growth) || 0
+          baseMult = computeBaseMultPercent(damagePercentage, damagePercentageGrowth, level)
+        } else {
+          // 异常类倍率（异放 / 耀变等）只写在 desc 的 CAL 模板里，没有 param 数值
+          const cal = parseCalFormula(p?.desc)
+          if (!cal) continue
+          const valueAt1 = cal.evaluate(1)
+          const valueAt12 = cal.evaluate(12)
+          const valueAtLevel = cal.evaluate(level)
+          if (![valueAt1, valueAt12, valueAtLevel].every((v) => Number.isFinite(v))) continue
+          damagePercentage = Math.round(valueAt1 * 100 * 1000) / 1000
+          damagePercentageGrowth =
+            Math.round(((valueAt12 - valueAt1) / 11) * 100 * 1000) / 1000
+          baseMult = Math.round(valueAtLevel * 1000) / 1000
+          calExpression = cal.expression
+        }
+
+        const displayName =
+          damageType === 'direct' ? buildDisplayName(skillName, paramName) : skillName
+        const norm = `${damageType}|${normalizeSkillName(displayName)}`
         if (seenNorm.has(norm)) continue
         seenNorm.add(norm)
+        const talentKey = CATEGORY_TO_TALENT_KEY[category] ?? null
         segments.push({
           category,
           skillName,
           paramName,
-          nanokaSkillId: String(nanokaSkillId),
+          nanokaSkillId: String(nanokaSkillId ?? parentParamId ?? `cal-${category}-${skillName}`),
           displayName,
           baseMult,
           damagePercentage,
           damagePercentageGrowth,
-          skillTypes: mapSkillTypes(category, skillName),
+          skillTypes: damageType === 'direct' ? mapSkillTypes(category, skillName) : [],
           titleCore: stripSkillTitlePrefix(skillName),
+          damageType,
+          talentKey: damageType === 'direct' ? null : talentKey,
+          calExpression,
         })
       }
     }
@@ -214,11 +383,12 @@ export function sameOptionalNumber(a, b, eps = 1e-6) {
  * @param {Array<Record<string, any>>} [params.existingSkills] 本库全部招式（`listSkills()`）
  * @param {Array<Record<string, any>>} [params.subcategories] 本库招式小类（人工按需建的）
  * @param {number} [params.level] 技能等级，默认 12
- * @returns {{ create: object[], overwrite: object[], skipSame: object[], unmatchedLocal: object[] }}
+ * @returns {{ create: object[], overwrite: object[], skipSame: object[], existingManual: object[], unmatchedLocal: object[] }}
  *   - `create`：可直接交给 `upsertSkill` 的完整招式文档
  *   - `overwrite`：只改倍率字段；`doc` 是「保留其余字段」的写库载荷（策略 B：`{...existing, ...multFields}`），
  *     条目本身**不带** `element` / `skillTypes` / `buffAnchorId`，避免手工修正的元素被 nanoka 值冲掉
  *   - `skipSame`：倍率与来源都一致，无需动作
+ *   - `existingManual`：命中人工建/手工调过的异常类招式（`multSource ≠ nanoka`）——只提示，不覆盖
  *   - `unmatchedLocal`：本库有、nanoka 没有的招式（只提示，不删）
  */
 export function planAgentSkillImport({
@@ -236,21 +406,39 @@ export function planAgentSkillImport({
   const agentSkills = (Array.isArray(existingSkills) ? existingSkills : []).filter(
     (s) => String(s.agentId ?? '') === agentId,
   )
-  const byNormName = new Map()
-  for (const skill of agentSkills) {
-    byNormName.set(normalizeSkillName(skill.name), skill)
-  }
 
   const create = []
   const overwrite = []
   const skipSame = []
+  const existingManual = []
+  const matchedIds = new Set()
+
+  const byTypeAndName = new Map()
+  const byTypeAndAnchor = new Map()
+  for (const skill of agentSkills) {
+    const type = String(skill.damageType ?? 'direct')
+    const norm = normalizeSkillName(skill.name)
+    const nameKey = `${type}|${norm}`
+    if (!byTypeAndName.has(nameKey)) byTypeAndName.set(nameKey, skill)
+    const anchor = String(skill.buffAnchorId ?? '')
+    if (anchor) {
+      const anchorKey = `${type}|${anchor}`
+      if (!byTypeAndAnchor.has(anchorKey)) byTypeAndAnchor.set(anchorKey, skill)
+    }
+  }
 
   for (const seg of segments) {
+    const type = seg.damageType ?? 'direct'
     const norm = normalizeSkillName(seg.displayName)
-    const existing = byNormName.get(norm)
     const resolvedAnchor = resolveBuffAnchorId(subcategories, agentId, seg)
+    // 异常类段与直伤同名：先按「类型 + 名字」找，再回落「类型 + 锚点」（人工命名的 ·异放 行）
+    let existing = byTypeAndName.get(`${type}|${norm}`)
+    if (!existing && type !== 'direct' && resolvedAnchor) {
+      existing = byTypeAndAnchor.get(`${type}|${resolvedAnchor}`)
+    }
     const buffAnchorId = resolvedAnchor ?? existing?.buffAnchorId ?? null
     const id = existing?.id ?? stableSkillId(agentId, seg.nanokaSkillId, seg.paramName)
+    if (existing) matchedIds.add(existing.id)
     const skillTypes = seg.skillTypes
     const multFields = {
       multSource: 'nanoka',
@@ -260,6 +448,17 @@ export function planAgentSkillImport({
     }
 
     if (existing) {
+      // 人工建/手工调过的异常类招式不覆盖（如菲欧妮「·异放」的固定值 + 等级转模组合）
+      if (type !== 'direct' && String(existing.multSource ?? '') !== 'nanoka') {
+        existingManual.push({
+          id,
+          name: existing.name,
+          damageType: type,
+          localBaseMult: existing.baseMult,
+          importedBaseMult: seg.baseMult,
+        })
+        continue
+      }
       const sameMult = sameOptionalNumber(existing.baseMult, seg.baseMult)
       const samePercentage = sameOptionalNumber(existing.damagePercentage, seg.damagePercentage)
       const sameGrowth = sameOptionalNumber(
@@ -286,11 +485,11 @@ export function planAgentSkillImport({
         })
       }
     } else {
-      create.push({
+      const doc = {
         id,
         agentId,
         name: seg.displayName,
-        damageType: 'direct',
+        damageType: type,
         skillTypes,
         buffAnchorId,
         baseMult: seg.baseMult,
@@ -302,16 +501,17 @@ export function planAgentSkillImport({
         note: '',
         damagePercentage: seg.damagePercentage,
         damagePercentageGrowth: seg.damagePercentageGrowth,
-      })
+      }
+      if (seg.talentKey) doc.radianceTalentKey = seg.talentKey
+      create.push(doc)
     }
   }
 
-  const matchedNorms = new Set(segments.map((s) => normalizeSkillName(s.displayName)))
   const unmatchedLocal = []
   for (const skill of agentSkills) {
-    if (matchedNorms.has(normalizeSkillName(skill.name))) continue
+    if (matchedIds.has(skill.id)) continue
     unmatchedLocal.push({ id: skill.id, name: skill.name, baseMult: skill.baseMult })
   }
 
-  return { create, overwrite, skipSame, unmatchedLocal }
+  return { create, overwrite, skipSame, existingManual, unmatchedLocal }
 }

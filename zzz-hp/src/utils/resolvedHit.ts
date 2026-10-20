@@ -137,6 +137,8 @@ export interface ResolvedHit {
   critMode: DamageEventCritMode
   damageKind: DamageCalcKind
   anomalySubKind: AnomalyDamageSubKind
+  /** 直伤第二级：普通直伤 / 命破 / 锋御（异常类固定 normal，不参与匹配） */
+  directSubKind: 'normal' | 'pierce' | 'sharpen'
   /** 招式类型翻译成的旧 Buff 坐标，命中任意一个即生效；空数组 = 不吃招式限定 Buff */
   coords: SkillMatchCoord[]
   isFollowUp: boolean
@@ -205,12 +207,24 @@ export interface ResolveFlowOptions {
   skillSubcategories?: SkillSubcategory[] | null
   /** 每人五大类技能等级；缺省按 L12，并按该槽影画上下限钳制 */
   skillTalentLevelsByAgent?: Record<string, SkillTalentLevels | Partial<SkillTalentLevels> | null>
+  /** 招式持有者职业（判定直伤第二级：命破 / 锋御） */
+  resolveAgentProfession?: (agentId: string) => string | undefined
 }
 
 /** 招式被删后，引用它的准备阶段条目会解析失败，此处记下来给 UI 提示 */
 export interface ResolveFlowResult {
   hits: ResolvedHit[]
   missingSkillIds: string[]
+}
+
+/** 直伤第二级：命破职业优先，其次锋御职业 / 锐化招式，其余普通直伤 */
+function resolveDirectSubKind(
+  skill: Skill,
+  profession: string | undefined,
+): 'normal' | 'pierce' | 'sharpen' {
+  if (profession === '命破') return 'pierce'
+  if (profession === '锋御' || skill.damageType === 'sharpen') return 'sharpen'
+  return 'normal'
 }
 
 function resolveOne(
@@ -264,6 +278,10 @@ function resolveOne(
     levels,
     ownerRank,
   )
+  const directSubKind = resolveDirectSubKind(
+    skill,
+    options.resolveAgentProfession?.(ownerAgentId),
+  )
   return {
     id: overrides?.hitId ?? entry.id,
     buffOverride:
@@ -277,6 +295,7 @@ function resolveOne(
     critMode: resolveFlowHitCritMode(skill.damageType, crit),
     damageKind,
     anomalySubKind,
+    directSubKind,
     coords,
     isFollowUp: skillTypesIncludeFollowUp(skill.skillTypes),
     multOverrides: buildMultOverrides(skill, prepared.extraMods, effectiveBaseMult),
@@ -477,6 +496,8 @@ export function buildGenericPanelSkillContext(options?: {
     element: options?.element,
     staggerPhase: options?.staggerPhase,
     isFollowUp: false,
+    directSubKind: 'normal',
+    generic: true,
   }
 }
 
@@ -495,6 +516,7 @@ export function buildSkillContextFromHit(
     staggerPhase: hit.staggerPhase,
     isFollowUp: hit.isFollowUp,
     anomalySubKind: hit.anomalySubKind,
+    directSubKind: hit.directSubKind,
   }
 }
 

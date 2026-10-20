@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 
 /** 选期卡片的最小数据结构：往期详细直接传 PhaseData，对比面板用图表点适配 */
 export interface PhasePickerItem {
@@ -121,11 +122,19 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocumentKeydown)
 })
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => emit('close'))
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="phase-modal-overlay" @click.self="emit('close')">
+    <div
+      v-if="visible"
+      class="phase-modal-overlay"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="phase-modal">
         <button type="button" class="phase-modal-close" aria-label="关闭" @click="emit('close')">
           ×
