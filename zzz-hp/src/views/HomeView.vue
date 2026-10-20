@@ -206,8 +206,13 @@ const modes: ModeCard[] = [
   transform: skew(-8deg);
 }
 
-/* 中文字形回落到系统字体后比 Archivo Black 细；补描边把字重拉齐 */
+/* 中文比 HP 略小并居中，四周留出与 HP 相近的呼吸空间 */
 .hero-title-cn {
+  display: inline-block;
+  font-size: 0.8em;
+  line-height: 1;
+  vertical-align: middle;
+  margin-left: 0.12em;
   font-weight: 900;
   -webkit-text-stroke: 0.02em currentColor;
 }
