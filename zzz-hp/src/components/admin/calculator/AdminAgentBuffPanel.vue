@@ -554,8 +554,11 @@ defineExpose({ scrollToSection, saveAgent, removeAgent, selectedId, saving })
 }
 
 .toolbar-tabs .mindscape-tab {
-  padding: 0.16rem 0.55rem;
-  font-size: 0.74rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.3rem 0.65rem;
+  font-family: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
 }
 
 .doc-card {

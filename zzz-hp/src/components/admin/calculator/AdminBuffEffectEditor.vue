@@ -700,6 +700,13 @@ defineExpose({
 </template>
 <style scoped>
 .effect-editor {
+  --buff-editor-title-size: 1rem;
+  --buff-editor-text-size: 0.9375rem;
+  --buff-editor-label-size: 0.875rem;
+  --buff-editor-meta-size: 0.8125rem;
+  --buff-editor-control-height: 2.25rem;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -728,13 +735,14 @@ defineExpose({
   align-items: center;
   gap: 0.3rem;
   max-width: 22rem;
-  padding: 0.22rem 0.5rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.65rem;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
   cursor: pointer;
 }
 
@@ -752,6 +760,7 @@ defineExpose({
 }
 
 .owner-name {
+  font-size: var(--buff-editor-title-size);
   font-weight: 600;
   color: var(--color-heading);
   overflow: hidden;
@@ -790,13 +799,14 @@ defineExpose({
 
 .owner-search {
   width: 100%;
+  min-height: var(--buff-editor-control-height);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
   padding: 0.3rem 0.45rem;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .owner-list {
@@ -818,7 +828,7 @@ defineExpose({
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
   text-align: left;
   cursor: pointer;
 }
@@ -840,19 +850,19 @@ defineExpose({
 
 .owner-item-meta {
   flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.6;
 }
 
 .owner-empty {
   margin: 0;
   padding: 0.3rem 0.4rem;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.6;
 }
 
 .toolbar-stats {
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.72;
   white-space: nowrap;
 }
@@ -862,7 +872,7 @@ defineExpose({
 }
 
 .save-state {
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-meta-size);
   white-space: nowrap;
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
@@ -931,8 +941,8 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.05rem;
-  height: 1.35rem;
+  width: 1.25rem;
+  height: var(--buff-editor-control-height);
   padding: 0;
   border: none;
   background: transparent;
@@ -960,12 +970,13 @@ defineExpose({
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
-  padding: 0.2rem 0.2rem 0.2rem 0;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.3rem 0.35rem 0;
   border: none;
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-label-size);
   text-align: left;
   cursor: pointer;
 }
@@ -973,7 +984,7 @@ defineExpose({
 .block-initial {
   display: none;
   flex: 0 0 auto;
-  font-size: 0.64rem;
+  font-size: var(--buff-editor-meta-size);
   font-weight: 600;
 }
 
@@ -983,6 +994,7 @@ defineExpose({
 
 .block-name {
   flex: 1 1 auto;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -990,7 +1002,7 @@ defineExpose({
 
 .block-count {
   flex: 0 0 auto;
-  font-size: 0.64rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.6;
 }
 
@@ -1037,14 +1049,15 @@ defineExpose({
   justify-content: space-between;
   gap: 0.25rem;
   min-width: 0;
-  padding: 0.14rem 0.3rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.4rem;
   border: none;
   border-left: 2px solid transparent;
   border-radius: 0 6px 6px 0;
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-label-size);
   text-align: left;
   cursor: pointer;
 }
@@ -1074,7 +1087,7 @@ defineExpose({
 }
 
 .tree-badge {
-  font-size: 0.64rem;
+  font-size: var(--buff-editor-meta-size);
   line-height: 1.3;
   padding: 0 0.22rem;
   border: 1px solid var(--color-border);
@@ -1094,19 +1107,20 @@ defineExpose({
 
 .tree-empty {
   padding: 0.1rem 0.3rem;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.5;
 }
 
 .block-add {
   margin-top: 0.15rem;
+  min-height: var(--buff-editor-control-height);
   padding: 0.3rem 0.45rem;
   border: 1px dashed var(--color-border);
   border-radius: 8px;
   background: transparent;
   color: var(--color-heading);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1118,8 +1132,8 @@ defineExpose({
 
 .hint {
   margin: 0;
-  font-size: 0.72rem;
-  opacity: 0.68;
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.75;
   line-height: 1.45;
   color: var(--color-text);
 }
@@ -1128,13 +1142,13 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--buff-editor-title-size);
   opacity: 0.7;
   padding: 1rem 0.5rem;
 }
 
 .muted {
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.6;
 }
 
@@ -1152,7 +1166,7 @@ defineExpose({
   background: var(--color-background-soft);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .block-head {
@@ -1160,18 +1174,25 @@ defineExpose({
   gap: 0.75rem;
   align-items: end;
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .name-field {
-  flex: 1;
+  flex: 1 1 15rem;
+  min-width: 0;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-label-size);
   color: var(--color-text);
+}
+
+.field > span {
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .field input[type='text'],
@@ -1181,14 +1202,26 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
-  padding: 0.35rem 0.45rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.4rem 0.65rem;
   font: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
+  width: 100%;
+  min-width: 0;
+}
+
+.field.name-field input[type='text'] {
+  min-height: 2.5rem;
+  font-size: var(--buff-editor-title-size);
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .field textarea {
   resize: vertical;
-  min-height: 2.2rem;
-  line-height: 1.4;
+  min-height: 4rem;
+  line-height: 1.5;
 }
 
 .note-input {
@@ -1197,12 +1230,12 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
-  padding: 0.35rem 0.45rem;
+  padding: 0.4rem 0.65rem;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
   resize: vertical;
-  min-height: 2.2rem;
-  line-height: 1.4;
+  min-height: 4rem;
+  line-height: 1.5;
 }
 
 .add-btn,
@@ -1212,9 +1245,12 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-heading);
-  padding: 0.32rem 0.6rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.65rem;
   cursor: pointer;
-  font-size: 0.76rem;
+  font-family: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   white-space: nowrap;
 }
 
@@ -1231,7 +1267,7 @@ defineExpose({
 .err {
   margin: 0;
   color: #c45c5c;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 /* ── 响应式：只压左列（220 → 180 → 56 窄条），右列宽度不动 ── */
@@ -1265,12 +1301,12 @@ defineExpose({
     align-items: center;
     gap: 0.05rem;
     padding: 0.25rem 0.05rem;
-    font-size: 0.64rem;
+    font-size: var(--buff-editor-label-size);
   }
 
   .block-add {
     padding: 0.25rem 0.05rem;
-    font-size: 0.64rem;
+    font-size: var(--buff-editor-label-size);
   }
 }
 </style>
