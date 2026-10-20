@@ -46,10 +46,18 @@ console.log('\n[2] BuffEffect 适配')
   check('固定效果 stage=combatPreConvert', spec.stage === 'combatPreConvert')
   check('stat 保留 dmgBonus', spec.stat === 'dmgBonus')
   check('招式条件带上', spec.conditions.skillTargets?.[0]?.category === 'basic')
-  // scope 数组口径（2026-10-16 改造）：读时兼容单值，写出去是数组
+  // scope 废弃（2026-10-20）：招式只由 skillTargets 表达，不产伤害类型条件
   check(
-    'scope 招式进 conditions（数组口径）',
-    Array.isArray(spec.conditions.scope) && spec.conditions.scope.length === 1 && spec.conditions.scope[0] === 'skill',
+    'scope=skill 不再产 damageTypes',
+    Array.isArray(spec.conditions.damageTypes) && spec.conditions.damageTypes.length === 0,
+  )
+
+  const anomalyFx = fixedEffect('b', 'dmgBonus', 10, { scope: ['anomaly'] })
+  const anomalySpec = adaptBuffEffect(anomalyFx)
+  check(
+    '旧 scope=anomaly 迁到 conditions.damageTypes',
+    Array.isArray(anomalySpec.conditions.damageTypes) &&
+      anomalySpec.conditions.damageTypes[0] === 'anomaly',
   )
 
   const cv = convertEffect('c', 'atk', { from: 'mastery', panelSource: 'final', ratioPercent: 80 })

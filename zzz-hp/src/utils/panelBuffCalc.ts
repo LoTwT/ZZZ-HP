@@ -17,7 +17,7 @@ import type {
   WengineBuffDoc,
 } from '@/types/calculator'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
-import { normalizeBuffScopes } from '@/utils/buffScope'
+import { damageTypesOf } from '@/utils/buffDamageTypes'
 import {
   createEmptyExternalPanel,
   createDefaultExternalPanel,
@@ -198,6 +198,19 @@ function collectTwoPieceBlockEntries(disc: DriveDiscBuffDoc) {
 /**
  * 邦布/音擎精炼：任一精炼勾选了「异常计算时也生效」，则当前精炼同身份效果也生效。
  */
+function refinementIdentityKey(effect: BuffEffect): string {
+  const targets = (effect.skillTargets ?? [])
+    .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
+    .join('|')
+  return [
+    effect.stat,
+    effect.kind,
+    damageTypesOf(effect).join(','),
+    effect.applyTarget,
+    targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`,
+  ].join('|')
+}
+
 function withRefinementAnomalyFlags(
   activeEffects: BuffEffect[],
   allRefineEffects: BuffEffect[][],
@@ -205,14 +218,7 @@ function withRefinementAnomalyFlags(
 ): BuffEffect[] {
   const flagged = new Set<string>()
   const mark = (effect: BuffEffect) => {
-    if (effect.appliesToAnomaly === true) {
-      const targets = (effect.skillTargets ?? [])
-        .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
-        .join('|')
-      flagged.add(
-        `${effect.stat}|${effect.kind}|${normalizeBuffScopes(effect.scope).join(',')}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`,
-      )
-    }
+    if (effect.appliesToAnomaly === true) flagged.add(refinementIdentityKey(effect))
   }
   for (const list of allRefineEffects) {
     for (const effect of list ?? []) mark(effect)
@@ -226,11 +232,9 @@ function withRefinementAnomalyFlags(
   }
   if (!flagged.size) return activeEffects
   return activeEffects.map((effect) => {
-    const targets = (effect.skillTargets ?? [])
-      .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
-      .join('|')
-    const key = `${effect.stat}|${effect.kind}|${normalizeBuffScopes(effect.scope).join(',')}|${effect.applyTarget}|${targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`}`
-    if (!flagged.has(key) || effect.appliesToAnomaly === true) return effect
+    if (!flagged.has(refinementIdentityKey(effect)) || effect.appliesToAnomaly === true) {
+      return effect
+    }
     return { ...effect, appliesToAnomaly: true }
   })
 }
@@ -1157,6 +1161,8 @@ function defaultSkillContext(
     coords: [],
     element,
     isFollowUp: false,
+    directSubKind: 'normal',
+    generic: true,
   }
 }
 
@@ -2555,6 +2561,8 @@ function buildReleaseMultSkillContext(
     damageKind: 'anomaly',
     anomalySubKind: 'anomalyRelease',
     element: triggerElement,
+    // 这里是「异放结算」而不是面板汇总，带伤害类型条件的效果要能命中。
+    generic: false,
   }
 }
 

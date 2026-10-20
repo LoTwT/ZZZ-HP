@@ -10,6 +10,11 @@ import {
   normalizeWengineAdvancedStats,
   readNumber,
 } from '../utils/calculatorBuffFields.js'
+import {
+  effectHasGenericConditions,
+  normalizeEffectConditionsForStat,
+  normalizeGroupId,
+} from '../utils/buffEffectConditions.js'
 import { listFollowUpSkillRules, listSkillSubcategories } from './skillSubcategoryService.js'
 
 const WENGINE_TABLE = '`W-Engine`'
@@ -59,10 +64,10 @@ export function normalizeBuffScopes(value) {
   return BUFF_SCOPE_ORDER.filter((id) => picked.has(id))
 }
 
-function normalizeScopeValue(value) {
-  return normalizeBuffScopes(value)
-}
-
+/**
+ * 旧扁平 mods → fixed effects。
+ * 2026-10-20 起 BuffEffect 不再写 `scope`（`scope` 只作读入兼容；词条库另有一套 scope）。
+ */
 function flatModsToEffects(mods, applyTarget) {
   const effects = []
   for (const key of BUFF_STAT_KEYS) {
@@ -73,8 +78,6 @@ function flatModsToEffects(mods, applyTarget) {
     if (!value) continue
     effects.push({
       id: `legacy-${applyTarget}-${key}`,
-      // 写时统一数组口径
-      scope: ['general'],
       applyTarget,
       kind: 'fixed',
       stat: key,
@@ -89,7 +92,8 @@ function effectsToFlatMods(effects, applyTarget) {
   const result = createEmptyBuffStatModifiers()
   for (const effect of effects || []) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
-    if (!normalizeBuffScopes(effect.scope).includes('general')) continue
+    // 旧口径：只有「通用」效果进扁平增量表。带伤害类型 / 招式条件的不进。
+    if (!effectHasGenericConditions(effect)) continue
     let amount = readNumber(effect.value ?? effect.valuePerStack)
     if (!BUFF_STAT_KEYS.includes(effect.stat)) continue
     if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
@@ -166,7 +170,7 @@ function normalizeConvert(value) {
   }
 }
 
-function normalizeEffectList(value) {
+export function normalizeEffectList(value) {
   if (!Array.isArray(value)) return []
   return value
     .filter((item) => item && typeof item === 'object')
@@ -211,10 +215,10 @@ function normalizeEffectList(value) {
           ? null
           : String(item.applyProfession).trim()
 
+      const stat = BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus'
       const effect = {
         id: typeof item.id === 'string' && item.id ? item.id : `eff-${index}`,
         origin: typeof item.origin === 'string' ? item.origin : '',
-        scope: normalizeScopeValue(item.scope),
         applyTarget: item.applyTarget === 'team' ? 'team' : 'self',
         applySituation:
           item.applySituation === 'stagger' || item.applySituation === 'non_stagger'
@@ -237,7 +241,7 @@ function normalizeEffectList(value) {
         elementFilter: item.elementFilter ?? 'all',
         kind:
           item.kind === 'stacked' || item.kind === 'convert' ? item.kind : 'fixed',
-        stat: BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus',
+        stat,
         value: readNumber(item.value),
         stackable: Boolean(item.stackable),
         maxStacks: Math.max(1, readNumber(item.maxStacks) || 1),
@@ -255,6 +259,12 @@ function normalizeEffectList(value) {
         enabledDefault: item.enabledDefault === false ? false : true,
         note: typeof item.note === 'string' ? item.note : '',
       }
+      // 同源行分组键：只在管理侧用于聚合，引擎不读；空值不落库。
+      const groupId = normalizeGroupId(item.groupId)
+      if (groupId) effect.groupId = groupId
+      // 伤害类型条件：新字段优先，旧 scope 兼容读入；15 个子类 stat 不写冗余条件。
+      const conditions = normalizeEffectConditionsForStat(item.conditions, item.scope, stat)
+      if (conditions) effect.conditions = conditions
       if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
         effect.value = normalizeBuffMultFactorDelta(effect.value)
         effect.valuePerStack = normalizeBuffMultFactorDelta(effect.valuePerStack)
@@ -273,7 +283,7 @@ function normalizeEffectList(value) {
     .filter(Boolean)
 }
 
-function normalizeSelfTeamBuffs(value) {
+export function normalizeSelfTeamBuffs(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     if (Array.isArray(value.effectBlocks) && value.effectBlocks.length > 0) {
       const effectBlocks = value.effectBlocks

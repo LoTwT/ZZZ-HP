@@ -1,8 +1,8 @@
 import type {
   AgentMindscapeRankBuffs,
-  AnomalyDamageSubKind,
   BuffApplySituation,
   BuffApplyTarget,
+  BuffDamageType,
   BuffEffect,
   BuffEffectBlock,
   BuffEffectConvert,
@@ -21,7 +21,14 @@ import type {
   SkillSubcategory,
 } from '@/types/calculator'
 import { CONVERT_FROM_OPTIONS } from '@/types/calculator'
-import { buffScopeLabel, hasBuffScope, normalizeBuffScopes } from '@/utils/buffScope'
+import {
+  anomalyTypeOfStat,
+  damageTypeLabel,
+  damageTypesOf,
+  effectHasGenericConditions,
+  normalizeEffectConditionsForStat,
+  normalizeGroupId,
+} from '@/utils/buffDamageTypes'
 import { isLuminousElement } from '@/utils/remielUtils'
 import {
   isSkillConvertFromKey,
@@ -30,25 +37,6 @@ import {
 } from '@/utils/skillTalentLevels'
 import { formatCalcDecimal, roundCalc } from '@/utils/calcNumberFormat'
 import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
-
-function isAnomalyDamageScope(scope: BuffScope): boolean {
-  return (
-    scope === 'anomaly' ||
-    scope === 'disorder' ||
-    scope === 'turbulence' ||
-    scope === 'anomalyRelease' ||
-    scope === 'radiance'
-  )
-}
-
-function scopeToAnomalySubKind(scope: BuffScope): AnomalyDamageSubKind | null {
-  if (scope === 'anomaly') return 'anomaly'
-  if (scope === 'disorder') return 'disorder'
-  if (scope === 'turbulence') return 'turbulence'
-  if (scope === 'anomalyRelease') return 'anomalyRelease'
-  if (scope === 'radiance') return 'radiance'
-  return null
-}
 
 const BUFF_STAT_KEYS: BuffStatKey[] = [
   'hp',
@@ -233,10 +221,10 @@ export function createEmptyBuffEffect(
     overrides.skillSubcategoryId,
   )
   const primary = skillTargets[0]
-  return {
+  const stat = overrides.stat ?? 'dmgBonus'
+  const effect: BuffEffect = {
     id: overrides.id ?? newEffectId(),
     origin: overrides.origin ?? '',
-    scope: normalizeBuffScopes(overrides.scope),
     applyTarget: overrides.applyTarget ?? 'self',
     applySituation: overrides.applySituation ?? 'global',
     applyProfession:
@@ -267,7 +255,7 @@ export function createEmptyBuffEffect(
     skillSubcategoryId: primary?.subcategoryId ?? overrides.skillSubcategoryId ?? null,
     elementFilter: overrides.elementFilter ?? 'all',
     kind: overrides.kind ?? 'fixed',
-    stat: overrides.stat ?? 'dmgBonus',
+    stat,
     value: overrides.value ?? 0,
     stackable: overrides.stackable ?? false,
     maxStacks: overrides.maxStacks ?? 1,
@@ -278,6 +266,11 @@ export function createEmptyBuffEffect(
     enabledDefault: overrides.enabledDefault ?? true,
     note: overrides.note ?? '',
   }
+  const conditions = normalizeEffectConditionsForStat(overrides.conditions, overrides.scope, stat)
+  if (conditions) effect.conditions = conditions
+  const groupId = normalizeGroupId(overrides.groupId)
+  if (groupId) effect.groupId = groupId
+  return effect
 }
 
 /** 读取效果的招式目标列表（兼容旧单字段） */
@@ -379,6 +372,9 @@ export function cloneEffectInstance(
       ? [...effect.elementFilter]
       : effect.elementFilter,
     convert: effect.convert ? { ...effect.convert } : undefined,
+    conditions: effect.conditions?.damageTypes
+      ? { damageTypes: [...effect.conditions.damageTypes] }
+      : undefined,
   }
 }
 
@@ -389,7 +385,8 @@ export function effectsToFlatMods(
   let total = emptyMods()
   for (const effect of effects) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
-    if (!hasBuffScope(effect.scope, 'general')) continue
+    // 旧口径：只有「通用」效果进扁平增量表；带伤害类型 / 招式条件的不进。
+    if (!effectHasGenericConditions(effect)) continue
     const amount = resolveEffectBaseValue(effect, effect.defaultStacks ?? 1)
     if (isBuffMultFactorKey(effect.stat)) {
       if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) continue
@@ -482,30 +479,49 @@ export function resolveConvertValue(
   return roundCalc(amount)
 }
 
+/** 当前结算上下文的第二级伤害类型 */
+function contextDamageType(ctx: SkillCalcContext): BuffDamageType | null {
+  if (ctx.damageKind === 'anomaly') return ctx.anomalySubKind ?? 'anomaly'
+  return ctx.directSubKind ?? 'normal'
+}
+
+/** 伤害类型集合命中（兼容旧口径：异常 scope 的异放倍率增益在异放结算时也生效） */
+function damageTypeMatches(
+  types: readonly BuffDamageType[],
+  current: BuffDamageType,
+  stat: BuffStatKey,
+): boolean {
+  if (types.includes(current)) return true
+  if (
+    current === 'anomalyRelease' &&
+    types.includes('anomaly') &&
+    (stat === 'anomalyReleaseMult' || stat === 'anomalyReleaseMultFactor')
+  ) {
+    return true
+  }
+  return false
+}
+
+/** 是否有招式条件（有 skillTargets / 旧 skillCategory 即限定招式） */
+function hasSkillCondition(effect: BuffEffect): boolean {
+  return getEffectSkillTargets(effect).length > 0
+}
+
 /**
- * 作用域生效判定（**数组口径**：任一成员命中即生效）。
+ * 效果生效判定（2026-10-20 条件体系）。
  *
- * 与「把 `scope: ['a','b']` 拆成两条单值行」完全等价：逐成员跑同一个单值判定，
- * 任一为真即真（`singleScopeMatchesContext` 就是改造前的整段单值逻辑）。
+ * - 有 `conditions.damageTypes`：只在这些第二级类型上生效；通用面板上下文一律不命中。
+ * - 无伤害类型条件：走旧「通用」语义（含 appliesToAnomaly 规则）。
+ * - 有 skillTargets：要求命中招式坐标；异常结算下仍要求 appliesToAnomaly === true。
+ * - `groupId` 不参与任何判定。
  */
 export function effectMatchesContext(
   effect: BuffEffect,
   ctx: SkillCalcContext | null | undefined,
 ): boolean {
-  return normalizeBuffScopes(effect.scope).some((scope) =>
-    singleScopeMatchesContext(effect, ctx, scope),
-  )
-}
-
-/** 单值作用域判定（改造前 `effectMatchesContext` 的原逻辑，逐字保留语义） */
-function singleScopeMatchesContext(
-  effect: BuffEffect,
-  ctx: SkillCalcContext | null | undefined,
-  scope: BuffScope,
-): boolean {
-  if (!ctx) {
-    return scope === 'general'
-  }
+  const types = damageTypesOf(effect)
+  const skillCondition = hasSkillCondition(effect)
+  if (!ctx) return types.length === 0 && !skillCondition
 
   const situation = effect.applySituation ?? 'global'
   if (situation !== 'global') {
@@ -522,27 +538,16 @@ function singleScopeMatchesContext(
     return false
   }
 
-  if (scope === 'mutation') {
-    return ctx.damageKind === 'anomaly'
-  }
-  if (scope === 'radiance') {
-    return ctx.damageKind === 'anomaly' && (ctx.anomalySubKind ?? 'anomaly') === 'radiance'
-  }
-
-  if (isAnomalyDamageScope(scope)) {
-    if (ctx.damageKind !== 'anomaly') return false
-    const required = scopeToAnomalySubKind(scope)
-    const current = ctx.anomalySubKind ?? 'anomaly'
-    if (required === current) return true
-    // 异常 scope 的异放倍率增益在异放结算时也应生效
-    if (
-      current === 'anomalyRelease' &&
-      required === 'anomaly' &&
-      (effect.stat === 'anomalyReleaseMult' || effect.stat === 'anomalyReleaseMultFactor')
-    ) {
-      return true
+  if (types.length) {
+    // 面板通用上下文（只汇总无类型/无招式条件的通用 Buff）：带类型条件的不进。
+    if (ctx.generic) return false
+    const current = contextDamageType(ctx)
+    if (!current || !damageTypeMatches(types, current, effect.stat)) return false
+    if (skillCondition) {
+      if (ctx.damageKind === 'anomaly' && effect.appliesToAnomaly !== true) return false
+      return effectTargetsSkill(effect, ctx)
     }
-    return false
+    return true
   }
 
   if (ctx.damageKind === 'anomaly') {
@@ -550,18 +555,13 @@ function singleScopeMatchesContext(
       effect.stat === 'skillDmgBonus' || effect.stat === 'skillMultiplierBonus'
     const allowsAnomaly =
       effect.appliesToAnomaly === true ||
-      (effect.appliesToAnomaly !== false && scope === 'general' && !skillStat)
+      (effect.appliesToAnomaly !== false && !skillStat)
     if (!allowsAnomaly) return false
-    if (scope === 'skill' && effect.appliesToAnomaly !== true) return false
+    if (skillCondition && effect.appliesToAnomaly !== true) return false
   }
 
-  if (scope === 'general') return true
-
-  if (scope === 'skill') {
-    return effectTargetsSkill(effect, ctx)
-  }
-
-  return false
+  if (skillCondition) return effectTargetsSkill(effect, ctx)
+  return true
 }
 
 /**
@@ -950,7 +950,9 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
   const effect = createEmptyBuffEffect({
     id: typeof entry.id === 'string' && entry.id ? entry.id : newEffectId(),
     origin: typeof entry.origin === 'string' ? entry.origin : '',
-    scope: normalizeBuffScopes(entry.scope),
+    conditions: entry.conditions as BuffEffect['conditions'],
+    scope: entry.scope as BuffScope | BuffScope[] | undefined,
+    groupId: typeof entry.groupId === 'string' ? entry.groupId : undefined,
     applyTarget: normalizeApplyTarget(entry.applyTarget),
     applySituation: normalizeApplySituation(entry.applySituation),
     applyProfession:
@@ -1010,7 +1012,7 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
   if (effect.kind === 'stacked' || effect.stackable || effect.kind === 'convert') {
     effect.value = 0
   }
-  if (hasBuffScope(effect.scope, 'skill')) {
+  if (hasSkillCondition(effect)) {
     const targets = getEffectSkillTargets(effect)
     if (!targets.length) {
       setEffectSkillTargets(effect, [{ category: 'basic', subcategoryId: null }])
@@ -1066,9 +1068,11 @@ const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
 
 function resolveAppliesToAnomaly(entry: Record<string, unknown>): boolean | undefined {
   if (entry.appliesToAnomaly != null) return Boolean(entry.appliesToAnomaly)
-  const scopes = normalizeBuffScopes(entry.scope)
   const stat = normalizeStat(entry.stat)
-  if (scopes.includes('skill') && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
+  const hasSkill =
+    (Array.isArray(entry.skillTargets) && entry.skillTargets.length > 0) ||
+    Boolean(entry.skillCategory)
+  if (hasSkill && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
   return undefined
 }
 
@@ -1263,12 +1267,11 @@ export function formatSkillTargetBracket(
   return `[${catLabel}]`
 }
 
-/** 按顺序拼接全部招式目标括号 */
+/** 按顺序拼接全部招式目标括号（有 skillTargets 即限定招式） */
 export function formatSkillTargetsPrefix(
   effect: BuffEffect,
   skillSubcategories?: SkillSubcategory[] | null,
 ): string {
-  if (!hasBuffScope(effect.scope, 'skill')) return ''
   return getEffectSkillTargets(effect)
     .map((target) => formatSkillTargetBracket(target, skillSubcategories))
     .join('')
@@ -1281,16 +1284,12 @@ export function effectSummaryLabel(
 ): string {
   const target = effect.applyTarget === 'team' ? '全队' : '自身'
   const skillPrefix = formatSkillTargetsPrefix(effect, skillSubcategories)
-  // 作用域是数组：多选时按顺序拼接（如「异常 + 异放」；招式带上锚点括号）
-  const scope = normalizeBuffScopes(effect.scope)
-    .map((id) =>
-      id === 'skill'
-        ? skillPrefix
-          ? `招式·${skillPrefix}`
-          : '招式'
-        : buffScopeLabel([id]),
-    )
-    .join(' + ')
+  // 显示只显示第二级类型，不带「直伤类 / 异常类」前缀；类2 的类型由 stat 反推。
+  const explicitTypes = damageTypesOf(effect)
+  const statType = anomalyTypeOfStat(effect.stat)
+  const typeIds: BuffDamageType[] =
+    explicitTypes.length ? explicitTypes : statType ? [statType] : []
+  const typeText = typeIds.map((id) => damageTypeLabel(id)).join(' + ')
   const situation =
     APPLY_SITUATION_LABELS[effect.applySituation ?? 'global'] ?? '全局'
   const applyProf = formatApplyProfessionLabel(effect)
@@ -1303,7 +1302,10 @@ export function effectSummaryLabel(
       : effect.kind === 'convert'
         ? convertSummaryLabel(effect.convert)
         : `${effect.value ?? 0}`
-  const parts = [target, scope, situation]
+  const parts = [target]
+  if (skillPrefix) parts.push(`招式·${skillPrefix}`)
+  if (typeText) parts.push(typeText)
+  parts.push(situation)
   if (applyProf) parts.splice(0, 0, applyProf)
   // 属性限制：全局之后、效果之前
   if (elementLabel) parts.push(elementLabel)

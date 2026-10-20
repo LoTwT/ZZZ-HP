@@ -24,6 +24,10 @@
  */
 import { BUFF_STAT_KEYS } from '../utils/calculatorBuffFields.js'
 import {
+  normalizeEffectConditionsForStat,
+  normalizeGroupId,
+} from '../utils/buffEffectConditions.js'
+import {
   CONVERT_FROM_LABELS,
   CONVERT_PANEL_SOURCE_LABELS,
   CONVERT_SLOT_HINTS,
@@ -51,31 +55,6 @@ const AGENT_SLOT_COUNT = 7
 const REFINEMENT_COUNT = 5
 const MINDSCAPE_NOTES_LENGTH = 7
 
-const SCOPE_VALUES = new Set([
-  'general',
-  'skill',
-  'anomaly',
-  'disorder',
-  'turbulence',
-  'anomalyRelease',
-  'radiance',
-  'mutation',
-])
-
-/** 作用域归一化（**与 `calculatorBuffService.normalizeBuffScopes` 同源规则**；本文件内联一份避免循环依赖） */
-function normalizeBuffScopesLocal(value) {
-  const raw = Array.isArray(value) ? value : value == null ? [] : [value]
-  const picked = new Set()
-  for (const item of raw) {
-    if (typeof item !== 'string') continue
-    const text = item.trim()
-    if (!SCOPE_VALUES.has(text)) continue
-    if (text === 'general') return ['general']
-    picked.add(text)
-  }
-  if (!picked.size) return ['general']
-  return [...SCOPE_VALUES].filter((id) => picked.has(id))
-}
 const APPLY_TARGET_VALUES = new Set(['self', 'team'])
 const APPLY_SITUATION_VALUES = new Set(['global', 'stagger', 'non_stagger'])
 const EFFECT_KINDS = new Set(['fixed', 'stacked', 'convert'])
@@ -203,8 +182,6 @@ export function sanitizeEffect(input, index = 0) {
   const effect = {
     id: String(raw.id ?? `eff-${index}`).trim() || `eff-${index}`,
     origin: typeof raw.origin === 'string' ? raw.origin : '',
-    // 作用域数组口径（读时兼容单值字符串；写库统一数组）
-    scope: normalizeBuffScopesLocal(raw.scope),
     applyTarget: APPLY_TARGET_VALUES.has(raw.applyTarget) ? raw.applyTarget : 'self',
     applySituation: APPLY_SITUATION_VALUES.has(raw.applySituation) ? raw.applySituation : 'global',
     applyProfession:
@@ -284,10 +261,15 @@ export function sanitizeEffect(input, index = 0) {
   } else {
     effect.convert = undefined
   }
+  // `scope` 只作旧输入兼容；写库统一迁移为 conditions.damageTypes。
+  const groupId = normalizeGroupId(raw.groupId)
+  if (groupId) effect.groupId = groupId
+  const conditions = normalizeEffectConditionsForStat(raw.conditions, raw.scope, stat)
+  if (conditions) effect.conditions = conditions
   return effect
 }
 
-/** 判重签名（**不看 note / scope / elementFilter / id**：本地更精确的老条目不该被再追加一份） */
+/** 判重签名（**不看 note / groupId / elementFilter / id**：本地更精确的老条目不该被再追加一份） */
 function effectSignature(effect) {
   const parts = [
     effect.stat,
@@ -305,6 +287,7 @@ function effectSignature(effect) {
     (effect.skillTargets ?? []).map((t) => `${t.category}:${t.subcategoryId ?? ''}`).join(','),
     effect.skillCategory ?? '',
     effect.skillSubcategoryId ?? '',
+    (effect.conditions?.damageTypes ?? []).join(','),
     effect.convert ? `${effect.convert.from}/${effect.convert.panelSource}/${toNumber(effect.convert.ratioPercent)}` : '',
   ]
   return parts.join('|')
