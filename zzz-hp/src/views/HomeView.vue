@@ -199,7 +199,7 @@ const modes: ModeCard[] = [
 
 .hero-title-name {
   display: inline-block;
-  padding: 0.04em 0.14em 0.06em 0.06em;
+  padding: 0.04em 0.14em 0.06em;
   font-size: clamp(3.2rem, 9.5vw, 6.8rem);
   background: var(--zzz-yellow);
   color: #0a0a0a;
