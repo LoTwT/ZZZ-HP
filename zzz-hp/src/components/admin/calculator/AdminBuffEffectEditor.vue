@@ -734,7 +734,7 @@ defineExpose({
   background: var(--color-background);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   cursor: pointer;
 }
 
@@ -827,8 +827,9 @@ defineExpose({
   background: color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 
+/* 下拉里的当前项：同薄荷强调色（原来是 heading 16% 的灰泥色） */
 .owner-item.is-active {
-  background: color-mix(in srgb, var(--color-heading) 16%, transparent);
+  background: hsla(160, 100%, 37%, 0.14);
 }
 
 .owner-item-name {
@@ -839,19 +840,19 @@ defineExpose({
 
 .owner-item-meta {
   flex: 0 0 auto;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   opacity: 0.6;
 }
 
 .owner-empty {
   margin: 0;
   padding: 0.3rem 0.4rem;
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   opacity: 0.6;
 }
 
 .toolbar-stats {
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   opacity: 0.72;
   white-space: nowrap;
 }
@@ -861,7 +862,7 @@ defineExpose({
 }
 
 .save-state {
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   white-space: nowrap;
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
@@ -919,8 +920,10 @@ defineExpose({
   border-radius: 8px;
 }
 
+/* 选中态：与「影画页签」「列表项」同一套薄荷强调色（hsla(160…)，见 adminCalculatorPanel.css）。
+   原先用 color-mix(heading 12%) 在暖纸底上是一层灰泥色，和左边导航的薄荷色打架。 */
 .tree-block-head.is-active {
-  background: color-mix(in srgb, var(--color-heading) 12%, transparent);
+  background: hsla(160, 100%, 37%, 0.12);
 }
 
 .tree-toggle {
@@ -962,7 +965,7 @@ defineExpose({
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   text-align: left;
   cursor: pointer;
 }
@@ -970,7 +973,7 @@ defineExpose({
 .block-initial {
   display: none;
   flex: 0 0 auto;
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 600;
 }
 
@@ -987,7 +990,7 @@ defineExpose({
 
 .block-count {
   flex: 0 0 auto;
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   opacity: 0.6;
 }
 
@@ -1041,7 +1044,7 @@ defineExpose({
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   text-align: left;
   cursor: pointer;
 }
@@ -1051,9 +1054,10 @@ defineExpose({
 }
 
 .tree-row.is-active {
-  border-left-color: var(--color-heading);
-  background: color-mix(in srgb, var(--color-heading) 16%, transparent);
+  border-left-color: hsl(160, 100%, 32%);
+  background: hsla(160, 100%, 37%, 0.16);
   color: var(--color-heading);
+  font-weight: 600;
 }
 
 .tree-row-label {
@@ -1070,7 +1074,7 @@ defineExpose({
 }
 
 .tree-badge {
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   line-height: 1.3;
   padding: 0 0.22rem;
   border: 1px solid var(--color-border);
@@ -1090,7 +1094,7 @@ defineExpose({
 
 .tree-empty {
   padding: 0.1rem 0.3rem;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   opacity: 0.5;
 }
 
@@ -1102,7 +1106,7 @@ defineExpose({
   background: transparent;
   color: var(--color-heading);
   font: inherit;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1114,7 +1118,7 @@ defineExpose({
 
 .hint {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   opacity: 0.68;
   line-height: 1.45;
   color: var(--color-text);
@@ -1124,7 +1128,7 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   opacity: 0.7;
   padding: 1rem 0.5rem;
 }
@@ -1210,7 +1214,7 @@ defineExpose({
   color: var(--color-heading);
   padding: 0.32rem 0.6rem;
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   white-space: nowrap;
 }
 
@@ -1261,12 +1265,12 @@ defineExpose({
     align-items: center;
     gap: 0.05rem;
     padding: 0.25rem 0.05rem;
-    font-size: 0.66rem;
+    font-size: 0.64rem;
   }
 
   .block-add {
     padding: 0.25rem 0.05rem;
-    font-size: 0.66rem;
+    font-size: 0.64rem;
   }
 }
 </style>

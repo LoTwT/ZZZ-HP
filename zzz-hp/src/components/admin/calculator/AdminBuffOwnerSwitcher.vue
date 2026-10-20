@@ -122,8 +122,9 @@ const filtered = computed(() => {
   background: color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 
+/* 当前项：与增益编辑器左列、影画页签同一套薄荷强调色 */
 .os-item.is-active {
-  background: color-mix(in srgb, var(--color-heading) 16%, transparent);
+  background: hsla(160, 100%, 37%, 0.14);
 }
 
 .os-name {
@@ -134,14 +135,14 @@ const filtered = computed(() => {
 
 .os-meta {
   flex: 0 0 auto;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   opacity: 0.6;
 }
 
 .os-empty {
   margin: 0;
   padding: 0.3rem 0.4rem;
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   opacity: 0.6;
 }
 

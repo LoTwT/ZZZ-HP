@@ -1091,6 +1091,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border-radius: 8px;
   padding: 0.3rem 0.45rem;
   background: var(--color-background);
+  /* 行内基准字号：数值列等没显式声明字号的地方统一继承这里，
+     否则会继承到外层正文（比左侧「条件/属性」大一圈 —— 2026-10-20 用户指出） */
+  font-size: 0.72rem;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -1117,7 +1120,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .effect-title strong {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
@@ -1174,7 +1177,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   flex: 0 0 auto;
 }
 
@@ -1184,7 +1187,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   align-items: center;
   gap: 0.4rem;
   color: #c45c5c;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 
 .member-line {
@@ -1199,7 +1202,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px dashed var(--color-border);
   border-radius: 6px;
   padding: 0 0.3rem;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 /* 主体：左（条件 + 高级，常显）+ 右（数值列，常显） */
@@ -1239,10 +1242,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--color-heading);
 }
 
+/* 次级标签（伤害类型 / 每层 / 最大 / 默认）：与「条件」「属性」同字号同字重，
+   只靠略低的对比度区分层级 —— 之前是 0.68rem + 0.66 透明度，看上去比「属性」小一号 */
 .line-sub {
   flex: 0 0 auto;
-  font-size: 0.68rem;
-  opacity: 0.66;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.8;
 }
 
 .inline-field {
@@ -1274,7 +1280,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--color-text);
   padding: 0.05rem 0.25rem;
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   max-width: 11rem;
 }
 
@@ -1299,12 +1305,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.12rem;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
 }
 
 .note-inline {
   margin: 0;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   opacity: 0.75;
   white-space: pre-wrap;
 }
@@ -1313,7 +1319,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: none;
   background: transparent;
   color: var(--color-text);
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   line-height: 1;
   padding: 0 0.1rem;
   opacity: 0.45;
@@ -1355,7 +1361,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: none;
   background: transparent;
   color: var(--color-text);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   padding: 0.28rem 0.4rem;
   border-radius: 6px;
   cursor: pointer;
@@ -1381,7 +1387,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   opacity: 0.6;
   white-space: nowrap;
 }
@@ -1404,7 +1410,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 0 0.35rem;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   line-height: 1.4;
   background: var(--color-background);
   cursor: pointer;
@@ -1425,7 +1431,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0 0.25rem;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   line-height: 1.4;
 }
 
@@ -1434,7 +1440,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   background: transparent;
   color: var(--color-text);
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   line-height: 1;
   opacity: 0.6;
   padding: 0;
@@ -1465,7 +1471,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 
 .menu-field select {
@@ -1485,6 +1491,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   gap: 0.15rem;
   padding: 0.15rem 0.35rem;
   border-left: 1px dashed var(--color-border);
+  /* 与左侧「条件 / 属性」同字号（否则这里的「属性 / 类型」会继承正文大小） */
+  font-size: 0.72rem;
   min-width: 0;
 }
 
@@ -1515,12 +1523,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 .unit {
   flex: 0 0 auto;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   opacity: 0.66;
 }
 
 .value-fallback {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   opacity: 0.8;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1540,7 +1548,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   padding: 0.1rem 0.25rem;
   border-radius: 6px;
   background: color-mix(in srgb, var(--color-border) 25%, transparent);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -1613,13 +1621,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .muted {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   opacity: 0.55;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   opacity: 0.7;
 }
 
@@ -1643,7 +1651,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--color-heading);
   padding: 0.1rem 0.35rem;
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   line-height: 1.4;
   white-space: nowrap;
 }
