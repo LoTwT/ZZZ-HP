@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import AdminBuffEffectRow from '@/components/admin/calculator/AdminBuffEffectRow.vue'
 import type {
   BuffDamageType,
   BuffEffect,
   BuffEffectBlock,
 } from '@/types/calculator'
-import { createEmptyBuffEffect, createEmptyBuffEffectBlock, packFromBlocks } from '@/utils/buffEffect'
+import { createEmptyBuffEffect, createEmptyBuffEffectBlock, convertSummaryLabel, packFromBlocks } from '@/utils/buffEffect'
+import { formatCalcDecimal } from '@/utils/calcNumberFormat'
+import { BUFF_STAT_FIELDS } from '@/utils/calculatorUi'
 import { findBuffStatZoneById } from '@/utils/buffStatZones'
 import {
   alignRow,
@@ -20,6 +22,14 @@ import {
   validateEffectGroups,
   type EffectRow,
 } from '@/utils/buffEffectRows'
+
+/** 工具条「当前编辑」下拉里的可切换对象（代理人 / 音擎 / 邦布…） */
+interface BuffEditorOwnerOption {
+  id: string
+  name: string
+  /** 次要信息，如「强攻 · 电」「S 音擎」 */
+  meta?: string
+}
 
 const props = defineProps<{
   lockApplyTarget?: 'self' | 'team' | null
@@ -36,7 +46,25 @@ const props = defineProps<{
    * 勾选「异常计算时也生效」时回调（用于邦布/音擎精炼跨精同步）。
    */
   onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
+  /** 工具条：当前编辑对象名称（代理人 / 音擎 / 邦布…） */
+  ownerLabel?: string
+  /** 工具条：当前编辑对象 id（下拉里高亮） */
+  ownerId?: string
+  /** 工具条：可切换对象列表；配合 `switch-owner` 事件使用 */
+  owners?: BuffEditorOwnerOption[]
+  /** 块排序口径：代理人（核心被动/额外能力/招式/影画）或音擎（基础/精炼） */
+  ownerKind?: 'agent' | 'wengine'
+  /** 工具条保存状态；不传则用组件内的「有改动 / 无改动」本地标记 */
+  saveState?: 'clean' | 'dirty' | 'saving' | 'saved'
+  /** 已保存的补充说明（如「12:03」） */
+  savedAtLabel?: string
 }>()
+
+const emit = defineEmits<{
+  'switch-owner': [id: string]
+}>()
+
+const slots = useSlots()
 
 const model = defineModel<BuffEffectBlock[]>({ required: true })
 
@@ -46,10 +74,252 @@ const mergeMode = ref(false)
 const selectedRowKeys = ref<string[]>([])
 const mergeError = ref('')
 
+/* ───────────────────────── 三列布局：工具条 / 块列表 / 当前块 ───────────────────────── */
+
+const selectedBlockId = ref('')
+const ownerMenuOpen = ref(false)
+const ownerSearch = ref('')
+/** 组件内的「有改动」标记：只用于工具条提示，不参与保存 */
+const localDirty = ref(false)
+
+watch(
+  model,
+  () => {
+    localDirty.value = true
+  },
+  { deep: true },
+)
+
 function rowsOf(block: BuffEffectBlock): EffectRow[] {
   const suppressed = new Set(suppressedByBlock.value[block.id] ?? [])
   return buildEffectRows(block.effects, { suppressHeuristicIds: suppressed })
 }
+
+const blockSummaries = computed(() => {
+  const map = new Map<string, { rows: number; effects: number; warn: boolean; ungrouped: boolean }>()
+  for (const block of model.value) {
+    const rows = rowsOf(block)
+    map.set(block.id, {
+      rows: rows.length,
+      effects: block.effects.length,
+      warn: rows.some((row) => row.issues.length > 0),
+      ungrouped: rows.some((row) => row.heuristic && !row.groupId),
+    })
+  }
+  return map
+})
+
+const totalEffects = computed(() =>
+  model.value.reduce((sum, block) => sum + block.effects.length, 0),
+)
+const recordedBlocks = computed(
+  () => model.value.filter((block) => block.effects.length > 0).length,
+)
+
+/** 块排序口径：页面没给 ownerKind 时按块名猜（音擎=基础/精炼，其余按代理人） */
+const editorKind = computed<'agent' | 'wengine'>(() => {
+  if (props.ownerKind === 'agent' || props.ownerKind === 'wengine') return props.ownerKind
+  if ((props.defaultFirstBlockName ?? '').trim().startsWith('精')) return 'wengine'
+  const names = model.value.map((block) => (block.name ?? '').trim())
+  if (names.some((name) => /精炼/.test(name) || /^精\s*[1-6]$/.test(name))) return 'wengine'
+  return 'agent'
+})
+
+const AGENT_SKILL_ORDER = ['普通攻击', '闪避', '支援', '特殊', '连携', '终结', '追加']
+const CN_DIGITS: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 }
+
+interface BlockOrderKey {
+  group: number
+  sub: number
+}
+
+/**
+ * 展示排序（不改数据顺序）：
+ * - 代理人：核心被动 → 额外能力 → 招式（按类别）→ 影画 1..6 → 其它（保持原顺序）
+ * - 音擎：基础 → 精炼 1..5 → 其它
+ */
+function blockOrderKey(name: string, kind: 'agent' | 'wengine'): BlockOrderKey {
+  const text = (name ?? '').trim()
+  if (kind === 'wengine') {
+    const refine = /精炼\s*([1-6])/.exec(text) ?? /精\s*([1-6])/.exec(text)
+    if (refine) return { group: 1, sub: Number(refine[1]) }
+    if (/基础/.test(text)) return { group: 0, sub: 0 }
+    return { group: 9, sub: 0 }
+  }
+  const rank = /影画\s*([0-9一二三四五六])/.exec(text)
+  if (rank) {
+    const rankLabel = rank[1]!
+    return { group: 3, sub: CN_DIGITS[rankLabel] ?? (Number(rankLabel) || 0) }
+  }
+  if (/核心/.test(text)) return { group: 0, sub: 0 }
+  if (/额外/.test(text)) return { group: 1, sub: 0 }
+  const skillIndex = AGENT_SKILL_ORDER.findIndex((keyword) => text.includes(keyword))
+  if (skillIndex >= 0) return { group: 2, sub: skillIndex }
+  if (/招式/.test(text)) return { group: 2, sub: AGENT_SKILL_ORDER.length }
+  return { group: 9, sub: 0 }
+}
+
+const orderedBlocks = computed(() => {
+  const kind = editorKind.value
+  return model.value
+    .map((block, index) => ({ block, index, key: blockOrderKey(block.name ?? '', kind) }))
+    .sort(
+      (left, right) =>
+        left.key.group - right.key.group ||
+        left.key.sub - right.key.sub ||
+        left.index - right.index,
+    )
+    .map((item) => item.block)
+})
+
+const activeBlock = computed(
+  () =>
+    orderedBlocks.value.find((block) => block.id === selectedBlockId.value) ??
+    orderedBlocks.value[0] ??
+    null,
+)
+
+/* ── 左列导航树：块 → 行；块可整块折叠（这是唯一的折叠），行只负责选中 ── */
+const selectedRowKey = ref('')
+const collapsedBlocks = ref<Record<string, boolean>>({})
+
+function isBlockCollapsed(blockId: string) {
+  return collapsedBlocks.value[blockId] === true
+}
+
+function toggleBlock(blockId: string) {
+  collapsedBlocks.value = {
+    ...collapsedBlocks.value,
+    [blockId]: !isBlockCollapsed(blockId),
+  }
+}
+
+/** 所有行（按块展示顺序展开），右列只渲染选中的那一行 */
+const allRows = computed(() =>
+  orderedBlocks.value.flatMap((block) => rowsOf(block).map((row) => ({ block, row }))),
+)
+
+const activeRow = computed(
+  () => allRows.value.find((item) => item.row.key === selectedRowKey.value) ?? null,
+)
+
+watch(
+  allRows,
+  (list) => {
+    if (!list.some((item) => item.row.key === selectedRowKey.value)) {
+      const first = list[0]
+      selectedRowKey.value = first?.row.key ?? ''
+      if (first) selectedBlockId.value = first.block.id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => model.value.map((block) => block.id).join('|'),
+  () => {
+    if (!model.value.some((block) => block.id === selectedBlockId.value)) {
+      selectedBlockId.value = orderedBlocks.value[0]?.id ?? ''
+    }
+  },
+  { immediate: true },
+)
+
+/** 左列行摘要：`属性 · 目标 · 数值` */
+function rowNavLabel(row: EffectRow) {
+  const first = row.effects[0]
+  if (!first) return '（空行）'
+  const field = BUFF_STAT_FIELDS.find((item) => item.key === first.stat)
+  const stat = row.zone?.label ?? field?.label ?? first.stat
+  const target = (first.applyTarget ?? 'self') === 'team' ? '全队' : '自身'
+  const suffix = field?.unit === 'percent' ? '%' : ''
+  const amount =
+    first.kind === 'stacked'
+      ? `${formatCalcDecimal(first.valuePerStack ?? 0)}${suffix}×${first.maxStacks ?? 1}层`
+      : first.kind === 'convert'
+        ? convertSummaryLabel(first.convert)
+        : `${formatCalcDecimal(first.value ?? 0)}${suffix}`
+  return `${stat} · ${target} · ${amount}`
+}
+
+function selectRow(block: BuffEffectBlock, row: EffectRow) {
+  selectedBlockId.value = block.id
+  selectedRowKey.value = row.key
+}
+
+function selectBlock(block: BuffEffectBlock) {
+  selectedBlockId.value = block.id
+  const firstRow = rowsOf(block)[0]
+  if (firstRow) selectedRowKey.value = firstRow.key
+}
+
+/** 窄条模式下的块图标：取块名前两个字 */
+function blockInitial(name: string) {
+  return (name ?? '').trim().slice(0, 2) || '块'
+}
+
+/* ───────────────────────── 工具条：当前编辑 / 块统计 / 保存状态 ───────────────────────── */
+
+const hasOwnerSlot = computed(() => Boolean(slots['owner-switcher']))
+const canSwitchOwner = computed(
+  () => hasOwnerSlot.value || (props.owners?.length ?? 0) > 0,
+)
+const ownerButtonTitle = computed(() =>
+  canSwitchOwner.value ? '搜索 / 切换当前编辑对象' : '当前编辑对象由所在页面切换',
+)
+const ownerName = computed(() => (props.ownerLabel ?? '').trim() || '未命名')
+
+const filteredOwners = computed(() => {
+  const keyword = ownerSearch.value.trim().toLowerCase()
+  const list = props.owners ?? []
+  if (!keyword) return list
+  return list.filter((owner) =>
+    `${owner.name} ${owner.meta ?? ''}`.toLowerCase().includes(keyword),
+  )
+})
+
+function toggleOwnerMenu() {
+  if (!canSwitchOwner.value) return
+  ownerMenuOpen.value = !ownerMenuOpen.value
+  if (!ownerMenuOpen.value) ownerSearch.value = ''
+}
+
+function closeOwnerMenu() {
+  ownerMenuOpen.value = false
+  ownerSearch.value = ''
+}
+
+function pickOwner(id: string) {
+  emit('switch-owner', id)
+  closeOwnerMenu()
+}
+
+function onDocumentClick() {
+  ownerMenuOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+
+const saveStateResolved = computed<'clean' | 'dirty' | 'saving' | 'saved'>(
+  () => props.saveState ?? (localDirty.value ? 'dirty' : 'clean'),
+)
+
+const saveStateText = computed(() => {
+  const state = saveStateResolved.value
+  if (state === 'saving') return '保存中…'
+  if (state === 'saved') {
+    return props.savedAtLabel ? `已保存 · ${props.savedAtLabel}` : '已保存'
+  }
+  if (state === 'dirty') return '● 未保存'
+  return '✓ 无改动'
+})
+
+/** 上层保存成功后调用：清掉工具条的「未保存」提示（可选用法） */
+function markSaved() {
+  localDirty.value = false
+}
+
+/* ───────────────────────── 块 / 效果的行操作（数据逻辑保持原样） ───────────────────────── */
 
 function rememberSuppressed(blockId: string, effects: readonly BuffEffect[]) {
   const ids = new Set(suppressedByBlock.value[blockId] ?? [])
@@ -76,25 +346,28 @@ function addBlock() {
     isFirst && props.defaultFirstBlockNote?.trim()
       ? props.defaultFirstBlockNote.trim()
       : ''
-  model.value = [
-    ...model.value,
-    createEmptyBuffEffectBlock({
-      name,
-      note,
-      effects: [
-        createEmptyBuffEffect({
-          applyTarget: props.lockApplyTarget ?? 'self',
-          stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
-        }),
-      ],
-    }),
-  ]
+  const block = createEmptyBuffEffectBlock({
+    name,
+    note,
+    effects: [
+      createEmptyBuffEffect({
+        applyTarget: props.lockApplyTarget ?? 'self',
+        stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
+      }),
+    ],
+  })
+  model.value = [...model.value, block]
+  selectedBlockId.value = block.id
 }
 
-function removeBlock(index: number) {
-  const block = model.value[index]
-  if (block) delete suppressedByBlock.value[block.id]
+function removeBlock(block: BuffEffectBlock) {
+  const index = model.value.findIndex((item) => item.id === block.id)
+  if (index < 0) return
+  delete suppressedByBlock.value[block.id]
   model.value = model.value.filter((_, i) => i !== index)
+  if (selectedBlockId.value === block.id) {
+    selectedBlockId.value = orderedBlocks.value[0]?.id ?? ''
+  }
 }
 
 function addEffect(block: BuffEffectBlock) {
@@ -191,104 +464,669 @@ defineExpose({
     }
     return packFromBlocks(model.value)
   },
+  /** 上层保存成功后调用，清掉工具条的「未保存」提示 */
+  markSaved,
 })
 </script>
 
+
 <template>
   <div class="effect-editor">
-    <p v-if="hint !== ''" class="hint">
-      {{
-        hint ??
-        '每行是一组同源效果：改数值 / 目标 / 条件会整组一起改；勾伤害类型加一条、取消删对应条；[拆开] 清 groupId；[合并] 把同块同族同值的行写成同一个 groupId。'
-      }}
-    </p>
+    <!-- 顶部工具条：当前编辑 + 块统计 + 保存状态（低频的搜索/切换收进下拉） -->
+    <header class="editor-toolbar">
+      <div v-if="ownerLabel || canSwitchOwner" class="owner-switch">
+        <button
+          type="button"
+          class="owner-btn"
+          :class="{ 'is-open': ownerMenuOpen }"
+          :disabled="!canSwitchOwner"
+          :title="ownerButtonTitle"
+          @click.stop="toggleOwnerMenu"
+        >
+          <span class="owner-prefix">当前编辑：</span>
+          <strong class="owner-name">{{ ownerName }}</strong>
+          <span v-if="canSwitchOwner" class="owner-caret" aria-hidden="true" />
+        </button>
 
-    <div class="merge-toolbar">
+        <div v-if="ownerMenuOpen" class="owner-menu" @click.stop>
+          <slot name="owner-switcher" :close="closeOwnerMenu">
+            <input
+              v-model="ownerSearch"
+              class="owner-search"
+              type="search"
+              placeholder="搜索名称 / 职业 / 属性"
+              autocomplete="off"
+            />
+            <div class="owner-list">
+              <button
+                v-for="owner in filteredOwners"
+                :key="owner.id"
+                type="button"
+                class="owner-item"
+                :class="{ 'is-active': owner.id === ownerId }"
+                @click="pickOwner(owner.id)"
+              >
+                <span class="owner-item-name">{{ owner.name }}</span>
+                <span v-if="owner.meta" class="owner-item-meta">{{ owner.meta }}</span>
+              </button>
+              <p v-if="!filteredOwners.length" class="owner-empty">没有匹配项</p>
+            </div>
+          </slot>
+        </div>
+      </div>
+
+      <span class="toolbar-stats">
+        块 {{ model.length }} · 已录 {{ recordedBlocks }} · 效果 {{ totalEffects }} 条
+      </span>
+
+      <!-- 页面自带的切换器（如 影画 1..6 / 固定·精1..5）放进同一行工具条 -->
+      <slot name="toolbar-extra" />
+
+      <span class="toolbar-spacer" />
+
+      <span
+        class="save-state"
+        :class="`is-${saveStateResolved}`"
+        :title="
+          saveState === undefined
+            ? '本页是否有未保存改动（由本组件内的编辑动作判断）'
+            : '保存状态由所在页面同步'
+        "
+      >
+        {{ saveStateText }}
+      </span>
+
       <button type="button" class="ghost-btn" @click="toggleMergeMode">
         {{ mergeMode ? '退出合并模式' : '合并行…' }}
       </button>
-      <span v-if="mergeMode" class="hint">勾选同块、同族、同值的行，再点下面块内的「合并选中」。</span>
+    </header>
+
+    <p v-if="mergeMode" class="hint">
+      勾选左侧同块、同族、同值的行，再点右侧「合并选中」。
+      <span v-if="mergeError" class="err">{{ mergeError }}</span>
+    </p>
+    <p v-else-if="hint !== ''" class="hint">
+      {{
+        hint ??
+        '左列选块 / 选行；右列显示选中行的完整内容（全部常显）。改数值 / 目标 / 条件会整组一起改；[拆开] 清 groupId；[合并] 把同块同族同值的行写成同一个 groupId。'
+      }}
+    </p>
+
+    <div class="editor-body">
+      <!-- 左列：块 → 行 两级导航树（块可整块折叠，这是唯一的折叠） -->
+      <nav class="block-tree" aria-label="效果块与效果行">
+        <div v-for="block in orderedBlocks" :key="block.id" class="tree-block">
+          <div class="tree-block-head" :class="{ 'is-active': block.id === activeBlock?.id }">
+            <button
+              type="button"
+              class="tree-toggle"
+              :aria-expanded="!isBlockCollapsed(block.id)"
+              :title="isBlockCollapsed(block.id) ? '展开该块的行' : '收起该块的行'"
+              @click="toggleBlock(block.id)"
+            >
+              <span class="tree-caret" :class="{ 'is-collapsed': isBlockCollapsed(block.id) }" />
+            </button>
+            <button
+              type="button"
+              class="tree-block-btn"
+              :title="`${block.name || '未命名块'} · ${block.effects.length} 条`"
+              @click="selectBlock(block)"
+            >
+              <span class="block-initial">{{ blockInitial(block.name) }}</span>
+              <span class="block-name">{{ block.name || '未命名块' }}</span>
+              <span class="block-count">{{ block.effects.length }}</span>
+              <span
+                v-if="blockSummaries.get(block.id)?.warn"
+                class="block-dot is-warn"
+                title="组内不一致"
+              />
+              <span
+                v-else-if="blockSummaries.get(block.id)?.ungrouped"
+                class="block-dot is-ungrouped"
+                title="未分组"
+              />
+            </button>
+          </div>
+
+          <ul v-show="!isBlockCollapsed(block.id)" class="tree-rows">
+            <li v-for="row in rowsOf(block)" :key="row.key" class="tree-row-wrap">
+              <input
+                v-if="mergeMode"
+                type="checkbox"
+                class="tree-row-check"
+                :checked="selectedRowKeys.includes(row.key)"
+                @change="toggleSelect(row)"
+              />
+              <button
+                type="button"
+                class="tree-row"
+                :class="{ 'is-active': row.key === selectedRowKey }"
+                :title="rowNavLabel(row)"
+                @click="selectRow(block, row)"
+              >
+                <span class="tree-row-label">{{ rowNavLabel(row) }}</span>
+                <span class="tree-row-badges">
+                  <span v-if="row.effects.length > 1" class="tree-badge">{{ row.effects.length }} 条</span>
+                  <span v-if="row.issues.length" class="tree-badge is-warn" title="组内不一致">⚠</span>
+                  <span
+                    v-else-if="row.heuristic && !row.groupId"
+                    class="tree-badge is-ungrouped"
+                    title="未分组"
+                  >
+                    未分组
+                  </span>
+                </span>
+              </button>
+            </li>
+            <li v-if="!rowsOf(block).length" class="tree-empty">（空块）</li>
+          </ul>
+        </div>
+
+        <button type="button" class="block-add" title="添加效果块" @click="addBlock">＋ 块</button>
+      </nav>
+
+      <!-- 右列：选中行的完整内容（永远展开，没有任何折叠控件） -->
+      <section class="block-work">
+        <template v-if="activeRow">
+          <article class="block-card">
+            <header class="block-head">
+              <label class="field name-field">
+                <span>效果块名称</span>
+                <input
+                  v-model="activeRow.block.name"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="可自定义名称"
+                />
+              </label>
+              <button type="button" class="danger-btn" @click="removeBlock(activeRow.block)">
+                删除块
+              </button>
+            </header>
+
+            <label class="field note-field">
+              <span>块备注 / 注释</span>
+              <textarea
+                v-model="activeRow.block.note"
+                class="note-input"
+                rows="2"
+                autocomplete="off"
+                placeholder="可选说明、触发条件等"
+              />
+            </label>
+
+            <p v-if="mergeMode" class="merge-block-actions">
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="selectedRowKeys.length < 2"
+                @click="mergeSelected(activeRow.block)"
+              >
+                合并选中（{{ selectedRowKeys.length }}）
+              </button>
+            </p>
+
+            <AdminBuffEffectRow
+              :key="activeRow.row.key"
+              :row="activeRow.row"
+              :agent-id="agentId"
+              :lock-apply-target="lockApplyTarget"
+              :merge-mode="mergeMode"
+              :selected="selectedRowKeys.includes(activeRow.row.key)"
+              :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
+              @change-zone="(zoneId, types) => onChangeZone(activeRow!.block, activeRow!.row, zoneId, types)"
+              @toggle-type="(type, checked) => onToggleType(activeRow!.block, activeRow!.row, type, checked)"
+              @split="onSplit(activeRow!.block, activeRow!.row)"
+              @remove="removeRow(activeRow!.block, activeRow!.row)"
+              @confirm-merge="onConfirmMerge(activeRow!.block, activeRow!.row)"
+              @align="onAlign(activeRow!.block, activeRow!.row)"
+              @toggle-select="toggleSelect(activeRow!.row)"
+            />
+
+            <button type="button" class="add-btn" @click="addEffect(activeRow.block)">
+              ＋ 在此块添加效果
+            </button>
+          </article>
+        </template>
+
+        <div v-else class="empty">
+          <span>从左侧选择一个效果</span>
+          <span class="muted">（还没有效果块时，点左列「＋ 块」新建）</span>
+        </div>
+      </section>
     </div>
-
-    <div v-if="!model.length" class="empty">暂无效果块</div>
-
-    <article v-for="(block, blockIndex) in model" :key="block.id" class="block-card">
-      <header class="block-head">
-        <label class="field name-field">
-          <span>效果块名称</span>
-          <input v-model="block.name" type="text" autocomplete="off" placeholder="可自定义名称" />
-        </label>
-        <button type="button" class="danger-btn" @click="removeBlock(blockIndex)">删除块</button>
-      </header>
-
-      <label class="field note-field">
-        <span>块备注 / 注释</span>
-        <textarea v-model="block.note" rows="2" autocomplete="off" placeholder="可选说明、触发条件等" />
-      </label>
-
-      <p v-if="mergeMode" class="merge-block-actions">
-        <button
-          type="button"
-          class="ghost-btn"
-          :disabled="selectedRowKeys.length < 2"
-          @click="mergeSelected(block)"
-        >
-          合并选中（{{ selectedRowKeys.length }}）
-        </button>
-        <span v-if="mergeError" class="err">{{ mergeError }}</span>
-      </p>
-
-      <AdminBuffEffectRow
-        v-for="row in rowsOf(block)"
-        :key="row.key"
-        :row="row"
-        :agent-id="agentId"
-        :lock-apply-target="lockApplyTarget"
-        :merge-mode="mergeMode"
-        :selected="selectedRowKeys.includes(row.key)"
-        :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
-        @change-zone="(zoneId, types) => onChangeZone(block, row, zoneId, types)"
-        @toggle-type="(type, checked) => onToggleType(block, row, type, checked)"
-        @split="onSplit(block, row)"
-        @remove="removeRow(block, row)"
-        @confirm-merge="onConfirmMerge(block, row)"
-        @align="onAlign(block, row)"
-        @toggle-select="toggleSelect(row)"
-      />
-
-      <button type="button" class="add-btn" @click="addEffect(block)">＋ 在此块添加效果</button>
-    </article>
-
-    <button type="button" class="add-btn" @click="addBlock">＋ 添加效果块</button>
   </div>
 </template>
-
 <style scoped>
 .effect-editor {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.55rem;
+}
+
+/* ── 顶部工具条 ── */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+}
+
+.owner-switch {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.owner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 22rem;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.owner-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.owner-btn.is-open {
+  border-color: color-mix(in srgb, var(--color-heading) 45%, var(--color-border));
+}
+
+.owner-prefix {
+  opacity: 0.7;
+}
+
+.owner-name {
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 下拉指示：CSS 画的箭头（页面上不出现 ▸/▾ 字符） */
+.owner-caret {
+  flex: 0 0 auto;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-left: 0.1rem;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translateY(-0.1rem);
+  opacity: 0.6;
+}
+
+.owner-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  width: 17rem;
+  max-height: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.owner-search {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-size: 0.76rem;
+}
+
+.owner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow-y: auto;
+  max-height: 17rem;
+}
+
+.owner-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.28rem 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owner-item:hover {
+  background: color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+
+.owner-item.is-active {
+  background: color-mix(in srgb, var(--color-heading) 16%, transparent);
+}
+
+.owner-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-item-meta {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.owner-empty {
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.74rem;
+  opacity: 0.6;
+}
+
+.toolbar-stats {
+  font-size: 0.74rem;
+  opacity: 0.72;
+  white-space: nowrap;
+}
+
+.toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.save-state {
+  font-size: 0.74rem;
+  white-space: nowrap;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  opacity: 0.85;
+}
+
+.save-state.is-dirty {
+  color: #d08b2c;
+  border-color: rgba(208, 139, 44, 0.5);
+}
+
+.save-state.is-saving {
+  color: #4d8bd8;
+  border-color: rgba(77, 139, 216, 0.5);
+}
+
+.save-state.is-saved,
+.save-state.is-clean {
+  opacity: 0.6;
+}
+
+/* ── 主体：左导航树 + 右内容 ── */
+.editor-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.block-tree {
+  position: sticky;
+  top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+}
+
+.tree-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.tree-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  border-radius: 8px;
+}
+
+.tree-block-head.is-active {
+  background: color-mix(in srgb, var(--color-heading) 12%, transparent);
+}
+
+.tree-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.35rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 折叠指示：CSS 画的箭头（旋转 90° = 展开，0° = 收起） */
+.tree-caret {
+  width: 0.36rem;
+  height: 0.36rem;
+  border-right: 1px solid var(--color-text);
+  border-bottom: 1px solid var(--color-text);
+  transform: rotate(90deg);
+  opacity: 0.7;
+  transition: transform 0.12s ease;
+}
+
+.tree-caret.is-collapsed {
+  transform: rotate(0deg);
+}
+
+.tree-block-btn {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.2rem 0.2rem 0.2rem 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.74rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.block-initial {
+  display: none;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.block-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.block-count {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  opacity: 0.6;
+}
+
+.block-dot {
+  flex: 0 0 auto;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+}
+
+.block-dot.is-warn {
+  background: #c45c5c;
+}
+
+.block-dot.is-ungrouped {
+  background: #dca028;
+}
+
+.tree-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.tree-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.tree-row-check {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.tree-row {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.14rem 0.3rem;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+}
+
+.tree-row.is-active {
+  border-left-color: var(--color-heading);
+  background: color-mix(in srgb, var(--color-heading) 16%, transparent);
+  color: var(--color-heading);
+}
+
+.tree-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row-badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+}
+
+.tree-badge {
+  font-size: 0.6rem;
+  line-height: 1.3;
+  padding: 0 0.22rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  opacity: 0.75;
+}
+
+.tree-badge.is-warn {
+  color: #c45c5c;
+  border-color: rgba(196, 92, 92, 0.55);
+}
+
+.tree-badge.is-ungrouped {
+  color: #dca028;
+  border-color: rgba(220, 160, 40, 0.55);
+}
+
+.tree-empty {
+  padding: 0.1rem 0.3rem;
+  font-size: 0.68rem;
+  opacity: 0.5;
+}
+
+.block-add {
+  margin-top: 0.15rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.block-work {
+  min-width: 0;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.76rem;
-  opacity: 0.72;
+  font-size: 0.74rem;
+  opacity: 0.68;
   line-height: 1.45;
   color: var(--color-text);
 }
 
 .empty {
-  font-size: 0.85rem;
-  opacity: 0.65;
-  padding: 0.5rem 0;
-}
-
-.merge-toolbar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  font-size: 0.84rem;
+  opacity: 0.7;
+  padding: 1rem 0.5rem;
+}
+
+.muted {
+  font-size: 0.72rem;
+  opacity: 0.6;
 }
 
 .merge-block-actions {
@@ -301,11 +1139,11 @@ defineExpose({
 .block-card {
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 0.85rem;
+  padding: 0.7rem;
   background: var(--color-background-soft);
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.5rem;
 }
 
 .block-head {
@@ -334,18 +1172,28 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
-  padding: 0.4rem 0.5rem;
+  padding: 0.35rem 0.45rem;
   font: inherit;
 }
 
 .field textarea {
   resize: vertical;
-  min-height: 2.6rem;
+  min-height: 2.2rem;
   line-height: 1.4;
 }
 
-.note-field {
+.note-input {
   width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  padding: 0.35rem 0.45rem;
+  font: inherit;
+  font-size: 0.76rem;
+  resize: vertical;
+  min-height: 2.2rem;
+  line-height: 1.4;
 }
 
 .add-btn,
@@ -355,9 +1203,10 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-heading);
-  padding: 0.4rem 0.7rem;
+  padding: 0.32rem 0.6rem;
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .danger-btn {
@@ -373,6 +1222,46 @@ defineExpose({
 .err {
   margin: 0;
   color: #c45c5c;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+}
+
+/* ── 响应式：只压左列（220 → 180 → 56 窄条），右列宽度不动 ── */
+@media (max-width: 1200px) {
+  .editor-body {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .editor-body {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .block-tree {
+    padding: 0.2rem;
+  }
+
+  .tree-toggle,
+  .tree-rows,
+  .block-name {
+    display: none;
+  }
+
+  .block-initial {
+    display: inline;
+  }
+
+  .tree-block-btn {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    padding: 0.25rem 0.05rem;
+    font-size: 0.66rem;
+  }
+
+  .block-add {
+    padding: 0.25rem 0.05rem;
+    font-size: 0.66rem;
+  }
 }
 </style>

@@ -2,10 +2,10 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
+import AdminBuffOwnerSwitcher from '@/components/admin/calculator/AdminBuffOwnerSwitcher.vue'
 import AdminCalculatorAvatarField from '@/components/admin/calculator/AdminCalculatorAvatarField.vue'
 import AdminRememberedNumberField from '@/components/admin/calculator/AdminRememberedNumberField.vue'
 import AdminWengineAdvancedStatsGrid from '@/components/admin/calculator/AdminWengineAdvancedStatsGrid.vue'
-import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import type { AgentMindscapeRankBuffs, WengineBuffDoc } from '@/types/calculator'
 import type { WengineBuffEditSectionId } from '@/constants/wengineBuffEditNav'
@@ -34,15 +34,24 @@ import {
 const store = useCalculatorBuffStore()
 const { wengines } = storeToRefs(store)
 
-const search = ref('')
-const roleFilter = ref('')
 const selectedId = ref(wengines.value[0]?.id ?? '')
 const message = ref('')
 const error = ref('')
 const saving = ref(false)
 const suggestionRefreshToken = ref(0)
 const activeRefinementRank = ref(1)
+/** 工作区视图：固定增益，或精炼 1..5 */
+const activeBuffView = ref<'fixed' | number>('fixed')
 const avatarFieldRef = ref<InstanceType<typeof AdminCalculatorAvatarField> | null>(null)
+
+function selectBuffView(view: 'fixed' | number) {
+  if (view === 'fixed') {
+    activeBuffView.value = 'fixed'
+    return
+  }
+  activeRefinementRank.value = Number(view)
+  activeBuffView.value = Number(view)
+}
 
 const form = ref({
   id: '',
@@ -57,13 +66,17 @@ const form = ref({
   refinementForm: createEmptyWengineRefinementBuffs(),
 })
 
-const filteredWengines = computed(() => {
-  const keyword = search.value.trim()
-  return wengines.value.filter((item) =>
-    (!keyword || `${item.name}${item.rarity}${item.id}${item.profession}`.includes(keyword)) &&
-    (!roleFilter.value || item.profession === roleFilter.value),
-  )
-})
+/** 工具条「当前编辑 ▾」下拉里的音擎条目（搜索/职业筛选在 AdminBuffOwnerSwitcher 里） */
+const ownerItems = computed(() =>
+  wengines.value.map((item) => ({
+    id: item.id,
+    name: item.name,
+    meta: [item.rarity ? `${item.rarity} 级` : '', item.profession || '未分类']
+      .filter(Boolean)
+      .join(' · '),
+    profession: item.profession,
+  })),
+)
 
 const activeRefinementForm = computed(
   () => form.value.refinementForm[activeRefinementRank.value - 1]!,
@@ -119,6 +132,9 @@ function loadForm(doc: WengineBuffDoc) {
   activeRefinementRank.value = 1
   void nextTick(() => {
     avatarFieldRef.value?.setAvatarImage(doc.avatar_image)
+    // 切音擎 = 载入已保存的数据，工具条回到「无改动」
+    fixedEditorRef.value?.markSaved?.()
+    refinementEditorRef.value?.markSaved?.()
   })
 }
 
@@ -138,12 +154,27 @@ function resetForm() {
   activeRefinementRank.value = 1
   selectedId.value = ''
   avatarFieldRef.value?.clearAvatarImage()
+  void nextTick(() => {
+    fixedEditorRef.value?.markSaved?.()
+    refinementEditorRef.value?.markSaved?.()
+  })
 }
 
 function selectItem(id: string) {
   selectedId.value = id
   const doc = wengines.value.find((item) => item.id === id)
   if (doc) loadForm(doc)
+}
+
+/** 工具条下拉里选中：切音擎并收起下拉 */
+function switchOwner(id: string, close?: () => void) {
+  selectItem(id)
+  close?.()
+}
+
+function createOwner(close?: () => void) {
+  createNew()
+  close?.()
 }
 
 function createNew() {
@@ -235,6 +266,8 @@ async function saveItem() {
 
     await store.upsertWengine(doc)
     selectedId.value = id
+    fixedEditorRef.value?.markSaved?.()
+    refinementEditorRef.value?.markSaved?.()
     rememberWenginePanelStats()
     suggestionRefreshToken.value += 1
     message.value = isEditing ? `已保存音擎「${name}」` : `已新增音擎「${name}」`
@@ -280,8 +313,17 @@ watch(
 )
 
 const panelRootRef = ref<HTMLElement | null>(null)
+const fixedEditorRef = ref<{ markSaved?: () => void } | null>(null)
+const refinementEditorRef = ref<{ markSaved?: () => void } | null>(null)
 
 async function scrollToSection(sectionId: WengineBuffEditSectionId) {
+  await nextTick()
+  // 固定 / 精炼已合并到同一工作区：侧栏跳转时顺带切视图
+  if (sectionId === 'admin-wengine-fixed') {
+    selectBuffView('fixed')
+  } else if (sectionId === 'admin-wengine-refinement' && activeBuffView.value === 'fixed') {
+    selectBuffView(1)
+  }
   await nextTick()
   const target = panelRootRef.value?.querySelector<HTMLElement>(`#${sectionId}`)
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -291,47 +333,127 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
 </script>
 
 <template>
-  <div ref="panelRootRef" class="editor-panel">
+  <div ref="panelRootRef" class="editor-panel editor-panel--wide">
     <header class="panel-header">
       <h1 class="panel-title">编辑音擎增益</h1>
       <p class="panel-desc">固定增益与精1至精5精炼增益，均使用固定数值条目。</p>
     </header>
 
-    <div class="editor-layout">
-      <aside id="admin-wengine-picker" class="item-list editor-anchor">
-        <label class="field">
-          <span class="field-label">搜索音擎</span>
-          <input v-model="search" type="text" class="field-input" placeholder="名称 / 稀有度" />
-        </label>
-        <label class="field">
-          <span class="field-label">职业筛选</span>
-          <select v-model="roleFilter" class="field-input">
-            <option value="">全部职业</option>
-            <option v-for="role in AGENT_ROLES" :key="role" :value="role">
-              {{ role }}
-            </option>
-          </select>
-        </label>
+    <form class="editor-form editor-form--solo" @submit.prevent="saveItem">
+      <!-- 顶部工具条 + 三列工作区：固定 / 精1..精5 在工具条里切换 -->
+      <section id="admin-wengine-picker" class="workspace editor-anchor">
+        <span id="admin-wengine-fixed" class="anchor-jump" />
+        <span id="admin-wengine-refinement" class="anchor-jump" />
 
-        <button type="button" class="secondary-btn" @click="createNew">+ 新增音擎</button>
+        <AdminBuffEffectEditor
+          v-show="activeBuffView === 'fixed'"
+          ref="fixedEditorRef"
+          v-model="form.fixedBuffs.effectBlocks"
+          owner-kind="wengine"
+          :owner-label="form.name || '新音擎'"
+          :owner-id="form.id || undefined"
+          :owners="ownerItems"
+          :save-state="saving ? 'saving' : undefined"
+          @switch-owner="selectItem"
+        >
+          <template #toolbar-extra>
+            <div class="mindscape-tabs toolbar-tabs">
+              <button
+                type="button"
+                class="mindscape-tab"
+                :class="{ active: activeBuffView === 'fixed' }"
+                @click="selectBuffView('fixed')"
+              >
+                固定
+              </button>
+              <button
+                v-for="rank in REFINEMENT_RANKS"
+                :key="rank"
+                type="button"
+                class="mindscape-tab"
+                :class="{ active: activeBuffView === rank }"
+                @click="selectBuffView(rank)"
+              >
+                精{{ rank }}
+              </button>
+            </div>
+          </template>
+          <template #owner-switcher="{ close }">
+            <AdminBuffOwnerSwitcher
+              :items="ownerItems"
+              :selected-id="selectedId"
+              :role-options="AGENT_ROLES"
+              placeholder="搜索音擎（名称 / 稀有度）"
+              create-label="＋ 新增音擎"
+              @select="(id) => switchOwner(id, close)"
+              @create="createOwner(close)"
+            />
+          </template>
+        </AdminBuffEffectEditor>
 
-        <div class="list-scroll">
-          <button
-            v-for="item in filteredWengines"
-            :key="item.id"
-            type="button"
-            class="list-item"
-            :class="{ active: selectedId === item.id }"
-            @click="selectItem(item.id)"
-          >
-            <CalculatorAvatar :avatar-image="item.avatar_image" :name="item.name" />
-            <span class="list-name">{{ item.name }}</span>
-            <span class="list-meta">{{ item.profession || '未分类' }} · {{ item.rarity }} 级</span>
+        <AdminBuffEffectEditor
+          v-show="activeBuffView !== 'fixed'"
+          :key="`wengine-refinement-${activeRefinementRank}`"
+          ref="refinementEditorRef"
+          v-model="activeRefinementForm.effectBlocks"
+          :default-first-block-name="`精${activeRefinementRank}`"
+          owner-kind="wengine"
+          :owner-label="form.name || '新音擎'"
+          :owner-id="form.id || undefined"
+          :owners="ownerItems"
+          :save-state="saving ? 'saving' : undefined"
+          :on-applies-to-anomaly-change="syncRefinementAppliesToAnomaly"
+          @switch-owner="selectItem"
+        >
+          <template #toolbar-extra>
+            <div class="mindscape-tabs toolbar-tabs">
+              <button
+                type="button"
+                class="mindscape-tab"
+                :class="{ active: activeBuffView === 'fixed' }"
+                @click="selectBuffView('fixed')"
+              >
+                固定
+              </button>
+              <button
+                v-for="rank in REFINEMENT_RANKS"
+                :key="rank"
+                type="button"
+                class="mindscape-tab"
+                :class="{ active: activeBuffView === rank }"
+                @click="selectBuffView(rank)"
+              >
+                精{{ rank }}
+              </button>
+            </div>
+          </template>
+          <template #owner-switcher="{ close }">
+            <AdminBuffOwnerSwitcher
+              :items="ownerItems"
+              :selected-id="selectedId"
+              :role-options="AGENT_ROLES"
+              placeholder="搜索音擎（名称 / 稀有度）"
+              create-label="＋ 新增音擎"
+              @select="(id) => switchOwner(id, close)"
+              @create="createOwner(close)"
+            />
+          </template>
+        </AdminBuffEffectEditor>
+
+        <div v-if="activeBuffView !== 'fixed' && activeRefinementRank > 1" class="refinement-copy-row">
+          <button type="button" class="secondary-btn" @click="copyRefinementFrom(1)">
+            从精1复制
           </button>
+          <span class="hint">精2~精5通常只有数值差别，复制后再改数值即可。</span>
         </div>
-      </aside>
+      </section>
 
-      <form class="editor-form" @submit.prevent="saveItem">
+      <!-- 音擎资料（低频字段，收在工作区下面） -->
+      <section class="doc-card">
+        <header class="mindscape-header">
+          <h3>音擎资料</h3>
+          <p>ID / 名称 / 职业 / 稀有度 / 注释 / 头像 / 基础属性。</p>
+        </header>
         <div id="admin-wengine-basic" class="editor-anchor">
         <div class="field-row">
           <label class="field">
@@ -406,47 +528,7 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
             :refresh-token="suggestionRefreshToken"
           />
         </section>
-
-        <section id="admin-wengine-fixed" class="mindscape-section editor-anchor">
-          <header class="mindscape-header">
-            <h3>固定增益</h3>
-          </header>
-          <AdminBuffEffectEditor v-model="form.fixedBuffs.effectBlocks" />
-        </section>
-
-        <section id="admin-wengine-refinement" class="mindscape-section editor-anchor">
-          <header class="mindscape-header">
-            <h3>精炼增益</h3>
-          </header>
-
-          <div class="mindscape-tabs">
-            <button
-              v-for="rank in REFINEMENT_RANKS"
-              :key="rank"
-              type="button"
-              class="mindscape-tab"
-              :class="{ active: activeRefinementRank === rank }"
-              @click="activeRefinementRank = rank"
-            >
-              精{{ rank }}
-            </button>
-          </div>
-
-          <div v-if="activeRefinementRank > 1" class="refinement-copy-row">
-            <button type="button" class="secondary-btn" @click="copyRefinementFrom(1)">
-              从精1复制
-            </button>
-            <span class="hint">精2~精5通常只有数值差别，复制后再改数值即可。</span>
-          </div>
-
-          <p class="mods-section-title">精{{ activeRefinementRank }} · 效果块</p>
-          <AdminBuffEffectEditor
-            :key="`wengine-refinement-${activeRefinementRank}`"
-            v-model="activeRefinementForm.effectBlocks"
-            :default-first-block-name="`精${activeRefinementRank}`"
-            :on-applies-to-anomaly-change="syncRefinementAppliesToAnomaly"
-          />
-        </section>
+      </section>
 
         <p v-if="error" class="form-error">{{ error }}</p>
         <p v-if="message" class="form-success">{{ message }}</p>
@@ -460,7 +542,6 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
           </button>
         </div>
       </form>
-    </div>
   </div>
 </template>
 
@@ -470,10 +551,53 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
   scroll-margin-top: 1rem;
 }
 
+/* 页面 = 顶部工具条 + 三列工作区（左侧不再有搜索/列表）；宽屏铺满 */
+.editor-panel--wide {
+  max-width: none;
+}
+
+.editor-form--solo {
+  border: none;
+  background: transparent;
+  padding: 0;
+  gap: 0.7rem;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* 侧栏「固定增益 / 精炼增益」的跳转锚点：跳转时顺便切视图 */
+.anchor-jump {
+  display: block;
+  height: 0;
+  scroll-margin-top: 1rem;
+}
+
+.toolbar-tabs {
+  flex: 0 0 auto;
+}
+
+.toolbar-tabs .mindscape-tab {
+  padding: 0.16rem 0.55rem;
+  font-size: 0.74rem;
+}
+
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-background-soft);
+  padding: 0.85rem;
+}
+
 .refinement-copy-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin-top: 0.6rem;
 }
 </style>
