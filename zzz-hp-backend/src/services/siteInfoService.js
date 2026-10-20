@@ -6,7 +6,7 @@ const DEFAULT_SECTIONS = [
   {
     panelKey: 'about',
     title: '关于本站',
-    content: `ZZZ-HP 是由粉丝制作的《绝区零》非官方工具站，旨在整理玩法数据、提供计算辅助，并搭建玩家交流空间。
+    content: `HP数据站 是由粉丝制作的《绝区零》非官方工具站，旨在整理玩法数据、提供计算辅助，并搭建玩家交流空间。
 
 本站与 HoYoverse / 米哈游官方无任何隶属或授权关系，所有功能由爱好者社区维护，仅供交流与学习使用。
 
@@ -63,7 +63,7 @@ https://zzz.nanoka.cc/
   {
     panelKey: 'legal',
     title: '版权声明',
-    content: `ZZZ-HP 是粉丝制作的网站。
+    content: `HP数据站 是粉丝制作的网站。
 
 游戏中相关的图像、角色、名称、UI 元素及其他资产的版权与商标权均归 HoYoverse 所有。
 

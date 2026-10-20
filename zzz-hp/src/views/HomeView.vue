@@ -70,7 +70,7 @@ const modes: ModeCard[] = [
       <header class="hero">
         <span class="hero-tag">非官方 · 玩家自制工具站</span>
         <h1 class="hero-title zzz-display">
-          <span class="hero-title-en">ZZZ-HP</span>
+          <span class="hero-title-name">HP数据站</span>
         </h1>
         <p class="hero-cn">
           <span>数据查询与伤害计算站</span>
@@ -197,7 +197,7 @@ const modes: ModeCard[] = [
   line-height: 0.95;
 }
 
-.hero-title-en {
+.hero-title-name {
   display: inline-block;
   padding: 0.04em 0.14em 0.06em 0.06em;
   font-size: clamp(3.2rem, 9.5vw, 6.8rem);
