@@ -70,7 +70,7 @@ const modes: ModeCard[] = [
       <header class="hero">
         <span class="hero-tag">非官方 · 玩家自制工具站</span>
         <h1 class="hero-title zzz-display">
-          <span class="hero-title-en">ZZZ-HP</span>
+          <span class="hero-title-name">HP<span class="hero-title-cn">数据站</span></span>
         </h1>
         <p class="hero-cn">
           <span>数据查询与伤害计算站</span>
@@ -114,6 +114,17 @@ const modes: ModeCard[] = [
           <HomeChangelog />
         </div>
       </section>
+
+      <!-- 备案信息：按要求在首页底部公示 -->
+      <footer class="site-filing">
+        <a
+          class="site-filing-link"
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >湘ICP备2026047771号-1</a
+        >
+      </footer>
     </div>
 
     <RouterLink to="/admin/login" class="admin-entry">ADMIN</RouterLink>
@@ -186,13 +197,25 @@ const modes: ModeCard[] = [
   line-height: 0.95;
 }
 
-.hero-title-en {
-  display: inline-block;
-  padding: 0.04em 0.14em 0.06em 0.06em;
+.hero-title-name {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05em 0.14em 0.05em 0.06em;
   font-size: clamp(3.2rem, 9.5vw, 6.8rem);
   background: var(--zzz-yellow);
   color: #0a0a0a;
   transform: skew(-8deg);
+  line-height: 1;
+}
+
+/* 中文比 HP 略小，四周留出与 HP 相近的呼吸空间 */
+.hero-title-cn {
+  display: inline-block;
+  font-size: 0.8em;
+  line-height: 1;
+  margin-left: 0.12em;
+  font-weight: 900;
+  -webkit-text-stroke: 0.02em currentColor;
 }
 
 .hero-cn {
@@ -379,6 +402,33 @@ const modes: ModeCard[] = [
 
 .deck-body :deep(.sum-title) {
   color: var(--zzz-fg);
+}
+
+/* ── 备案信息 ─────────────────────────────── */
+.site-filing {
+  display: flex;
+  justify-content: center;
+}
+
+.site-filing-link {
+  font-family: var(--zzz-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--zzz-fg);
+  opacity: 0.72;
+  text-decoration: none;
+  transition:
+    color 0.16s ease-out,
+    opacity 0.16s ease-out;
+}
+
+.site-filing-link:hover {
+  color: var(--zzz-yellow);
+  opacity: 1;
+}
+
+[data-theme='light'] .site-filing-link:hover {
+  color: #7a7a00;
 }
 
 /* ── 管理员入口 ───────────────────────────── */
