@@ -500,18 +500,6 @@ const summaryText = computed(() => {
   return parts.join(' · ')
 })
 
-/** 条件面板标题旁的摘要（如 `招式[落雷] · 火`） */
-const condSummaryText = computed(() => {
-  const parts: string[] = []
-  if (applyTarget.value === 'team') parts.push('全队')
-  if (skillText.value) parts.push(skillText.value)
-  if (elementNames.value.length) parts.push(elementNames.value.join('·'))
-  if (damageText.value) parts.push(damageText.value)
-  if (applySituation.value !== 'global') parts.push(situationText.value)
-  if (applyProfession.value) parts.push(`职业·${applyProfession.value}`)
-  if (teamGateText.value) parts.push(teamGateText.value)
-  return parts.join(' · ') || '默认'
-})
 
 const statUnit = computed(
   () => BUFF_STAT_FIELDS.find((field) => field.key === first.value?.stat)?.unit ?? 'percent',

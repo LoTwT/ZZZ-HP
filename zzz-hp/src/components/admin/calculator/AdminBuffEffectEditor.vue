@@ -561,7 +561,7 @@ defineExpose({
               type="button"
               class="tree-toggle"
               :aria-expanded="!isBlockCollapsed(block.id)"
-              :title="isBlockCollapsed(block.id) ? '展开该块的行' : '收起该块的行'"
+              :title="isBlockCollapsed(block.id) ? '显示该块的行' : '隐藏该块的行'"
               @click="toggleBlock(block.id)"
             >
               <span class="tree-caret" :class="{ 'is-collapsed': isBlockCollapsed(block.id) }" />
@@ -569,6 +569,7 @@ defineExpose({
             <button
               type="button"
               class="tree-block-btn"
+              :class="{ 'is-empty': block.effects.length === 0 }"
               :title="`${block.name || '未命名块'} · ${block.effects.length} 条`"
               @click="selectBlock(block)"
             >
@@ -971,6 +972,10 @@ defineExpose({
   flex: 0 0 auto;
   font-size: 0.68rem;
   font-weight: 600;
+}
+
+.tree-block-btn.is-empty {
+  opacity: 0.5;
 }
 
 .block-name {
