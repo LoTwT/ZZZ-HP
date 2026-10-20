@@ -10,7 +10,7 @@ import {
   EFFECT_SPEC_VERSION,
 } from '@/types/effectSpec'
 import { operationForStat } from '@/utils/effectStatRegistry'
-import { normalizeBuffScopes } from '@/utils/buffScope'
+import { damageTypesOf, normalizeDamageTypes } from '@/utils/buffDamageTypes'
 import {
   affixRollsToEquivalentRolls,
   statKeyOfTarget,
@@ -41,7 +41,7 @@ export function adaptBuffEffect(effect: BuffEffect): EffectSpec {
     beneficiary: applyTargetToBeneficiary(effect.applyTarget),
     conditions: {
       applySituation: effect.applySituation,
-      scope: effect.scope,
+      damageTypes: damageTypesOf(effect),
       skillTargets: getEffectSkillTargets(effect),
       elementFilter: effect.elementFilter,
       appliesToAnomaly: effect.appliesToAnomaly,
@@ -83,9 +83,10 @@ export function instantiateBuffEffect(
  */
 export function effectInstanceToBuffEffect(instance: EffectInstance): BuffEffect {
   const skillTargets = instance.conditions.skillTargets
+  const damageTypes = normalizeDamageTypes(instance.conditions.damageTypes)
   return createEmptyBuffEffect({
     id: instance.instanceId,
-    scope: normalizeBuffScopes(instance.conditions.scope),
+    conditions: damageTypes.length ? { damageTypes } : undefined,
     applyTarget: beneficiaryToApplyTarget(instance.beneficiary),
     applySituation: instance.conditions.applySituation ?? 'global',
     applyProfession: instance.conditions.applyProfession,

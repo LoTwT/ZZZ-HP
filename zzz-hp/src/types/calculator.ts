@@ -70,6 +70,67 @@ export const BUFF_SCOPE_OPTIONS: { id: BuffScope; label: string }[] = [
   { id: 'radiance', label: '耀变' },
   { id: 'mutation', label: '异化系数' },
 ]
+
+/**
+ * 第二级伤害类型（2026-10-20 条件体系）。
+ *
+ * 两级只影响展示：直伤类 3 项 / 异常类 5 项；数据层只存第二级 id。
+ * 空数组 = 全部。
+ */
+export type BuffDamageType =
+  | 'normal'
+  | 'pierce'
+  | 'sharpen'
+  | 'anomaly'
+  | 'turbulence'
+  | 'disorder'
+  | 'radiance'
+  | 'anomalyRelease'
+
+export interface BuffDamageTypeOption {
+  id: BuffDamageType
+  label: string
+}
+
+export interface BuffDamageTypeGroup {
+  id: 'direct' | 'anomaly'
+  label: string
+  types: BuffDamageTypeOption[]
+}
+
+/** 界面顺序：直伤 3 + 异常 5（异常内按 属性异常 / 乱流 / 紊乱 / 耀变 / 异放） */
+export const BUFF_DAMAGE_TYPE_GROUPS: BuffDamageTypeGroup[] = [
+  {
+    id: 'direct',
+    label: '直伤类',
+    types: [
+      { id: 'normal', label: '普通直伤' },
+      { id: 'pierce', label: '命破' },
+      { id: 'sharpen', label: '锋御' },
+    ],
+  },
+  {
+    id: 'anomaly',
+    label: '异常类',
+    types: [
+      { id: 'anomaly', label: '属性异常' },
+      { id: 'turbulence', label: '乱流' },
+      { id: 'disorder', label: '紊乱' },
+      { id: 'radiance', label: '耀变' },
+      { id: 'anomalyRelease', label: '异放' },
+    ],
+  },
+]
+
+export const BUFF_DAMAGE_TYPE_OPTIONS: BuffDamageTypeOption[] =
+  BUFF_DAMAGE_TYPE_GROUPS.flatMap((group) => group.types)
+
+/** BuffEffect 条件集合：本次先收编旧 scope 的伤害类型维度。 */
+export interface BuffEffectConditions {
+  /** 伤害类型条件；缺省 / 空 = 全部 */
+  damageTypes?: BuffDamageType[]
+}
+
 export type BuffApplyTarget = 'self' | 'team'
 /** 增益作用情况：全局 / 仅失衡期 / 仅非失衡期 */
 export type BuffApplySituation = 'global' | 'stagger' | 'non_stagger'
@@ -351,11 +412,22 @@ export interface BuffEffect {
   /** @deprecated 已改用效果块名称展示，仅兼容旧数据 */
   origin?: string
   /**
-   * 作用域（**数组**，多选）：成员 = `BUFF_SCOPE_OPTIONS`。
-   * 读时兼容单值字符串 / 缺省（归一化见 `normalizeBuffScopes`）；含 `general` 时其余丢弃。
-   * 结算语义：数组内**任一命中即生效**（与拆成多条单值行等价）。
+   * @deprecated 2026-10-20 起 BuffEffect 不再写 `scope`；
+   * 读时迁移为 `conditions.damageTypes`（词条库 / 额外增益的 scope 是另一套，仍保留）。
+   * 仅兼容旧数据 / 旧导入器，管理端不再展示、不再写。
    */
-  scope: BuffScope[]
+  scope?: BuffScope[]
+  /**
+   * 条件集合（本次先收编旧 scope 的伤害类型维度）。
+   * - 空/缺省 = 全部伤害类型
+   * - 有值 = 只在这些第二级类型上生效
+   */
+  conditions?: BuffEffectConditions
+  /**
+   * 同源行分组键：管理侧把「同块同族同值的 N 条子类行」聚合成 1 行用。
+   * **引擎完全忽略**；空 = 独立行 / 老数据。
+   */
+  groupId?: string
   applyTarget: BuffApplyTarget
   /** 作用情况：全局 / 失衡期 / 非失衡期，默认全局 */
   applySituation?: BuffApplySituation
@@ -649,6 +721,16 @@ export interface SkillCalcContext {
   isFollowUp?: boolean
   /** 异常伤害子类（异常/紊乱/乱流/异放）；直伤时可省略 */
   anomalySubKind?: AnomalyDamageSubKind
+  /**
+   * 直伤第二级：普通直伤 / 命破 / 锋御。
+   * 由招式持有者职业 + 招式 damageType 推导；缺省按 normal 兼容旧调用方。
+   */
+  directSubKind?: 'normal' | 'pierce' | 'sharpen'
+  /**
+   * 通用面板上下文（只汇总无伤害类型 / 无招式的通用 Buff）。
+   * 带 conditions.damageTypes 的效果在这种上下文下一律不生效。
+   */
+  generic?: boolean
 }
 
 export interface AgentMindscapeRankBuffs {
@@ -734,6 +816,11 @@ export interface AgentBuffDoc {
   basePanel: AgentBasePanel
   mindscapeNotes: string[]
   mindscapeBuffs: AgentMindscapeRankBuffs[]
+  /**
+   * 库里该行的 `updated_at`（ISO/UTC 秒级，读取接口下发）。
+   * 保存时作为乐观锁基准发给后端（字段名 `baseUpdatedAt`）：库里的行已经变了 → 409，拒绝整份覆盖。
+   */
+  updatedAt?: string
 }
 
 export interface WengineBuffDoc {

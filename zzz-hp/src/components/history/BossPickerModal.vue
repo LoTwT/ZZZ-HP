@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { BossPickerItem } from '@/utils/bossPickerItems'
 import { formatTraitTextWithPercent } from '@/utils/elementIcons'
 import { resolveAssetUrl } from '@/utils/gameData'
@@ -43,11 +44,20 @@ function markImageBroken(bossName: string) {
 function pick(item: BossPickerItem) {
   emit('select', item.bossName)
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => emit('close'))
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="boss-picker-overlay" role="presentation" @click.self="emit('close')">
+    <div
+      v-if="open"
+      class="boss-picker-overlay"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="history-boss-picker" role="dialog" aria-modal="true" :aria-label="title">
         <header class="boss-picker-header">
           <div>

@@ -252,6 +252,8 @@ const resolvedFlow = computed(() =>
     findSkillGroup: (id) => calculatorBuffStore.findSkillGroup(id),
     skillSubcategories: skillSubcategories.value,
     skillTalentLevelsByAgent,
+    resolveAgentProfession: (id) =>
+      agents.value.find((agent) => agent.id === id)?.profession,
   }),
 )
 
@@ -299,7 +301,7 @@ const damageResultEvalCtx = computed(() =>
     mainSlotIndex: activeSlot.value,
     driveDiscMainStats: {
       ...createDefaultAffixDriveDiscMainStats(),
-      ...(slotPanels[teamSlots[activeSlot.value]?.agentId ?? '']?.affixDriveDiscMainStats ?? {}),
+      ...(slotPanels[teamSlots[activeSlot.value]?.agentId ?? '']?.affixDriveDiscMainStats),
     },
     mainAffixCounts: slotPanels[teamSlots[activeSlot.value]?.agentId ?? '']?.affixCounts,
     enemyInput: { ...enemyInput.value },
@@ -358,6 +360,8 @@ const previewHits = computed(() =>
     findSkillGroup: (id) => calculatorBuffStore.findSkillGroup(id),
     skillSubcategories: skillSubcategories.value,
     skillTalentLevelsByAgent,
+    resolveAgentProfession: (id) =>
+      agents.value.find((agent) => agent.id === id)?.profession,
   }),
 )
 const firstHit = computed(() => hits.value[0] ?? null)

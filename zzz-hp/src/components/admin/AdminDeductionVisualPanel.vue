@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { provide, ref } from 'vue'
 import DeductionDetailPanel from '@/components/deduction/DeductionDetailPanel.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import {
   createDeductionAdminNode,
   createDeductionAdminPeriod,
@@ -364,6 +365,22 @@ function closeReorder() {
   reorderVersion.value = ''
 }
 
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关。
+// 本组件有三个遮罩弹窗，各用一个独立实例，按下态不会互相串。
+const { onMaskPointerDown, onMaskClick } = useMaskClose(closeReorder)
+const {
+  onMaskPointerDown: onNewPeriodMaskPointerDown,
+  onMaskClick: onNewPeriodMaskClick,
+} = useMaskClose(() => {
+  newPeriodOpen.value = false
+})
+const {
+  onMaskPointerDown: onRenamePeriodMaskPointerDown,
+  onMaskClick: onRenamePeriodMaskClick,
+} = useMaskClose(() => {
+  renamePeriodOpen.value = false
+})
+
 async function saveReorder() {
   if (!reorderVersion.value) return
   reorderActing.value = true
@@ -514,7 +531,12 @@ async function onAdminDeletePeriod(period: DeductionPeriod) {
 
     <!-- 节点排序 -->
     <Teleport to="body">
-      <div v-if="reorderOpen" class="adv-modal-mask" @click.self="closeReorder">
+      <div
+        v-if="reorderOpen"
+        class="adv-modal-mask"
+        @pointerdown="onMaskPointerDown"
+        @click="onMaskClick"
+      >
         <div class="adv-modal adv-modal--wide" role="dialog" aria-modal="true" aria-label="节点排序">
           <h3 class="adv-modal-title">节点排序 · {{ reorderVersion }}</h3>
           <p class="adv-hint">使用上/下按钮调整节点顺序，保存后生效。</p>
@@ -560,7 +582,12 @@ async function onAdminDeletePeriod(period: DeductionPeriod) {
 
     <!-- 新建期数 -->
     <Teleport to="body">
-      <div v-if="newPeriodOpen" class="adv-modal-mask" @click.self="newPeriodOpen = false">
+      <div
+        v-if="newPeriodOpen"
+        class="adv-modal-mask"
+        @pointerdown="onNewPeriodMaskPointerDown"
+        @click="onNewPeriodMaskClick"
+      >
         <div class="adv-modal" role="dialog" aria-modal="true" aria-label="新建期数">
           <h3 class="adv-modal-title">新建期数</h3>
           <div class="adv-field">
@@ -588,7 +615,12 @@ async function onAdminDeletePeriod(period: DeductionPeriod) {
 
     <!-- 期数改名 -->
     <Teleport to="body">
-      <div v-if="renamePeriodOpen && renameTarget" class="adv-modal-mask" @click.self="renamePeriodOpen = false">
+      <div
+        v-if="renamePeriodOpen && renameTarget"
+        class="adv-modal-mask"
+        @pointerdown="onRenamePeriodMaskPointerDown"
+        @click="onRenamePeriodMaskClick"
+      >
         <div class="adv-modal" role="dialog" aria-modal="true" aria-label="期数改名">
           <h3 class="adv-modal-title">
             改名 · {{ deductionPeriodDisplay(renameTarget) }}

@@ -132,7 +132,14 @@ const pickerModal = readFileSync(
 )
 check('弹窗 select 事件只上抛 bossName', pickerModal.includes("emit('select', item.bossName)"))
 check('弹窗卡片抗性带 40% 档（resistanceHigh）', pickerModal.includes('formatTraitTextWithPercent(item.resistance, item.resistanceHigh)'))
-check('弹窗取消只 close，不改选中', pickerModal.includes("@click.self=\"emit('close')\""))
+check(
+  '弹窗取消只 close，不改选中',
+  // 遮罩不再用 @click.self（会把「弹窗里按下、拖到遮罩上松手」误判成点遮罩），
+  // 改成 pointerdown/click 落点双判定；这里的契约不变：关窗只 emit('close')，不碰选中。
+  pickerModal.includes('@pointerdown="onMaskPointerDown"') &&
+    pickerModal.includes('@click="onMaskClick"') &&
+    pickerModal.includes("useMaskClose(() => emit('close'))"),
+)
 
 const stats = readFileSync(
   new URL('../src/components/history/MonsterDetailStats.vue', import.meta.url),

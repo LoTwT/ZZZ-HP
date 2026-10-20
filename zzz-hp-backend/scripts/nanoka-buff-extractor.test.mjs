@@ -1986,7 +1986,7 @@ test('属性下拉（STAT_OPTIONS）与词表一致：子类增伤关键词既�
     assert.ok(STAT_OPTIONS.includes(keyword), `${keyword} 下拉缺失`)
   }
 })
-test('作用域数组口径（前后端同源）：单值兼容 / general 归一 / 去重剔非法保序 / skill 并存 / 写库前归一', () => {
+test('旧 scope 兼容（词条库仍用）：数组口径归一 / 写库前迁移为 conditions', () => {
   // ① 单值兼容
   assert.deepEqual(normalizeBuffScopes('anomaly'), ['anomaly'])
   assert.deepEqual(normalizeBuffScopes(['anomalyRelease']), ['anomalyRelease'])
@@ -2004,13 +2004,14 @@ test('作用域数组口径（前后端同源）：单值兼容 / general 归一
   )
   // ④ skill 与其它并存（招式锚点仍需 skillTargets）
   assert.deepEqual(normalizeBuffScopes(['skill', 'anomaly']), ['skill', 'anomaly'])
-  // ⑤ 写库前归一（nanoka 写入路径 `sanitizeEffect` 落数组）
+  // ⑤ 写库前归一（nanoka 写入路径 `sanitizeEffect` 落 conditions；不再写 scope）
   const sanitized = sanitizeEffect(
     { id: 'a', stat: 'dmgBonus', kind: 'fixed', value: 10, applyTarget: 'self', scope: 'anomaly' },
     0,
   )
-  assert.ok(Array.isArray(sanitized.scope), 'scope 写库前必须是数组')
-  assert.deepEqual(sanitized.scope, ['anomaly'])
+  assert.equal('scope' in sanitized, false, '写库不再输出 scope')
+  assert.deepEqual(sanitized.conditions, { damageTypes: ['anomaly'] })
+  assert.equal(sanitized.groupId, undefined)
   // ⑥ 官方预设模板的条件字段也走数组口径
   const template = buildAffixEffectTemplate({
     target: 'gain:dmgBonus',

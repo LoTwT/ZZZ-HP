@@ -13,6 +13,7 @@
  * - 白天主题：`html[data-theme='light']` 覆盖（写法对齐 GameAffixRulesModal）
  */
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import {
   flowBuffColumnBulkState,
   flowBuffColumnMatchesName,
@@ -336,10 +337,15 @@ const stickyTopBulk = computed(() => {
   const { group, block } = headerRowHeights.value
   return group + block > 0 ? `${Math.round(group + block)}px` : undefined
 })
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  open.value = false
+})
 </script>
 
 <template>
-  <div v-if="open" class="fbt-mask" @click.self="open = false">
+  <div v-if="open" class="fbt-mask" @pointerdown="onMaskPointerDown" @click="onMaskClick">
     <div class="fbt-card">
       <header class="fbt-head">
         <div class="fbt-head-main">

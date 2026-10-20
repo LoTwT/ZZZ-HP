@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +24,12 @@ const emit = defineEmits<{
   confirm: []
   cancel: []
 }>()
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关。
+// `!loading` 的判断原样保留（处理中不允许点遮罩取消）。
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  if (!props.loading) emit('cancel')
+})
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && props.visible && !props.loading) {
@@ -52,7 +59,8 @@ onUnmounted(() => {
     <div
       v-if="visible"
       class="confirm-overlay"
-      @click.self="!loading && emit('cancel')"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
     >
       <div class="confirm-dialog" role="dialog" aria-modal="true" :aria-label="title">
         <h3 class="confirm-title">{{ title }}</h3>

@@ -10,6 +10,11 @@ import {
   normalizeWengineAdvancedStats,
   readNumber,
 } from '../utils/calculatorBuffFields.js'
+import {
+  effectHasGenericConditions,
+  normalizeEffectConditionsForStat,
+  normalizeGroupId,
+} from '../utils/buffEffectConditions.js'
 import { listFollowUpSkillRules, listSkillSubcategories } from './skillSubcategoryService.js'
 
 const WENGINE_TABLE = '`W-Engine`'
@@ -59,10 +64,10 @@ export function normalizeBuffScopes(value) {
   return BUFF_SCOPE_ORDER.filter((id) => picked.has(id))
 }
 
-function normalizeScopeValue(value) {
-  return normalizeBuffScopes(value)
-}
-
+/**
+ * 旧扁平 mods → fixed effects。
+ * 2026-10-20 起 BuffEffect 不再写 `scope`（`scope` 只作读入兼容；词条库另有一套 scope）。
+ */
 function flatModsToEffects(mods, applyTarget) {
   const effects = []
   for (const key of BUFF_STAT_KEYS) {
@@ -73,8 +78,6 @@ function flatModsToEffects(mods, applyTarget) {
     if (!value) continue
     effects.push({
       id: `legacy-${applyTarget}-${key}`,
-      // 写时统一数组口径
-      scope: ['general'],
       applyTarget,
       kind: 'fixed',
       stat: key,
@@ -89,7 +92,8 @@ function effectsToFlatMods(effects, applyTarget) {
   const result = createEmptyBuffStatModifiers()
   for (const effect of effects || []) {
     if (applyTarget && effect.applyTarget !== applyTarget) continue
-    if (!normalizeBuffScopes(effect.scope).includes('general')) continue
+    // 旧口径：只有「通用」效果进扁平增量表。带伤害类型 / 招式条件的不进。
+    if (!effectHasGenericConditions(effect)) continue
     let amount = readNumber(effect.value ?? effect.valuePerStack)
     if (!BUFF_STAT_KEYS.includes(effect.stat)) continue
     if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
@@ -166,7 +170,7 @@ function normalizeConvert(value) {
   }
 }
 
-function normalizeEffectList(value) {
+export function normalizeEffectList(value) {
   if (!Array.isArray(value)) return []
   return value
     .filter((item) => item && typeof item === 'object')
@@ -211,10 +215,10 @@ function normalizeEffectList(value) {
           ? null
           : String(item.applyProfession).trim()
 
+      const stat = BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus'
       const effect = {
         id: typeof item.id === 'string' && item.id ? item.id : `eff-${index}`,
         origin: typeof item.origin === 'string' ? item.origin : '',
-        scope: normalizeScopeValue(item.scope),
         applyTarget: item.applyTarget === 'team' ? 'team' : 'self',
         applySituation:
           item.applySituation === 'stagger' || item.applySituation === 'non_stagger'
@@ -237,7 +241,7 @@ function normalizeEffectList(value) {
         elementFilter: item.elementFilter ?? 'all',
         kind:
           item.kind === 'stacked' || item.kind === 'convert' ? item.kind : 'fixed',
-        stat: BUFF_STAT_KEYS.includes(item.stat) ? item.stat : 'dmgBonus',
+        stat,
         value: readNumber(item.value),
         stackable: Boolean(item.stackable),
         maxStacks: Math.max(1, readNumber(item.maxStacks) || 1),
@@ -255,6 +259,12 @@ function normalizeEffectList(value) {
         enabledDefault: item.enabledDefault === false ? false : true,
         note: typeof item.note === 'string' ? item.note : '',
       }
+      // 同源行分组键：只在管理侧用于聚合，引擎不读；空值不落库。
+      const groupId = normalizeGroupId(item.groupId)
+      if (groupId) effect.groupId = groupId
+      // 伤害类型条件：新字段优先，旧 scope 兼容读入；15 个子类 stat 不写冗余条件。
+      const conditions = normalizeEffectConditionsForStat(item.conditions, item.scope, stat)
+      if (conditions) effect.conditions = conditions
       if (BUFF_MULT_FACTOR_KEYS.includes(effect.stat)) {
         effect.value = normalizeBuffMultFactorDelta(effect.value)
         effect.valuePerStack = normalizeBuffMultFactorDelta(effect.valuePerStack)
@@ -273,7 +283,7 @@ function normalizeEffectList(value) {
     .filter(Boolean)
 }
 
-function normalizeSelfTeamBuffs(value) {
+export function normalizeSelfTeamBuffs(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     if (Array.isArray(value.effectBlocks) && value.effectBlocks.length > 0) {
       const effectBlocks = value.effectBlocks
@@ -374,6 +384,86 @@ function normalizeWengineRefinementBuffs(value) {
   }
 }
 
+/* =====================================================================
+ * 保存并发保护（乐观锁）
+ * ---------------------------------------------------------------------
+ * 事故（2026-10-18）：管理端「角色增益」面板打开时把角色整份装进表单，保存时提交
+ * 整份 7 档 `mindscapeBuffs`。面板打开期间库里若被别的东西改过（批量导入脚本、
+ * AI 用 SQL 落库），保存就会拿旧副本整份覆盖，悄悄丢掉别人的改动
+ * —— 菲欧妮因此丢了一整天的四批数据（核心被动 18 条效果被写回 6 条、转模参数回退）。
+ *
+ * 规则：客户端保存时带上「加载该行时拿到的 updated_at」（`baseUpdatedAt`）；
+ * 服务端在写库前重新读一次该行的 updated_at，与原值不一致就抛 `STALE_WRITE`，
+ * 一律不写库，由控制器回 409 让前端提示刷新。
+ * ===================================================================== */
+
+/** 表名白名单形态：`character` / `W-Engine` 这类（本函数只由服务内部调用，仍做一次防御） */
+const SAFE_TABLE_PATTERN = /^`?[A-Za-z0-9_-]+`?$/
+
+function runPoolQuery(sql, params) {
+  return pool.query(sql, params)
+}
+
+/**
+ * 把各种来源的时间统一成 **ISO/UTC、秒级** 字符串（形如 `2026-10-18T15:22:09.000Z`）。
+ *
+ * - 库侧：mysql2 把 TIMESTAMP 读成 Date（已按会话时区换回真实瞬时），直接 toISOString 即可，
+ *   与本机 UNIX_TIMESTAMP 验证过一致（本机 MySQL `@@session.time_zone = SYSTEM` = +08:00）；
+ * - 客户端侧：回传的是本函数上一次发出去的 ISO 字符串；
+ * - 兜底字符串（如 `2026-10-18 15:22:09`）：交给 Date 解析，无时区后缀时按本机时区，
+ *   与 MySQL 会话时区（SYSTEM）口径一致，不会凭空偏移。
+ *
+ * 精度压到秒：列是 `TIMESTAMP`（无小数秒），比较时不能被毫秒残差绊倒。
+ */
+export function normalizeUpdatedAt(value) {
+  if (value == null || value === '') return null
+  let ms
+  if (value instanceof Date) {
+    ms = value.getTime()
+  } else if (typeof value === 'number') {
+    ms = value
+  } else if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text) return null
+    ms = new Date(text).getTime()
+  } else {
+    return null
+  }
+  if (!Number.isFinite(ms)) return null
+  return new Date(Math.floor(ms / 1000) * 1000).toISOString()
+}
+
+/**
+ * 乐观锁校验（**可复用**）：库里该行的 updated_at 与加载时拿到的值不一致即抛 STALE_WRITE。
+ *
+ * - `baseUpdatedAt` 为空（老客户端 / 新建）→ 不校验，行为与加保护之前完全一致；
+ * - 该行不存在 → 视为新建，不校验；
+ * - 本次只接到 `upsertAgent`；音擎(`W-Engine`)/邦布/驱动盘/招式这些对象后续可直接复用本函数。
+ *
+ * @param {string} tableSql 已加反引号的表名，如 '`character`'
+ * @param {string} id 主键值
+ * @param {string | undefined} baseUpdatedAt 加载该行时拿到的 updated_at（ISO 字符串）
+ * @param {(sql: string, params: unknown[]) => Promise<unknown>} [runQuery] 查询执行器（测试注入用）
+ * @returns {Promise<{ currentUpdatedAt: string } | null>} 校验通过时返回库里的当前值（可能为 null）
+ */
+export async function assertNotStale(tableSql, id, baseUpdatedAt, runQuery = runPoolQuery) {
+  if (!SAFE_TABLE_PATTERN.test(tableSql)) {
+    throw new Error(`assertNotStale: 非法表名 ${tableSql}`)
+  }
+  const base = normalizeUpdatedAt(baseUpdatedAt)
+  if (!base) return null
+  const [[row]] = await runQuery(`SELECT updated_at FROM ${tableSql} WHERE id = ?`, [id])
+  if (!row) return null
+  const currentUpdatedAt = normalizeUpdatedAt(row.updated_at ?? row.updatedAt)
+  if (!currentUpdatedAt || currentUpdatedAt === base) {
+    return currentUpdatedAt ? { currentUpdatedAt } : null
+  }
+  throw Object.assign(new Error('数据已被其它操作更新'), {
+    code: 'STALE_WRITE',
+    currentUpdatedAt,
+  })
+}
+
 function parseJson(value, fallback) {
   if (value == null) return fallback
   if (typeof value === 'object') return value
@@ -406,6 +496,8 @@ function rowToAgent(row) {
     ...raw,
     id: row.id,
     name: row.name,
+    // 乐观锁基准：读取侧必须带出去，否则前端保存时没有可比对的 updated_at
+    updatedAt: normalizeUpdatedAt(row.updated_at) ?? undefined,
     profession: row.profession ?? '',
     element: row.element ?? '',
     supportNeeds: parseJson(row.support_needs, raw.supportNeeds ?? []),
@@ -637,6 +729,11 @@ export async function upsertAgent(doc) {
     throw new Error('角色 ID 与名称为必填项')
   }
 
+  // 乐观锁：客户端带了「加载时拿到的 updated_at」就先校验，库里的行已经变了就直接抛 STALE_WRITE，
+  // 一个字节都不写（管理端整份 mindscapeBuffs 覆盖就是这样悄悄吃掉别人改动的）。
+  const baseUpdatedAt = typeof doc.baseUpdatedAt === 'string' ? doc.baseUpdatedAt : ''
+  await assertNotStale('`character`', id, baseUpdatedAt)
+
   const avatar_image = await resolveAvatarImageForUpsert(
     '`character`',
     id,
@@ -691,6 +788,7 @@ export async function upsertAgent(doc) {
     ],
   )
 
+  // 保存后回读整行：rowToAgent 会带上最新的 updatedAt（前端拿它作为下一次保存的基准）
   const [[row]] = await pool.query('SELECT * FROM `character` WHERE id = ?', [id])
   return rowToAgent(row)
 }

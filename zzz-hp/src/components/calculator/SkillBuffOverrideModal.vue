@@ -16,6 +16,7 @@ import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import NumberStepper from '@/components/common/NumberStepper.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 import type { BuffEffect, SkillSubcategory } from '@/types/calculator'
 import type {
   CollectedEffect,
@@ -155,7 +156,7 @@ function stacksModel(effect: BuffEffect): number {
 }
 
 function setStacks(effect: BuffEffect, value: number) {
-  const next = { ...(override.value?.stacksByEffectId ?? {}) }
+  const next = { ...override.value?.stacksByEffectId }
   next[effect.id] = Math.max(0, value)
   write({ stacksByEffectId: next })
 }
@@ -171,7 +172,7 @@ function convertModel(effect: BuffEffect): number {
 }
 
 function setConvertInput(effect: BuffEffect, value: number) {
-  const next = { ...(override.value?.convertInputsByEffectId ?? {}) }
+  const next = { ...override.value?.convertInputsByEffectId }
   next[effect.id] = Math.max(0, value)
   write({ convertInputsByEffectId: next })
 }
@@ -179,8 +180,8 @@ function setConvertInput(effect: BuffEffect, value: number) {
 /** 单条恢复继承：删掉该效果的行级覆盖值 */
 function restoreEffectInherit(effect: BuffEffect) {
   if (!override.value) return
-  const stacks = { ...(override.value.stacksByEffectId ?? {}) }
-  const converts = { ...(override.value.convertInputsByEffectId ?? {}) }
+  const stacks = { ...override.value.stacksByEffectId }
+  const converts = { ...override.value.convertInputsByEffectId }
   delete stacks[effect.id]
   delete converts[effect.id]
   write({ stacksByEffectId: stacks, convertInputsByEffectId: converts })
@@ -266,11 +267,22 @@ function effectResultText(item: CollectedEffect): string {
     applySituation: true,
   })
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
+  open.value = false
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="bo-mask" role="presentation" @click.self="open = false">
+    <div
+      v-if="open"
+      class="bo-mask"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="bo-card" role="dialog" aria-modal="true" aria-label="本行增益例外">
         <header class="bo-head">
           <div class="bo-title-row">

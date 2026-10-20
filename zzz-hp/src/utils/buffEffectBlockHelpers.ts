@@ -1,6 +1,6 @@
 import type { BuffEffect, BuffEffectBlock } from '@/types/calculator'
 import { getEffectSkillTargets } from '@/utils/buffEffect'
-import { sameBuffScopes } from '@/utils/buffScope'
+import { damageTypesOf, sameDamageTypes } from '@/utils/buffDamageTypes'
 
 function skillTargetsKey(effect: BuffEffect) {
   return getEffectSkillTargets(effect)
@@ -15,7 +15,7 @@ export function sameBuffEffectIdentity(a: BuffEffect, b: BuffEffect) {
   return (
     a.stat === b.stat &&
     a.kind === b.kind &&
-    sameBuffScopes(a.scope, b.scope) &&
+    sameDamageTypes(damageTypesOf(a), damageTypesOf(b)) &&
     a.applyTarget === b.applyTarget &&
     skillTargetsKey(a) === skillTargetsKey(b)
   )

@@ -1,6 +1,7 @@
 import type {
   BuffApplySituation,
   BuffApplyTarget,
+  BuffDamageType,
   BuffEffect,
   BuffEffectConvert,
   BuffEffectKind,
@@ -29,7 +30,9 @@ export type EffectBeneficiary = 'self' | 'team' | { slot: number }
 
 export interface EffectConditions {
   applySituation?: BuffApplySituation
-  /** 作用域（**数组**口径；读时兼容单值字符串） */
+  /** BuffEffect 的伤害类型条件（第二级；空 = 全部） */
+  damageTypes?: BuffDamageType[]
+  /** @deprecated 词条库仍用 general/skill；BuffEffect 不再写 scope */
   scope?: BuffScope[]
   skillTargets?: BuffSkillTarget[]
   elementFilter?: 'all' | string[]

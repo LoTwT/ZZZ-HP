@@ -1,44 +1,35 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-import NumberStepper from '@/components/common/NumberStepper.vue'
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
+import AdminBuffEffectRow from '@/components/admin/calculator/AdminBuffEffectRow.vue'
 import type {
+  BuffDamageType,
   BuffEffect,
   BuffEffectBlock,
-  BuffScope,
-  BuffSkillTarget,
-  BuffSkillTargetId,
-  SkillCategoryId,
-  SkillSubcategory,
 } from '@/types/calculator'
-import {
-  BUFF_SKILL_TARGET_OPTIONS,
-  CONVERT_FROM_OPTIONS,
-  CONVERT_PANEL_SOURCE_OPTIONS,
-  BUFF_SCOPE_OPTIONS,
-  SKILL_CATEGORY_OPTIONS,
-} from '@/types/calculator'
-import { AGENT_ELEMENTS, AGENT_ROLES } from '@/utils/calculatorUi'
-import {
-  BUFF_STAT_FIELDS,
-  GENERAL_BUFF_STAT_FIELDS,
-  SKILL_BUFF_STAT_FIELDS,
-  buffStatFieldLabel,
-} from '@/utils/calculatorUi'
+import { createEmptyBuffEffect, createEmptyBuffEffectBlock, convertSummaryLabel, packFromBlocks } from '@/utils/buffEffect'
 import { formatCalcDecimal } from '@/utils/calcNumberFormat'
+import { BUFF_STAT_FIELDS } from '@/utils/calculatorUi'
+import { findBuffStatZoneById } from '@/utils/buffStatZones'
 import {
-  createEmptyBuffEffect,
-  createEmptyBuffEffectBlock,
-  formatSkillTargetBracket,
-  getEffectSkillTargets,
-  normalizeTeamProfessionValues,
-  packFromBlocks,
-  resolveConvertValue,
-  setEffectSkillTargets,
-} from '@/utils/buffEffect'
-import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
-import { buffScopeLabel, hasBuffScope, isGeneralScope, normalizeBuffScopes, toggleBuffScope } from '@/utils/buffScope'
-import { createDefaultSkillSubcategoryMults } from '@/utils/skillSubcategoryMult'
+  alignRow,
+  buildEffectRows,
+  changeRowZone,
+  confirmMergeRow,
+  mergeRows,
+  replaceRowEffects,
+  splitRow,
+  toggleRowDamageType,
+  validateEffectGroups,
+  type EffectRow,
+} from '@/utils/buffEffectRows'
+
+/** 工具条「当前编辑」下拉里的可切换对象（代理人 / 音擎 / 邦布…） */
+interface BuffEditorOwnerOption {
+  id: string
+  name: string
+  /** 次要信息，如「强攻 · 电」「S 音擎」 */
+  meta?: string
+}
 
 const props = defineProps<{
   lockApplyTarget?: 'self' | 'team' | null
@@ -53,229 +44,296 @@ const props = defineProps<{
   energyRegenFlatOnly?: boolean
   /**
    * 勾选「异常计算时也生效」时回调（用于邦布/音擎精炼跨精同步）。
-   * 返回 true 表示已由外部处理，编辑器不再单独改当前 effect。
    */
   onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
+  /** 工具条：当前编辑对象名称（代理人 / 音擎 / 邦布…） */
+  ownerLabel?: string
+  /** 工具条：当前编辑对象 id（下拉里高亮） */
+  ownerId?: string
+  /** 工具条：可切换对象列表；配合 `switch-owner` 事件使用 */
+  owners?: BuffEditorOwnerOption[]
+  /** 块排序口径：代理人（核心被动/额外能力/招式/影画）或音擎（基础/精炼） */
+  ownerKind?: 'agent' | 'wengine'
+  /** 工具条保存状态；不传则用组件内的「有改动 / 无改动」本地标记 */
+  saveState?: 'clean' | 'dirty' | 'saving' | 'saved'
+  /** 已保存的补充说明（如「12:03」） */
+  savedAtLabel?: string
 }>()
+
+const emit = defineEmits<{
+  'switch-owner': [id: string]
+}>()
+
+const slots = useSlots()
 
 const model = defineModel<BuffEffectBlock[]>({ required: true })
 
-const calculatorBuffStore = useCalculatorBuffStore()
-const { agents, skillSubcategories } = storeToRefs(calculatorBuffStore)
+/** [拆开] 后本次编辑里不再按启发式聚回去（只影响显示，不写数据） */
+const suppressedByBlock = ref<Record<string, string[]>>({})
+const mergeMode = ref(false)
+const selectedRowKeys = ref<string[]>([])
+const mergeError = ref('')
 
-const creatingSubcatForId = ref<string | null>(null)
-const newSubcat = ref({
-  agentId: '',
-  name: '',
-  categoryId: 'basic' as SkillCategoryId,
-  countsAsFollowUp: false,
-})
-const subcatMessage = ref('')
-const subcatError = ref('')
+/* ───────────────────────── 三列布局：工具条 / 块列表 / 当前块 ───────────────────────── */
 
-/** 正在添加的招式草稿（按效果 id） */
-const draftSkillByEffectId = ref<Record<string, BuffSkillTarget>>({})
+const selectedBlockId = ref('')
+const ownerMenuOpen = ref(false)
+const ownerSearch = ref('')
+/** 组件内的「有改动」标记：只用于工具条提示，不参与保存 */
+const localDirty = ref(false)
 
-const subcategoriesByCategory = computed(() => {
-  const map = new Map<string, SkillSubcategory[]>()
-  const agentFilter = props.agentId || newSubcat.value.agentId
-  for (const item of skillSubcategories.value) {
-    if (agentFilter && item.agentId && item.agentId !== agentFilter) continue
-    const list = map.get(item.categoryId) ?? []
-    list.push(item)
-    map.set(item.categoryId, list)
+watch(
+  model,
+  () => {
+    localDirty.value = true
+  },
+  { deep: true },
+)
+
+function rowsOf(block: BuffEffectBlock): EffectRow[] {
+  const suppressed = new Set(suppressedByBlock.value[block.id] ?? [])
+  return buildEffectRows(block.effects, { suppressHeuristicIds: suppressed })
+}
+
+const blockSummaries = computed(() => {
+  const map = new Map<string, { rows: number; effects: number; warn: boolean; ungrouped: boolean }>()
+  for (const block of model.value) {
+    const rows = rowsOf(block)
+    map.set(block.id, {
+      rows: rows.length,
+      effects: block.effects.length,
+      warn: rows.some((row) => row.issues.length > 0),
+      ungrouped: rows.some((row) => row.heuristic && !row.groupId),
+    })
   }
   return map
 })
 
-const followUpSubcategories = computed(() => {
-  const agentFilter = props.agentId || newSubcat.value.agentId
-  return skillSubcategories.value.filter((item) => {
-    if (!item.countsAsFollowUp) return false
-    if (agentFilter && item.agentId && item.agentId !== agentFilter) return false
-    return true
-  })
+const totalEffects = computed(() =>
+  model.value.reduce((sum, block) => sum + block.effects.length, 0),
+)
+const recordedBlocks = computed(
+  () => model.value.filter((block) => block.effects.length > 0).length,
+)
+
+/** 块排序口径：页面没给 ownerKind 时按块名猜（音擎=基础/精炼，其余按代理人） */
+const editorKind = computed<'agent' | 'wengine'>(() => {
+  if (props.ownerKind === 'agent' || props.ownerKind === 'wengine') return props.ownerKind
+  if ((props.defaultFirstBlockName ?? '').trim().startsWith('精')) return 'wengine'
+  const names = model.value.map((block) => (block.name ?? '').trim())
+  if (names.some((name) => /精炼/.test(name) || /^精\s*[1-6]$/.test(name))) return 'wengine'
+  return 'agent'
 })
 
-function skillTargetOptionsFor() {
-  return BUFF_SKILL_TARGET_OPTIONS
+const AGENT_SKILL_ORDER = ['普通攻击', '闪避', '支援', '特殊', '连携', '终结', '追加']
+const CN_DIGITS: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 }
+
+interface BlockOrderKey {
+  group: number
+  sub: number
 }
 
-function ensureDraftSkill(effect: BuffEffect): BuffSkillTarget {
-  const existing = draftSkillByEffectId.value[effect.id]
-  if (existing) return existing
-  const draft: BuffSkillTarget = {
-    category: (effect.skillCategory as BuffSkillTargetId) ?? 'basic',
-    subcategoryId: null,
+/**
+ * 展示排序（不改数据顺序）：
+ * - 代理人：核心被动 → 额外能力 → 招式（按类别）→ 影画 1..6 → 其它（保持原顺序）
+ * - 音擎：基础 → 精炼 1..5 → 其它
+ */
+function blockOrderKey(name: string, kind: 'agent' | 'wengine'): BlockOrderKey {
+  const text = (name ?? '').trim()
+  if (kind === 'wengine') {
+    const refine = /精炼\s*([1-6])/.exec(text) ?? /精\s*([1-6])/.exec(text)
+    if (refine) return { group: 1, sub: Number(refine[1]) }
+    if (/基础/.test(text)) return { group: 0, sub: 0 }
+    return { group: 9, sub: 0 }
   }
-  draftSkillByEffectId.value[effect.id] = draft
-  return draft
-}
-
-function subcategoriesForCategory(category: BuffSkillTargetId): SkillSubcategory[] {
-  if (category === 'follow_up') return followUpSubcategories.value
-  return subcategoriesByCategory.value.get(category as SkillCategoryId) ?? []
-}
-
-function subcategoriesForEffect(effect: BuffEffect): SkillSubcategory[] {
-  const draft = ensureDraftSkill(effect)
-  return subcategoriesForCategory(draft.category)
-}
-
-function canCreateSubcat(effect: BuffEffect) {
-  return ensureDraftSkill(effect).category !== 'follow_up'
-}
-
-function isCreatingSubcat(effect: BuffEffect) {
-  return creatingSubcatForId.value === effect.id
-}
-
-function skillTargetsOf(effect: BuffEffect) {
-  return getEffectSkillTargets(effect)
-}
-
-function skillTargetLabel(target: BuffSkillTarget) {
-  return formatSkillTargetBracket(target, skillSubcategories.value)
-}
-
-function onTeamProfessionChange(effect: BuffEffect, role: string) {
-  const next = role.trim()
-  if (!next) {
-    effect.teamProfession = null
-    effect.teamProfessionValues = null
-    effect.teamProfessionMinCount = null
-    return
+  const rank = /影画\s*([0-9一二三四五六])/.exec(text)
+  if (rank) {
+    const rankLabel = rank[1]!
+    return { group: 3, sub: CN_DIGITS[rankLabel] ?? (Number(rankLabel) || 0) }
   }
-  effect.teamProfession = next
-  effect.teamProfessionMinCount = null
-  // 人数档需手动勾选；全空表示条件未配置完成、不生效
-  effect.teamProfessionValues = [null, null, null]
+  if (/核心/.test(text)) return { group: 0, sub: 0 }
+  if (/额外/.test(text)) return { group: 1, sub: 0 }
+  const skillIndex = AGENT_SKILL_ORDER.findIndex((keyword) => text.includes(keyword))
+  if (skillIndex >= 0) return { group: 2, sub: skillIndex }
+  if (/招式/.test(text)) return { group: 2, sub: AGENT_SKILL_ORDER.length }
+  return { group: 9, sub: 0 }
 }
 
-function onKindChange(effect: BuffEffect, kind: BuffEffect['kind']) {
-  effect.kind = kind
-  if (kind === 'convert') {
-    ensureConvert(effect)
-  } else {
-    effect.convert = undefined
+const orderedBlocks = computed(() => {
+  const kind = editorKind.value
+  return model.value
+    .map((block, index) => ({ block, index, key: blockOrderKey(block.name ?? '', kind) }))
+    .sort(
+      (left, right) =>
+        left.key.group - right.key.group ||
+        left.key.sub - right.key.sub ||
+        left.index - right.index,
+    )
+    .map((item) => item.block)
+})
+
+const activeBlock = computed(
+  () =>
+    orderedBlocks.value.find((block) => block.id === selectedBlockId.value) ??
+    orderedBlocks.value[0] ??
+    null,
+)
+
+/* ── 左列导航树：块 → 行；块可整块折叠（这是唯一的折叠），行只负责选中 ── */
+const selectedRowKey = ref('')
+const collapsedBlocks = ref<Record<string, boolean>>({})
+
+function isBlockCollapsed(blockId: string) {
+  return collapsedBlocks.value[blockId] === true
+}
+
+function toggleBlock(blockId: string) {
+  collapsedBlocks.value = {
+    ...collapsedBlocks.value,
+    [blockId]: !isBlockCollapsed(blockId),
   }
 }
 
-function teamProfessionTier(effect: BuffEffect): Array<number | null> {
-  if (!effect.teamProfession) return [null, null, null]
-  return (
-    normalizeTeamProfessionValues(
-      effect.teamProfessionValues,
-      effect.teamProfession,
-      effect.teamProfessionMinCount,
-      effect.value,
-    ) ?? [null, null, null]
+/** 所有行（按块展示顺序展开），右列只渲染选中的那一行 */
+const allRows = computed(() =>
+  orderedBlocks.value.flatMap((block) => rowsOf(block).map((row) => ({ block, row }))),
+)
+
+const activeRow = computed(
+  () => allRows.value.find((item) => item.row.key === selectedRowKey.value) ?? null,
+)
+
+watch(
+  allRows,
+  (list) => {
+    if (!list.some((item) => item.row.key === selectedRowKey.value)) {
+      const first = list[0]
+      selectedRowKey.value = first?.row.key ?? ''
+      if (first) selectedBlockId.value = first.block.id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => model.value.map((block) => block.id).join('|'),
+  () => {
+    if (!model.value.some((block) => block.id === selectedBlockId.value)) {
+      selectedBlockId.value = orderedBlocks.value[0]?.id ?? ''
+    }
+  },
+  { immediate: true },
+)
+
+/** 左列行摘要：`属性 · 目标 · 数值` */
+function rowNavLabel(row: EffectRow) {
+  const first = row.effects[0]
+  if (!first) return '（空行）'
+  const field = BUFF_STAT_FIELDS.find((item) => item.key === first.stat)
+  const stat = row.zone?.label ?? field?.label ?? first.stat
+  const target = (first.applyTarget ?? 'self') === 'team' ? '全队' : '自身'
+  const suffix = field?.unit === 'percent' ? '%' : ''
+  const amount =
+    first.kind === 'stacked'
+      ? `${formatCalcDecimal(first.valuePerStack ?? 0)}${suffix}×${first.maxStacks ?? 1}层`
+      : first.kind === 'convert'
+        ? convertSummaryLabel(first.convert)
+        : `${formatCalcDecimal(first.value ?? 0)}${suffix}`
+  return `${stat} · ${target} · ${amount}`
+}
+
+function selectRow(block: BuffEffectBlock, row: EffectRow) {
+  selectedBlockId.value = block.id
+  selectedRowKey.value = row.key
+}
+
+function selectBlock(block: BuffEffectBlock) {
+  selectedBlockId.value = block.id
+  const firstRow = rowsOf(block)[0]
+  if (firstRow) selectedRowKey.value = firstRow.key
+}
+
+/** 窄条模式下的块图标：取块名前两个字 */
+function blockInitial(name: string) {
+  return (name ?? '').trim().slice(0, 2) || '块'
+}
+
+/* ───────────────────────── 工具条：当前编辑 / 块统计 / 保存状态 ───────────────────────── */
+
+const hasOwnerSlot = computed(() => Boolean(slots['owner-switcher']))
+const canSwitchOwner = computed(
+  () => hasOwnerSlot.value || (props.owners?.length ?? 0) > 0,
+)
+const ownerButtonTitle = computed(() =>
+  canSwitchOwner.value ? '搜索 / 切换当前编辑对象' : '当前编辑对象由所在页面切换',
+)
+const ownerName = computed(() => (props.ownerLabel ?? '').trim() || '未命名')
+
+const filteredOwners = computed(() => {
+  const keyword = ownerSearch.value.trim().toLowerCase()
+  const list = props.owners ?? []
+  if (!keyword) return list
+  return list.filter((owner) =>
+    `${owner.name} ${owner.meta ?? ''}`.toLowerCase().includes(keyword),
   )
+})
+
+function toggleOwnerMenu() {
+  if (!canSwitchOwner.value) return
+  ownerMenuOpen.value = !ownerMenuOpen.value
+  if (!ownerMenuOpen.value) ownerSearch.value = ''
 }
 
-function isTeamProfessionTierOn(effect: BuffEffect, index: number) {
-  return teamProfessionTier(effect)[index] != null
+function closeOwnerMenu() {
+  ownerMenuOpen.value = false
+  ownerSearch.value = ''
 }
 
-function setTeamProfessionTierOn(effect: BuffEffect, index: number, on: boolean) {
-  const tiers = [...teamProfessionTier(effect)]
-  // 仅作启用标记；数值无意义，固定写 0
-  tiers[index] = on ? 0 : null
-  effect.teamProfessionValues = tiers
-  effect.teamProfessionMinCount = null
+function pickOwner(id: string) {
+  emit('switch-owner', id)
+  closeOwnerMenu()
 }
 
-function removeSkillTarget(effect: BuffEffect, index: number) {
-  const next = skillTargetsOf(effect).filter((_, i) => i !== index)
-  setEffectSkillTargets(effect, next.length ? next : [{ category: 'basic', subcategoryId: null }])
+function onDocumentClick() {
+  ownerMenuOpen.value = false
 }
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
-function addSkillTarget(effect: BuffEffect) {
-  const draft = ensureDraftSkill(effect)
-  const next = [
-    ...skillTargetsOf(effect),
-    {
-      category: draft.category,
-      subcategoryId: draft.subcategoryId ?? null,
-    },
-  ]
-  setEffectSkillTargets(effect, next)
-}
+const saveStateResolved = computed<'clean' | 'dirty' | 'saving' | 'saved'>(
+  () => props.saveState ?? (localDirty.value ? 'dirty' : 'clean'),
+)
 
-function isAllElements(effect: BuffEffect) {
-  return !effect.elementFilter || effect.elementFilter === 'all'
-}
-
-function isElementChecked(effect: BuffEffect, el: string) {
-  if (isAllElements(effect)) return false
-  return Array.isArray(effect.elementFilter) && effect.elementFilter.includes(el)
-}
-
-function setAllElements(effect: BuffEffect) {
-  effect.elementFilter = 'all'
-}
-
-function toggleElement(effect: BuffEffect, el: string) {
-  const current = isAllElements(effect)
-    ? []
-    : Array.isArray(effect.elementFilter)
-      ? [...effect.elementFilter]
-      : []
-  const idx = current.indexOf(el)
-  if (idx >= 0) current.splice(idx, 1)
-  else current.push(el)
-  effect.elementFilter = current.length ? current : 'all'
-}
-
-function elementFilterSummary(effect: BuffEffect) {
-  if (isAllElements(effect)) return '全部属性'
-  if (!Array.isArray(effect.elementFilter) || !effect.elementFilter.length) return '全部属性'
-  return effect.elementFilter.join('、')
-}
-
-function statFieldsFor(effect: BuffEffect) {
-  const filterEnergyRegen = <T extends { key: string }>(fields: T[]) =>
-    props.energyRegenFlatOnly
-      ? fields.filter((field) => field.key === 'energyRegen')
-      : fields
-  const base =
-    hasBuffScope(effect.scope, 'skill')
-      ? filterEnergyRegen([...SKILL_BUFF_STAT_FIELDS, ...GENERAL_BUFF_STAT_FIELDS])
-      : filterEnergyRegen(
-          GENERAL_BUFF_STAT_FIELDS.length ? GENERAL_BUFF_STAT_FIELDS : BUFF_STAT_FIELDS,
-        )
-  // 当前值若不在选项里，强制保留，避免 <select> 回落到第一项「增伤」并写脏数据
-  if (!base.some((field) => field.key === effect.stat)) {
-    const orphan = BUFF_STAT_FIELDS.find((field) => field.key === effect.stat)
-    if (orphan) return [orphan, ...base]
+const saveStateText = computed(() => {
+  const state = saveStateResolved.value
+  if (state === 'saving') return '保存中…'
+  if (state === 'saved') {
+    return props.savedAtLabel ? `已保存 · ${props.savedAtLabel}` : '已保存'
   }
-  return base
+  if (state === 'dirty') return '● 未保存'
+  return '✓ 无改动'
+})
+
+/** 上层保存成功后调用：清掉工具条的「未保存」提示（可选用法） */
+function markSaved() {
+  localDirty.value = false
 }
 
-function defaultEffectStat(): BuffEffect['stat'] {
-  return props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus'
+/* ───────────────────────── 块 / 效果的行操作（数据逻辑保持原样） ───────────────────────── */
+
+function rememberSuppressed(blockId: string, effects: readonly BuffEffect[]) {
+  const ids = new Set(suppressedByBlock.value[blockId] ?? [])
+  for (const effect of effects) ids.add(effect.id)
+  suppressedByBlock.value = {
+    ...suppressedByBlock.value,
+    [blockId]: [...ids],
+  }
 }
 
-const FACTOR_STATS = new Set([
-  'directDmgMultFactor',
-  'anomalyMultFactor',
-  'anomalyReleaseMultFactor',
-  'disorderBaseMultFactor',
-  'turbulenceBaseMultFactor',
-])
-
-function onStatChange(effect: BuffEffect, raw: string) {
-  const next = raw as BuffEffect['stat']
-  const prevWasFactor = FACTOR_STATS.has(effect.stat)
-  const nextIsFactor = FACTOR_STATS.has(next)
-  effect.stat = next
-  // 倍率修正增益填写百分点增量，切过来默认 0
-  if (nextIsFactor && !prevWasFactor && (effect.value == null || effect.value === 1 || effect.value === 0)) {
-    effect.value = 0
-  }
-  if (!nextIsFactor && prevWasFactor && effect.value === 0) {
-    effect.value = 0
-  }
+function clearSuppressed(blockId: string, effects: readonly BuffEffect[]) {
+  const removed = new Set(effects.map((effect) => effect.id))
+  const next = (suppressedByBlock.value[blockId] ?? []).filter((id) => !removed.has(id))
+  suppressedByBlock.value = { ...suppressedByBlock.value, [blockId]: next }
 }
 
 function addBlock() {
@@ -288,700 +346,827 @@ function addBlock() {
     isFirst && props.defaultFirstBlockNote?.trim()
       ? props.defaultFirstBlockNote.trim()
       : ''
-  model.value = [
-    ...model.value,
-    createEmptyBuffEffectBlock({
-      name,
-      note,
-      effects: [
-        createEmptyBuffEffect({
-          applyTarget: props.lockApplyTarget ?? 'self',
-          stat: defaultEffectStat(),
-        }),
-      ],
-    }),
-  ]
+  const block = createEmptyBuffEffectBlock({
+    name,
+    note,
+    effects: [
+      createEmptyBuffEffect({
+        applyTarget: props.lockApplyTarget ?? 'self',
+        stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
+      }),
+    ],
+  })
+  model.value = [...model.value, block]
+  selectedBlockId.value = block.id
 }
 
-function removeBlock(index: number) {
+function removeBlock(block: BuffEffectBlock) {
+  const index = model.value.findIndex((item) => item.id === block.id)
+  if (index < 0) return
+  delete suppressedByBlock.value[block.id]
   model.value = model.value.filter((_, i) => i !== index)
+  if (selectedBlockId.value === block.id) {
+    selectedBlockId.value = orderedBlocks.value[0]?.id ?? ''
+  }
 }
 
 function addEffect(block: BuffEffectBlock) {
   block.effects.push(
     createEmptyBuffEffect({
       applyTarget: props.lockApplyTarget ?? 'self',
-      stat: defaultEffectStat(),
+      stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
     }),
   )
 }
 
-function removeEffect(block: BuffEffectBlock, effectIndex: number) {
-  block.effects.splice(effectIndex, 1)
+function removeRow(block: BuffEffectBlock, row: EffectRow) {
+  const ids = new Set(row.effects.map((effect) => effect.id))
+  block.effects = block.effects.filter((effect) => !ids.has(effect.id))
+  clearSuppressed(block.id, row.effects)
+  selectedRowKeys.value = selectedRowKeys.value.filter((key) => key !== row.key)
 }
 
-/** 作用域（数组口径）：勾选/取消一个成员；「通用」与具体项互斥（见 `toggleBuffScope`） */
-function onScopeToggle(effect: BuffEffect, id: BuffScope, checked: boolean) {
-  effect.scope = toggleBuffScope(effect.scope, id, checked)
-  onScopeChange(effect)
+function onChangeZone(
+  block: BuffEffectBlock,
+  row: EffectRow,
+  zoneId: string,
+  types: BuffDamageType[],
+) {
+  const zone = findBuffStatZoneById(zoneId)
+  if (!zone) return
+  block.effects = changeRowZone(block.effects, row, zone, types)
+  clearSuppressed(block.id, row.effects)
 }
 
-function isScopeChecked(effect: BuffEffect, id: BuffScope): boolean {
-  return normalizeBuffScopes(effect.scope).includes(id)
+function onToggleType(
+  block: BuffEffectBlock,
+  row: EffectRow,
+  type: BuffDamageType,
+  checked: boolean,
+) {
+  block.effects = toggleRowDamageType(block.effects, row, type, checked)
+  clearSuppressed(block.id, row.effects)
 }
 
-/** 只有「通用」时，具体项禁用（通用已覆盖全部） */
-function isScopeLockedToGeneral(effect: BuffEffect): boolean {
-  return isGeneralScope(effect.scope)
-}
-
-function onScopeChange(effect: BuffEffect) {
-  // 数组口径：任一成员命中就走对应分支（skill 优先，因为它要挂锚点）
-  if (hasBuffScope(effect.scope, 'skill')) {
-    const targets = getEffectSkillTargets(effect)
-    if (!targets.length) {
-      setEffectSkillTargets(effect, [{ category: 'basic', subcategoryId: null }])
-    } else {
-      setEffectSkillTargets(effect, targets)
-    }
-    if (!SKILL_BUFF_STAT_FIELDS.some((f) => f.key === effect.stat)) {
-      effect.stat = 'skillDmgBonus'
-    }
-    return
-  }
-  setEffectSkillTargets(effect, [])
-  if (isAnomalyDamageScope(effect.scope)) {
-    effect.appliesToAnomaly = undefined
-  }
-}
-
-function isAnomalyDamageScope(scope: BuffEffect['scope']) {
-  return normalizeBuffScopes(scope).some(
-    (id) =>
-      id === 'anomaly' || id === 'disorder' || id === 'turbulence' || id === 'anomalyRelease',
+function onSplit(block: BuffEffectBlock, row: EffectRow) {
+  const beforeIds = new Set(block.effects.map((effect) => effect.id))
+  const oldIds = row.effects.map((effect) => effect.id)
+  const next = splitRow(block.effects, row)
+  block.effects = next
+  const splitIds =
+    row.effects.length > 1
+      ? oldIds
+      : [...oldIds, ...next.filter((effect) => !beforeIds.has(effect.id)).map((effect) => effect.id)]
+  rememberSuppressed(
+    block.id,
+    splitIds.map((id) => next.find((effect) => effect.id === id)).filter(Boolean) as BuffEffect[],
   )
 }
 
-function onDraftCategoryChange(effect: BuffEffect, category: BuffSkillTargetId) {
-  const draft = ensureDraftSkill(effect)
-  draft.category = category
-  draft.subcategoryId = null
+function onConfirmMerge(block: BuffEffectBlock, row: EffectRow) {
+  block.effects = confirmMergeRow(block.effects, row)
 }
 
-async function createSubcategory(effect: BuffEffect) {
-  subcatMessage.value = ''
-  subcatError.value = ''
-  const name = newSubcat.value.name.trim()
-  // 允许空 agentId = 全部角色
-  const agentId = props.agentId ?? newSubcat.value.agentId
-  if (!name) {
-    subcatError.value = '小类名称为必填'
+function onAlign(block: BuffEffectBlock, row: EffectRow) {
+  block.effects = replaceRowEffects(block.effects, row, alignRow(row))
+}
+
+function toggleMergeMode() {
+  mergeMode.value = !mergeMode.value
+  selectedRowKeys.value = []
+  mergeError.value = ''
+}
+
+function toggleSelect(row: EffectRow) {
+  const exists = selectedRowKeys.value.includes(row.key)
+  selectedRowKeys.value = exists
+    ? selectedRowKeys.value.filter((key) => key !== row.key)
+    : [...selectedRowKeys.value, row.key]
+}
+
+function mergeSelected(block: BuffEffectBlock) {
+  const rows = rowsOf(block).filter((row) => selectedRowKeys.value.includes(row.key))
+  const result = mergeRows(block.effects, rows)
+  if (!result.ok || !result.effects) {
+    mergeError.value = result.error ?? '合并失败'
     return
   }
-  try {
-    const saved = await calculatorBuffStore.upsertSkillSubcategoryDoc({
-      id: '',
-      agentId,
-      categoryId: newSubcat.value.categoryId,
-      name,
-      countsAsFollowUp: newSubcat.value.countsAsFollowUp,
-      ...createDefaultSkillSubcategoryMults(),
-    })
-    const draft = ensureDraftSkill(effect)
-    draft.category = saved.categoryId
-    draft.subcategoryId = saved.id
-    setEffectSkillTargets(effect, [
-      ...skillTargetsOf(effect),
-      { category: saved.categoryId, subcategoryId: saved.id },
-    ])
-    creatingSubcatForId.value = null
-    newSubcat.value = {
-      agentId: props.agentId || agentId,
-      name: '',
-      categoryId: saved.categoryId,
-      countsAsFollowUp: false,
-    }
-    subcatMessage.value = `已添加小类「${saved.name}」`
-  } catch (err) {
-    subcatError.value = err instanceof Error ? err.message : '添加失败'
-  }
-}
-
-function openCreateSubcat(effect: BuffEffect) {
-  creatingSubcatForId.value = effect.id
-  const draft = ensureDraftSkill(effect)
-  const categoryId =
-    draft.category && draft.category !== 'follow_up' ? draft.category : 'basic'
-  newSubcat.value = {
-    agentId: props.agentId || '',
-    name: '',
-    categoryId,
-    countsAsFollowUp: false,
-  }
-  subcatError.value = ''
-  subcatMessage.value = ''
-}
-
-function closeCreateSubcat() {
-  creatingSubcatForId.value = null
-  subcatError.value = ''
-  subcatMessage.value = ''
-}
-
-function setAppliesToAnomaly(effect: BuffEffect, checked: boolean) {
-  if (props.onAppliesToAnomalyChange) {
-    props.onAppliesToAnomalyChange(effect, checked)
-    return
-  }
-  effect.appliesToAnomaly = checked ? true : undefined
-}
-
-function convertPreviewText(effect: BuffEffect): string {
-  const convert = effect.convert
-  if (!convert) return ''
-  const attrLabel =
-    CONVERT_FROM_OPTIONS.find((item) => item.id === convert.from)?.label ?? convert.from
-  const statLabel = buffStatFieldLabel(
-    BUFF_STAT_FIELDS.find((item) => item.key === effect.stat) ?? BUFF_STAT_FIELDS[0]!,
-  )
-  const initial = convert.initialBase ?? 0
-  const initialHint =
-    initial > 0 ? `，超出初始值 ${formatCalcDecimal(initial)} 的部分参与折算` : ''
-  if (convert.panelSource === 'manual') {
-    const base = convert.defaultBase ?? 0
-    const amount = resolveConvertValue(effect, {})
-    const uncappedAmount = resolveConvertValue(
-      { ...effect, convert: { ...convert, cap: null } },
-      {},
-    )
-    const capped = amount !== uncappedAmount
-    const rounded = formatCalcDecimal(amount)
-    const baseExpr =
-      initial > 0
-        ? `max(0, ${formatCalcDecimal(base)} − ${formatCalcDecimal(initial)})`
-        : formatCalcDecimal(base)
-    return `${attrLabel} ${baseExpr} × ${formatCalcDecimal(convert.ratioPercent ?? 0)}% = ${statLabel} ${amount < 0 ? '' : '+'}${rounded}${capped ? '（已达上限）' : ''}${initialHint}`
-  }
-  const sourceLabel = convert.panelSource === 'final' ? '局内' : '局外'
-  return `${sourceLabel}${attrLabel} × ${formatCalcDecimal(convert.ratioPercent ?? 0)}% → ${statLabel}，超出初始值部分实时折算${initialHint}`
-}
-
-function ensureConvert(effect: BuffEffect) {
-  if (!effect.convert) {
-    effect.convert = {
-      from: 'atk',
-      panelSource: 'external',
-      ratioPercent: 0,
-      cap: null,
-      defaultBase: null,
-      initialBase: 0,
-    }
-  }
-  if (!effect.convert.panelSource) {
-    effect.convert.panelSource = 'external'
-  }
-  if (effect.convert.defaultBase === undefined) {
-    effect.convert.defaultBase = null
-  }
-  if (effect.convert.initialBase == null || !Number.isFinite(effect.convert.initialBase)) {
-    effect.convert.initialBase = 0
-  }
-  return effect.convert
+  block.effects = result.effects
+  mergeError.value = ''
+  selectedRowKeys.value = []
 }
 
 defineExpose({
-  syncPack: () => packFromBlocks(model.value),
+  syncPack: () => {
+    const validation = validateEffectGroups(model.value)
+    if (!validation.ok) {
+      throw new Error(validation.errors.join('；'))
+    }
+    return packFromBlocks(model.value)
+  },
+  /** 上层保存成功后调用，清掉工具条的「未保存」提示 */
+  markSaved,
 })
 </script>
 
+
 <template>
   <div class="effect-editor">
-    <p v-if="hint !== ''" class="hint">
-      {{
-        hint ??
-        '每个效果块可包含多条效果。招式可多选动作（按顺序展示）；未选小类时整大类生效。属性限定可多选。默认：通用增益参与异常；招式伤害/倍率不参与，除非勾选「异常计算时也生效」。'
-      }}
-    </p>
+    <!-- 顶部工具条：当前编辑 + 块统计 + 保存状态（低频的搜索/切换收进下拉） -->
+    <header class="editor-toolbar">
+      <div v-if="ownerLabel || canSwitchOwner" class="owner-switch">
+        <button
+          type="button"
+          class="owner-btn"
+          :class="{ 'is-open': ownerMenuOpen }"
+          :disabled="!canSwitchOwner"
+          :title="ownerButtonTitle"
+          @click.stop="toggleOwnerMenu"
+        >
+          <span class="owner-prefix">当前编辑：</span>
+          <strong class="owner-name">{{ ownerName }}</strong>
+          <span v-if="canSwitchOwner" class="owner-caret" aria-hidden="true" />
+        </button>
 
-    <div v-if="!model.length" class="empty">暂无效果块</div>
-
-    <article v-for="(block, blockIndex) in model" :key="block.id" class="block-card">
-      <header class="block-head">
-        <label class="field name-field">
-          <span>效果块名称</span>
-          <input
-            v-model="block.name"
-            type="text"
-            autocomplete="off"
-            placeholder="可自定义名称"
-          />
-        </label>
-        <button type="button" class="danger-btn" @click="removeBlock(blockIndex)">删除块</button>
-      </header>
-
-      <label class="field note-field">
-        <span>块备注 / 注释</span>
-        <textarea
-          v-model="block.note"
-          rows="2"
-          autocomplete="off"
-          placeholder="可选说明、触发条件等"
-        />
-      </label>
-
-      <div v-for="(effect, effectIndex) in block.effects" :key="effect.id" class="effect-card">
-        <header class="effect-card-head">
-          <strong>效果 {{ effectIndex + 1 }}</strong>
-          <button type="button" class="danger-btn" @click="removeEffect(block, effectIndex)">
-            删除
-          </button>
-        </header>
-
-        <div class="grid">
-          <label class="field">
-            <span>作用情况</span>
-            <select
-              :value="effect.applySituation ?? 'global'"
-              @change="
-                (e) => {
-                  const v = (e.target as HTMLSelectElement).value
-                  effect.applySituation =
-                    v === 'stagger' || v === 'non_stagger' ? v : 'global'
-                }
-              "
-            >
-              <option value="global">全局</option>
-              <option value="stagger">失衡期</option>
-              <option value="non_stagger">非失衡期</option>
-            </select>
-          </label>
-
-          <div class="field field-span">
-            <span>作用域（可多选）· 当前：{{ buffScopeLabel(effect.scope) }}</span>
-            <div class="chip-row">
-              <label class="chip">
-                <input
-                  :key="isScopeChecked(effect, 'general') ? 'on' : 'off'"
-                  type="checkbox"
-                  :checked="isScopeChecked(effect, 'general')"
-                  @change="onScopeToggle(effect, 'general', ($event.target as HTMLInputElement).checked)"
-                />
-                <span>通用</span>
-              </label>
-              <label
-                v-for="opt in BUFF_SCOPE_OPTIONS.filter((item) => item.id !== 'general')"
-                :key="opt.id"
-                class="chip"
-                :class="{ 'chip-muted': isScopeLockedToGeneral(effect) }"
-                :title="isScopeLockedToGeneral(effect) ? '当前是「通用」（已覆盖全部子类）；点具体项会自动取消通用' : ''"
-              >
-                <input
-                  :key="isScopeChecked(effect, opt.id) ? 'on' : 'off'"
-                  type="checkbox"
-                  :checked="isScopeChecked(effect, opt.id)"
-                  @change="onScopeToggle(effect, opt.id, ($event.target as HTMLInputElement).checked)"
-                />
-                <span>{{ opt.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <label v-if="!lockApplyTarget" class="field">
-            <span>目标</span>
-            <select v-model="effect.applyTarget">
-              <option value="self">自身</option>
-              <option value="team">全队（含自己）</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>职业限制（谁受益）</span>
-            <select
-              :value="effect.applyProfession ?? ''"
-              @change="effect.applyProfession = ($event.target as HTMLSelectElement).value || null"
-            >
-              <option value="">不限</option>
-              <option v-for="role in AGENT_ROLES" :key="role" :value="role">
-                {{ role }}
-              </option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>数值类型</span>
-            <select
-              :value="effect.kind"
-              @change="onKindChange(effect, ($event.target as HTMLSelectElement).value as BuffEffect['kind'])"
-            >
-              <option value="fixed">固定</option>
-              <option value="stacked">叠层</option>
-              <option value="convert">转模</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>属性</span>
-            <select
-              :value="effect.stat"
-              @change="onStatChange(effect, ($event.target as HTMLSelectElement).value)"
-            >
-              <option
-                v-for="field in statFieldsFor(effect)"
-                :key="field.key"
-                :value="field.key"
-              >
-                {{ buffStatFieldLabel(field) }}
-              </option>
-            </select>
-          </label>
-
-          <div class="field field-span">
-            <span>属性限定（可多选）· 当前：{{ elementFilterSummary(effect) }}</span>
-            <div class="chip-row">
-              <label class="chip">
-                <input
-                  type="checkbox"
-                  :checked="isAllElements(effect)"
-                  @change="setAllElements(effect)"
-                />
-                <span>全部属性</span>
-              </label>
-              <label v-for="el in AGENT_ELEMENTS" :key="el" class="chip">
-                <input
-                  type="checkbox"
-                  :checked="isElementChecked(effect, el)"
-                  @change="toggleElement(effect, el)"
-                />
-                <span>{{ el }}</span>
-              </label>
-            </div>
-          </div>
-
-          <template v-if="hasBuffScope(effect.scope, 'skill')">
-            <div class="field field-span">
-              <span>已选招式（可多选，按顺序展示）</span>
-              <div class="chip-row">
-                <span
-                  v-for="(target, targetIndex) in skillTargetsOf(effect)"
-                  :key="`${target.category}-${target.subcategoryId ?? 'all'}-${targetIndex}`"
-                  class="skill-chip"
-                >
-                  {{ skillTargetLabel(target) }}
-                  <button
-                    type="button"
-                    class="chip-remove"
-                    aria-label="移除招式"
-                    @click="removeSkillTarget(effect, targetIndex)"
-                  >
-                    ×
-                  </button>
-                </span>
-                <span v-if="!skillTargetsOf(effect).length" class="muted">尚未添加招式</span>
-              </div>
-            </div>
-            <label class="field">
-              <span>添加·招式大类</span>
-              <select
-                :value="ensureDraftSkill(effect).category"
-                @change="
-                  (e) =>
-                    onDraftCategoryChange(
-                      effect,
-                      (e.target as HTMLSelectElement).value as BuffSkillTargetId,
-                    )
-                "
-              >
-                <option
-                  v-for="opt in skillTargetOptionsFor()"
-                  :key="opt.id"
-                  :value="opt.id"
-                >
-                  {{ opt.label }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>添加·招式小类</span>
-              <select v-model="ensureDraftSkill(effect).subcategoryId">
-                <option :value="null">
-                  {{
-                    ensureDraftSkill(effect).category === 'follow_up' ? '全部追加' : '整大类'
-                  }}
-                </option>
-                <option
-                  v-for="sub in subcategoriesForEffect(effect)"
-                  :key="sub.id"
-                  :value="sub.id"
-                >
-                  {{ sub.name }}
-                </option>
-              </select>
-            </label>
-            <div class="field subcat-actions">
-              <button type="button" class="ghost-btn" @click="addSkillTarget(effect)">
-                ＋ 添加动作
-              </button>
-              <button
-                v-if="canCreateSubcat(effect)"
-                type="button"
-                class="ghost-btn"
-                @click="openCreateSubcat(effect)"
-              >
-                ＋ 新建招式小类
-              </button>
-            </div>
-          </template>
-
-          <label class="field checkbox">
-            <input v-model="effect.enabledDefault" type="checkbox" />
-            <span>默认启用</span>
-          </label>
-
-          <label
-            v-if="!isAnomalyDamageScope(effect.scope)"
-            class="field checkbox"
-            title="默认：通用增益参与异常；招式伤害/倍率不参与。勾选后异常结算也会计入。邦布/音擎精炼下勾选会对所有精炼同步。"
-          >
+        <div v-if="ownerMenuOpen" class="owner-menu" @click.stop>
+          <slot name="owner-switcher" :close="closeOwnerMenu">
             <input
-              :checked="effect.appliesToAnomaly === true"
-              type="checkbox"
-              @change="
-                (e) => {
-                  setAppliesToAnomaly(effect, (e.target as HTMLInputElement).checked)
-                }
-              "
+              v-model="ownerSearch"
+              class="owner-search"
+              type="search"
+              placeholder="搜索名称 / 职业 / 属性"
+              autocomplete="off"
             />
-            <span>异常计算时也生效</span>
-          </label>
-        </div>
-
-        <div v-if="isCreatingSubcat(effect)" class="subcat-create">
-          <header class="subcat-create-head">
-            <p class="hint">新建招式小类（仅当前效果）</p>
-            <button type="button" class="close-subcat" aria-label="关闭" @click="closeCreateSubcat">
-              ×
-            </button>
-          </header>
-          <div class="grid">
-            <label v-if="!agentId" class="field">
-              <span>角色</span>
-              <select v-model="newSubcat.agentId">
-                <option value="">全部角色</option>
-                <option v-for="agent in agents" :key="agent.id" :value="agent.id">
-                  {{ agent.name }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>招式大类</span>
-              <select v-model="newSubcat.categoryId">
-                <option v-for="opt in SKILL_CATEGORY_OPTIONS" :key="opt.id" :value="opt.id">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </label>
-            <label class="field">
-              <span>小类名称</span>
-              <input v-model="newSubcat.name" type="text" placeholder="显示名称" />
-            </label>
-            <label class="field checkbox">
-              <input v-model="newSubcat.countsAsFollowUp" type="checkbox" />
-              <span>视为追加攻击</span>
-            </label>
-          </div>
-          <div class="subcat-create-actions">
-            <button type="button" class="ghost-btn" @click="createSubcategory(effect)">保存小类</button>
-            <button type="button" class="ghost-btn" @click="closeCreateSubcat">取消</button>
-          </div>
-          <p v-if="subcatError" class="err">{{ subcatError }}</p>
-          <p v-if="subcatMessage" class="ok">{{ subcatMessage }}</p>
-        </div>
-
-        <div class="field field-span team-prof-condition">
-          <label class="field">
-            <span>队内职业人数条件（与数值类型无关；勾选为恰好 N 人时生效）</span>
-            <select
-              :value="effect.teamProfession ?? ''"
-              @change="onTeamProfessionChange(effect, ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="">不限</option>
-              <option v-for="role in AGENT_ROLES" :key="`gate-${role}`" :value="role">
-                {{ role }}
-              </option>
-            </select>
-          </label>
-          <div v-if="effect.teamProfession" class="team-prof-tier-row team-prof-tier-row--gate">
-            <label v-for="n in 3" :key="`tier-${effect.id}-${n}`" class="tier-cell tier-cell--gate">
-              <span class="tier-head">
-                <input
-                  type="checkbox"
-                  :checked="isTeamProfessionTierOn(effect, n - 1)"
-                  @change="
-                    setTeamProfessionTierOn(
-                      effect,
-                      n - 1,
-                      ($event.target as HTMLInputElement).checked,
-                    )
-                  "
-                />
-                <span>恰好{{ n }}人时生效</span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div v-if="effect.kind === 'fixed'" class="grid">
-          <label class="field">
-            <span>数值</span>
-            <NumberStepper
-              :model-value="effect.value ?? 0"
-              :min="-999999"
-              :max="999999"
-              :step="0.0001"
-              @update:model-value="effect.value = $event"
-            />
-          </label>
-        </div>
-
-        <div v-else-if="effect.kind === 'stacked'" class="grid">
-          <label class="field">
-            <span>每层数值</span>
-            <NumberStepper
-              :model-value="effect.valuePerStack ?? 0"
-              :min="-999999"
-              :max="999999"
-              :step="0.0001"
-              @update:model-value="effect.valuePerStack = $event"
-            />
-          </label>
-          <label class="field">
-            <span>最大层数</span>
-            <NumberStepper
-              :model-value="effect.maxStacks ?? 1"
-              :min="1"
-              :max="99"
-              @update:model-value="effect.maxStacks = $event"
-            />
-          </label>
-          <label class="field">
-            <span>默认层数</span>
-            <NumberStepper
-              :model-value="effect.defaultStacks ?? 1"
-              :min="0"
-              :max="99"
-              @update:model-value="effect.defaultStacks = $event"
-            />
-          </label>
-        </div>
-
-        <div v-else-if="effect.kind === 'convert'" class="grid">
-          <label class="field">
-            <span>面板来源</span>
-            <select v-model="ensureConvert(effect).panelSource">
-              <option
-                v-for="opt in CONVERT_PANEL_SOURCE_OPTIONS"
-                :key="opt.id"
-                :value="opt.id"
+            <div class="owner-list">
+              <button
+                v-for="owner in filteredOwners"
+                :key="owner.id"
+                type="button"
+                class="owner-item"
+                :class="{ 'is-active': owner.id === ownerId }"
+                @click="pickOwner(owner.id)"
               >
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-          <label class="field">
-            <span>来源属性</span>
-            <select v-model="ensureConvert(effect).from">
-              <option v-for="opt in CONVERT_FROM_OPTIONS" :key="opt.id" :value="opt.id">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-          <label
-            v-if="ensureConvert(effect).panelSource === 'manual'"
-            class="field"
-          >
-            <span>自行设置基础值</span>
-            <NumberStepper
-              :model-value="ensureConvert(effect).defaultBase ?? 0"
-              :min="0"
-              :max="999999"
-              :step="0.0001"
-              @update:model-value="ensureConvert(effect).defaultBase = $event"
-            />
-          </label>
-          <label class="field">
-            <span>转换比例%</span>
-            <NumberStepper
-              :model-value="ensureConvert(effect).ratioPercent"
-              :min="-9999"
-              :max="9999"
-              :step="0.0001"
-              @update:model-value="ensureConvert(effect).ratioPercent = $event"
-            />
-          </label>
-          <label class="field">
-            <span>转模初始值</span>
-            <NumberStepper
-              :model-value="ensureConvert(effect).initialBase ?? 0"
-              :min="0"
-              :max="999999"
-              :step="0.0001"
-              @update:model-value="ensureConvert(effect).initialBase = $event"
-            />
-          </label>
-          <label class="field">
-            <span>上限（0=无上限）</span>
-            <NumberStepper
-              :model-value="ensureConvert(effect).cap ?? 0"
-              :min="0"
-              :max="999999"
-              :step="0.0001"
-              @update:model-value="
-                (v) => {
-                  ensureConvert(effect).cap = v > 0 ? v : null
-                }
-              "
-            />
-          </label>
-          <p class="convert-preview">{{ convertPreviewText(effect) }}</p>
+                <span class="owner-item-name">{{ owner.name }}</span>
+                <span v-if="owner.meta" class="owner-item-meta">{{ owner.meta }}</span>
+              </button>
+              <p v-if="!filteredOwners.length" class="owner-empty">没有匹配项</p>
+            </div>
+          </slot>
         </div>
       </div>
 
-      <button type="button" class="add-btn" @click="addEffect(block)">＋ 在此块添加效果</button>
-    </article>
+      <span class="toolbar-stats">
+        块 {{ model.length }} · 已录 {{ recordedBlocks }} · 效果 {{ totalEffects }} 条
+      </span>
 
-    <button type="button" class="add-btn" @click="addBlock">＋ 添加效果块</button>
+      <!-- 页面自带的切换器（如 影画 1..6 / 固定·精1..5）放进同一行工具条 -->
+      <slot name="toolbar-extra" />
+
+      <span class="toolbar-spacer" />
+
+      <span
+        class="save-state"
+        :class="`is-${saveStateResolved}`"
+        :title="
+          saveState === undefined
+            ? '本页是否有未保存改动（由本组件内的编辑动作判断）'
+            : '保存状态由所在页面同步'
+        "
+      >
+        {{ saveStateText }}
+      </span>
+
+      <button type="button" class="ghost-btn" @click="toggleMergeMode">
+        {{ mergeMode ? '退出合并模式' : '合并行…' }}
+      </button>
+    </header>
+
+    <p v-if="mergeMode" class="hint">
+      勾选左侧同块、同族、同值的行，再点右侧「合并选中」。
+      <span v-if="mergeError" class="err">{{ mergeError }}</span>
+    </p>
+    <p v-else-if="hint !== ''" class="hint">
+      {{
+        hint ??
+        '左列选块 / 选行；右列显示选中行的完整内容（全部常显）。改数值 / 目标 / 条件会整组一起改；[拆开] 清 groupId；[合并] 把同块同族同值的行写成同一个 groupId。'
+      }}
+    </p>
+
+    <div class="editor-body">
+      <!-- 左列：块 → 行 两级导航树（块可整块折叠，这是唯一的折叠） -->
+      <nav class="block-tree" aria-label="效果块与效果行">
+        <div v-for="block in orderedBlocks" :key="block.id" class="tree-block">
+          <div class="tree-block-head" :class="{ 'is-active': block.id === activeBlock?.id }">
+            <button
+              type="button"
+              class="tree-toggle"
+              :aria-expanded="!isBlockCollapsed(block.id)"
+              :title="isBlockCollapsed(block.id) ? '显示该块的行' : '隐藏该块的行'"
+              @click="toggleBlock(block.id)"
+            >
+              <span class="tree-caret" :class="{ 'is-collapsed': isBlockCollapsed(block.id) }" />
+            </button>
+            <button
+              type="button"
+              class="tree-block-btn"
+              :class="{ 'is-empty': block.effects.length === 0 }"
+              :title="`${block.name || '未命名块'} · ${block.effects.length} 条`"
+              @click="selectBlock(block)"
+            >
+              <span class="block-initial">{{ blockInitial(block.name) }}</span>
+              <span class="block-name">{{ block.name || '未命名块' }}</span>
+              <span class="block-count">{{ block.effects.length }}</span>
+              <span
+                v-if="blockSummaries.get(block.id)?.warn"
+                class="block-dot is-warn"
+                title="组内不一致"
+              />
+              <span
+                v-else-if="blockSummaries.get(block.id)?.ungrouped"
+                class="block-dot is-ungrouped"
+                title="未分组"
+              />
+            </button>
+          </div>
+
+          <ul v-show="!isBlockCollapsed(block.id)" class="tree-rows">
+            <li v-for="row in rowsOf(block)" :key="row.key" class="tree-row-wrap">
+              <input
+                v-if="mergeMode"
+                type="checkbox"
+                class="tree-row-check"
+                :checked="selectedRowKeys.includes(row.key)"
+                @change="toggleSelect(row)"
+              />
+              <button
+                type="button"
+                class="tree-row"
+                :class="{ 'is-active': row.key === selectedRowKey }"
+                :title="rowNavLabel(row)"
+                @click="selectRow(block, row)"
+              >
+                <span class="tree-row-label">{{ rowNavLabel(row) }}</span>
+                <span class="tree-row-badges">
+                  <span v-if="row.effects.length > 1" class="tree-badge">{{ row.effects.length }} 条</span>
+                  <span v-if="row.issues.length" class="tree-badge is-warn" title="组内不一致">⚠</span>
+                  <span
+                    v-else-if="row.heuristic && !row.groupId"
+                    class="tree-badge is-ungrouped"
+                    title="未分组"
+                  >
+                    未分组
+                  </span>
+                </span>
+              </button>
+            </li>
+            <li v-if="!rowsOf(block).length" class="tree-empty">（空块）</li>
+          </ul>
+        </div>
+
+        <button type="button" class="block-add" title="添加效果块" @click="addBlock">＋ 块</button>
+      </nav>
+
+      <!-- 右列：选中行的完整内容（永远展开，没有任何折叠控件） -->
+      <section class="block-work">
+        <template v-if="activeRow">
+          <article class="block-card">
+            <header class="block-head">
+              <label class="field name-field">
+                <span>效果块名称</span>
+                <input
+                  v-model="activeRow.block.name"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="可自定义名称"
+                />
+              </label>
+              <button type="button" class="danger-btn" @click="removeBlock(activeRow.block)">
+                删除块
+              </button>
+            </header>
+
+            <label class="field note-field">
+              <span>块备注 / 注释</span>
+              <textarea
+                v-model="activeRow.block.note"
+                class="note-input"
+                rows="2"
+                autocomplete="off"
+                placeholder="可选说明、触发条件等"
+              />
+            </label>
+
+            <p v-if="mergeMode" class="merge-block-actions">
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="selectedRowKeys.length < 2"
+                @click="mergeSelected(activeRow.block)"
+              >
+                合并选中（{{ selectedRowKeys.length }}）
+              </button>
+            </p>
+
+            <AdminBuffEffectRow
+              :key="activeRow.row.key"
+              :row="activeRow.row"
+              :agent-id="agentId"
+              :lock-apply-target="lockApplyTarget"
+              :merge-mode="mergeMode"
+              :selected="selectedRowKeys.includes(activeRow.row.key)"
+              :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
+              @change-zone="(zoneId, types) => onChangeZone(activeRow!.block, activeRow!.row, zoneId, types)"
+              @toggle-type="(type, checked) => onToggleType(activeRow!.block, activeRow!.row, type, checked)"
+              @split="onSplit(activeRow!.block, activeRow!.row)"
+              @remove="removeRow(activeRow!.block, activeRow!.row)"
+              @confirm-merge="onConfirmMerge(activeRow!.block, activeRow!.row)"
+              @align="onAlign(activeRow!.block, activeRow!.row)"
+              @toggle-select="toggleSelect(activeRow!.row)"
+            />
+
+            <button type="button" class="add-btn" @click="addEffect(activeRow.block)">
+              ＋ 在此块添加效果
+            </button>
+          </article>
+        </template>
+
+        <div v-else class="empty">
+          <span>从左侧选择一个效果</span>
+          <span class="muted">（还没有效果块时，点左列「＋ 块」新建）</span>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
-
 <style scoped>
 .effect-editor {
+  --buff-editor-title-size: 1rem;
+  --buff-editor-text-size: 0.9375rem;
+  --buff-editor-label-size: 0.875rem;
+  --buff-editor-meta-size: 0.8125rem;
+  --buff-editor-control-height: 2.25rem;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.55rem;
+}
+
+/* ── 顶部工具条 ── */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+}
+
+.owner-switch {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.owner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 22rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--buff-editor-text-size);
+  cursor: pointer;
+}
+
+.owner-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.owner-btn.is-open {
+  border-color: color-mix(in srgb, var(--color-heading) 45%, var(--color-border));
+}
+
+.owner-prefix {
+  opacity: 0.7;
+}
+
+.owner-name {
+  font-size: var(--buff-editor-title-size);
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 下拉指示：CSS 画的箭头（页面上不出现 ▸/▾ 字符） */
+.owner-caret {
+  flex: 0 0 auto;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-left: 0.1rem;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translateY(-0.1rem);
+  opacity: 0.6;
+}
+
+.owner-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  width: 17rem;
+  max-height: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.owner-search {
+  width: 100%;
+  min-height: var(--buff-editor-control-height);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-size: var(--buff-editor-text-size);
+}
+
+.owner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow-y: auto;
+  max-height: 17rem;
+}
+
+.owner-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.28rem 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--buff-editor-text-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.owner-item:hover {
+  background: color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+
+/* 下拉里的当前项：同薄荷强调色（原来是 heading 16% 的灰泥色） */
+.owner-item.is-active {
+  background: hsla(160, 100%, 37%, 0.14);
+}
+
+.owner-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-item-meta {
+  flex: 0 0 auto;
+  font-size: var(--buff-editor-text-size);
+  opacity: 0.6;
+}
+
+.owner-empty {
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: var(--buff-editor-text-size);
+  opacity: 0.6;
+}
+
+.toolbar-stats {
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.72;
+  white-space: nowrap;
+}
+
+.toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.save-state {
+  font-size: var(--buff-editor-meta-size);
+  white-space: nowrap;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  opacity: 0.85;
+}
+
+.save-state.is-dirty {
+  color: #d08b2c;
+  border-color: rgba(208, 139, 44, 0.5);
+}
+
+.save-state.is-saving {
+  color: #4d8bd8;
+  border-color: rgba(77, 139, 216, 0.5);
+}
+
+.save-state.is-saved,
+.save-state.is-clean {
+  opacity: 0.6;
+}
+
+/* ── 主体：左导航树 + 右内容 ── */
+.editor-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.block-tree {
+  position: sticky;
+  top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background-soft);
+}
+
+.tree-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.tree-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  border-radius: 8px;
+}
+
+/* 选中态：与「影画页签」「列表项」同一套薄荷强调色（hsla(160…)，见 adminCalculatorPanel.css）。
+   原先用 color-mix(heading 12%) 在暖纸底上是一层灰泥色，和左边导航的薄荷色打架。 */
+.tree-block-head.is-active {
+  background: hsla(160, 100%, 37%, 0.12);
+}
+
+.tree-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: var(--buff-editor-control-height);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 折叠指示：CSS 画的箭头（旋转 90° = 展开，0° = 收起） */
+.tree-caret {
+  width: 0.36rem;
+  height: 0.36rem;
+  border-right: 1px solid var(--color-text);
+  border-bottom: 1px solid var(--color-text);
+  transform: rotate(90deg);
+  opacity: 0.7;
+  transition: transform 0.12s ease;
+}
+
+.tree-caret.is-collapsed {
+  transform: rotate(0deg);
+}
+
+.tree-block-btn {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.3rem 0.35rem 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--buff-editor-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.block-initial {
+  display: none;
+  flex: 0 0 auto;
+  font-size: var(--buff-editor-meta-size);
+  font-weight: 600;
+}
+
+.tree-block-btn.is-empty {
+  opacity: 0.5;
+}
+
+.block-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.block-count {
+  flex: 0 0 auto;
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.6;
+}
+
+.block-dot {
+  flex: 0 0 auto;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+}
+
+.block-dot.is-warn {
+  background: #c45c5c;
+}
+
+.block-dot.is-ungrouped {
+  background: #dca028;
+}
+
+.tree-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.tree-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.tree-row-check {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.tree-row {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.4rem;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--buff-editor-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+}
+
+.tree-row.is-active {
+  border-left-color: hsl(160, 100%, 32%);
+  background: hsla(160, 100%, 37%, 0.16);
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.tree-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row-badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+}
+
+.tree-badge {
+  font-size: var(--buff-editor-meta-size);
+  line-height: 1.3;
+  padding: 0 0.22rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  opacity: 0.75;
+}
+
+.tree-badge.is-warn {
+  color: #c45c5c;
+  border-color: rgba(196, 92, 92, 0.55);
+}
+
+.tree-badge.is-ungrouped {
+  color: #dca028;
+  border-color: rgba(220, 160, 40, 0.55);
+}
+
+.tree-empty {
+  padding: 0.1rem 0.3rem;
+  font-size: var(--buff-editor-text-size);
+  opacity: 0.5;
+}
+
+.block-add {
+  margin-top: 0.15rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.3rem 0.45rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: var(--buff-editor-text-size);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.block-work {
+  min-width: 0;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.76rem;
-  opacity: 0.72;
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.75;
   line-height: 1.45;
   color: var(--color-text);
 }
 
 .empty {
-  font-size: 0.85rem;
-  opacity: 0.65;
-  padding: 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--buff-editor-title-size);
+  opacity: 0.7;
+  padding: 1rem 0.5rem;
+}
+
+.muted {
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.6;
+}
+
+.merge-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
 }
 
 .block-card {
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 0.85rem;
+  padding: 0.7rem;
   background: var(--color-background-soft);
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.75rem;
 }
 
 .block-head {
@@ -989,53 +1174,25 @@ defineExpose({
   gap: 0.75rem;
   align-items: end;
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .name-field {
-  flex: 1;
-}
-
-.effect-card {
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 0.7rem;
-  background: var(--color-background);
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.effect-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-@media (min-width: 900px) {
-  .grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  flex: 1 1 15rem;
+  min-width: 0;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.76rem;
+  font-size: var(--buff-editor-label-size);
   color: var(--color-text);
 }
 
-.field.checkbox {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.4rem;
-  padding-top: 1.1rem;
+.field > span {
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .field input[type='text'],
@@ -1045,189 +1202,56 @@ defineExpose({
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-text);
-  padding: 0.4rem 0.5rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.4rem 0.65rem;
   font: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
+  width: 100%;
+  min-width: 0;
+}
+
+.field.name-field input[type='text'] {
+  min-height: 2.5rem;
+  font-size: var(--buff-editor-title-size);
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .field textarea {
   resize: vertical;
-  min-height: 2.6rem;
-  line-height: 1.4;
+  min-height: 4rem;
+  line-height: 1.5;
 }
 
-.note-field {
+.note-input {
   width: 100%;
-}
-
-.convert-preview {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0.35rem 0.5rem;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-border) 25%, transparent);
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.subcat-actions {
-  justify-content: end;
-  padding-top: 1.1rem;
-}
-
-.subcat-create {
-  border: 1px dashed var(--color-border);
-  border-radius: 8px;
-  padding: 0.65rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  background: var(--color-background-soft, transparent);
-}
-
-.subcat-create-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.subcat-create-head .hint {
-  margin: 0;
-}
-
-.close-subcat {
-  border: none;
-  background: transparent;
-  color: var(--color-text);
-  font-size: 1.35rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 0.25rem;
-}
-
-.subcat-create-actions {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.field-span {
-  grid-column: 1 / -1;
-}
-
-.team-prof-tiers {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.team-prof-condition {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.team-prof-condition > .field {
-  max-width: 320px;
-}
-
-.team-prof-tier-row--gate {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.tier-cell--gate {
-  padding: 0.4rem 0.55rem;
-}
-
-.team-prof-tier-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-
-.tier-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 0.45rem 0.55rem;
   background: var(--color-background);
-}
-
-.tier-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.78rem;
   color: var(--color-text);
-}
-
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.2rem 0.55rem;
-  font-size: 0.74rem;
-  background: var(--color-background);
-  cursor: pointer;
-}
-
-.skill-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 0.2rem 0.45rem 0.2rem 0.55rem;
-  font-size: 0.74rem;
-  background: color-mix(in srgb, var(--color-background) 80%, var(--color-border));
-}
-
-/* 作用域多选：当前是「通用」时具体项**提示性**变淡（仍可点，点了会自动取消通用） */
-.chip-muted {
-  opacity: 0.72;
-}
-
-.chip-remove {
-  border: none;
-  background: transparent;
-  color: var(--color-text);
-  cursor: pointer;
-  font-size: 0.95rem;
-  line-height: 1;
-  padding: 0 0.1rem;
-  opacity: 0.7;
-}
-
-.chip-remove:hover {
-  opacity: 1;
-}
-
-.muted {
-  font-size: 0.74rem;
-  opacity: 0.6;
+  padding: 0.4rem 0.65rem;
+  font: inherit;
+  font-size: var(--buff-editor-text-size);
+  resize: vertical;
+  min-height: 4rem;
+  line-height: 1.5;
 }
 
 .add-btn,
-.danger-btn,
-.ghost-btn {
+.ghost-btn,
+.danger-btn {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-background);
   color: var(--color-heading);
-  padding: 0.4rem 0.7rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.35rem 0.65rem;
   cursor: pointer;
-  font-size: 0.82rem;
+  font-family: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .danger-btn {
@@ -1235,15 +1259,54 @@ defineExpose({
   border-color: rgba(196, 92, 92, 0.4);
 }
 
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .err {
   margin: 0;
   color: #c45c5c;
-  font-size: 0.78rem;
+  font-size: var(--buff-editor-text-size);
 }
 
-.ok {
-  margin: 0;
-  color: hsl(160, 100%, 32%);
-  font-size: 0.78rem;
+/* ── 响应式：只压左列（220 → 180 → 56 窄条），右列宽度不动 ── */
+@media (max-width: 1200px) {
+  .editor-body {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .editor-body {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .block-tree {
+    padding: 0.2rem;
+  }
+
+  .tree-toggle,
+  .tree-rows,
+  .block-name {
+    display: none;
+  }
+
+  .block-initial {
+    display: inline;
+  }
+
+  .tree-block-btn {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    padding: 0.25rem 0.05rem;
+    font-size: var(--buff-editor-label-size);
+  }
+
+  .block-add {
+    padding: 0.25rem 0.05rem;
+    font-size: var(--buff-editor-label-size);
+  }
 }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import { useMaskClose } from '@/composables/useMaskClose'
 
 export interface EquipPickerChip {
   id: string
@@ -101,6 +102,9 @@ function pick(id: string) {
 function onChip(chip: EquipPickerChip) {
   emit('chipClick', chip.id)
 }
+
+// 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字出界松手不误关
+const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 </script>
 
 <template>
@@ -119,7 +123,13 @@ function onChip(chip: EquipPickerChip) {
   </button>
 
   <Teleport to="body">
-    <div v-if="open" class="equip-picker-overlay" role="presentation" @click.self="close">
+    <div
+      v-if="open"
+      class="equip-picker-overlay"
+      role="presentation"
+      @pointerdown="onMaskPointerDown"
+      @click="onMaskClick"
+    >
       <div class="equip-picker-modal" role="dialog" aria-modal="true" :aria-label="title">
         <header class="equip-picker-header">
           <div>
