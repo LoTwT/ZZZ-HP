@@ -44730,7 +44730,8 @@
                   },
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-yuzuha-m1-01"
                 },
                 {
                   "id": "eff-ms44dh8h-xb20mu",
@@ -44763,7 +44764,8 @@
                   },
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-yuzuha-m1-01"
                 }
               ],
               "enabledDefault": true
@@ -44826,7 +44828,8 @@
               },
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-yuzuha-m1-01"
             },
             {
               "id": "eff-ms44dh8h-xb20mu",
@@ -44859,7 +44862,8 @@
               },
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-yuzuha-m1-01"
             }
           ],
           "selfMods": {
@@ -62737,7 +62741,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-alice-m2-01"
                 },
                 {
                   "id": "legacy-team-disorderDmgBonus",
@@ -62763,7 +62768,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-alice-m2-01"
                 }
               ],
               "enabledDefault": true
@@ -62794,7 +62800,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-alice-m2-01"
             },
             {
               "id": "legacy-team-disorderDmgBonus",
@@ -62820,7 +62827,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-alice-m2-01"
             }
           ],
           "selfMods": {
@@ -73502,7 +73510,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-jane-m4-01"
                 },
                 {
                   "id": "legacy-team-disorderDmgBonus",
@@ -73527,7 +73536,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-jane-m4-01"
                 }
               ],
               "enabledDefault": true
@@ -73557,7 +73567,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-jane-m4-01"
             },
             {
               "id": "legacy-team-disorderDmgBonus",
@@ -73582,7 +73593,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-jane-m4-01"
             }
           ],
           "selfMods": {
@@ -89950,7 +89962,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-vivian-m0-01"
                 },
                 {
                   "id": "legacy-team-disorderDmgBonus",
@@ -89977,7 +89990,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-vivian-m0-01"
                 }
               ],
               "enabledDefault": true
@@ -90187,7 +90201,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-vivian-m0-01"
             },
             {
               "id": "legacy-team-disorderDmgBonus",
@@ -90214,7 +90229,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-vivian-m0-01"
             },
             {
               "id": "eff-ms4qu5nj-q9gcnu",
@@ -90568,7 +90584,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-vivian-m1-01"
                 },
                 {
                   "id": "legacy-team-disorderDmgBonus",
@@ -90593,7 +90610,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-vivian-m1-01"
                 }
               ],
               "enabledDefault": true
@@ -90623,7 +90641,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-vivian-m1-01"
             },
             {
               "id": "legacy-team-disorderDmgBonus",
@@ -90648,7 +90667,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-vivian-m1-01"
             }
           ],
           "selfMods": {
@@ -144175,7 +144195,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r1-01"
                 },
                 {
                   "id": "legacy-self-disorderDmgBonus",
@@ -144200,7 +144221,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r1-01"
                 }
               ],
               "enabledDefault": true
@@ -144280,7 +144302,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r1-01"
             },
             {
               "id": "legacy-self-disorderDmgBonus",
@@ -144305,7 +144328,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r1-01"
             }
           ],
           "selfMods": {
@@ -144538,7 +144562,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r2-01"
                 },
                 {
                   "id": "legacy-self-disorderDmgBonus",
@@ -144563,7 +144588,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r2-01"
                 }
               ],
               "enabledDefault": true
@@ -144642,7 +144668,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r2-01"
             },
             {
               "id": "legacy-self-disorderDmgBonus",
@@ -144667,7 +144694,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r2-01"
             }
           ],
           "selfMods": {
@@ -144900,7 +144928,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r3-01"
                 },
                 {
                   "id": "legacy-self-disorderDmgBonus",
@@ -144925,7 +144954,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r3-01"
                 }
               ],
               "enabledDefault": true
@@ -145004,7 +145034,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r3-01"
             },
             {
               "id": "legacy-self-disorderDmgBonus",
@@ -145029,7 +145060,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r3-01"
             }
           ],
           "selfMods": {
@@ -145262,7 +145294,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r4-01"
                 },
                 {
                   "id": "legacy-self-disorderDmgBonus",
@@ -145287,7 +145320,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r4-01"
                 }
               ],
               "enabledDefault": true
@@ -145366,7 +145400,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r4-01"
             },
             {
               "id": "legacy-self-disorderDmgBonus",
@@ -145391,7 +145426,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r4-01"
             }
           ],
           "selfMods": {
@@ -145624,7 +145660,8 @@
                   "valuePerStack": 0,
                   "defaultStacks": 1,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r5-01"
                 },
                 {
                   "id": "legacy-self-disorderDmgBonus",
@@ -145649,7 +145686,8 @@
                   "defaultStacks": 1,
                   "appliesToAnomaly": true,
                   "enabledDefault": true,
-                  "note": ""
+                  "note": "",
+                  "groupId": "gk-Angel_In_The_Shell-r5-01"
                 }
               ],
               "enabledDefault": true
@@ -145728,7 +145766,8 @@
               "valuePerStack": 0,
               "defaultStacks": 1,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r5-01"
             },
             {
               "id": "legacy-self-disorderDmgBonus",
@@ -145753,7 +145792,8 @@
               "defaultStacks": 1,
               "appliesToAnomaly": true,
               "enabledDefault": true,
-              "note": ""
+              "note": "",
+              "groupId": "gk-Angel_In_The_Shell-r5-01"
             }
           ],
           "selfMods": {
@@ -253235,7 +253275,8 @@
                 "defaultStacks": 1,
                 "appliesToAnomaly": true,
                 "enabledDefault": true,
-                "note": ""
+                "note": "",
+                "groupId": "gk-SuitNotesFromtheChained-4pc-01"
               },
               {
                 "id": "eff-ms0amhdr-a6cild",
@@ -253260,7 +253301,8 @@
                 "defaultStacks": 1,
                 "appliesToAnomaly": true,
                 "enabledDefault": true,
-                "note": ""
+                "note": "",
+                "groupId": "gk-SuitNotesFromtheChained-4pc-01"
               }
             ],
             "enabledDefault": true
@@ -253315,7 +253357,8 @@
             "defaultStacks": 1,
             "appliesToAnomaly": true,
             "enabledDefault": true,
-            "note": ""
+            "note": "",
+            "groupId": "gk-SuitNotesFromtheChained-4pc-01"
           },
           {
             "id": "eff-ms0amhdr-a6cild",
@@ -253340,7 +253383,8 @@
             "defaultStacks": 1,
             "appliesToAnomaly": true,
             "enabledDefault": true,
-            "note": ""
+            "note": "",
+            "groupId": "gk-SuitNotesFromtheChained-4pc-01"
           }
         ],
         "selfMods": {
