@@ -183,6 +183,34 @@ const activeBlock = computed(
 const selectedRowKey = ref('')
 const collapsedBlocks = ref<Record<string, boolean>>({})
 
+/**
+ * 选中行的稳定锚点：行的 `key` 会随数据 patch 变化
+ * （勾/取消伤害类型、拆开、合并时 effect id / groupId 会重建），
+ * 所以额外记住「块 id + 乘区 + groupId + 序号」，数据变了也能落回同一行。
+ */
+interface RowAnchor {
+  blockId: string
+  zoneId: string
+  groupId?: string
+  index: number
+}
+const selectedAnchor = ref<RowAnchor | null>(null)
+
+type RowItem = { block: BuffEffectBlock; row: EffectRow }
+
+function applySelection(item: RowItem) {
+  selectedRowKey.value = item.row.key
+  selectedBlockId.value = item.block.id
+  const rows = rowsOf(item.block)
+  const index = rows.findIndex((row) => row.key === item.row.key)
+  selectedAnchor.value = {
+    blockId: item.block.id,
+    zoneId: item.row.zone?.id ?? '',
+    groupId: item.row.groupId,
+    index: index < 0 ? 0 : index,
+  }
+}
+
 function isBlockCollapsed(blockId: string) {
   return collapsedBlocks.value[blockId] === true
 }
@@ -195,7 +223,7 @@ function toggleBlock(blockId: string) {
 }
 
 /** 所有行（按块展示顺序展开），右列只渲染选中的那一行 */
-const allRows = computed(() =>
+const allRows = computed<RowItem[]>(() =>
   orderedBlocks.value.flatMap((block) => rowsOf(block).map((row) => ({ block, row }))),
 )
 
@@ -203,17 +231,42 @@ const activeRow = computed(
   () => allRows.value.find((item) => item.row.key === selectedRowKey.value) ?? null,
 )
 
-watch(
-  allRows,
-  (list) => {
-    if (!list.some((item) => item.row.key === selectedRowKey.value)) {
-      const first = list[0]
-      selectedRowKey.value = first?.row.key ?? ''
-      if (first) selectedBlockId.value = first.block.id
+/** 数据 patch 后重新落位：优先同 key，其次按锚点（同块同乘区 → 同 groupId / 同序号） */
+function resolveSelection() {
+  const list = allRows.value
+  if (!list.length) {
+    selectedRowKey.value = ''
+    selectedAnchor.value = null
+    return
+  }
+
+  const current = list.find((item) => item.row.key === selectedRowKey.value)
+  if (current) {
+    // 仍是同一行：只刷新锚点（序号/groupId 可能变了）
+    applySelection(current)
+    return
+  }
+
+  const anchor = selectedAnchor.value
+  if (anchor) {
+    const inBlock = list.filter((item) => item.block.id === anchor.blockId)
+    const sameZone = inBlock.filter((item) => (item.row.zone?.id ?? '') === anchor.zoneId)
+    const hit =
+      sameZone.find((item) => anchor.groupId && item.row.groupId === anchor.groupId) ??
+      sameZone[anchor.index] ??
+      sameZone[0] ??
+      inBlock[anchor.index] ??
+      inBlock[0]
+    if (hit) {
+      applySelection(hit)
+      return
     }
-  },
-  { immediate: true },
-)
+  }
+
+  applySelection(list[0]!)
+}
+
+watch(allRows, resolveSelection, { immediate: true })
 
 watch(
   () => model.value.map((block) => block.id).join('|'),
@@ -243,14 +296,13 @@ function rowNavLabel(row: EffectRow) {
 }
 
 function selectRow(block: BuffEffectBlock, row: EffectRow) {
-  selectedBlockId.value = block.id
-  selectedRowKey.value = row.key
+  applySelection({ block, row })
 }
 
 function selectBlock(block: BuffEffectBlock) {
   selectedBlockId.value = block.id
   const firstRow = rowsOf(block)[0]
-  if (firstRow) selectedRowKey.value = firstRow.key
+  if (firstRow) applySelection({ block, row: firstRow })
 }
 
 /** 窄条模式下的块图标：取块名前两个字 */
@@ -535,6 +587,9 @@ defineExpose({
       >
         {{ saveStateText }}
       </span>
+
+      <!-- 页面级动作（保存 / 删除）跟保存状态并排放在右上角 -->
+      <slot name="toolbar-actions" />
 
       <button type="button" class="ghost-btn" @click="toggleMergeMode">
         {{ mergeMode ? '退出合并模式' : '合并行…' }}

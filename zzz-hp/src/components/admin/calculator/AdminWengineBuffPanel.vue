@@ -378,6 +378,19 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
               </button>
             </div>
           </template>
+          <template #toolbar-actions>
+            <button type="submit" class="submit-btn submit-btn--toolbar" :disabled="saving">
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
+            <button
+              v-if="selectedId"
+              type="button"
+              class="danger-btn danger-btn--toolbar"
+              @click="removeItem"
+            >
+              删除
+            </button>
+          </template>
           <template #owner-switcher="{ close }">
             <AdminBuffOwnerSwitcher
               :items="ownerItems"
@@ -426,6 +439,19 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
                 精{{ rank }}
               </button>
             </div>
+          </template>
+          <template #toolbar-actions>
+            <button type="submit" class="submit-btn submit-btn--toolbar" :disabled="saving">
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
+            <button
+              v-if="selectedId"
+              type="button"
+              class="danger-btn danger-btn--toolbar"
+              @click="removeItem"
+            >
+              删除
+            </button>
           </template>
           <template #owner-switcher="{ close }">
             <AdminBuffOwnerSwitcher
@@ -532,15 +558,6 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
 
         <p v-if="error" class="form-error">{{ error }}</p>
         <p v-if="message" class="form-success">{{ message }}</p>
-
-        <div class="actions">
-          <button type="submit" class="submit-btn" :disabled="saving">
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
-          <button v-if="selectedId" type="button" class="danger-btn" @click="removeItem">
-            删除
-          </button>
-        </div>
       </form>
   </div>
 </template>
@@ -599,5 +616,16 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
   display: flex;
   align-items: center;
   gap: 0.6rem;
+}
+
+/* 保存 / 删除：跟「✓ 无改动 / ● 未保存」并排放在工具条右侧 */
+.submit-btn--toolbar {
+  padding: 0.18rem 0.7rem;
+  font-size: 0.76rem;
+}
+
+.danger-btn--toolbar {
+  padding: 0.18rem 0.55rem;
+  font-size: 0.76rem;
 }
 </style>
