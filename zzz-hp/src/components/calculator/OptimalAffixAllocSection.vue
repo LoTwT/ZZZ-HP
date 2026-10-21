@@ -68,7 +68,6 @@ import {
   evaluateAffixCounts,
   evaluateAffixCountsForSweep,
   clearAffixEvalCache,
-  evaluateOptimalEventDetail,
   withAffixLibraryExtraGains,
   buildDirectAffixCounts,
   buildAnomalyAffixCounts,
@@ -118,6 +117,7 @@ import {
   readHitEvalCache,
   writeHitEvalCache,
 } from '@/utils/hitEvalCache'
+import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 
 import {
   computeAffixBenefitSeriesForTable,
@@ -1708,9 +1708,7 @@ function recomputeSkillFlowHitMaps() {
     const key = hitEvalCacheKey(buildHitEvalFingerprint(hit), contextToken, external, false)
     let entry = readHitEvalCache(key)
     if (!entry) {
-      const detail = evaluateOptimalEventDetail(flowCtx, external, hit, {
-        includeDetails: false,
-      })
+      const detail = evaluateSkillFlowHit(flowCtx, external, hit)
       if (!detail) return
       entry = {
         hitId: hit.id,
@@ -3438,6 +3436,18 @@ watch(
 )
 
 defineExpose({
+  resolveFlowCalculationDetail(hitId: string) {
+    if (!isSectionActive.value) return null
+    void skillFlowContextFingerprint.value
+    const hit = props.hits?.find((item) => item.id === hitId)
+    const external = skillFlowExternal.value
+    if (!hit || !external) return null
+    const allocatedGains = props.skillFlowMainExternalOverride
+      ? (props.skillFlowSourceExtraGains ?? [])
+      : []
+    const context = withAffixLibraryExtraGains(evalCtx.value, allocatedGains)
+    return resolveSkillFlowCalculationDetail(context, external, hit)
+  },
   buffBreakdown: computed(() => displayEval.value?.breakdown ?? null),
   displayEval,
   previewFinalPanel,

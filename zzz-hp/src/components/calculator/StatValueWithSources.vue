@@ -8,8 +8,11 @@ defineProps<{
 }>()
 
 const triggerRef = ref<HTMLElement | null>(null)
+const tipRef = ref<HTMLElement | null>(null)
 const tipVisible = ref(false)
 const tipStyle = ref<Record<string, string>>({})
+let hideTipTimer: ReturnType<typeof setTimeout> | null = null
+let pointerOverTip = false
 
 function getTipWidth() {
   if (window.innerWidth <= 768) {
@@ -43,12 +46,39 @@ async function updateTipPosition() {
 }
 
 function onShow() {
+  clearHideTipTimer()
   tipVisible.value = true
   updateTipPosition()
 }
 
+function clearHideTipTimer() {
+  if (hideTipTimer == null) return
+  clearTimeout(hideTipTimer)
+  hideTipTimer = null
+}
+
 function onHide() {
+  clearHideTipTimer()
+  pointerOverTip = false
   tipVisible.value = false
+}
+
+function scheduleHideTip() {
+  clearHideTipTimer()
+  hideTipTimer = setTimeout(() => {
+    hideTipTimer = null
+    if (!pointerOverTip) onHide()
+  }, 220)
+}
+
+function onTipMouseEnter() {
+  pointerOverTip = true
+  clearHideTipTimer()
+}
+
+function onTipMouseLeave() {
+  pointerOverTip = false
+  scheduleHideTip()
 }
 
 function onToggle() {
@@ -62,6 +92,7 @@ function onDocumentPointerDown(event: Event) {
   const target = event.target
   if (!(target instanceof Node)) return
   if (triggerRef.value?.contains(target)) return
+  if (tipRef.value?.contains(target)) return
   onHide()
 }
 
@@ -77,6 +108,7 @@ if (typeof window !== 'undefined') {
 }
 
 onBeforeUnmount(() => {
+  clearHideTipTimer()
   if (typeof window === 'undefined') return
   window.removeEventListener('scroll', onScrollOrResize, true)
   window.removeEventListener('resize', onScrollOrResize)
@@ -90,18 +122,21 @@ onBeforeUnmount(() => {
     class="stat-value"
     tabindex="0"
     @mouseenter="onShow"
-    @mouseleave="onHide"
+    @mouseleave="scheduleHideTip"
     @focus="onShow"
-    @blur="onHide"
+    @blur="scheduleHideTip"
     @click="onToggle"
   >
     <strong>{{ value }}</strong>
     <Teleport to="body">
       <div
         v-if="tipVisible && groups.length"
+        ref="tipRef"
         class="stat-value-tip"
         :style="tipStyle"
         role="tooltip"
+        @mouseenter="onTipMouseEnter"
+        @mouseleave="onTipMouseLeave"
       >
         <p class="tip-title">数值组成</p>
         <div class="tip-groups">
@@ -120,9 +155,12 @@ onBeforeUnmount(() => {
       </div>
       <div
         v-else-if="tipVisible"
+        ref="tipRef"
         class="stat-value-tip tip-empty"
         :style="tipStyle"
         role="tooltip"
+        @mouseenter="onTipMouseEnter"
+        @mouseleave="onTipMouseLeave"
       >
         暂无组成明细
       </div>
@@ -161,8 +199,18 @@ onBeforeUnmount(() => {
   line-height: 1.45;
   white-space: normal;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: text;
   overflow: visible;
+}
+
+.stat-value-tip::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
 }
 
 .stat-value-tip::after {

@@ -21,7 +21,7 @@
  *   - `collectNanokaSkills`：吃浏览器抓来的角色详情，算出招式录入计划（不写库）；
  *   - `applyNanokaSkills`：按计划写库（`upsertSkill`，唯一写路径）。
  *   招式名与倍率是**确定值**（用户 2026-10-16 裁定），所以这条链路不需要逐字段复核：
- *   前端默认直接录入，只保留一个「先预览（不写入）」开关。倍率口径见 nanoka/nanokaSkillMapper.js。
+ *   前端统一先预览，再按勾选录入。倍率口径见 nanoka/nanokaSkillMapper.js。
  */
 import { listCalculatorBuffs, upsertAgent, upsertWengine } from './calculatorBuffService.js'
 import { listSkills, upsertSkill } from './skillLibraryService.js'
@@ -34,6 +34,7 @@ import {
   normalizeName,
 } from './nanoka/nanokaBasicsMapper.js'
 import { planAgentSkillImport } from './nanoka/nanokaSkillMapper.js'
+import { selectReviewedNanokaSkills } from '../utils/nanokaSkillReview.js'
 
 const AGENT_LABELS = {
   hp: '生命值',
@@ -384,10 +385,10 @@ function isNanokaSkill(skill) {
  *
  * 用 `listCalculatorBuffs()` 拿角色，用 `listSkills()` 数每个角色现有招式；
  * 返回 `[{ id, name, element, profession, skillCount, nanokaSkillCount }]`，
- * 只含 `nanokaSkillCount === 0` 的角色（按现有招式条数升序，再按名字），
- * 便于一眼看出「0 条」和「条数明显偏少」的差别。
+ * 默认只含 `nanokaSkillCount === 0` 的角色，includeExisting 可列全部角色供增量检查。
+ * 条数不用于判断招式是否完整。
  */
-export async function listNanokaSkillGaps() {
+export async function listNanokaSkillGaps({ includeExisting = false } = {}) {
   const [buffs, skills] = await Promise.all([listCalculatorBuffs(), listSkills()])
   const stat = new Map()
   for (const skill of skills) {
@@ -412,7 +413,7 @@ export async function listNanokaSkillGaps() {
         nanokaSkillCount: counts.nanokaSkillCount,
       }
     })
-    .filter((row) => row.nanokaSkillCount === 0)
+    .filter((row) => includeExisting || row.nanokaSkillCount === 0)
 
   rows.sort(
     (a, b) => a.skillCount - b.skillCount || a.name.localeCompare(b.name, 'zh-Hans-CN') || (a.id < b.id ? -1 : 1),
@@ -470,11 +471,11 @@ export async function collectNanokaSkills({ nanokaId, meta, detail, level = 12 }
     subcategories: buffs.skillSubcategories ?? [],
     level,
   })
-  return { agentId: String(agent.id), agentName: String(agent.name ?? ''), nanokaId: nanokaId == null ? null : String(nanokaId), plan }
+  return { agentId: String(agent.id), agentName: String(agent.name ?? ''), nanokaId: nanokaId == null ? null : String(nanokaId), supportsSelection: true, plan }
 }
 
 /**
- * 按计划**写库**（招式名与倍率是确定值，默认直接录入）。
+ * 重新计算计划，再按预览勾选项写库；倍率旧值变化时拒绝该角色的本次录入。
  *
  * 写库只用既有 `upsertSkill`（不新造 SQL 写路径）：
  *   - `create` 整条新建；
@@ -483,8 +484,10 @@ export async function collectNanokaSkills({ nanokaId, meta, detail, level = 12 }
  *
  * `dryRun: true` 时只返回计划，不写库。
  */
-export async function applyNanokaSkills({ nanokaId, meta, detail, level = 12, dryRun = false } = {}) {
-  const { agentId, agentName, plan } = await collectNanokaSkills({ nanokaId, meta, detail, level })
+export async function applyNanokaSkills({ nanokaId, meta, detail, level = 12, dryRun = false, selection } = {}) {
+  const collected = await collectNanokaSkills({ nanokaId, meta, detail, level })
+  const { agentId, agentName } = collected
+  const plan = selectReviewedNanokaSkills(collected.plan, selection)
   const details = []
   let created = 0
   let updated = 0

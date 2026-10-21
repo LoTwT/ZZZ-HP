@@ -58,6 +58,8 @@ const formulaSegments = computed((): DirectFormulaTerm[][] => {
 .formula-aligned-title {
   margin: 0;
   padding-top: 0.15rem;
+  color: var(--calc-text, #1c212a);
+  font-weight: 700;
   line-height: 1.45;
 }
 
@@ -80,32 +82,38 @@ const formulaSegments = computed((): DirectFormulaTerm[][] => {
 }
 
 .formula-aligned-term-label {
-  font-size: 0.75rem;
+  font-size: inherit;
   line-height: 1.35;
-  color: var(--calc-muted, #b7c0cd);
+  color: var(--calc-text, #1c212a);
   white-space: nowrap;
 }
 
 .formula-aligned-term-value {
-  font-size: 0.88rem;
+  font-size: inherit;
   line-height: 1.35;
+  color: var(--calc-text, #1c212a);
   white-space: nowrap;
+}
+
+.formula-aligned-term-value :deep(.stat-value > strong) {
+  color: var(--calc-text, #1c212a);
+  font-weight: 600;
 }
 
 .formula-aligned-op {
   flex-shrink: 0;
-  color: var(--calc-muted, #8a93a0);
-  font-size: 0.82rem;
+  color: var(--calc-text, #1c212a);
+  font-size: inherit;
   line-height: 1.35;
   user-select: none;
 }
 
 .formula-aligned-result--inline {
   flex-shrink: 0;
-  font-size: 0.88rem;
+  font-size: var(--calc-formula-result-font-size);
   line-height: 1.35;
   white-space: nowrap;
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
 }
 </style>

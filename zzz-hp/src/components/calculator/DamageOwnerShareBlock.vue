@@ -295,7 +295,7 @@ function eventSkillName(event: { displayName: string }): string {
                 'owner-event-detail-anchor--open': selectedEventId === event.eventId,
               }"
             >
-              <slot name="event-detail" />
+              <slot v-if="selectedEventId === event.eventId" name="event-detail" />
             </div>
           </li>
         </ul>

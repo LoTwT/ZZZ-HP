@@ -18,6 +18,8 @@ import type {
 } from '@/types/damageCalcHistory'
 import SkillFlowCard from '@/components/calculator/SkillFlowCard.vue'
 import SkillFlowStatsPanel from '@/components/calculator/SkillFlowStatsPanel.vue'
+import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
+import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import SkillDefinitionForm from '@/components/calculator/SkillDefinitionForm.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { listAllDamageCalcHistory } from '@/utils/damageCalcHistory'
@@ -37,7 +39,6 @@ import {
 } from '@/utils/resolvedHit'
 import { isLuminousAgent } from '@/utils/remielUtils'
 import {
-  buildSkillCalcZoneRows,
   formatSkillMultZoneAsPercent,
   pickSkillMultPercentRatio,
 } from '@/utils/skillCalcZones'
@@ -103,6 +104,7 @@ const props = defineProps<{
   hits?: ResolvedHit[]
   hitDamages?: Record<string, number>
   hitCalcResults?: Record<string, DamageCalcResult>
+  resolveCalculationDetail?: (hitId: string) => SkillFlowCalculationDetail | null
   /** 每人五大类技能等级；展示 nanoka 有效倍率用 */
   skillTalentLevelsByAgent?: Record<string, SkillTalentLevels | Partial<SkillTalentLevels>>
   /** 当前加载的方案名；未归档为空 */
@@ -1463,17 +1465,12 @@ const detailAgentTriggerId = computed(() => {
   return prepared.triggerAgentId ?? ''
 })
 
-const detailZoneRows = computed(() => {
-  // 乘区 / 最终伤害：流程整行或组内某段；准备 / 招式库不算伤
-  // 异常类：外侧汇总必暴击；详情内同时展示暴击 / 期望 / 不暴击。直伤仍为期望。
+const detailCalculation = computed(() => {
   const kind = detail.value?.kind
-  if (kind !== 'flow' && kind !== 'flowMember') return []
-  const skill = detailSkill.value
+  if (kind !== 'flow' && kind !== 'flowMember') return null
   const key = detailCalcKey.value
-  if (!skill || !key || detailSkipReason.value) return []
-  const result = props.hitCalcResults?.[key]
-  if (!result) return []
-  return buildSkillCalcZoneRows(result, skill.damageType)
+  if (!key || detailSkipReason.value) return null
+  return props.resolveCalculationDetail?.(key) ?? null
 })
 
 /** 详情「倍率%」：最终倍率区换算为百分点；触发者不合规则不展示倍率。
@@ -3999,16 +3996,11 @@ const showcaseTitle = computed(() => {
               />
 
               <p class="detail-section-title">计算过程</p>
-              <div v-if="detailZoneRows.length" class="zone-display-grid">
-                <div v-for="row in detailZoneRows" :key="row.label" class="zone-display-item">
-                  <span class="zone-display-label">{{ row.label }}</span>
-                  <span class="zone-display-val">{{ row.value }}</span>
-                </div>
-              </div>
+              <FlowCalculationDetail v-if="detailCalculation" :calculation="detailCalculation" />
               <p v-else class="empty-hint">
                 {{
                   detail.kind === 'flow' || detail.kind === 'flowMember'
-                    ? '还没有这段的结算结果。确认已加入流程并完成计算。'
+                    ? (detailSkipReason ?? '本条暂未计入伤害。请检查参与角色的面板是否已导入，以及当前面板来源是否可用。')
                     : '还没有结算结果。直伤预览在准备行；异常类要先加入准备并选双代理人。计算过程在流程详情里看。'
                 }}
               </p>

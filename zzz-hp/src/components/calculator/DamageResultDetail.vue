@@ -38,6 +38,8 @@ import {
   formatSettlementDmgMultZoneFormula,
 } from '@/utils/directDamageDisplay'
 import { normalizeDamageEnemyInput, resolveEnemyResistanceForElement } from '@/utils/enemyResistance'
+import type { DamageEventCritMode } from '@/types/calculator'
+import { DAMAGE_EVENT_CRIT_MODE_OPTIONS } from '@/utils/damageEvent'
 
 const props = defineProps<{
   calcParts: DamageCalcResult
@@ -58,6 +60,7 @@ const props = defineProps<{
   isMb: boolean
   /** direct=通用乘区+直伤；anomaly=通用乘区+异常子类 */
   show: 'direct' | 'anomaly'
+  critMode?: DamageEventCritMode
   anomalySubKind?: import('@/types/calculator').AnomalyDamageSubKind
   /** 紊乱/乱流：产生角色面板（用于倍率区来源提示） */
   producerFinalPanel?: PanelStats
@@ -95,6 +98,10 @@ const props = defineProps<{
 }>()
 
 const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
+const critMode = computed(() => props.critMode ?? 'expected')
+const critModeLabel = computed(() =>
+  DAMAGE_EVENT_CRIT_MODE_OPTIONS.find((mode) => mode.id === critMode.value)?.label ?? '期望',
+)
 
 function formatNumber(v: number) {
   return Math.round(v).toLocaleString('en-US')
@@ -290,7 +297,7 @@ const alignedGeneralFormula = computed((): AlignedFormulaGroup => {
 })
 
 const alignedDirectFormula = computed(() =>
-  buildAlignedDirectFormulaGroup(props.calcParts, formatFormulaNumber, formatNumber),
+  buildAlignedDirectFormulaGroup(props.calcParts, formatFormulaNumber, formatNumber, undefined, critMode.value),
 )
 
 const anomalyFormulaLabels = computed((): AnomalyFormulaAgentLabels => ({
@@ -307,6 +314,7 @@ const alignedAnomalyFormulas = computed((): AlignedFormulaGroup[] =>
     formatFormulaNumber,
     formatNumber,
     anomalyFormulaLabels.value,
+    critMode.value,
   ) as AlignedFormulaGroup[],
 )
 
@@ -1512,11 +1520,39 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       : [],
   }
 })
+/** 公式的结果与暴击乘区按本条结算口径解释；其余来源沿用完整面板明细。 */
+const formulaValueTips = computed(() => {
+  const tips = { ...valueTips.value }
+  const direct = alignedDirectFormula.value
+  const groups = props.show === 'direct' ? [direct] : alignedAnomalyFormulas.value
+  for (const group of groups) {
+    const segments = group === direct && direct.sumMultZones?.length
+      ? direct.sumMultZones.map((zone) => [...direct.terms, zone])
+      : [group.terms]
+    tips[group.key] = [{
+      label: group.key === 'anomalyBaseExpected' ? '异常基础计算' : `本条公式（${critModeLabel.value}）`,
+      items: [
+        segments.map((terms) => terms.map((term) => `${term.label} ${term.value}`).join(' × ')).join(' + '),
+        `= ${group.result}`,
+      ],
+    }]
+    for (const term of group.terms) {
+      if (term.tipsKey === 'critMultiplier' || term.tipsKey.endsWith('CritZone')) {
+        const key = term.tipsKey as ValueTipsKey
+        tips[key] = [
+          { label: '本条结算', items: [`${critModeLabel.value}：${term.label} = ${term.value}`] },
+          ...valueTips.value[key],
+        ]
+      }
+    }
+  }
+  return tips
+})
 </script>
 
 <template>
   <div class="damage-result-detail">
-    <h3 v-if="!calcParts.remielSelfRadianceActive" class="result-section-title">通用乘区</h3>
+    <h3 v-if="!calcParts.remielSelfRadianceActive" class="result-section-title">通用乘区 · 中间结果</h3>
     <p v-else class="result-subtotal">蕾米埃尔本人耀变不使用通用乘区，异常基础见下方公式。</p>
     <div v-if="!calcParts.remielSelfRadianceActive" class="formula-block formula-block--aligned">
       <div class="formula-aligned-group">
@@ -1544,7 +1580,9 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         </div>
       </div>
     </div>
-    <div v-if="!calcParts.remielSelfRadianceActive" class="result-grid">
+    <details v-if="!calcParts.remielSelfRadianceActive" class="calculation-parameters">
+      <summary>通用乘区明细</summary>
+      <div class="result-grid">
       <p>基础伤害（局内）：<StatValueWithSources :value="calcParts.baseDamage" :groups="valueTips.baseDamage" /></p>
       <p>增伤区：<StatValueWithSources :value="calcParts.dmgMultiplier" :groups="valueTips.dmgMultiplier" /></p>
       <p>防御区：<StatValueWithSources :value="calcParts.defenseMultiplier" :groups="valueTips.defenseMultiplier" /></p>
@@ -1552,17 +1590,20 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       <p>易伤区（含增益）：<StatValueWithSources :value="formatFormulaNumber(displayVulnerableMultiplier)" :groups="valueTips.vulnerableMultiplier" /></p>
       <p>失衡易伤区（含增益）：<StatValueWithSources :value="calcParts.staggerMultiplier" :groups="valueTips.staggerMultiplier" /></p>
       <p class="result-subtotal">通用乘区：<StatValueWithSources :value="formatFormulaNumber(calcParts.generalMultiplier, 2)" :groups="valueTips.generalMultiplier" /></p>
-    </div>
+      </div>
+    </details>
 
     <template v-if="show === 'direct'">
-      <h3 class="result-section-title">直伤期望伤害</h3>
+      <h3 class="result-section-title">{{ calcParts.useSharpenFormula ? '锐化' : '直伤' }}伤害 · {{ critModeLabel }}</h3>
       <div class="formula-block formula-block--aligned">
         <DirectDamageFormulaAligned
           :group="alignedDirectFormula"
-          :value-tips="valueTips"
+          :value-tips="formulaValueTips"
         />
       </div>
-      <div class="result-grid">
+      <details class="calculation-parameters">
+        <summary>直伤乘区明细与期望值</summary>
+        <div class="result-grid">
         <p>暴击率（计入上限 {{ calcParts.useSharpenFormula ? '2' : '1' }}）：<StatValueWithSources :value="calcParts.critRateRatio" :groups="valueTips.critRateRatio" /></p>
         <p>{{ calcParts.useSharpenFormula ? '锐爆区' : '暴击区' }}：<StatValueWithSources :value="calcParts.critMultiplier" :groups="valueTips.critMultiplier" /></p>
         <p>特殊乘区（含增益）：<StatValueWithSources :value="calcParts.specialMultiplier" :groups="valueTips.specialMultiplier" /></p>
@@ -1574,11 +1615,12 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         <p>有效防御项：<StatValueWithSources :value="calcParts.effectiveDefense" :groups="valueTips.effectiveDefense" /></p>
         <p>贯穿力（局内）：<StatValueWithSources :value="Math.round(piercePower).toLocaleString('en-US')" :groups="valueTips.piercePower" /></p>
         <p class="result-total">直伤期望伤害：<StatValueWithSources :value="Math.round(calcParts.directDamageExpected).toLocaleString('en-US')" :groups="valueTips.directDamageExpected" /></p>
-      </div>
+        </div>
+      </details>
     </template>
 
     <template v-else>
-      <h3 class="result-section-title">异常 / 紊乱 / 乱流期望伤害</h3>
+      <h3 class="result-section-title">异常类伤害 · {{ critModeLabel }}</h3>
       <div class="formula-block formula-block--aligned">
         <div
           v-for="group in alignedAnomalyFormulas"
@@ -1596,28 +1638,31 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
               <div class="formula-aligned-term">
                 <span class="formula-aligned-term-label">{{ term.label }}</span>
                 <span class="formula-aligned-term-value">
-                  <StatValueWithSources :value="term.value" :groups="valueTips[term.tipsKey]" />
+                  <StatValueWithSources :value="term.value" :groups="formulaValueTips[term.tipsKey]" />
                 </span>
               </div>
             </template>
             <span class="formula-aligned-op" aria-hidden="true">→</span>
-            <div v-if="group.dualResults?.length" class="formula-aligned-dual">
+            <div class="formula-aligned-result">
+              <StatValueWithSources :value="group.result" :groups="formulaValueTips[group.key]" />
+            </div>
+            <details v-if="group.dualResults?.length" class="calculation-parameters formula-comparison">
+              <summary>暴击口径对照</summary>
               <div
                 v-for="item in group.dualResults"
                 :key="`${group.key}-${item.label}`"
                 class="formula-aligned-result formula-aligned-result--dual"
               >
                 <span class="formula-aligned-term-label">{{ item.label }}</span>
-                <StatValueWithSources :value="item.value" :groups="valueTips[group.key]" />
+                <strong>{{ item.value }}</strong>
               </div>
-            </div>
-            <div v-else class="formula-aligned-result">
-              <StatValueWithSources :value="group.result" :groups="valueTips[group.key]" />
-            </div>
+            </details>
           </div>
         </div>
       </div>
-      <div class="result-grid">
+      <details class="calculation-parameters">
+        <summary>异常乘区明细与暴击对照</summary>
+        <div class="result-grid">
         <h4 class="result-subsection-title">异常基础期望</h4>
         <p>精通区：<StatValueWithSources :value="calcParts.masteryZone" :groups="valueTips.masteryZone" /></p>
         <p>等级区：<StatValueWithSources :value="calcParts.levelZone" :groups="valueTips.levelZone" /></p>
@@ -1759,15 +1804,31 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
           />
         </p>
         </template>
-      </div>
+        </div>
+      </details>
     </template>
   </div>
 </template>
 
 <style scoped>
 .damage-result-detail {
+  --calc-formula-result-color: #3c82af;
+  --calc-formula-result-font-size: 1.25rem;
   display: flex;
   flex-direction: column;
+}
+
+.calculation-parameters {
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+  color: var(--calc-text, #1c212a);
+}
+.calculation-parameters > summary {
+  cursor: pointer;
+  color: var(--calc-muted, #697588);
+}
+.formula-comparison {
+  flex-basis: 100%;
 }
 
 /* ===== 标题层：墨色、字重对比（editorial 风格） ===== */
@@ -1799,6 +1860,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
 .formula-block {
   display: flex;
   flex-direction: column;
+  font-size: 1rem;
   gap: 0.35rem;
   margin: 0.35rem 0 0.6rem;
   padding: 0.85rem 1rem;
@@ -1872,7 +1934,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
 }
 
 .formula-aligned-term-label {
-  font-size: 0.75rem;
+  font-size: inherit;
   line-height: 1.35;
   color: var(--calc-text, #1c212a);
   text-align: center;
@@ -1891,7 +1953,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
 }
 
 .formula-aligned-term-value {
-  font-size: 0.85rem;
+  font-size: inherit;
   line-height: 1.4;
   color: var(--calc-text, #1c212a);
   text-align: center;
@@ -1908,16 +1970,21 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   flex: 0 0 auto;
   align-self: center;
   color: var(--calc-text, #1c212a);
-  font-size: 0.78rem;
+  font-size: inherit;
 }
 
 .formula-aligned-result {
   flex: 0 0 auto;
   align-self: center;
-  font-size: 0.85rem;
+  font-size: var(--calc-formula-result-font-size);
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
   font-variant-numeric: tabular-nums;
+}
+
+.damage-result-detail :deep(.formula-aligned-result .stat-value > strong) {
+  font-weight: inherit;
+  border-bottom-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
 .formula-aligned-dual {
@@ -2001,6 +2068,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
 
 /* 暗夜模式：组件根重定义 --calc-*（照抄仓库既有约定：AffixBenefitTable 的 benefit-workbench 写法） */
 :global([data-theme='dark'] .damage-result-detail) {
+  --calc-formula-result-color: #8fc9ee;
   --calc-surface-2: rgba(0, 0, 0, 0.25);
   --calc-border: #2a2f37;
   --calc-text: #e8eaed;

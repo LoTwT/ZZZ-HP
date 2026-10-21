@@ -299,8 +299,8 @@ export async function collectNanokaBasics(payload: {
 /**
  * 缺 nanoka 招式的角色（`GET /api/admin/nanoka/agent-skill-gaps`）。
  *
- * 这个接口是**纯本地查询**（不联网、不写库）：招式名与倍率是确定值，所以这里只负责
- * 列出「谁还没有招式」；nanoka 侧的数字 id 由浏览器抓 `character.json` 后本地匹配。
+ * 纯本地查询（不联网、不写库），可包含已有招式的角色供增量检查。
+ * nanoka 数字 id 由浏览器抓 `character.json` 后匹配。
  */
 export interface NanokaSkillGap {
   id: string
@@ -309,7 +309,7 @@ export interface NanokaSkillGap {
   profession: string
   /** 该角色本地现有招式条数（含非 nanoka 来源） */
   skillCount: number
-  /** 其中 nanoka 来源的条数；本接口返回的行都是 0 */
+  /** 其中 nanoka 来源的条数，不代表招式已完整 */
   nanokaSkillCount: number
 }
 
@@ -340,6 +340,7 @@ export interface NanokaSkillPlanOverwrite {
   name: string
   from: number | null
   to: number
+  expect: Record<string, number | string | null>
   changed: {
     baseMult: boolean
     damagePercentage: boolean
@@ -386,6 +387,8 @@ export interface NanokaSkillCollectResult {
   agentId: string
   agentName: string
   nanokaId: string | null
+  /** 旧后端会忽略 selection；缺少此能力时禁止进入勾选录入。 */
+  supportsSelection?: boolean
   plan: NanokaSkillPlan
 }
 
@@ -426,9 +429,18 @@ export interface NanokaSkillPayload {
   level?: number
 }
 
-/** 列出「还没有 nanoka 招式」的角色（纯本地查询，不联网） */
-export async function listNanokaSkillGaps(): Promise<NanokaSkillGap[]> {
-  const { data } = await requestApi<NanokaSkillGap[]>('/api/admin/nanoka/agent-skill-gaps')
+export interface NanokaSkillSelection {
+  id: string
+  action: 'create' | 'overwrite'
+  expect?: Record<string, number | string | null>
+}
+
+/** 默认列出未采过招式的角色，includeExisting 可列全部本地角色。 */
+export async function listNanokaSkillGaps(
+  options: { includeExisting?: boolean } = {},
+): Promise<NanokaSkillGap[]> {
+  const suffix = options.includeExisting ? '?includeExisting=1' : ''
+  const { data } = await requestApi<NanokaSkillGap[]>(`/api/admin/nanoka/agent-skill-gaps${suffix}`)
   return data
 }
 
@@ -448,11 +460,11 @@ export async function collectNanokaSkills(
 }
 
 /**
- * 招式录入：算计划并写库（招式名与倍率是确定值，不需要逐字段复核）。
+ * 招式录入：重算计划，按 selection 限定写入；覆盖核对预览旧值。
  * `dryRun: true` 时后端只算不写，等价于 `/collect-skills`。
  */
 export async function applyNanokaSkills(
-  payload: NanokaSkillPayload & { dryRun?: boolean },
+  payload: NanokaSkillPayload & { dryRun?: boolean; selection?: NanokaSkillSelection[] },
 ): Promise<{ result: NanokaSkillApplyResult; message: string }> {
   const { data, message } = await requestApi<NanokaSkillApplyResult>(
     '/api/admin/nanoka/apply-skills',

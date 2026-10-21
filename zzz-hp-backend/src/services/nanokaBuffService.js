@@ -28,6 +28,7 @@ import {
   normalizeGroupId,
 } from '../utils/buffEffectConditions.js'
 import {
+  buildRulesTable,
   CONVERT_FROM_LABELS,
   CONVERT_PANEL_SOURCE_LABELS,
   CONVERT_SLOT_HINTS,
@@ -43,7 +44,7 @@ import {
   unableSlotsOf,
 } from './nanoka/nanokaBuffExtractor.js'
 import { normalizeSkillName } from './nanoka/nanokaSkillMapper.js'
-import { listCalculatorBuffs, upsertAgent, upsertWengine } from './calculatorBuffService.js'
+import { listCalculatorBuffs, normalizeEffectList, upsertAgent, upsertWengine } from './calculatorBuffService.js'
 import { listSkills, upsertSkill } from './skillLibraryService.js'
 import { upsertSkillSubcategory } from './skillSubcategoryService.js'
 
@@ -228,7 +229,7 @@ export function sanitizeEffect(input, index = 0) {
           : [String(raw.elementFilter)],
     kind,
     stat,
-    value: kind === 'convert' ? 0 : value,
+    value: kind === 'fixed' && !raw.stackable ? value : 0,
     stackable: Boolean(raw.stackable),
     maxStacks,
     valuePerStack: kind === 'stacked' ? valuePerStack || value : valuePerStack,
@@ -269,28 +270,31 @@ export function sanitizeEffect(input, index = 0) {
   return effect
 }
 
-/** 判重签名（**不看 note / groupId / elementFilter / id**：本地更精确的老条目不该被再追加一份） */
-function effectSignature(effect) {
-  const parts = [
-    effect.stat,
-    effect.kind,
-    effect.applyTarget,
-    effect.applySituation,
-    effect.applyProfession ?? '',
-    effect.teamProfession ?? '',
-    (effect.teamProfessionValues ?? []).map((item) => item ?? '').join('/'),
-    Math.max(1, Math.round(toNumber(effect.maxStacks, 1) || 1)),
-    toNumber(effect.value),
-    toNumber(effect.valuePerStack),
-    toNumber(effect.defaultStacks, 1),
-    Array.isArray(effect.elementFilter) ? effect.elementFilter.join('/') : (effect.elementFilter ?? 'all'),
-    (effect.skillTargets ?? []).map((t) => `${t.category}:${t.subcategoryId ?? ''}`).join(','),
-    effect.skillCategory ?? '',
-    effect.skillSubcategoryId ?? '',
-    (effect.conditions?.damageTypes ?? []).join(','),
-    effect.convert ? `${effect.convert.from}/${effect.convert.panelSource}/${toNumber(effect.convert.ratioPercent)}` : '',
-  ]
-  return parts.join('|')
+/** 同块判重：先按正式写库规则归一化；不比较 id、来源文案及展示分组。 */
+function effectSignature(input) {
+  const sanitized = sanitizeEffect(input)
+  // 回读会清空无职业限制的人数档，比较时必须与写库规则一致，否则每次重试都会追加。
+  const effect = normalizeEffectList([sanitized])[0] ?? sanitized
+  const sorted = (values) => [...new Set(values ?? [])].sort()
+  const skillTargets = effect.skillTargets?.length
+    ? effect.skillTargets
+    : effect.skillCategory
+      ? [{ category: effect.skillCategory, subcategoryId: effect.skillSubcategoryId ?? null }]
+      : []
+  return JSON.stringify({
+    stat: effect.stat, kind: effect.kind,
+    applyTarget: effect.applyTarget, applySituation: effect.applySituation,
+    applyProfession: effect.applyProfession, teamProfession: effect.teamProfession,
+    teamProfessionValues: effect.teamProfessionValues, teamProfessionMinCount: effect.teamProfessionMinCount,
+    value: effect.value, valuePerStack: effect.valuePerStack,
+    maxStacks: effect.maxStacks, defaultStacks: effect.defaultStacks, stackable: effect.stackable,
+    elementFilter: Array.isArray(effect.elementFilter) ? sorted(effect.elementFilter) : effect.elementFilter,
+    skillTargets: sorted(skillTargets.map((target) => JSON.stringify([target.category, target.subcategoryId ?? null]))),
+    damageTypes: effect.conditions?.damageTypes ?? [],
+    convert: effect.convert ?? null,
+    appliesToAnomaly: effect.appliesToAnomaly ?? null,
+    enabledDefault: effect.enabledDefault,
+  })
 }
 
 function sameEffect(a, b) {
@@ -432,6 +436,37 @@ export function mergeIntoSlot({ container, index, blocks, effects, blockHint }) 
   }
 }
 
+/** 新编辑器按明确的块 id 保存；不同来源不再挤入槽内首块。 */
+export function mergeEditorBlocksIntoSlot({ blocks, entries }) {
+  const list = blocks.map((block) => ({ ...block, effects: [...(block.effects ?? [])] }))
+  const appendedEffects = []
+  let duplicates = 0
+  let blockIsNew = false
+  const blockNames = new Set()
+  for (const { row, effect } of entries) {
+    const metadata = row.block
+    let block = list.find((item) => item.id === metadata.id)
+    if (!block) {
+      block = { id: metadata.id, name: metadata.name, note: metadata.note, enabledDefault: metadata.enabledDefault !== false, effects: [] }
+      list.push(block)
+      blockIsNew = true
+    } else {
+      block.name = String(metadata.name ?? block.name)
+      block.note = String(metadata.note ?? '')
+      block.enabledDefault = metadata.enabledDefault !== false
+    }
+    blockNames.add(block.name)
+    if (block.effects.some((existing) => sameEffect(existing, effect))) {
+      duplicates += 1
+      continue
+    }
+    const withId = ensureUniqueEffectIds([...list.flatMap((item) => item.effects), effect]).pop()
+    block.effects.push(withId)
+    appendedEffects.push(withId)
+  }
+  return { blocks: list, blockIndex: 0, blockName: [...blockNames].join(' / '), blockIsNew, added: appendedEffects.length, duplicates, appendedEffects }
+}
+
 /** 原文 + `[关键字]` 行追加进块 note（**追加不覆盖**；已含则不重复），并同步 `mindscapeNotes[i]` */
 export function appendSourceText(existing, text) {
   const current = typeof existing === 'string' ? existing.trim() : ''
@@ -530,7 +565,7 @@ export const MERGE_FIELD_LIST = [
   { id: 'teamProfession', label: '队伍职业条件' },
   { id: 'teamProfessionValues', label: '启用人数档' },
   { id: 'elementFilter', label: '元素过滤' },
-  { id: 'scope', label: '范围' },
+  { id: 'conditions', label: '伤害类型条件' },
   { id: 'skillTargets', label: '招式目标' },
   { id: 'skillCategory', label: '招式大类' },
   { id: 'skillSubcategoryId', label: '招式小类' },
@@ -648,8 +683,9 @@ export function smartMergeParse({ rows = [], keywords = [], anchors = null, agen
       continue
     }
 
-    const parsed = mapped.effect
+    const parsed = sanitizeEffect(mapped.effect)
     const nextEffect = { ...current }
+    delete nextEffect.scope
     const rowConflicts = []
     const filledFields = []
     for (const field of MERGE_FIELD_LIST) {
@@ -684,6 +720,7 @@ export function smartMergeParse({ rows = [], keywords = [], anchors = null, agen
     outRows.push({
       ...row,
       key,
+      blockReason: '',
       effect: nextEffect,
       dirty,
       conflicts: rowConflicts,
@@ -882,6 +919,7 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
   const list = Array.isArray(rows) ? rows : []
   const groups = new Map()
   const invalid = []
+  const validRows = []
   let failed = 0
 
   const slotKeyOf = (row) => {
@@ -904,6 +942,7 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
       invalid.push({ key: String(row?.key ?? ''), reason: err.message })
       continue
     }
+    validRows.push(row)
     const key = slotKeyOf(row)
     if (!groups.has(key)) groups.set(key, { row: row ?? {}, effects: [] })
     groups.get(key).effects.push({ row: row ?? {}, effect })
@@ -942,13 +981,16 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
         ? local[target.container][target.index ?? 0]
         : {}
     const blocks = readBlockList(containerValue)
-    const merged = mergeIntoSlot({
-      container: target.container,
-      index: target.index,
-      blocks,
-      effects: group.effects.map((item) => item.effect),
-      blockHint: sample?.blockHint,
-    })
+    const hasEditorBlocks = group.effects.every((item) => isPlainObject(item.row.block) && String(item.row.block.id ?? '').trim())
+    const merged = hasEditorBlocks
+      ? mergeEditorBlocksIntoSlot({ blocks, entries: group.effects })
+      : mergeIntoSlot({
+          container: target.container,
+          index: target.index,
+          blocks,
+          effects: group.effects.map((item) => item.effect),
+          blockHint: sample?.blockHint,
+        })
 
     // 原文 + `[关键字]` 行：**同一段原文只写一次**，该段的所有关键字行逐条列在后面（用户 2026-10-17：
     // 之前是按行追加，一段原文下 6 条关键字就把同一段原文重复贴了 6 遍，块备注全变成复读）。
@@ -978,7 +1020,7 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
         duplicate: noteState.duplicate || next.duplicate,
       }
     }
-    merged.blocks[merged.blockIndex].note = noteState.note
+    if (!hasEditorBlocks) merged.blocks[merged.blockIndex].note = noteState.note
 
     const effectsDetail = merged.appendedEffects.map((effect, index) => ({
       id: effect.id,
@@ -1029,18 +1071,25 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
   }
 
   // —— 招式文本：原文 + 关键字写进该技能的「描述」字段（`calculator_skills.note`，追加不覆盖）
-  const skillPlan = []
-  const skillRows = list.filter((row) => isPlainObject(row?.skillDesc))
-  for (const row of skillRows) {
+  const skillPlan = new Map()
+  const skillRowsBySource = new Map()
+  for (const row of validRows.filter((row) => isPlainObject(row?.skillDesc))) {
+    const key = JSON.stringify([row.skillDesc.agentId, row.skillDesc.skillName, row.rawText])
+    const entries = skillRowsBySource.get(key) ?? []
+    entries.push(row)
+    skillRowsBySource.set(key, entries)
+  }
+  for (const sourceRows of skillRowsBySource.values()) {
+    const row = sourceRows[0]
     const targets = matchSkillDescTargets(skills, {
       agentId: row.skillDesc.agentId,
       skillName: row.skillDesc.skillName,
     })
     const sourceText = row.rawText
-      ? formatSourceBlock({ rawText: row.rawText, effects: [{ slots: row.keywordSlots, convert: row.convert }] })
+      ? formatSourceBlock({ rawText: row.rawText, effects: sourceRows.map((item) => ({ slots: item.keywordSlots, convert: item.convert })) })
       : ''
     if (!targets.length) {
-      skillPlan.push({
+      skillPlan.set(`missing:${row.skillDesc.agentId}:${row.skillDesc.skillName}`, {
         agentId: String(row.skillDesc.agentId ?? ''),
         skillName: String(row.skillDesc.skillName ?? ''),
         appended: false,
@@ -1050,12 +1099,13 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
       continue
     }
     for (const skill of targets) {
-      const next = appendSourceText(skill.note, sourceText)
-      skillPlan.push({
+      const previous = skillPlan.get(String(skill.id))
+      const next = appendSourceText(previous?.note ?? skill.note, sourceText)
+      skillPlan.set(String(skill.id), {
         skillId: String(skill.id),
         skillName: String(skill.name ?? ''),
-        appended: next.appended,
-        duplicate: next.duplicate,
+        appended: Boolean(previous?.appended || next.appended),
+        duplicate: Boolean(previous?.duplicate || next.duplicate),
         note: next.note,
         reason: '',
       })
@@ -1064,7 +1114,7 @@ export function planBuffApply({ kind, local, rows = [], skills = [], subcategori
 
   return {
     groups: outGroups,
-    skills: skillPlan,
+    skills: [...skillPlan.values()],
     anchors: planAnchorCreations({ rows: list, subcategories }).creations,
     unresolvedAnchors: planAnchorCreations({ rows: list, subcategories }).unresolved,
     updated,
@@ -1207,7 +1257,7 @@ export async function simplifyBuffTexts({ kind, nanokaId, items = [] } = {}) {
 /**
  * 写入（**唯一写库入口**；`dryRun: true` 只算不写）。
  *
- * `rows` 是阶段二确认过的增益行（一条 = 一条关键字 = 一条增益，一对一）。
+ * `rows` 是阶段二确认过的最终效果行；新版调用携带明确的 block，可由一个来源拆分出多条。
  */
 export async function applyBuffItems({ kind, id, rows = [], dryRun = false } = {}) {
   const normalizedKind = kind === 'wengine' ? 'wengine' : kind === 'agent' ? 'agent' : ''

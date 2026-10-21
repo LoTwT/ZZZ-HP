@@ -474,6 +474,12 @@ export function planAgentSkillImport({
           name: existing.name,
           from: existing.baseMult,
           to: seg.baseMult,
+          expect: {
+            baseMult: existing.baseMult ?? null,
+            damagePercentage: existing.damagePercentage ?? null,
+            damagePercentageGrowth: existing.damagePercentageGrowth ?? null,
+            multSource: existing.multSource ?? null,
+          },
           changed: {
             baseMult: !sameMult,
             damagePercentage: !samePercentage,
