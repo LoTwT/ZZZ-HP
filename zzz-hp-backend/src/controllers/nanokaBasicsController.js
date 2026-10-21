@@ -8,7 +8,7 @@
  *   - `GET /agent-skill-gaps`：纯本地查询，列出还没有 nanoka 招式的角色；
  *   - `POST /collect-skills`：吃浏览器抓来的角色详情，只算计划不写库；
  *   - `POST /apply-skills`：算计划并写库（`upsertSkill`），`dryRun: true` 时只算不写。
- * 招式名与倍率是确定值，这条链路不需要逐字段复核（用户 2026-10-16 裁定）。
+ * 前端统一先采集预览，再提交明确勾选的新增/覆盖项。
  */
 import {
   applyNanokaCandidates,
@@ -80,9 +80,10 @@ export async function collectNanokaBasicsHandler(req, res) {
 /** GET /api/admin/nanoka/agent-skill-gaps —— 纯本地查询：还没有 nanoka 招式的角色（不联网、不写库） */
 export async function listNanokaSkillGapsHandler(req, res) {
   try {
-    const rows = await listNanokaSkillGaps()
+    const includeExisting = req.query?.includeExisting === '1'
+    const rows = await listNanokaSkillGaps({ includeExisting })
     const zero = rows.filter((row) => row.skillCount === 0).length
-    const message = `本地共 ${rows.length} 个角色没有 nanoka 招式（其中 ${zero} 个连本地招式也是 0 条）`
+    const message = includeExisting ? `可检查 ${rows.length} 个角色的招式（其中 ${zero} 个暂无招式）` : `本地共 ${rows.length} 个角色没有 nanoka 招式（其中 ${zero} 个连本地招式也是 0 条）`
     return success(res, rows, message)
   } catch (err) {
     return failInternal(res, err, '列出缺招式角色失败')
@@ -105,8 +106,8 @@ export async function collectNanokaSkillsHandler(req, res) {
 /** POST /api/admin/nanoka/apply-skills —— 算计划并写库；`dryRun: true` 时只算不写 */
 export async function applyNanokaSkillsHandler(req, res) {
   try {
-    const { nanokaId, meta, detail, level, dryRun } = req.body ?? {}
-    const data = await applyNanokaSkills({ nanokaId, meta, detail, level, dryRun: dryRun === true })
+    const { nanokaId, meta, detail, level, dryRun, selection } = req.body ?? {}
+    const data = await applyNanokaSkills({ nanokaId, meta, detail, level, dryRun: dryRun === true, selection })
     const head = `${data.agentName || data.agentId}`
     const message = data.dryRun
       ? `${head}：预览（未写入）——将新建 ${data.plan.create.length} 条 / 覆盖倍率 ${data.plan.overwrite.length} 条 / 跳过 ${data.skipped} 条`
