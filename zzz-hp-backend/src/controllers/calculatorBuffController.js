@@ -178,12 +178,34 @@ export async function removeDamageEventMode(req, res) {
   }
 }
 
+/** 保存冲突（乐观锁）的响应体：HTTP 409，顶层给出 error/updatedAt，同时保留 code/message/data 信封 */
+export function buildStaleAgentResponse(err) {
+  const message = err?.message || '数据已被其它操作更新'
+  const updatedAt = err?.currentUpdatedAt ?? null
+  return {
+    code: 409,
+    message,
+    data: { error: 'stale', message, updatedAt },
+    // 顶层再平铺一份：调用方既可读信封（data）也可直接读 error/updatedAt
+    error: 'stale',
+    updatedAt,
+  }
+}
+
+/** 角色保存失败出口：STALE_WRITE → 409（拒绝覆盖）；其它错误维持原有 400 行为 */
+export function handleAgentSaveError(res, err) {
+  if (err?.code === 'STALE_WRITE') {
+    return res.status(409).json(buildStaleAgentResponse(err))
+  }
+  return fail(res, err.message || '角色保存失败', 400, { error: err.message })
+}
+
 export async function saveAgent(req, res) {
   try {
     const data = await upsertAgent(req.body)
     return success(res, data, '角色保存成功')
   } catch (err) {
-    return fail(res, err.message || '角色保存失败', 400, { error: err.message })
+    return handleAgentSaveError(res, err)
   }
 }
 

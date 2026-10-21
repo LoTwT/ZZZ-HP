@@ -332,7 +332,10 @@ export function applyAffixCountsToFixedParts(
     mastery: roundPanelValue(
       parts.mastery + affixStatTotal(counts.mastery, valuePerCount.mastery),
     ),
-    anomalyControl: roundPanelValue(parts.anomalyControl),
+    // 异常掌控是**唯一保留整数**的属性（游戏口径：初始 × 百分比后**舍弃小数**，不是四舍五入）。
+    // 其它属性都按 roundPanelValue 保留两位；这里必须 floor，否则小数会流进转模，
+    // 算出 68.332 这种不可能的暴击率（2026-10-18 用户指出）。
+    anomalyControl: Math.floor(parts.anomalyControl),
     energyRegen: roundPanelValue(parts.energyRegen),
     /**
      * 冲击力：**主属性那 18% 是唯一来源**，词条模式推不出「基础冲击力」。
@@ -576,7 +579,8 @@ export function remapImportedExternalPanelForMainCombo(
         (toMods.mastery - fromMods.mastery),
     ),
     impact: roundPanelValue(input.panel.impact + (toMain.impact - fromMain.impact)),
-    anomalyControl: roundPanelValue(
+    // 同 `buildAffixExternalFixedParts`：异常掌控舍弃小数，只有它保留整数。
+    anomalyControl: Math.floor(
       input.panel.anomalyControl +
         (input.anomalyControlBase * dAnomalyControlPct) / 100 +
         (toMods.anomalyControl - fromMods.anomalyControl),

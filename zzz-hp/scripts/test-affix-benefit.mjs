@@ -281,8 +281,9 @@ console.log('\n[4.1] 条目贡献的折算口径')
   // 按基础值乘算的字段：与主属性同一套口径（面板取角色基础值，模拟真实角色）
   const panelAtBase = { ...createDefaultExternalPanel(), anomalyControl: 94, energyRegen: 120 }
   const percent = applyPanelDeltas(panelAtBase, { anomalyControl: 30, energyRegen: 60 }, DELTA_BASES)
-  check('异常掌控 30% 落到 基础×1.3（94 → 122.2，与主属性同口径）',
-    nearly(percent.anomalyControl, 122.2, 1e-9),
+  // 异常掌控是唯一保留整数的属性：94 × 1.3 = 122.2 → **舍弃小数** 122（2026-10-18 用户口径）
+  check('异常掌控 30% 落到 基础×1.3 后舍弃小数（94 → 122，不是 122.2）',
+    nearly(percent.anomalyControl, 122, 1e-9),
     `实际 ${percent.anomalyControl}`)
   check('能量恢复 60% 落在 基础×1.6（120 → 192，与主属性同口径）',
     nearly(percent.energyRegen, 192, 1e-9),

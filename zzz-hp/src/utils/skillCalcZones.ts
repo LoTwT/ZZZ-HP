@@ -138,7 +138,16 @@ function pushRemielSelfRadianceRows(rows: SkillCalcZoneRow[], result: DamageCalc
   push(rows, '耀变倍率区', result.radianceMultZone * 100)
   push(rows, '特殊倍率乘区', result.specialMultZone)
   push(rows, '特殊乘区', result.specialMultiplier)
-  push(rows, '期望伤害', result.radianceExpected, true)
+  const hasCritZone = isActiveZone(result.radianceFullCritZone)
+  if (hasCritZone) {
+    push(rows, '耀变暴击区', result.radianceFullCritZone)
+  }
+  pushAnomalyFinalDamages(rows, {
+    hasCritZone,
+    critDamage: result.radianceExpectedFullCrit,
+    expectedDamage: result.radianceExpected,
+    noCritDamage: result.radianceExpectedNoCrit,
+  })
 }
 
 /** 按伤害类型列出本条招式实际用到的乘区，风格对齐 zzz-dev 招式详情的 key / value。 */
@@ -198,6 +207,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'disorder') {
+    // 紊乱**只吃自己的**暴击（紊乱暴击率/爆伤），与乱流同款判断
+    const hasCritZone = isActiveZone(result.disorderFullCritZone)
     push(rows, '紊乱基础倍率', result.disorderBaseMultRatio)
     push(rows, '异常持续时间', result.effectiveAnomalyDuration)
     push(rows, '紊乱补偿倍率', result.disorderCompMultRatio)
@@ -206,7 +217,15 @@ export function buildSkillCalcZoneRows(
     }
     push(rows, '紊乱倍率区', result.disorderZone)
     push(rows, '紊乱增伤区', result.disorderDmgBonusZone)
-    push(rows, '期望伤害', result.disorderExpected, true)
+    if (hasCritZone) {
+      push(rows, '紊乱暴击区', result.disorderFullCritZone)
+    }
+    pushAnomalyFinalDamages(rows, {
+      hasCritZone,
+      critDamage: result.disorderExpectedFullCrit,
+      expectedDamage: result.disorderExpected,
+      noCritDamage: result.disorderExpectedNoCrit,
+    })
     return rows
   }
 
@@ -251,10 +270,20 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'radiance') {
+    // 耀变暴击对所有触发者成立（蕾米本人链见 pushRemielSelfRadianceRows）
+    const hasCritZone = isActiveZone(result.radianceFullCritZone)
     push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
     // 百分比展示，同 pushRemielSelfRadianceRows 的耀变倍率区
     push(rows, '耀变倍率区', result.radianceMultZone * 100)
-    push(rows, '期望伤害', result.radianceExpected, true)
+    if (hasCritZone) {
+      push(rows, '耀变暴击区', result.radianceFullCritZone)
+    }
+    pushAnomalyFinalDamages(rows, {
+      hasCritZone,
+      critDamage: result.radianceExpectedFullCrit,
+      expectedDamage: result.radianceExpected,
+      noCritDamage: result.radianceExpectedNoCrit,
+    })
   }
 
   return rows

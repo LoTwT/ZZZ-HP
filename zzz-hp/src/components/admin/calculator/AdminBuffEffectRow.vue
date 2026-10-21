@@ -996,7 +996,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               </option>
             </select>
           </label>
-          <label v-if="convert.panelSource === 'manual'" class="inline-field">
+          <label v-if="convert.panelSource === 'manual'" class="inline-field convert-number-field">
             <span>基础</span>
             <NumberStepper
               :model-value="convert.defaultBase ?? 0"
@@ -1006,7 +1006,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               @update:model-value="patchConvert('defaultBase', $event)"
             />
           </label>
-          <label class="inline-field">
+          <label class="inline-field convert-number-field">
             <span>比例%</span>
             <NumberStepper
               :model-value="convert.ratioPercent"
@@ -1016,7 +1016,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               @update:model-value="patchConvert('ratioPercent', $event)"
             />
           </label>
-          <label class="inline-field">
+          <label class="inline-field convert-number-field">
             <span>初始</span>
             <NumberStepper
               :model-value="convert.initialBase ?? 0"
@@ -1026,7 +1026,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               @update:model-value="patchConvert('initialBase', $event)"
             />
           </label>
-          <label class="inline-field">
+          <label class="inline-field convert-number-field">
             <span>上限</span>
             <NumberStepper
               :model-value="convert.cap ?? 0"
@@ -1085,15 +1085,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   </article>
 </template>
 <style scoped>
-/* 行：无折叠态，永远整行显示（摘要行 + 条件 + 高级 + 右侧数值列），靠小字号/小留白控高 */
+/* 条件与数值常显；文字和控件尺寸继承编辑器的局部排版变量。 */
 .effect-row {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 0.3rem 0.45rem;
+  padding: 0.65rem 0.75rem;
   background: var(--color-background);
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.65rem;
 }
 
 .effect-row--warn {
@@ -1103,9 +1105,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .effect-row-head {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  flex-wrap: nowrap;
-  min-height: 1.45rem;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  min-height: var(--buff-editor-control-height);
 }
 
 .effect-title {
@@ -1117,7 +1119,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .effect-title strong {
-  font-size: 0.78rem;
+  font-size: var(--buff-editor-title-size);
+  font-weight: 600;
+  color: var(--color-heading);
   white-space: nowrap;
 }
 
@@ -1128,24 +1132,24 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-label-size);
   opacity: 0.72;
 }
 
 .summary-value {
   margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 0.8rem;
+  flex: 0 1 auto;
+  font-size: var(--buff-editor-title-size);
   font-weight: 700;
   color: var(--color-heading);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .badge {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 0 0.35rem;
-  font-size: 0.64rem;
+  font-size: var(--buff-editor-meta-size);
   line-height: 1.35;
   opacity: 0.85;
   white-space: nowrap;
@@ -1174,7 +1178,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-text-size);
   flex: 0 0 auto;
 }
 
@@ -1184,7 +1188,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   align-items: center;
   gap: 0.4rem;
   color: #c45c5c;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .member-line {
@@ -1199,21 +1203,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px dashed var(--color-border);
   border-radius: 6px;
   padding: 0 0.3rem;
-  font-size: 0.66rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 /* 主体：左（条件 + 高级，常显）+ 右（数值列，常显） */
 .row-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 22rem;
-  gap: 0.35rem;
+  gap: 0.75rem;
   align-items: start;
 }
 
 .body-main {
   display: flex;
   flex-direction: column;
-  gap: 0.12rem;
+  gap: 0.5rem;
   min-width: 0;
 }
 
@@ -1222,9 +1226,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.12rem 0.4rem;
-  font-size: 0.72rem;
-  line-height: 1.35;
+  gap: 0.4rem 0.6rem;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   min-width: 0;
 }
 
@@ -1234,21 +1238,23 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 .line-label {
   flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-label-size);
   font-weight: 600;
   color: var(--color-heading);
 }
 
+/* 所有字段标签同一字号，重要性由名称和编辑值表达。 */
 .line-sub {
   flex: 0 0 auto;
-  font-size: 0.68rem;
-  opacity: 0.66;
+  font-size: var(--buff-editor-label-size);
+  font-weight: 600;
+  opacity: 0.8;
 }
 
 .inline-field {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 
@@ -1257,6 +1263,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .inline-field > span:first-child {
+  font-size: var(--buff-editor-label-size);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1272,21 +1279,34 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border-radius: 6px;
   background: var(--color-background);
   color: var(--color-text);
-  padding: 0.05rem 0.25rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.3rem 0.4rem;
   font: inherit;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-text-size);
   max-width: 11rem;
+}
+
+.inline-field.grow select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .inline-check {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  white-space: nowrap;
+  min-height: var(--buff-editor-control-height);
+  flex-wrap: wrap;
 }
 
 .inline-check input {
   margin: 0;
+}
+
+.effect-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
 }
 
 .tier-inline {
@@ -1299,12 +1319,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.12rem;
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .note-inline {
   margin: 0;
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.75;
   white-space: pre-wrap;
 }
@@ -1313,9 +1333,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: none;
   background: transparent;
   color: var(--color-text);
-  font-size: 0.62rem;
+  font-size: var(--buff-editor-meta-size);
   line-height: 1;
-  padding: 0 0.1rem;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  padding: 0 0.2rem;
   opacity: 0.45;
   cursor: pointer;
 }
@@ -1355,7 +1377,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: none;
   background: transparent;
   color: var(--color-text);
-  font-size: 0.74rem;
+  font-size: var(--buff-editor-text-size);
   padding: 0.28rem 0.4rem;
   border-radius: 6px;
   cursor: pointer;
@@ -1381,7 +1403,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.6;
   white-space: nowrap;
 }
@@ -1403,8 +1425,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   gap: 0.2rem;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 0 0.35rem;
-  font-size: 0.68rem;
+  min-height: 1.875rem;
+  padding: 0.15rem 0.5rem;
+  font-size: var(--buff-editor-text-size);
   line-height: 1.4;
   background: var(--color-background);
   cursor: pointer;
@@ -1425,7 +1448,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0 0.25rem;
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-text-size);
   line-height: 1.4;
 }
 
@@ -1434,7 +1457,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   background: transparent;
   color: var(--color-text);
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: var(--buff-editor-meta-size);
   line-height: 1;
   opacity: 0.6;
   padding: 0;
@@ -1465,7 +1488,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .menu-field select {
@@ -1482,67 +1505,81 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .value-col {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.15rem 0.35rem;
+  gap: 0.5rem;
+  padding: 0 0 0 0.75rem;
   border-left: 1px dashed var(--color-border);
+  font-size: var(--buff-editor-text-size);
   min-width: 0;
 }
 
 .value-row {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
   min-width: 0;
+}
+
+.value-col :deep(.num-stepper) {
+  height: var(--buff-editor-control-height);
+  min-width: 0;
+  max-width: 11rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.value-col :deep(.step-input) {
+  padding: 0.3rem 0.5rem;
+  font-size: var(--buff-editor-text-size);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-heading);
+}
+
+.value-col :deep(.step-btn) {
+  flex: 0 0 calc(var(--buff-editor-control-height) - 2px);
+  width: calc(var(--buff-editor-control-height) - 2px);
+  height: 100%;
+  font-size: var(--buff-editor-title-size);
 }
 
 .value-row :deep(.num-stepper) {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 7.5rem;
-}
-
-.value-row :deep(.step-input) {
-  padding: 0.1rem 0.3rem;
-  font-size: 0.72rem;
-}
-
-.value-row :deep(.step-btn) {
-  flex: 0 0 1.15rem;
-  width: 1.15rem;
-  height: 1.15rem;
-  font-size: 0.8rem;
+  flex: 1 1 0;
 }
 
 .unit {
   flex: 0 0 auto;
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-text-size);
   opacity: 0.66;
 }
 
 .value-fallback {
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.8;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .convert-block {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem 0.35rem;
+  gap: 0.5rem 0.6rem;
   align-items: center;
+}
+
+.convert-number-field {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 11rem);
+  width: 100%;
 }
 
 .convert-preview {
   margin: 0;
   width: 100%;
-  padding: 0.1rem 0.25rem;
+  padding: 0.4rem 0.5rem;
   border-radius: 6px;
   background: color-mix(in srgb, var(--color-border) 25%, transparent);
-  font-size: 0.66rem;
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: var(--buff-editor-meta-size);
+  line-height: 1.5;
 }
 
 .subcat-create {
@@ -1589,7 +1626,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
   color: var(--color-text);
   min-width: 0;
 }
@@ -1608,31 +1645,32 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   background: var(--color-background);
   color: var(--color-text);
   padding: 0.25rem 0.35rem;
+  min-height: var(--buff-editor-control-height);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .muted {
-  font-size: 0.68rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.55;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: var(--buff-editor-meta-size);
   opacity: 0.7;
 }
 
 .err {
   margin: 0;
   color: #c45c5c;
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .ok {
   margin: 0;
   color: hsl(160, 100%, 32%);
-  font-size: 0.72rem;
+  font-size: var(--buff-editor-text-size);
 }
 
 .ghost-btn,
@@ -1641,10 +1679,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border-radius: 6px;
   background: var(--color-background);
   color: var(--color-heading);
-  padding: 0.1rem 0.35rem;
+  min-height: var(--buff-editor-control-height);
+  padding: 0.3rem 0.6rem;
   cursor: pointer;
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-family: inherit;
+  font-size: var(--buff-editor-text-size);
+  line-height: 1.5;
   white-space: nowrap;
 }
 
@@ -1662,7 +1702,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   .value-col {
     border-left: none;
     border-top: 1px dashed var(--color-border);
-    padding-top: 0.2rem;
+    padding: 0.75rem 0 0;
   }
 }
 </style>

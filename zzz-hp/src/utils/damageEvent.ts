@@ -88,7 +88,11 @@ export function pickEventDamage(
     if (critMode === 'fullCrit') return result.anomalyExpectedFullCrit
     return result.anomalyExpected
   }
-  if (kind === 'disorder') return result.disorderExpected
+  if (kind === 'disorder') {
+    if (critMode === 'noCrit') return result.disorderExpectedNoCrit
+    if (critMode === 'fullCrit') return result.disorderExpectedFullCrit
+    return result.disorderExpected
+  }
   if (kind === 'anomalyRelease') {
     if (critMode === 'noCrit') return result.anomalyReleaseExpectedNoCrit
     if (critMode === 'fullCrit') return result.anomalyReleaseExpectedFullCrit
@@ -106,7 +110,11 @@ export function pickEventDamage(
 
 /**
  * 流程卡外侧汇总用暴击模式：
- * 异常 / 乱流 / 异放固定必暴击；直伤、紊乱、耀变仍跟随条目 critMode。
+ * 属性异常 / 乱流 / 异放固定必暴击；**紊乱、耀变跟随条目 critMode（默认期望）**。
+ *
+ * 2026-10-18：给紊乱/耀变补暴击区时曾顺手把这两类也并进必暴击名单，等于改了它们
+ * 既有的汇总口径（单次/合计/饼图/总伤都从「期望」变「必暴击」，约高 9%）。
+ * 用户裁定撤销：这两类本来就不是必暴击，补暴击区不该顺带改口径。
  */
 export function resolveFlowHitCritMode(
   damageType: DamageEventKind,

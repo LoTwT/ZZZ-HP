@@ -816,6 +816,11 @@ export interface AgentBuffDoc {
   basePanel: AgentBasePanel
   mindscapeNotes: string[]
   mindscapeBuffs: AgentMindscapeRankBuffs[]
+  /**
+   * 库里该行的 `updated_at`（ISO/UTC 秒级，读取接口下发）。
+   * 保存时作为乐观锁基准发给后端（字段名 `baseUpdatedAt`）：库里的行已经变了 → 409，拒绝整份覆盖。
+   */
+  updatedAt?: string
 }
 
 export interface WengineBuffDoc {

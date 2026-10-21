@@ -411,7 +411,9 @@ export function addStat(
   stat: BuffStatKey,
   amount: number,
 ): BuffStatModifiers {
-  return { ...mods, [stat]: mods[stat] + amount }
+  // 同上：缺键不能当 undefined 用，否则 `undefined + n` 是 NaN
+  const base = Number(mods[stat])
+  return { ...mods, [stat]: (Number.isFinite(base) ? base : 0) + amount }
 }
 
 export function resolveEffectBaseValue(effect: BuffEffect, stacks: number): number {

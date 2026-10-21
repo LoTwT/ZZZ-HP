@@ -71,7 +71,7 @@ function closeMobileNav() {
 
       <slot name="actions" />
 
-      <div class="sidebar-foot" aria-hidden="true">ZZZ-HP</div>
+      <div class="sidebar-foot" aria-hidden="true">HP数据站</div>
     </aside>
   </div>
 </template>

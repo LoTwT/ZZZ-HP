@@ -24,6 +24,7 @@ import {
   saveSkillSubcategory,
   saveWengineBuff,
 } from '@/api/calculatorBuffs'
+import type { AgentBuffSavePayload } from '@/api/calculatorBuffs'
 import { defaultAgentBuffDocs } from '@/data/calculatorBuffDefaults'
 import type {
   AgentBuffDoc,
@@ -192,6 +193,10 @@ function normalizeAgent(item: Record<string, unknown>): AgentBuffDoc {
     basePanel,
     mindscapeNotes: normalizeMindscapeNotes(item.mindscapeNotes),
     mindscapeBuffs: normalizeMindscapeBuffs(item),
+    // 乐观锁基准不能被归一化丢掉：丢了就等于每次都「无保护整份覆盖」
+    ...(typeof item.updatedAt === 'string' && item.updatedAt
+      ? { updatedAt: item.updatedAt }
+      : {}),
   }
 }
 
@@ -580,9 +585,14 @@ export const useCalculatorBuffStore = defineStore('calculatorBuffs', () => {
   }
 
   async function upsertAgent(doc: AgentBuffDoc) {
-    const saved = await saveAgentBuff(doc)
-    applyLocalAgent(normalizeAgent(saved as unknown as Record<string, unknown>))
-    return saved
+    // 乐观锁：把「加载该行时拿到的 updatedAt」作为 baseUpdatedAt 发给后端；
+    // 库里的行已变 → 后端回 409（StaleWriteError），这里原样抛给面板，绝不静默覆盖。
+    const payload: AgentBuffSavePayload = { ...doc }
+    if (doc.updatedAt) payload.baseUpdatedAt = doc.updatedAt
+    const saved = await saveAgentBuff(payload)
+    const normalized = normalizeAgent(saved as unknown as Record<string, unknown>)
+    applyLocalAgent(normalized)
+    return normalized
   }
 
   async function deleteAgent(id: string) {

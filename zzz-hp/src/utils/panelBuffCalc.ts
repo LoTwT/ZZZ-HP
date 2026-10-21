@@ -2414,21 +2414,29 @@ export function applyBuffModsToPanel(
     // 冲击力不进乘区、也没有任何增益改它：原样带过去，局内转模（青衣）才读得到
     impact: externalPanel.impact ?? 0,
     mastery: externalPanel.mastery + mods.mastery,
-    anomalyControl:
+    // 异常掌控是**唯一保留整数**的属性：局外已是整数，加上固定值/百分比后再舍弃小数
+    //（游戏口径是「舍弃」不是四舍五入）。不 floor 的话小数会流进转模，
+    // 算出 (209.76 − 155) × 0.7 = 38.332 这种暴击率（2026-10-18 用户指出）。
+    anomalyControl: Math.floor(
       externalPanel.anomalyControl +
-      mods.anomalyControl +
-      (baseAnomalyControl * mods.anomalyControlPercent) / 100,
+        mods.anomalyControl +
+        (baseAnomalyControl * mods.anomalyControlPercent) / 100,
+    ),
     energyRegen:
       externalPanel.energyRegen +
       (baseEnergyRegen * mods.energyRegen) / 100 +
       mods.energyRegenFlat,
     anomalyCritRate: externalPanel.anomalyCritRate + mods.anomalyCritRate,
-    turbulenceCritRate: externalPanel.anomalyCritRate + mods.turbulenceCritRate,
-    turbulenceCritDmg: externalPanel.anomalyCritDmg + mods.turbulenceCritDmg,
-    radianceCritRate: externalPanel.anomalyCritRate + mods.radianceCritRate,
-    radianceCritDmg: externalPanel.anomalyCritDmg + mods.radianceCritDmg,
-    disorderCritRate: externalPanel.anomalyCritRate + mods.disorderCritRate,
-    disorderCritDmg: externalPanel.anomalyCritDmg + mods.disorderCritDmg,
+    // 子类暴击**各自独立**：每类只吃「自己的局外面板值 + 自己的增益」，彼此没有父类。
+    // 2026-10-18 前这里错写成 externalPanel.anomalyCrit*（把异常暴击当父类），
+    // 与下方异放（anomalyReleaseCrit*）、上方异常（anomalyCrit*）的写法不一致；
+    // 今天 externalPanel 里这六格恒为 0，所以改前改后数字相同，只是把结构摆正。
+    turbulenceCritRate: externalPanel.turbulenceCritRate + mods.turbulenceCritRate,
+    turbulenceCritDmg: externalPanel.turbulenceCritDmg + mods.turbulenceCritDmg,
+    radianceCritRate: externalPanel.radianceCritRate + mods.radianceCritRate,
+    radianceCritDmg: externalPanel.radianceCritDmg + mods.radianceCritDmg,
+    disorderCritRate: externalPanel.disorderCritRate + mods.disorderCritRate,
+    disorderCritDmg: externalPanel.disorderCritDmg + mods.disorderCritDmg,
     anomalyCritDmg: externalPanel.anomalyCritDmg + mods.anomalyCritDmg,
     anomalyDmgBonus: externalPanel.anomalyDmgBonus + mods.anomalyDmgBonus,
     anomalyReleaseCritRate:
