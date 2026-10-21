@@ -249,7 +249,16 @@ export interface DamageCalcResult {
   disorderMultFactor: number
   disorderZone: number
   disorderDmgBonusZone: number
+  /** 紊乱暴击区（实际期望形式：1 + 紊乱暴击率 × 紊乱爆伤） */
+  disorderCritZone: number
+  /** 紊乱暴击区（暴击率强制为 1） */
+  disorderFullCritZone: number
+  /** 紊乱期望伤害（实际暴击率加权） */
   disorderExpected: number
+  /** 紊乱伤害（暴击率=0） */
+  disorderExpectedNoCrit: number
+  /** 紊乱伤害（暴击率=1） */
+  disorderExpectedFullCrit: number
   turbulenceBaseMultRatio: number
   turbulenceCompMultRatio: number
   /** 乱流倍率修正（乘在倍率区上） */
@@ -275,6 +284,10 @@ export interface DamageCalcResult {
   specialMultZone: number
   /** 异化系数乘区 */
   mutationZone: number
+  /** 耀变暴击区（实际期望形式：1 + 耀变暴击率 × 耀变爆伤） */
+  radianceCritZone: number
+  /** 耀变暴击区（暴击率强制为 1） */
+  radianceFullCritZone: number
   /** 耀变期望伤害 */
   radianceExpected: number
   radianceExpectedNoCrit: number
@@ -749,6 +762,15 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceCritDmgRatio = clamp(bonusPanel.turbulenceCritDmg / 100, 0, 20)
   const turbulenceCritZone = 1 + turbulenceCritRateRatio * turbulenceCritDmgRatio
   const turbulenceFullCritZone = 1 + turbulenceCritDmgRatio
+  // 紊乱 / 耀变同为异常类暴击，同样只吃自己的暴击字段，且都取异常类触发者面板（bonusPanel）
+  const disorderCritRateRatio = bonusPanel.disorderCritRate / 100
+  const disorderCritDmgRatio = clamp(bonusPanel.disorderCritDmg / 100, 0, 20)
+  const disorderCritZone = 1 + disorderCritRateRatio * disorderCritDmgRatio
+  const disorderFullCritZone = 1 + disorderCritDmgRatio
+  const radianceCritRateRatio = bonusPanel.radianceCritRate / 100
+  const radianceCritDmgRatio = clamp(bonusPanel.radianceCritDmg / 100, 0, 20)
+  const radianceCritZone = 1 + radianceCritRateRatio * radianceCritDmgRatio
+  const radianceFullCritZone = 1 + radianceCritDmgRatio
 
   const remielSelf = subKind === 'radiance' ? (input.remielSelfRadianceCalc ?? null) : null
   const remielSelfRadianceActive = Boolean(remielSelf)
@@ -864,7 +886,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     )
   }
   const disorderBase = triggerParts.anomalyBaseExpected
-  const disorderExpected = disorderBase * disorderZone * disorderDmgBonusZone
+  const disorderPreCrit = disorderBase * disorderZone * disorderDmgBonusZone
+  const disorderExpected = disorderPreCrit * disorderCritZone
+  const disorderExpectedNoCrit = disorderPreCrit
+  const disorderExpectedFullCrit = disorderPreCrit * disorderFullCritZone
 
   const turbulenceDmgBonusZone = 1 + bonusPanel.turbulenceDmgBonus / 100
   const turbulenceCombinedDmgBonusZone =
@@ -918,9 +943,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       specialMultZone *
       Math.max(0, mainParts.specialMultiplier)
     : anomalyBaseExpected * radianceCombinedDmgBonusZone * radianceMultZone
-  const radianceExpectedRaw = radiancePreCrit
+  // 耀变暴击对所有触发者成立（普通耀变链与蕾米埃尔本人耀变链都乘同一暴击区）
+  const radianceExpectedRaw = radiancePreCrit * radianceCritZone
   const radianceExpectedNoCritRaw = radiancePreCrit
-  const radianceExpectedFullCritRaw = radiancePreCrit
+  const radianceExpectedFullCritRaw = radiancePreCrit * radianceFullCritZone
 
   const mutationMultRaw = input.mutationZone
   const mutationMult =
@@ -1023,7 +1049,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     disorderMultFactor: round(disorderMultFactor, 4),
     disorderZone: round(disorderZone, 4),
     disorderDmgBonusZone: round(disorderDmgBonusZone, 4),
+    disorderCritZone: round(disorderCritZone, 4),
+    disorderFullCritZone: round(disorderFullCritZone, 4),
     disorderExpected: round(applyMutation(disorderExpected), 0),
+    disorderExpectedNoCrit: round(applyMutation(disorderExpectedNoCrit), 0),
+    disorderExpectedFullCrit: round(applyMutation(disorderExpectedFullCrit), 0),
     turbulenceBaseMultRatio: round(turbulenceBaseMultRatio, 4),
     turbulenceCompMultRatio: round(turbulenceCompMultRatio, 4),
     turbulenceMultFactor: round(turbulenceMultFactor, 4),
@@ -1039,6 +1069,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     radianceMultZone: round(radianceMultZone, 4),
     specialMultZone: round(specialMultZone, 4),
     mutationZone: round(mutationMult, 4),
+    radianceCritZone: round(radianceCritZone, 4),
+    radianceFullCritZone: round(radianceFullCritZone, 4),
     radianceExpected: round(applyMutation(radianceExpectedRaw), 0),
     radianceExpectedNoCrit: round(applyMutation(radianceExpectedNoCritRaw), 0),
     radianceExpectedFullCrit: round(applyMutation(radianceExpectedFullCritRaw), 0),

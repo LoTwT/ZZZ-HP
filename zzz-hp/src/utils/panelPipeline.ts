@@ -260,7 +260,8 @@ function roundRemappedImportedPanel(panel: PanelStats): PanelStats {
     penRate: roundPanelValue(panel.penRate),
     mastery: roundPanelValue(panel.mastery),
     impact: roundPanelValue(panel.impact),
-    anomalyControl: roundPanelValue(panel.anomalyControl),
+    // 异常掌控是唯一保留整数的属性（游戏口径：舍弃小数），见 affixPanelCalc §2.2
+    anomalyControl: Math.floor(panel.anomalyControl),
     energyRegen: roundPanelValue(panel.energyRegen),
     reduceDefense: roundPanelValue(panel.reduceDefense),
     resPen: roundPanelValue(panel.resPen),

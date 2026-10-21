@@ -331,7 +331,7 @@ const filteredDriveDiscDocs = computed(() =>
           </div>
         </div>
       </nav>
-      <div class="sidebar-foot" aria-hidden="true">ZZZ-HP</div>
+      <div class="sidebar-foot" aria-hidden="true">HP数据站</div>
     </aside>
 
     <section

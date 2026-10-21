@@ -2183,6 +2183,11 @@ export function applyPanelDeltas(
   if (critRate) next.critRate = next.critRate + critRate
   if (critDmg) next.critDmg = next.critDmg + critDmg
   if (pen) next.pen = next.pen + pen
+  // 异常掌控是唯一保留整数的属性：百分比档（如 6号位 30%）折算后**舍弃小数**，
+  // 与 `affixPanelCalc` / `panelBuffCalc` 同口径（2026-10-18 用户口径）。
+  if (Number(deltas.anomalyControl)) {
+    next.anomalyControl = Math.floor(next.anomalyControl)
+  }
   return next
 }
 

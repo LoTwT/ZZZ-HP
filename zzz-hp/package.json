@@ -1,6 +1,6 @@
 {
   "name": "zzz-hp",
-  "version": "3.2.4",
+  "version": "3.2.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,10 +21,12 @@
     "test:buff-conversions": "npx vite-node scripts/test-buff-conversions.mjs",
     "test:mult-factor-percent": "npx vite-node scripts/test-mult-factor-percent.mjs",
     "test:mult-factor-zone": "npx vite-node scripts/test-mult-factor-zone.mjs",
+    "test:buff-stat-keys": "npx vite-node scripts/test-buff-stat-keys.mjs",
+    "test:disorder-radiance-crit": "npx vite-node scripts/test-disorder-radiance-crit.mjs",
     "test:formula-align": "npx vite-node scripts/test-formula-align-compare.mjs",
     "test:sharpen-crit": "npx vite-node scripts/test-sharpen-crit.mjs",
     "test:skill-talent-levels": "npx vite-node scripts/test-skill-talent-levels.mjs",
-    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:buff-conversions test:env-buff-cache-key test:hit-eval-cache test:skill-flow-hit-context test:mult-factor-percent test:mult-factor-zone test:formula-align test:sharpen-crit test:defense-zone-clamp test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:buff-damage-types test:buff-stat-zones test:buff-effect-rows test:buff-group-equivalence test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge test:boss-resistance-level test:monster-detail test:monster-compare test:defense-monster-detail test:monster-resistance-table test:mask-close",
+    "test": "run-s test:release-mult test:skill-coords test:skill-migration test:history-stats test:crisis-hp-score test:mode-routes test:affix-preagg test:affix-gain-target test:affix-benefit test:affix-cache-key test:affix-external-panel-base test:affix-optimizer test:game-affix-rules test:affix-sweep-caps test:affix-preset-source test:buff-catalog-cache test:buff-conversions test:env-buff-cache-key test:hit-eval-cache test:skill-flow-hit-context test:mult-factor-percent test:mult-factor-zone test:buff-stat-keys test:disorder-radiance-crit test:formula-align test:sharpen-crit test:defense-zone-clamp test:skill-talent-levels test:external-panel-draft test:panel-dual-source test:panel-required-for-damage test:preset-picker-draft-reset test:remap-imported-panel-main-combo test:legacy-effect-contracts test:effect-model test:buff-damage-types test:buff-stat-zones test:buff-effect-rows test:buff-group-equivalence test:panel-pipeline-dual-run test:damage-zone-routing test:affix-eval-adapter test:extra-gain-effect-adapt test:agent-buff-effect-adapt test:pack-buff-effect-adapt test:affix-effect-template test:scheme-pack-merge test:boss-resistance-level test:monster-detail test:monster-compare test:defense-monster-detail test:mask-close test:monster-resistance-table test:agent-stale-write",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
@@ -65,7 +67,8 @@
     "test:monster-compare": "npx vite-node scripts/test-monster-compare.mjs",
     "test:defense-monster-detail": "npx vite-node scripts/test-defense-monster-detail.mjs",
     "test:mask-close": "npx vite-node scripts/test-mask-close.mjs",
-    "test:monster-resistance-table": "npx vite-node scripts/test-monster-resistance-table.mjs"
+    "test:monster-resistance-table": "npx vite-node scripts/test-monster-resistance-table.mjs",
+    "test:agent-stale-write": "npx vite-node scripts/test-agent-save-stale.mjs"
   },
   "dependencies": {
     "html-to-image": "^1.11.13",
