@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -32,41 +32,21 @@ import AdminConfirmDialog from '@/components/admin/AdminConfirmDialog.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { useMaskClose } from '@/composables/useMaskClose'
 import { clearAdminAuthenticated } from '@/utils/adminAuth'
-import { AGENT_ELEMENTS, AGENT_ROLES, BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import {
-  BUFF_SCOPE_OPTIONS,
-  BUFF_SKILL_TARGET_OPTIONS,
-  type BuffApplySituation,
-  type BuffApplyTarget,
-  type BuffEffectKind,
-  type BuffScope,
-  type BuffSkillTarget,
-  type BuffSkillTargetId,
-  type ConvertFromKey,
-  type ConvertPanelSource,
-} from '@/types/calculator'
+import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
+import type { BuffEffect, BuffEffectBlock } from '@/types/calculator'
+import { normalizeBuffEffect } from '@/utils/buffEffect'
+import { validateEffectGroups } from '@/utils/buffEffectRows'
+import { createNanokaBuffDraft, nanokaDraftApplyRows, refreshNanokaBuffDraft, rememberNanokaDraftEdits, type NanokaDraftSlots } from '@/utils/nanokaBuffDraft'
 
 /**
- * nanoka 增益（关键字 → 增益块）面板 —— **v3**。
- *
- * 规格：`dev-docs/nanoka-buff-extract-spec-v2-2026-10-16.md` 的「v3 变更」一节。
- *
- * 两页三层的落地：
- * ```
- * 阶段一：左=原文（只读）        右=关键字（可编辑，9 槽位不许缺格）
- * 阶段二：左=关键字（同一份数据）  右=实际增益（增益块全字段，可手改）
- * ```
- * - 关键字行**只显示有值的槽位**（`无` 默认隐藏，`[详情]` 才展开 9 格）；
- *   `无法提取` 用 `⚠X 槽位名` + `[补]`；`条件` 是唯一可复数的槽位。
- * - 阶段二 `[解析]` = **智能覆盖**：只回填没手改过的字段；手改值 ≠ 新解析值 → 冲突由人裁决；
- *   关键字新增 → 追加新行；关键字删掉 → 旧增益行保留并标「关键字里已无此条」。
- * - 写入按**槽位下标**落位（`写入：mindscapeBuffs[0] · 块「…」 · 新增`），块名只是展示文字。
- * - 抓 nanoka 一律在浏览器里做（服务端不联网）；`/apply` 只在点 `[确认写入]` 时才写库。
+ * nanoka 增益：阶段一校对原文/关键字，阶段二复用正式库的效果块编辑器。
+ * 来源信息只用于重解析与写入定位；阶段二允许合并、拆分和人工增删效果。
+ * 写库仍只在准备结果确认后发生。规格见开发手册的 2026-10-21 对齐记录。
  */
 
 const router = useRouter()
 const store = useCalculatorBuffStore()
-const { agents, wengines, skillSubcategories } = storeToRefs(store)
+const { agents, wengines } = storeToRefs(store)
 /** nanoka 静态站：响应带 `Access-Control-Allow-Origin: *`，浏览器可直接 fetch */
 const NANOKA_STATIC = 'https://static.nanoka.cc'
 const INDEX_TIMEOUT_MS = 25000
@@ -117,10 +97,9 @@ interface KeywordRow {
   detailOpen: boolean
   /** 阶段二：是否加入（默认加入；取消勾选 → 标灰、不参与写入准备） */
   included: boolean
-  patchSlot: string
   keywordDirty: boolean
   /** 阶段二：实际增益（增益块全字段） */
-  gain: GainFields | null
+  gain: BuffEffect | null
   dirty: Record<string, boolean>
   conflicts: NanokaParseConflict[]
   stale: boolean
@@ -131,35 +110,6 @@ interface KeywordRow {
 }
 
 /** 「增益块」全字段（阶段二右栏的控件直接绑这些） */
-interface GainFields {
-  stat: string
-  kind: BuffEffectKind
-  value: number
-  valuePerStack: number
-  maxStacks: number
-  defaultStacks: number
-  stackable: boolean
-  applyTarget: BuffApplyTarget
-  applySituation: BuffApplySituation
-  applyProfession: string | null
-  teamProfession: string | null
-  teamProfessionValues: (number | null)[]
-  elementFilter: 'all' | string[]
-  scope: BuffScope
-  skillTargets: BuffSkillTarget[]
-  appliesToAnomaly: boolean
-  enabledDefault: boolean
-  note: string
-  convert: {
-    from: ConvertFromKey
-    panelSource: ConvertPanelSource
-    ratioPercent: number
-    cap: number | null
-    defaultBase: number | null
-    initialBase: number
-  } | null
-}
-
 /** 底部「废原文」区（按来源块 · 整段原文；解析不出的句子只做淡色/下划线标记） */
 
 // ---------------------------------------------------------------- 顶部选择 / 状态
@@ -364,17 +314,75 @@ function displaySlotValue(slotId: string, value: unknown): string {
   return text
 }
 
-function statFieldLabel(key: string): string {
-  const field = BUFF_STAT_FIELDS.find((item) => item.key === key)
-  return field ? buffStatFieldLabel(field) : key
-}
-
 /** 该槽位是不是「无值」（`无` / 空）——`无` 默认隐藏（v3.1） */
 function isEmptySlotValue(value: unknown): boolean {
   if (value === null || value === undefined) return true
   if (Array.isArray(value)) return value.every((entry) => isEmptySlotValue(entry))
   const text = String(value).trim()
   return !text || text === NONE
+}
+
+/** 数字槽位（渲染成 `type=number`，不走下拉） */
+const NUMBER_SLOT_IDS = ['value', 'convertRatio', 'convertBase', 'convertCap']
+
+/** 单值文本槽位（下拉 / 输入框直接写回 `row.slots[id]`） */
+const SINGLE_TEXT_SLOT_IDS = ['stat', 'action', 'unit', 'target', 'scope', 'stacks', 'duration', 'object']
+
+function isNumberSlot(slotId: string): boolean {
+  return NUMBER_SLOT_IDS.includes(slotId)
+}
+
+/** 这些槽位**永远**要能选到 `无` / `无法提取`（后端词表已含，这里兜底，防止旧数据没得选） */
+const SLOT_ALWAYS_OPTIONS: Record<string, string[]> = {
+  conditions: [NONE, UNABLE],
+  scope: [NONE],
+}
+
+/**
+ * 下拉选项 = 白名单（后端 meta 唯一来源）+ **当前值兼容**（用户 2026-10-21 报的 bug）。
+ *
+ * 当前值可能是 `无法提取`、`无`、或者历史遗留的旧 scope 字符串（例如条件里存过 `异放`），
+ * 这些**不在词表里也不许显示成「请选择…」**：一律补进选项，用户改得动、也看得见原值。
+ */
+function slotOptionsFor(slotId: string, ...current: unknown[]): string[] {
+  const list = [...optionsOf(slotId)]
+  for (const extra of SLOT_ALWAYS_OPTIONS[slotId] ?? []) {
+    if (!list.includes(extra)) list.push(extra)
+  }
+  for (const item of current) {
+    for (const raw of Array.isArray(item) ? item : [item]) {
+      const text = raw === null || raw === undefined ? '' : String(raw).trim()
+      if (text && !list.includes(text)) list.push(text)
+    }
+  }
+  return list
+}
+
+/** 单值槽位控件的当前值（数组 → `a + b` 展示；空 → `无`，保证下拉永远有选中项） */
+function slotEditValue(entry: SlotEntry): string {
+  if (Array.isArray(entry.value)) return entry.value.map((item) => String(item)).join(' + ')
+  const text = entry.value === null || entry.value === undefined ? '' : String(entry.value)
+  return text || NONE
+}
+
+/**
+ * 该槽位是不是**锁定**（用户 2026-10-21）：
+ * - 整条不录（招式锚点关联不上）→ 全部槽位锁；
+ * - 该条被阻断（属性 / 动作 / 数值标了 `无法提取`）→ 软槽位先锁，硬槽位仍可改（补完自动解锁）。
+ * 锁定态显示**当前值 + 禁用**，而不是一个空的「请选择…」。
+ */
+function slotLockReason(row: KeywordRow, slotId: string): string {
+  if (!row.recorded) {
+    return `锁定：这条不录（${row.dropReason || '招式锚点关联不上'}），改这里也不会入库`
+  }
+  if (row.blocked && !isHardUnable(slotId)) {
+    return '锁定：这条被阻断（属性 / 动作 / 数值待补），先补硬槽位'
+  }
+  return ''
+}
+
+function isSlotLocked(row: KeywordRow, slotId: string): boolean {
+  return Boolean(slotLockReason(row, slotId))
 }
 
 /** 关键字行要显示的槽位（只显示有值；`无` 进 hidden；`无法提取` 进 unable） */
@@ -402,9 +410,25 @@ function slotBuckets(row: KeywordRow) {
   return { visible, hidden, unable }
 }
 
-function conditionText(value: unknown): string {
-  if (Array.isArray(value)) return value.join(' + ')
-  return String(value ?? NONE)
+/** 一行里要渲染的槽位（`无法提取` 优先 → 有值 → 无值（仅 [详情] 展开时）） */
+interface SlotEntry {
+  id: string
+  label: string
+  value: unknown
+  unable: boolean
+  hidden: boolean
+}
+
+function slotEntries(row: KeywordRow): SlotEntry[] {
+  const buckets = slotBuckets(row)
+  const entries: SlotEntry[] = [
+    ...buckets.unable.map((entry) => ({ ...entry, hidden: false })),
+    ...buckets.visible.map((entry) => ({ ...entry, hidden: false })),
+  ]
+  if (row.detailOpen) {
+    entries.push(...buckets.hidden.map((entry) => ({ ...entry, hidden: true })))
+  }
+  return entries
 }
 
 /** 槽位值是不是槽位级 `无法提取`（详情里要标 ⚠X，别当普通值） */
@@ -421,26 +445,6 @@ const HARD_UNABLE_SLOT_IDS = ['stat', 'action', 'value']
 
 function isHardUnable(slotId: string): boolean {
   return HARD_UNABLE_SLOT_IDS.includes(slotId)
-}
-
-/** 该条有没有「软」的无法提取（有的话显示「按无处理」提示，但不影响可写） */
-function softUnableSlotsOf(row: KeywordRow): string[] {
-  return (row.unableSlots ?? []).filter((id) => !isHardUnable(id))
-}
-
-/** 详情里某槽位的展示文本（元素 / 条件是复数，逐个列出） */
-function slotText(row: KeywordRow, slotId: string): string {
-  const value = (row.slots as unknown as Record<string, unknown>)[slotId]
-  if (Array.isArray(value)) {
-    const list = value.filter((item) => item !== NONE && item !== '')
-    return list.length ? list.map((item) => displaySlotValue(slotId, item)).join(' + ') : NONE
-  }
-  return displaySlotValue(slotId, value)
-}
-
-function isElementChecked(row: KeywordRow, element: string): boolean {
-  const filter = row.gain?.elementFilter
-  return Array.isArray(filter) && filter.includes(element)
 }
 
 // ---------------------------------------------------------------- 按句配对（v3.24）
@@ -685,53 +689,8 @@ const wasteBlocks = computed<WasteBlockRow[]>(() => {
 
 // ---------------------------------------------------------------- Row 组装
 
-function defaultGain(effect: NanokaLayerCEffect | null, fallbackNote: string): GainFields {
-  const layer = effect ?? ({} as Partial<NanokaLayerCEffect>)
-  return {
-    stat: String(layer.stat ?? 'dmgBonus'),
-    kind: (layer.kind === 'stacked' || layer.kind === 'convert' ? layer.kind : 'fixed') as BuffEffectKind,
-    value: Number(layer.value ?? 0),
-    valuePerStack: Number(layer.valuePerStack ?? 0),
-    maxStacks: Number(layer.maxStacks ?? 1),
-    defaultStacks: Number(layer.defaultStacks ?? 1),
-    stackable: Boolean(layer.stackable),
-    applyTarget: layer.applyTarget === 'team' ? 'team' : 'self',
-    applySituation:
-      layer.applySituation === 'stagger' || layer.applySituation === 'non_stagger'
-        ? layer.applySituation
-        : 'global',
-    applyProfession: layer.applyProfession ?? null,
-    teamProfession: layer.teamProfession ?? null,
-    teamProfessionValues: Array.isArray(layer.teamProfessionValues)
-      ? [0, 1, 2].map((index) => layer.teamProfessionValues?.[index] ?? null)
-      : [null, null, null],
-    elementFilter:
-      layer.elementFilter === 'all' || layer.elementFilter == null
-        ? 'all'
-        : Array.isArray(layer.elementFilter)
-          ? [...layer.elementFilter]
-          : [String(layer.elementFilter)],
-    scope: (layer.scope ?? 'general') as BuffScope,
-    skillTargets: Array.isArray(layer.skillTargets)
-      ? layer.skillTargets.map((target) => ({
-          category: target.category as BuffSkillTargetId,
-          subcategoryId: target.subcategoryId ?? null,
-        }))
-      : [],
-    appliesToAnomaly: Boolean(layer.appliesToAnomaly),
-    enabledDefault: layer.enabledDefault !== false,
-    note: String(layer.note ?? fallbackNote ?? ''),
-    convert: layer.convert
-      ? {
-          from: layer.convert.from as ConvertFromKey,
-          panelSource: (layer.convert.panelSource ?? 'external') as ConvertPanelSource,
-          ratioPercent: Number(layer.convert.ratioPercent ?? 0),
-          cap: layer.convert.cap ?? null,
-          defaultBase: layer.convert.defaultBase ?? null,
-          initialBase: Number(layer.convert.initialBase ?? 0),
-        }
-      : null,
-  }
+function defaultGain(effect: NanokaLayerCEffect): BuffEffect | null {
+  return normalizeBuffEffect(effect)
 }
 
 function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number): KeywordRow {
@@ -778,9 +737,8 @@ function toRow(effect: NanokaKeywordEffect, item: NanokaBuffItem, index: number)
     detailOpen: false,
     // 默认全部加入（可写条目全勾选）；用户可在阶段二把不想加入的去掉
     included: true,
-    patchSlot: '',
     keywordDirty: false,
-    gain: effect.layerC || effect.recorded ? defaultGain(effect.layerC, effect.sentence) : null,
+    gain: effect.layerC ? defaultGain(effect.layerC) : null,
     dirty: {},
     conflicts: [],
     stale: false,
@@ -800,13 +758,17 @@ function applyExtractResult(result: NanokaExtractResult) {
   rows.value = result.items.flatMap((item) =>
     item.effects.map((effect, index) => toRow(effect, item, index)),
   )
-  selectedKey.value = rows.value[0]?.key ?? ''
+  draftSlots.value = createNanokaBuffDraft(kind.value, rows.value)
+  activeDraftSlot.value = kind.value === 'agent' ? '0' : 'fixed'
   page.value = 'stage1'
   writePlan.value = null
   writeMessage.value = ''
 }
 
 function resetAll() {
+  if (autoParseTimer) clearTimeout(autoParseTimer)
+  draftSlots.value = {}
+  confirmVisible.value = false
   items.value = []
   rows.value = []
   meta.value = null
@@ -1012,10 +974,11 @@ function mergeSimplified(
   simplified.effects.forEach((effect, index) => {
     rows.value.push(toRow(effect, item, index))
   })
-  // 阶段二选中的条目可能刚被重算掉 → 挪到第一条，别让右侧空着
-  if (!rows.value.some((row) => row.key === selectedKey.value)) {
-    selectedKey.value = rows.value[0]?.key ?? ''
+  for (const blocks of Object.values(draftSlots.value)) {
+    const index = blocks.findIndex((block) => block.id === `nanoka-${slot}`)
+    if (index >= 0) blocks.splice(index, 1)
   }
+  refreshNanokaBuffDraft(kind.value, draftSlots.value, rows.value)
   // 按句配对视图跟着刷新（废原文区由 wasteSentences 计算，不必另存）
   item.sentences = simplified.sentences ?? []
   item.waste = simplified.waste ?? []
@@ -1123,7 +1086,7 @@ function markKeywordDirty(row: KeywordRow) {
 }
 
 function setSlot(row: KeywordRow, slotId: string, value: unknown) {
-  if (slotId === 'value' || slotId === 'convertRatio' || slotId === 'convertBase' || slotId === 'convertCap') {
+  if (isNumberSlot(slotId)) {
     const num = Number(value)
     const numeric = Number.isFinite(num) ? num : String(value)
     if (slotId === 'value') row.slots.value = numeric
@@ -1136,24 +1099,30 @@ function setSlot(row: KeywordRow, slotId: string, value: unknown) {
     row.convert.convertFrom = String(value)
   } else if (slotId === 'convertPanelSource' && row.convert) {
     row.convert.convertPanelSource = String(value)
-  } else if (slotId === 'stat') {
-    row.slots.stat = String(value)
-  } else if (slotId === 'action') {
-    row.slots.action = String(value)
-  } else if (slotId === 'unit') {
-    row.slots.unit = String(value)
-  } else if (slotId === 'target') {
-    row.slots.target = String(value)
-  } else if (slotId === 'stacks') {
-    row.slots.stacks = String(value)
-  } else if (slotId === 'duration') {
-    row.slots.duration = String(value)
-  } else if (slotId === 'object') {
-    row.slots.object = String(value)
+  } else if (slotId === 'conditions') {
+    // 多值槽位也能整槽写入（条件下拉在「无法提取」态走这里，别再静默丢掉）
+    row.slots.conditions = Array.isArray(value) ? value.map((item) => String(item)) : [String(value)]
+  } else if (slotId === 'elements') {
+    row.slots.elements = Array.isArray(value) ? value.map((item) => String(item)) : [String(value)]
+  } else if (SINGLE_TEXT_SLOT_IDS.includes(slotId)) {
+    ;(row.slots as unknown as Record<string, string>)[slotId] = String(value)
+  } else {
+    // 没接的槽位 id **必须炸出来**：用户 2026-10-21 报的「条件改了不保存」就是这里少了分支、被静默吞掉
+    throw new Error(`setSlot: 槽位 ${slotId} 没有写入分支`)
   }
-  row.patchSlot = ''
-  row.unableSlots = row.unableSlots.filter((id) => id !== slotId)
+  syncUnableSlot(row, slotId, (row.slots as unknown as Record<string, unknown>)[slotId])
   markKeywordDirty(row)
+}
+
+/**
+ * 槽位改完同步 `unableSlots`：值里还有 `无法提取` → 记上（阶段二的「按无处理」提示才准）；
+ * 改成真值 / `无` 了 → 摘掉（不然提示会残留成假话）。
+ */
+function syncUnableSlot(row: KeywordRow, slotId: string, value: unknown) {
+  const hasUnable = Array.isArray(value) ? value.includes(UNABLE) : String(value ?? '').trim() === UNABLE
+  const listed = row.unableSlots.includes(slotId)
+  if (hasUnable && !listed) row.unableSlots = [...row.unableSlots, slotId]
+  if (!hasUnable && listed) row.unableSlots = row.unableSlots.filter((id) => id !== slotId)
 }
 
 function multiValues(row: KeywordRow, slotId: string): string[] {
@@ -1167,6 +1136,7 @@ function addMulti(row: KeywordRow, slotId: string) {
   list.push('')
   if (slotId === 'conditions') row.slots.conditions = list.length ? list : [NONE]
   else row.slots.elements = list.length ? list : [NONE]
+  syncUnableSlot(row, slotId, multiValues(row, slotId))
   markKeywordDirty(row)
 }
 
@@ -1175,6 +1145,7 @@ function setMulti(row: KeywordRow, slotId: string, index: number, value: string)
   list[index] = value
   if (slotId === 'conditions') row.slots.conditions = list
   else row.slots.elements = list
+  syncUnableSlot(row, slotId, list)
   markKeywordDirty(row)
 }
 
@@ -1183,58 +1154,20 @@ function removeMulti(row: KeywordRow, slotId: string, index: number) {
   const next = list.length ? list : [NONE]
   if (slotId === 'conditions') row.slots.conditions = next
   else row.slots.elements = next
+  syncUnableSlot(row, slotId, next)
   markKeywordDirty(row)
 }
 
 function removeRow(row: KeywordRow) {
   rows.value = rows.value.filter((entry) => entry.key !== row.key)
-  if (selectedKey.value === row.key) selectedKey.value = rows.value[0]?.key ?? ''
+  for (const blocks of Object.values(draftSlots.value)) {
+    for (const block of blocks) block.effects = block.effects.filter((effect) => effect.origin !== row.key)
+  }
   messageKind.value = 'ok'
-  message.value = `已删掉该条关键字；它在阶段二的增益行会保留并标「关键字里已无此条」（点 [解析] 生效）`
+  message.value = `已删除该条关键字及其待录入效果`
 }
 
 // ---------------------------------------------------------------- 增益编辑（阶段二）
-
-function markDirty(row: KeywordRow, field: string) {
-  row.dirty = { ...row.dirty, [field]: true }
-  // 手改后该字段的冲突提示不再有意义（这是人的最终选择）
-  row.conflicts = row.conflicts.filter((conflict) => conflict.field !== field)
-  row.writeLabel = ''
-}
-
-function setElementAll(row: KeywordRow, all: boolean) {
-  if (!row.gain) return
-  row.gain.elementFilter = all ? 'all' : []
-  markDirty(row, 'elementFilter')
-}
-
-function toggleElement(row: KeywordRow, element: string) {
-  if (!row.gain) return
-  const current = Array.isArray(row.gain.elementFilter) ? [...row.gain.elementFilter] : []
-  const index = current.indexOf(element)
-  if (index >= 0) current.splice(index, 1)
-  else current.push(element)
-  row.gain.elementFilter = current.length ? current : 'all'
-  markDirty(row, 'elementFilter')
-}
-
-function addSkillTarget(row: KeywordRow) {
-  if (!row.gain) return
-  row.gain.skillTargets = [...row.gain.skillTargets, { category: 'basic', subcategoryId: null }]
-  markDirty(row, 'skillTargets')
-}
-
-function removeSkillTarget(row: KeywordRow, index: number) {
-  if (!row.gain) return
-  row.gain.skillTargets = row.gain.skillTargets.filter((_, i) => i !== index)
-  markDirty(row, 'skillTargets')
-}
-
-const subcategoryOptions = computed(() =>
-  skillSubcategories.value.filter(
-    (item) => !item.agentId || !selectedId.value || String(item.agentId) === String(selectedId.value),
-  ),
-)
 
 // ---------------------------------------------------------------- [解析]（智能覆盖）
 
@@ -1267,7 +1200,7 @@ function mergeParseRows(parsed: NanokaParseResultRow[]) {
       gain:
         result.effect == null
           ? row.gain
-          : defaultGain(result.effect as NanokaLayerCEffect, row.gain?.note ?? ''),
+          : defaultGain(result.effect as NanokaLayerCEffect),
       conflicts: result.conflicts ?? [],
       stale: Boolean(result.stale),
       blocked: Boolean(result.blocked),
@@ -1283,7 +1216,7 @@ function mergeParseRows(parsed: NanokaParseResultRow[]) {
     if (result.effect == null || !keyword) continue
     next.push({
       ...keyword,
-      gain: defaultGain(result.effect as NanokaLayerCEffect, keyword.sentence),
+      gain: defaultGain(result.effect as NanokaLayerCEffect),
       conflicts: result.conflicts ?? [],
       added: true,
       stale: false,
@@ -1299,22 +1232,26 @@ async function runParse(targetKeys?: string[]) {
     ? rows.value.filter((row) => targetKeys.includes(row.key))
     : rows.value
   if (!selectedRows.length) return
+  rememberNanokaDraftEdits(draftSlots.value, rows.value)
   parsing.value = true
   message.value = ''
   try {
     const { result, message: serverMessage } = await parseNanokaBuffs({
-      rows: rows.value.map((row) => ({
+      rows: selectedRows.map((row) => ({
         key: row.key,
         effect: row.gain ? ({ ...row.gain } as Partial<NanokaLayerCEffect>) : null,
         dirty: { ...row.dirty },
       })),
-      keywords: keywordPayload(),
+      keywords: keywordPayload().filter((keyword) => selectedRows.some((row) => row.key === keyword.key)),
       agentId: kind.value === 'agent' ? selectedId.value : '',
     })
     mergeParseRows(result.rows)
+    refreshNanokaBuffDraft(kind.value, draftSlots.value, rows.value)
     messageKind.value = 'ok'
     message.value = serverMessage
-    if (page.value === 'stage1') page.value = 'stage2'
+    // 切页**只能由用户点页签**（用户 2026-10-21 报的 bug：改完条件下拉就被甩到阶段二）：
+    // 这里以前有一句 `if (page === 'stage1') page = 'stage2'`，而「关键字一改就自动重算」走的也是
+    // 这个函数 —— 于是任何一次编辑都会顺手把用户踢到阶段二。去掉它：编辑不换页、重算不换页。
   } catch (err) {
     handleError(err, '解析失败')
   } finally {
@@ -1336,19 +1273,25 @@ async function switchPage(next: Page) {
 function resolveConflict(row: KeywordRow, conflict: NanokaParseConflict, choice: 'mine' | 'theirs') {
   if (!row.gain) return
   if (choice === 'theirs') {
-    const field = conflict.field as keyof GainFields
-    row.gain = { ...row.gain, [field]: conflict.theirs } as GainFields
+    const field = conflict.field as keyof BuffEffect
+    row.gain = { ...row.gain, [field]: conflict.theirs } as BuffEffect
     row.dirty = { ...row.dirty, [conflict.field]: false }
   } else {
     row.dirty = { ...row.dirty, [conflict.field]: true }
   }
   row.conflicts = row.conflicts.filter((item) => item.field !== conflict.field)
+  if (choice === 'theirs') {
+    for (const blocks of Object.values(draftSlots.value)) {
+      for (const block of blocks) {
+        for (const effect of block.effects) {
+          if (effect.origin === row.key) Object.assign(effect, { [conflict.field]: conflict.theirs })
+        }
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------- 阶段二：左选右看（主从布局）
-
-/** 阶段二当前选中的关键字（右侧**只**显示这一条的实际增益） */
-const selectedKey = ref('')
 
 /**
  * **清单排序**（用户 2026-10-16）：`核心被动 → 额外能力 → 招式文本（按类别 / 招式）→ 影画 1..6`；
@@ -1383,73 +1326,28 @@ const orderedRows = computed(() =>
   }),
 )
 
-const activeRow = computed<KeywordRow | null>(() => {
-  const row = rows.value.find((item) => item.key === selectedKey.value)
-  return row ?? orderedRows.value[0] ?? null
+const draftSlots = ref<NanokaDraftSlots>({})
+const activeDraftSlot = ref('0')
+const draftSlotOptions = computed(() => kind.value === 'agent'
+  ? Array.from({ length: 7 }, (_, index) => ({ id: String(index), label: `${index}影` }))
+  : [{ id: 'fixed', label: '基础' }, ...Array.from({ length: 5 }, (_, index) => ({ id: String(index), label: `精${index + 1}` }))])
+const activeDraftBlocks = computed<BuffEffectBlock[]>({
+  get: () => draftSlots.value[activeDraftSlot.value] ?? [],
+  set: (blocks) => { draftSlots.value[activeDraftSlot.value] = blocks },
 })
-
-/** 清单条目的展示结构（用户 2026-10-16：两行结构化，别一大坨换行文本） */
-function rowSourceTag(row: KeywordRow): string {
-  return `${row.itemSlotLabel} · 第 ${row.sentenceIndex + 1} 句`
-}
-
-function rowValueTag(row: KeywordRow): string {
-  if (row.slots.action === '转化') return '转模'
-  const unit = row.slots.unit === '无' ? '' : row.slots.unit
-  return `${row.slots.value}${unit}`
-}
-
-function rowMetaTag(row: KeywordRow): string {
-  const parts = [row.slots.action]
-  if (row.slots.scope && row.slots.scope !== NONE) parts.push(`作用域=${row.slots.scope}`)
-  const condition = conditionText(row.slots.conditions)
-  if (condition && condition !== NONE) parts.push(`条件=${condition}`)
-  return parts.join(' · ')
-}
-
-/** 勾选了「加入」的条目（未勾选的不参与写入准备） */
-const includedRows = computed(() => rows.value.filter((row) => row.included))
-
-/** 某个条目的下拉标签：来源块 · 第 N 句 · 属性=… */
-function rowLabel(row: KeywordRow): string {
-  const condition = conditionText(row.slots.conditions)
-  return (
-    `${row.itemSlotLabel} · 第 ${row.sentenceIndex + 1} 句 · 属性=${displaySlotValue('stat', row.slots.stat)}` +
-    ` · 动作=${row.slots.action}` +
-    (row.slots.action === '转化'
-      ? ' · 转模'
-      : ` · 数值=${row.slots.value}${row.slots.unit === '无' ? '' : row.slots.unit}`) +
-    (condition && condition !== '无' ? ` · 条件=${condition}` : '') +
-    (row.included ? '' : '（不加入）')
-  )
-}
-
-/** 切换勾选：不加入的条目在左侧标灰、不参与写入 */
-function toggleIncluded(row: KeywordRow, value: boolean) {
-  row.included = value
-}
+const conflictRows = computed(() => orderedRows.value.filter((row) => row.conflicts.length || row.blocked))
+watch(draftSlots, () => {
+  writePlan.value = null
+  writeMessage.value = ''
+  confirmVisible.value = false
+}, { deep: true })
+watch(selectedId, () => resetAll())
+onBeforeUnmount(() => { if (autoParseTimer) clearTimeout(autoParseTimer) })
 
 // ---------------------------------------------------------------- 写入（准备 → 确认写入）
 
-const writableRows = computed(() =>
-  rows.value.filter((row) => row.included && row.recorded && !row.blocked && row.gain),
-)
-
 function buildApplyRows(): NanokaApplyRow[] {
-  return writableRows.value.map((row) => ({
-    key: row.key,
-    slot: row.itemSlot,
-    slotLabel: row.itemSlotLabel,
-    source: row.source,
-    containerIndex: row.containerIndex,
-    blockHint: row.blockHint,
-    rawText: row.rawText,
-    keywordSlots: { ...row.slots, conditions: [...row.slots.conditions] },
-    convert: row.convert ? { ...row.convert } : null,
-    effect: { ...(row.gain as GainFields), note: row.gain?.note ?? '' } as Partial<NanokaLayerCEffect>,
-    anchors: row.anchors,
-    skillDesc: row.skillDesc,
-  }))
+  return nanokaDraftApplyRows(kind.value, draftSlots.value, rows.value)
 }
 
 async function runApply(dryRun: boolean) {
@@ -1459,7 +1357,14 @@ async function runApply(dryRun: boolean) {
     message.value = `请先选一个本地${kindLabel.value}`
     return
   }
-  if (!writableRows.value.length) {
+  rememberNanokaDraftEdits(draftSlots.value, rows.value)
+  const validation = Object.values(draftSlots.value).flatMap((blocks) => validateEffectGroups(blocks).errors)
+  if (validation.length || conflictRows.value.some((row) => row.conflicts.length)) {
+    messageKind.value = 'err'
+    message.value = validation.join('；') || '请先处理解析冲突，再准备写入'
+    return
+  }
+  if (!buildApplyRows().length) {
     messageKind.value = 'err'
     message.value = '没有可写入的增益行（招式锚点关联不上的条目不录；被阻断的条目先补关键字）'
     return
@@ -1489,7 +1394,10 @@ async function runApply(dryRun: boolean) {
     else {
       confirmVisible.value = false
       // 真的写进去了 → 0 增益列表要重新查（处理完的条目从列表消失；只读查询）
-      if (!result.writeError) void loadEmptyTargets()
+      if (!result.writeError) {
+        await store.loadAll(true)
+        void loadEmptyTargets()
+      }
     }
   } catch (err) {
     handleError(err, '写入失败')
@@ -1521,7 +1429,7 @@ const confirmMessage = computed(() => {
     .join('\n')
 })
 
-const canWrite = computed(() => writableRows.value.length > 0 && !busy.value)
+const canWrite = computed(() => buildApplyRows().length > 0 && !busy.value)
 
 const wasteOpen = ref(true)
 const wasteCount = computed(() =>
@@ -1534,7 +1442,7 @@ const wasteCount = computed(() =>
     <header class="panel-header">
       <h2 class="panel-title">nanoka 增益（关键字 → 增益块）</h2>
       <p class="panel-desc">
-        阶段一：原文（只读）→ 关键字（可编辑，9 槽位）。阶段二：关键字 → 实际增益（增益块全字段）。
+        阶段一：校对原文与关键字。阶段二：按效果块编辑实际增益，录入方式与正式增益库一致。
         抓取在浏览器里做，写入只在点「确认写入」时发生；`无法提取` 是槽位级标记，废原文整条不入库。
       </p>
     </header>
@@ -1544,6 +1452,7 @@ const wasteCount = computed(() =>
         <button
           type="button"
           class="nbf-tab"
+          :disabled="busy"
           :class="{ active: kind === 'agent' }"
           @click="kind = 'agent'; onKindChange()"
         >
@@ -1552,6 +1461,7 @@ const wasteCount = computed(() =>
         <button
           type="button"
           class="nbf-tab"
+          :disabled="busy"
           :class="{ active: kind === 'wengine' }"
           @click="kind = 'wengine'; onKindChange()"
         >
@@ -1564,7 +1474,7 @@ const wasteCount = computed(() =>
       </label>
       <label class="field nbf-field nbf-field-wide">
         <span class="field-label">本地{{ kindLabel }}</span>
-        <select v-model="selectedId" class="field-input">
+        <select v-model="selectedId" class="field-input" :disabled="busy">
           <option value="">请选择…</option>
           <option v-for="option in selectOptions" :key="option.id" :value="option.id">
             {{ option.name }}{{ option.meta ? `（${option.meta}）` : '' }}
@@ -1607,7 +1517,7 @@ const wasteCount = computed(() =>
         阶段二 · 关键字 → 增益
       </button>
       <span class="nbf-count">
-        关键字 {{ rows.length }} 条 · 已勾选 {{ includedRows.length }} 条 · 可写 {{ writableRows.length }} 条 ·
+        关键字 {{ rows.length }} 条 · 待录入 {{ buildApplyRows().length }} 条 ·
         废句 {{ wasteCount }} 句（{{ wasteBlocks.length }} 个有增益的块）
       </span>
     </div>
@@ -1715,51 +1625,49 @@ const wasteCount = computed(() =>
                 </p>
 
                 <div class="nbf-slots">
-                  <!-- 无法提取：⚠X + [补] -->
-                  <div v-for="entry in slotBuckets(row).unable" :key="`u-${entry.id}`" class="nbf-slot nbf-slot-unable">
-                    <span class="nbf-slot-label">⚠X {{ entry.label }}</span>
-                    <em class="nbf-unable-tag" :class="isHardUnable(entry.id) ? 'is-hard' : 'is-soft'">
-                      {{ isHardUnable(entry.id) ? '待补（阻断）' : '按无处理' }}
-                    </em>
-                    <button
-                      v-if="row.patchSlot !== entry.id"
-                      type="button"
-                      class="nbf-mini-btn nbf-danger"
-                      @click="row.patchSlot = entry.id"
-                    >
-                      补
-                    </button>
-                    <select
-                      v-else-if="entry.id !== 'value'"
-                      class="field-input nbf-slot-input"
-                      :value="''"
-                      @change="setSlot(row, entry.id, ($event.target as HTMLSelectElement).value)"
-                    >
-                      <option value="">请选择…</option>
-                      <option v-for="option in optionsOf(entry.id)" :key="option" :value="option">
-                        {{ displaySlotValue(entry.id, option) }}
-                      </option>
-                    </select>
-                    <input
-                      v-else
-                      type="number"
-                      class="field-input nbf-slot-input"
-                      @change="setSlot(row, 'value', ($event.target as HTMLInputElement).value)"
-                    />
-                  </div>
-
-                  <!-- 有值的槽位 -->
-                  <div v-for="entry in slotBuckets(row).visible" :key="`v-${entry.id}`" class="nbf-slot">
+                  <!--
+                    槽位格子（用户 2026-10-21 报的 bug 修法）：
+                    `无法提取` / `无` / 遗留旧值**一律有下拉**，选项里包含当前值 → 不再出现「请选择…」；
+                    不录 / 被阻断的条显示**锁定态（禁用 + 当前值）**。
+                    `无值` 槽位仍默认隐藏，[详情] 才铺开。
+                  -->
+                  <div
+                    v-for="entry in slotEntries(row)"
+                    :key="`s-${entry.id}`"
+                    class="nbf-slot"
+                    :class="{
+                      'nbf-slot-unable': entry.unable,
+                      'nbf-slot-empty': entry.hidden,
+                      'nbf-slot-locked': isSlotLocked(row, entry.id),
+                    }"
+                    :title="isSlotLocked(row, entry.id) ? slotLockReason(row, entry.id) : slotHint(entry.id)"
+                  >
                     <span class="nbf-slot-label" :title="slotHint(entry.id)">
-                      {{ entry.label }}
+                      <template v-if="entry.unable">⚠X {{ entry.label }}</template>
+                      <template v-else>{{ entry.label }}</template>
                       <!-- 敌人削弱族的目标默认值是「全队」（原文没写明给谁）→ 淡色「默认」提示，方便一眼改 -->
                       <em
-                        v-if="String(row.sources[entry.id] ?? '').startsWith('default-team')"
+                        v-if="!entry.unable && String(row.sources[entry.id] ?? '').startsWith('default-team')"
                         class="nbf-default-mark"
                         >默认</em
                       >
                     </span>
-                    <template v-if="MULTI_SLOT_IDS.includes(entry.id)">
+                    <em v-if="entry.unable" class="nbf-unable-tag" :class="isHardUnable(entry.id) ? 'is-hard' : 'is-soft'">
+                      {{ isHardUnable(entry.id) ? '待补（阻断）' : '按无处理' }}
+                    </em>
+
+                    <!-- 锁定态：禁用下拉，只显示当前值（不是「请选择…」） -->
+                    <select
+                      v-if="isSlotLocked(row, entry.id)"
+                      class="field-input nbf-slot-input"
+                      disabled
+                      :title="slotLockReason(row, entry.id)"
+                    >
+                      <option :value="slotEditValue(entry)">{{ displaySlotValue(entry.id, slotEditValue(entry)) }}</option>
+                    </select>
+
+                    <!-- 多值槽位（条件 / 元素）：逐条列下拉，选项里含该条当前值 -->
+                    <template v-else-if="MULTI_SLOT_IDS.includes(entry.id)">
                       <div class="nbf-conditions">
                         <div
                           v-for="(value, valueIndex) in multiValues(row, entry.id)"
@@ -1767,22 +1675,14 @@ const wasteCount = computed(() =>
                           class="nbf-condition"
                         >
                           <select
-                            v-if="optionsOf(entry.id).length"
                             class="field-input nbf-slot-input"
                             :value="value"
                             @change="setMulti(row, entry.id, valueIndex, ($event.target as HTMLSelectElement).value)"
                           >
-                            <option v-for="option in optionsOf(entry.id)" :key="option" :value="option">
+                            <option v-for="option in slotOptionsFor(entry.id, value)" :key="option" :value="option">
                               {{ displaySlotValue(entry.id, option) }}
                             </option>
-                            <option :value="value">{{ value }}</option>
                           </select>
-                          <input
-                            v-else
-                            class="field-input nbf-slot-input"
-                            :value="value"
-                            @change="setMulti(row, entry.id, valueIndex, ($event.target as HTMLInputElement).value)"
-                          />
                           <button
                             type="button"
                             class="nbf-mini-btn nbf-danger"
@@ -1796,40 +1696,28 @@ const wasteCount = computed(() =>
                         </button>
                       </div>
                     </template>
+
+                    <!-- 数字槽位 -->
                     <input
-                      v-else-if="entry.id === 'value' || entry.id === 'convertRatio' || entry.id === 'convertBase' || entry.id === 'convertCap'"
+                      v-else-if="isNumberSlot(entry.id)"
                       type="number"
                       class="field-input nbf-slot-input"
                       :value="entry.value"
                       @change="setSlot(row, entry.id, ($event.target as HTMLInputElement).value)"
                     />
+
+                    <!-- 单值下拉：选项 = 白名单 + 当前值（`无法提取` / `无` / 遗留旧值都能显示、能改） -->
                     <select
                       v-else
                       class="field-input nbf-slot-input"
-                      :value="String(entry.value)"
+                      :value="slotEditValue(entry)"
                       @change="setSlot(row, entry.id, ($event.target as HTMLSelectElement).value)"
                     >
-                      <option v-for="option in optionsOf(entry.id)" :key="option" :value="option">
+                      <option v-for="option in slotOptionsFor(entry.id, entry.value)" :key="option" :value="option">
                         {{ displaySlotValue(entry.id, option) }}
                       </option>
                     </select>
                   </div>
-
-                  <!-- 无值的槽位：默认隐藏，[详情] 才铺开 -->
-                  <template v-if="row.detailOpen">
-                    <div v-for="entry in slotBuckets(row).hidden" :key="`h-${entry.id}`" class="nbf-slot nbf-slot-empty">
-                      <span class="nbf-slot-label" :title="slotHint(entry.id)">{{ entry.label }}</span>
-                      <select
-                        class="field-input nbf-slot-input"
-                        :value="String(entry.value ?? '无')"
-                        @change="setSlot(row, entry.id, ($event.target as HTMLSelectElement).value)"
-                      >
-                        <option v-for="option in optionsOf(entry.id)" :key="option" :value="option">
-                          {{ displaySlotValue(entry.id, option) }}
-                        </option>
-                      </select>
-                    </div>
-                  </template>
                 </div>
               </div>
           </div>
@@ -2036,429 +1924,38 @@ const wasteCount = computed(() =>
         </div>
       </header>
 
-      <!-- 左选右看：左侧窄（下拉选择 + 勾选 + 详情），右侧宽（当前这一条的实际增益） -->
-      <div class="nbf-master">
-        <section class="nbf-master-left">
-          <h4 class="nbf-col-title">选一条关键字</h4>
-          <select v-model="selectedKey" class="field-input nbf-master-select">
-            <option v-for="row in orderedRows" :key="`opt-${row.key}`" :value="row.key">
-              {{ rowLabel(row) }}
-            </option>
-          </select>
-
-          <template v-if="activeRow">
-            <label class="nbf-include">
-              <input
-                type="checkbox"
-                :checked="activeRow.included"
-                @change="toggleIncluded(activeRow, ($event.target as HTMLInputElement).checked)"
-              />
-              <span>加入这条{{ activeRow.included ? '' : '（当前不加入）' }}</span>
-            </label>
-
-            <button type="button" class="nbf-mini-btn" @click="activeRow.detailOpen = !activeRow.detailOpen">
-              {{ activeRow.detailOpen ? '收起详情' : '详情' }}
-            </button>
-
-            <!-- 详情：信息量不少于阶段一（11 槽位 + 转模槽位 + 来源句 + 指代 / 无法提取标记） -->
-            <div v-if="activeRow.detailOpen" class="nbf-detail">
-              <p class="nbf-detail-sentence">{{ activeRow.sentence }}</p>
-              <p v-if="activeRow.inherited" class="nbf-sub">{{ activeRow.inherited.label }}（属性从前文继承）</p>
-              <p v-if="activeRow.tautologyDropped.length" class="nbf-sub">
-                同义反复已忽略：{{ activeRow.tautologyDropped.join(' / ') }}
-              </p>
-              <ul class="nbf-detail-slots">
-                <li v-for="entry in SLOT_ORDER" :key="`d-${entry}`">
-                  <span class="nbf-slot-label">{{ slotLabel(entry) }}</span>
-                  <span
-                    class="nbf-detail-value"
-                    :class="{ 'nbf-detail-unable': isUnableValue(activeRow.slots[entry]) }"
-                  >
-                    {{ isUnableValue(activeRow.slots[entry]) ? '⚠X ' : '' }}{{ slotText(activeRow, entry) }}
-                  </span>
-                </li>
-                <template v-if="activeRow.slots.action === '转化' && activeRow.convert">
-                  <li v-for="id in CONVERT_SLOT_ORDER" :key="`dc-${id}`">
-                    <span class="nbf-slot-label">{{ slotLabel(id) }}</span>
-                    <span class="nbf-detail-value">{{ displaySlotValue(id, activeRow.convert[id]) }}</span>
-                  </li>
-                </template>
-              </ul>
-              <p class="nbf-sub">
-                招式锚点：{{ activeRow.anchors.labels.length ? activeRow.anchors.labels.join(' + ') : '无' }} ·
-                状态：{{
-                  activeRow.recorded
-                    ? activeRow.blocked
-                      ? '待补（属性 / 动作 / 数值 标了无法提取 → 阻断）'
-                      : softUnableSlotsOf(activeRow).length
-                        ? `可写（${softUnableSlotsOf(activeRow).map((id) => slotLabel(id)).join(' / ')} 按「无」处理）`
-                        : '可写'
-                    : '不录'
-                }}
-              </p>
-            </div>
-          </template>
-
-          <h5 class="nbf-col-title nbf-include-title">
-            全部关键字（点卡片 = 选中 · 勾选框 = 是否加入 · 影画在最后）
-          </h5>
-          <ul class="nbf-include-list">
-            <li
-              v-for="row in orderedRows"
-              :key="`inc-${row.key}`"
-              class="nbf-list-item"
-              :class="{
-                'is-current': row.key === activeRow?.key,
-                'nbf-include-off': !row.included,
-              }"
-              role="button"
-              tabindex="0"
-              :aria-pressed="row.key === activeRow?.key"
-              @click="selectedKey = row.key"
-              @keydown.enter.prevent="selectedKey = row.key"
-              @keydown.space.prevent="selectedKey = row.key"
-            >
-              <!-- 勾选框独立可点：点击它只切换「加入」，不改变选中 -->
-              <input
-                class="nbf-list-check"
-                type="checkbox"
-                :checked="row.included"
-                :aria-label="`加入：${rowSourceTag(row)}`"
-                @click.stop
-                @change="toggleIncluded(row, ($event.target as HTMLInputElement).checked)"
-              />
-              <span class="nbf-list-body">
-                <span class="nbf-list-line1">
-                  <span class="nbf-list-source">{{ rowSourceTag(row) }}</span>
-                  <span v-if="row.key === activeRow?.key" class="nbf-list-current">当前</span>
-                  <span v-if="!row.included" class="nbf-list-off-tag">不加入</span>
-                </span>
-                <span class="nbf-list-line2">
-                  <span class="nbf-chip nbf-chip-stat">{{ displaySlotValue('stat', row.slots.stat) }}</span>
-                  <span class="nbf-chip nbf-chip-value">{{ rowValueTag(row) }}</span>
-                </span>
-                <span class="nbf-list-line3" :title="rowMetaTag(row)">{{ rowMetaTag(row) }}</span>
-              </span>
-            </li>
-          </ul>
-        </section>
-
-        <section class="nbf-master-right">
-          <h4 class="nbf-col-title">实际增益（增益块全字段 · 可手改）</h4>
-          <p v-if="!rows.length" class="empty-hint">还没有关键字：回阶段一 [抓取增益] / [化简]。</p>
-          <p v-else-if="!activeRow" class="empty-hint">左侧选一条关键字。</p>
-          <div v-else-if="!activeRow.included" class="nbf-excluded">
-            这条已取消勾选（**不加入**）：它的增益不参与「写入（准备）」。要看/改就重新勾选「加入这条」。
+      <AdminBuffEffectEditor
+        :key="`${kind}-${selectedId}-${activeDraftSlot}`"
+        v-model="activeDraftBlocks"
+        :agent-id="kind === 'agent' ? selectedId : undefined"
+        :owner-kind="kind"
+        :owner-label="localName || selectedLocal?.name"
+        :default-first-block-name="kind === 'agent' ? `${activeDraftSlot} 影` : activeDraftSlot === 'fixed' ? '基础效果' : `精炼 ${Number(activeDraftSlot) + 1}`"
+        :save-state="writing ? 'saving' : writePlan && !writePlan.dryRun && !writePlan.writeError ? 'saved' : 'dirty'"
+      >
+        <template #toolbar-extra>
+          <div class="mindscape-tabs">
+            <button v-for="slot in draftSlotOptions" :key="slot.id" type="button" class="mindscape-tab"
+              :class="{ active: activeDraftSlot === slot.id }" @click="activeDraftSlot = slot.id">{{ slot.label }}</button>
           </div>
-          <div v-for="row in activeRow ? [activeRow] : []" :key="`g-${row.key}`" class="nbf-gain">
-            <header class="nbf-kw-head">
-              <span class="nbf-kw-index">{{ row.itemSlotLabel }} · 第 {{ row.sentenceIndex + 1 }} 句</span>
-              <span v-if="row.stale" class="nbf-badge nbf-badge-warn">关键字里已无此条</span>
-              <span v-if="row.added" class="nbf-badge nbf-badge-ok">关键字新增</span>
-              <span v-if="row.blocked" class="nbf-badge nbf-badge-drop">{{ row.blockReason }}</span>
-              <span v-if="!row.included" class="nbf-badge nbf-badge-warn">不加入</span>
-              <span v-if="row.writeLabel" class="nbf-write-label">{{ row.writeLabel }}</span>
-            </header>
-
-            <div v-if="row.conflicts.length" class="nbf-conflicts">
-              <p class="nbf-sub">解析结果与你的手填值不一致（没有静默覆盖，请逐条裁决）：</p>
-              <div v-for="conflict in row.conflicts" :key="`cf-${conflict.field}`" class="nbf-conflict">
-                <span class="nbf-slot-label">{{ conflict.label }}</span>
-                <span class="nbf-mine">我的：{{ conflict.mine ?? '（空）' }}</span>
-                <span class="nbf-theirs">新解析：{{ conflict.theirs ?? '（空）' }}</span>
-                <button type="button" class="nbf-mini-btn" @click="resolveConflict(row, conflict, 'mine')">
-                  保留我的
-                </button>
-                <button
-                  type="button"
-                  class="nbf-mini-btn nbf-danger"
-                  @click="resolveConflict(row, conflict, 'theirs')"
-                >
-                  用新解析
-                </button>
-              </div>
-            </div>
-
-            <div v-if="row.gain" class="nbf-fields">
-              <label class="field nbf-field">
-                <span class="field-label">属性</span>
-                <select v-model="row.gain.stat" class="field-input" @change="markDirty(row, 'stat')">
-                  <option v-for="field in BUFF_STAT_FIELDS" :key="field.key" :value="field.key">
-                    {{ statFieldLabel(field.key) }}
-                  </option>
-                </select>
-              </label>
-              <label class="field nbf-field">
-                <span class="field-label">类型</span>
-                <select v-model="row.gain.kind" class="field-input" @change="markDirty(row, 'kind')">
-                  <option value="fixed">固定值</option>
-                  <option value="stacked">叠层</option>
-                  <option value="convert">转模</option>
-                </select>
-              </label>
-
-              <template v-if="row.gain.kind !== 'convert'">
-                <label class="field nbf-field">
-                  <span class="field-label">数值</span>
-                  <input
-                    v-model.number="row.gain.value"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'value')"
-                  />
-                </label>
-                <label v-if="row.gain.kind === 'stacked'" class="field nbf-field">
-                  <span class="field-label">每层值</span>
-                  <input
-                    v-model.number="row.gain.valuePerStack"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'valuePerStack')"
-                  />
-                </label>
-                <label v-if="row.gain.kind === 'stacked'" class="field nbf-field">
-                  <span class="field-label">层数上限</span>
-                  <input
-                    v-model.number="row.gain.maxStacks"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'maxStacks')"
-                  />
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label">默认层数</span>
-                  <input
-                    v-model.number="row.gain.defaultStacks"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'defaultStacks')"
-                  />
-                </label>
-              </template>
-
-              <template v-else-if="row.gain.convert">
-                <label class="field nbf-field">
-                  <span class="field-label" :title="slotHint('convertFrom')">读取属性</span>
-                  <select
-                    v-model="row.gain.convert.from"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  >
-                    <option v-for="option in optionsOf('convertFrom')" :key="option" :value="option">
-                      {{ displaySlotValue('convertFrom', option) }}
-                    </option>
-                  </select>
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label" :title="slotHint('convertPanelSource')">取哪一层</span>
-                  <select
-                    v-model="row.gain.convert.panelSource"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  >
-                    <option v-for="option in optionsOf('convertPanelSource')" :key="option" :value="option">
-                      {{ displaySlotValue('convertPanelSource', option) }}
-                    </option>
-                  </select>
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label" :title="slotHint('convertRatio')">折算比例</span>
-                  <input
-                    v-model.number="row.gain.convert.ratioPercent"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  />
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label" :title="slotHint('convertBase')">基础值</span>
-                  <input
-                    v-model.number="row.gain.convert.defaultBase"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  />
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label">初始基础值</span>
-                  <input
-                    v-model.number="row.gain.convert.initialBase"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  />
-                </label>
-                <label class="field nbf-field">
-                  <span class="field-label" :title="slotHint('convertCap')">上限</span>
-                  <input
-                    v-model.number="row.gain.convert.cap"
-                    type="number"
-                    class="field-input"
-                    @change="markDirty(row, 'convert')"
-                  />
-                </label>
-              </template>
-
-              <label class="field nbf-field">
-                <span class="field-label">生效目标</span>
-                <select
-                  v-model="row.gain.applyTarget"
-                  class="field-input"
-                  @change="markDirty(row, 'applyTarget')"
-                >
-                  <option value="self">自身</option>
-                  <option value="team">全队</option>
-                </select>
-              </label>
-              <label class="field nbf-field">
-                <span class="field-label">生效情形</span>
-                <select
-                  v-model="row.gain.applySituation"
-                  class="field-input"
-                  @change="markDirty(row, 'applySituation')"
-                >
-                  <option value="global">全局</option>
-                  <option value="stagger">失衡期</option>
-                  <option value="non_stagger">非失衡期</option>
-                </select>
-              </label>
-              <label class="field nbf-field">
-                <span class="field-label">范围</span>
-                <select v-model="row.gain.scope" class="field-input" @change="markDirty(row, 'scope')">
-                  <option v-for="option in BUFF_SCOPE_OPTIONS" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="field nbf-field">
-                <span class="field-label">受益职业</span>
-                <select
-                  v-model="row.gain.applyProfession"
-                  class="field-input"
-                  @change="markDirty(row, 'applyProfession')"
-                >
-                  <option :value="null">不限</option>
-                  <option v-for="role in AGENT_ROLES" :key="role" :value="role">{{ role }}</option>
-                </select>
-              </label>
-
-              <div class="field nbf-field nbf-field-wide">
-                <span class="field-label">元素过滤</span>
-                <div class="checkbox-grid">
-                  <label class="checkbox-item">
-                    <input
-                      type="checkbox"
-                      :checked="row.gain.elementFilter === 'all'"
-                      @change="setElementAll(row, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span>不限</span>
-                  </label>
-                  <label v-for="element in AGENT_ELEMENTS" :key="element" class="checkbox-item">
-                    <input
-                      type="checkbox"
-                      :checked="isElementChecked(row, element)"
-                      @change="toggleElement(row, element)"
-                    />
-                    <span>{{ element }}</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="field nbf-field nbf-field-wide">
-                <span class="field-label">招式目标（skillTargets · 锚点）</span>
-                <div v-for="(target, targetIndex) in row.gain.skillTargets" :key="`st-${targetIndex}`" class="nbf-target">
-                  <select
-                    v-model="target.category"
-                    class="field-input"
-                    @change="markDirty(row, 'skillTargets')"
-                  >
-                    <option v-for="option in BUFF_SKILL_TARGET_OPTIONS" :key="option.id" :value="option.id">
-                      {{ option.label }}
-                    </option>
-                  </select>
-                  <select
-                    v-model="target.subcategoryId"
-                    class="field-input"
-                    @change="markDirty(row, 'skillTargets')"
-                  >
-                    <option :value="null">整大类</option>
-                    <option v-for="sub in subcategoryOptions" :key="sub.id" :value="sub.id">
-                      {{ sub.name }}
-                    </option>
-                  </select>
-                  <button type="button" class="nbf-mini-btn nbf-danger" @click="removeSkillTarget(row, targetIndex)">
-                    ×
-                  </button>
-                </div>
-                <button type="button" class="nbf-mini-btn" @click="addSkillTarget(row)">+ 招式目标</button>
-              </div>
-
-              <div class="field nbf-field nbf-field-wide">
-                <span class="field-label">队伍职业条件</span>
-                <div class="nbf-target">
-                  <select
-                    v-model="row.gain.teamProfession"
-                    class="field-input"
-                    @change="markDirty(row, 'teamProfession')"
-                  >
-                    <option :value="null">不限</option>
-                    <option v-for="role in AGENT_ROLES" :key="role" :value="role">{{ role }}</option>
-                  </select>
-                  <label v-for="(tier, tierIndex) in row.gain.teamProfessionValues" :key="`t-${tierIndex}`" class="checkbox-item">
-                    <input
-                      type="checkbox"
-                      :checked="tier != null"
-                      @change="
-                        row.gain.teamProfessionValues[tierIndex] = ($event.target as HTMLInputElement).checked
-                          ? 0
-                          : null;
-                        markDirty(row, 'teamProfessionValues')
-                      "
-                    />
-                    <span>恰好 {{ tierIndex + 1 }} 人</span>
-                  </label>
-                </div>
-              </div>
-
-              <label class="field nbf-field">
-                <span class="field-label">计入异常</span>
-                <input
-                  type="checkbox"
-                  :checked="row.gain.appliesToAnomaly"
-                  @change="
-                    row.gain.appliesToAnomaly = ($event.target as HTMLInputElement).checked;
-                    markDirty(row, 'appliesToAnomaly')
-                  "
-                />
-              </label>
-              <label class="field nbf-field">
-                <span class="field-label">默认启用</span>
-                <input
-                  type="checkbox"
-                  :checked="row.gain.enabledDefault"
-                  @change="
-                    row.gain.enabledDefault = ($event.target as HTMLInputElement).checked;
-                    markDirty(row, 'enabledDefault')
-                  "
-                />
-              </label>
-              <label class="field nbf-field nbf-field-wide">
-                <span class="field-label">备注</span>
-                <textarea
-                  v-model="row.gain.note"
-                  class="field-textarea"
-                  rows="2"
-                  @change="markDirty(row, 'note')"
-                />
-              </label>
-            </div>
-            <p v-else class="empty-hint">这条不录（招式锚点关联不上）或还没解析。</p>
+        </template>
+      </AdminBuffEffectEditor>
+      <p class="nbf-sub">删除效果或块即取消本次录入；已有增益保持保留。确认写入前可在上方切换影画／精炼检查各槽。</p>
+      <section v-if="conflictRows.length" class="nbf-conflicts">
+        <h4 class="nbf-col-title">解析校对</h4>
+        <div v-for="row in conflictRows" :key="row.key">
+          <p>{{ row.itemSlotLabel }} · {{ row.sentence }}</p>
+          <p v-if="row.blocked" class="form-error">{{ row.blockReason }}</p>
+          <div v-for="conflict in row.conflicts" :key="conflict.field" class="nbf-conflict">
+            <span>{{ conflict.label }}：我的 {{ conflict.mine ?? '（空）' }} · 新解析 {{ conflict.theirs ?? '（空）' }}</span>
+            <button type="button" class="nbf-mini-btn" @click="resolveConflict(row, conflict, 'mine')">保留我的</button>
+            <button type="button" class="nbf-mini-btn" @click="resolveConflict(row, conflict, 'theirs')">用新解析</button>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       <section v-if="writePlan" class="nbf-plan">
-        <h4 class="nbf-col-title">写入（准备）结果 —— 未写入</h4>
+        <h4 class="nbf-col-title">{{ writePlan.dryRun ? '写入（准备）结果 —— 未写入' : writePlan.writeError ? '写入未完成' : '写入结果 —— 已写入' }}</h4>
         <ul class="nbf-plan-list">
           <li v-for="(detail, index) in writePlan.details" :key="`d-${index}`">
             <span class="nbf-chip">{{ detail.slotLabel }}</span>
@@ -2511,6 +2008,7 @@ const wasteCount = computed(() =>
 <style scoped src="./adminCalculatorPanel.css"></style>
 <style scoped>
 .nanoka-buff-panel {
+  max-width: none;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -3328,6 +2826,16 @@ const wasteCount = computed(() =>
 
 .nbf-slot-empty {
   opacity: 0.6;
+}
+
+/* 锁定态（这条不录 / 被阻断）：禁用下拉 + 当前值，鼠标提示写原因 */
+.nbf-slot-locked {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.nbf-slot-locked .nbf-slot-input {
+  cursor: not-allowed;
 }
 
 .nbf-conditions {

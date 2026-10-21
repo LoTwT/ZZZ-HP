@@ -1,4 +1,5 @@
 import { handleAdminSessionExpired, withAdminAuthHeaders } from '@/utils/adminAuth'
+import type { BuffEffect, BuffScope } from '@/types/calculator'
 
 /**
  * nanoka 增益（关键字 → 增益块）管理端接口。
@@ -12,7 +13,7 @@ import { handleAdminSessionExpired, withAdminAuthHeaders } from '@/utils/adminAu
  *   - `POST /apply`   ：唯一写库入口（`dryRun: true` 只算不写；写库走既有 upsert）。
  *
  * v3 口径：原文与关键字**都入库**（没有"选不选进"的开关）；废原文**不入库**、确认写入后丢弃；
- * `无法提取` 是**槽位级**标记（该条仍进阶段二等补）；关键字 ↔ 增益**一对一**。
+ * `无法提取` 是**槽位级**标记（该条仍进阶段二等补）；阶段二复用正式库编辑器，允许一个来源派生多条效果。
  */
 
 interface ApiResponse<T> {
@@ -84,39 +85,10 @@ export interface NanokaKeywordAnchors {
 }
 
 /** 层C：一条增益（= 「增益块」全字段；这里只列用得到的键） */
-export interface NanokaLayerCEffect {
-  id: string
-  origin?: string
-  scope: string
-  applyTarget: string
-  applySituation: string
-  applyProfession?: string | null
-  teamProfession?: string | null
-  teamProfessionValues?: (number | null)[] | null
-  teamProfessionMinCount?: number | null
-  skillCategory?: string
-  skillSubcategoryId?: string | null
-  skillTargets?: { category: string; subcategoryId?: string | null }[]
-  elementFilter: 'all' | string[]
-  kind: string
-  stat: string
+export type NanokaLayerCEffect = Omit<BuffEffect, 'scope'> & {
+  /** 仅兼容旧抽取器；进入编辑器时迁移成 conditions.damageTypes。 */
+  scope?: BuffScope | BuffScope[]
   statLabel?: string
-  value: number
-  stackable?: boolean
-  maxStacks: number
-  valuePerStack: number
-  defaultStacks: number
-  convert?: {
-    from: string
-    panelSource?: string
-    ratioPercent: number
-    cap?: number | null
-    defaultBase?: number | null
-    initialBase?: number
-  }
-  appliesToAnomaly?: boolean
-  enabledDefault?: boolean
-  note: string
 }
 
 /** 阶段1 的一条关键字效果（层B → 层C） */
@@ -299,7 +271,7 @@ export interface NanokaParseResult {
   steps: string[]
 }
 
-/** `POST /apply` 提交的一行 = 一条关键字对应的增益（按槽位下标落位） */
+/** `POST /apply` 提交的一行 = 一条最终效果；可携带来源关键字和明确的效果块。 */
 export interface NanokaApplyRow {
   key: string
   slot: string
@@ -308,9 +280,11 @@ export interface NanokaApplyRow {
   containerIndex: number | null
   blockHint?: string
   rawText: string
-  keywordSlots: NanokaKeywordSlots
+  keywordSlots?: NanokaKeywordSlots
   convert: NanokaKeywordConvert | null
   effect: Partial<NanokaLayerCEffect>
+  /** 共享编辑器确认后的效果块；未传时兼容旧版追加到首块的调用。 */
+  block?: { id: string; name: string; note: string; enabledDefault: boolean }
   /** 招式锚点（含 `pendingCreates`：库里没有同名小类时要建） */
   anchors?: NanokaKeywordAnchors | null
   skillDesc?: { agentId: string; skillName: string; category: string } | null
