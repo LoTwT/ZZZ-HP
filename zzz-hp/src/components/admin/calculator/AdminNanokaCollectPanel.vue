@@ -222,6 +222,10 @@ const collectingSkills = ref(false)
 const skillCancelled = ref(false)
 const skillGapsLoaded = ref(false)
 const skillRows = ref<SkillGapRow[]>([])
+const onlyEmptySkillAgents = ref(true)
+const emptySkillAgentCount = computed(
+  () => skillRows.value.filter((row) => row.skillCount === 0).length,
+)
 /** 招式的 nanoka 索引（character.json）：本地角色 id → nanokaId 靠它匹配 */
 const skillIndexTag = ref('')
 const skillIndexReady = ref(false)
@@ -256,10 +260,12 @@ const visibleScanRows = computed(() =>
   ),
 )
 const visibleSkillRows = computed(() =>
-  skillRows.value.filter((row) =>
-    `${row.name} ${row.agentId} ${row.element} ${row.profession}`
-      .toLowerCase()
-      .includes(searchText.value.trim().toLowerCase()),
+  skillRows.value.filter(
+    (row) =>
+      (!onlyEmptySkillAgents.value || row.skillCount === 0) &&
+      `${row.name} ${row.agentId} ${row.element} ${row.profession}`
+        .toLowerCase()
+        .includes(searchText.value.trim().toLowerCase()),
   ),
 )
 const activeRows = computed(() =>
@@ -1073,8 +1079,7 @@ async function runListSkillGaps() {
       nanokaSkillCount: gap.nanokaSkillCount,
       nanokaId: '',
       meta: null,
-      // 默认勾选「一条 nanoka 招式都没有」的；条数偏少的由人工判断后再勾
-      checked: gap.nanokaSkillCount === 0,
+      checked: gap.skillCount === 0,
       status: 'pending',
       error: '',
       result: '',
@@ -1086,7 +1091,7 @@ async function runListSkillGaps() {
     }))
     skillGapsLoaded.value = true
     messageKind.value = 'ok'
-    message.value = `共 ${gaps.length} 个本地角色，默认勾选未采过招式的角色；已采过的也可勾选检查更新。`
+    message.value = `共 ${gaps.length} 个本地角色，其中 ${emptySkillAgentCount.value} 个暂无招式；仅默认勾选本地 0 招式的角色。`
     if (!gaps.length) return
     try {
       await ensureSkillIndex(controller.signal)
@@ -1391,7 +1396,7 @@ async function retrySkillRow(row: SkillGapRow) {
       </div>
 
       <p v-if="hiddenSelectedCount" class="hint-line">
-        另有 {{ hiddenSelectedCount }} 个已选对象被搜索隐藏，采集时会一起处理。
+        另有 {{ hiddenSelectedCount }} 个已选对象被筛选隐藏，采集时会一起处理。
       </p>
       <template v-if="collectionContent === 'panels'">
         <p v-if="scanError" class="io-message err">{{ scanError }}</p>
@@ -1464,6 +1469,16 @@ async function retrySkillRow(row: SkillGapRow) {
         </details>
       </template>
       <template v-else>
+        <div v-if="skillGapsLoaded" class="empty-skill-filter">
+          <span class="empty-skill-summary"
+            ><span v-if="emptySkillAgentCount" class="empty-skill-dot" aria-hidden="true"></span
+            >本地 0 招式 <strong>{{ emptySkillAgentCount }}</strong> 个角色</span
+          >
+          <label class="skill-toggle"
+            ><input v-model="onlyEmptySkillAgents" type="checkbox" :disabled="busy" />仅显示本地 0
+            招式角色</label
+          >
+        </div>
         <p v-if="skillError" class="io-message err">{{ skillError }}</p>
         <p v-if="skillNote" class="hint-line" role="status">{{ skillNote }}</p>
         <p v-if="listingSkillGaps" class="hint-line" role="status">
@@ -1475,7 +1490,7 @@ async function retrySkillRow(row: SkillGapRow) {
             v-for="row in visibleSkillRows"
             :key="row.key"
             class="collect-row"
-            :class="'collect-' + row.status"
+            :class="['collect-' + row.status, { 'empty-skill-agent': row.skillCount === 0 }]"
           >
             <label class="collect-head">
               <input
@@ -1486,9 +1501,8 @@ async function retrySkillRow(row: SkillGapRow) {
                 @change="toggleSkillRow(row)"
               />
               <span class="collect-title">{{ row.name }}</span>
-              <span class="collect-meta"
-                >扫描时现有 {{ row.skillCount }} 条 · nanoka {{ row.nanokaSkillCount }} 条</span
-              >
+              <span v-if="row.skillCount === 0" class="empty-skill-badge">优先采集</span>
+              <span class="collect-meta">本地共 {{ row.skillCount }} 条招式（扫描时）</span>
             </label>
             <span class="collect-status">{{ skillStatusText(row) }}</span>
             <button
@@ -1507,7 +1521,11 @@ async function retrySkillRow(row: SkillGapRow) {
         <p v-else class="empty-hint">
           {{
             skillRows.length
-              ? '没有匹配的对象'
+              ? searchText.trim()
+                ? '没有匹配的对象'
+                : onlyEmptySkillAgents
+                  ? '没有本地 0 招式角色，可取消筛选查看全部角色。'
+                  : '没有匹配的对象'
               : skillGapsLoaded
                 ? '还没有本地角色，请先采集面板数据。'
                 : '点击「扫描」列出可采集招式的本地角色。'
@@ -2339,6 +2357,81 @@ section.io-card {
 
 .collect-row.collect-failed {
   border-color: rgba(232, 93, 76, 0.5);
+}
+
+.empty-skill-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, #e8a838 10%, var(--color-background));
+}
+
+.empty-skill-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-heading);
+  font-size: 0.85rem;
+}
+.empty-skill-summary strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.empty-skill-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #d99818;
+  animation: empty-skill-pulse 3s ease-in-out infinite;
+}
+.collect-row.empty-skill-agent {
+  padding-block: 0.7rem;
+  border-inline-start: 4px solid #d99818;
+  background: color-mix(in srgb, #e8a838 9%, var(--color-background));
+  animation: empty-skill-enter 0.3s ease-out;
+}
+.empty-skill-agent .collect-title {
+  font-size: 0.92rem;
+}
+.empty-skill-badge {
+  padding: 0.08rem 0.45rem;
+  border: 1px solid #d9981870;
+  border-radius: 999px;
+  background: #e8a83824;
+  color: var(--color-heading);
+  font-size: 0.73rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@keyframes empty-skill-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 #e8a83833;
+  }
+  50% {
+    box-shadow: 0 0 0 5px #e8a83808;
+  }
+}
+@keyframes empty-skill-enter {
+  from {
+    opacity: 0.6;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-skill-dot,
+  .collect-row.empty-skill-agent {
+    animation: none;
+  }
 }
 
 .collect-head {
