@@ -85,7 +85,7 @@ function formatDamage(value: number) {
   background: var(--calc-surface, var(--color-background));
   font-weight: 400;
 }
-.flow-calculation-detail :deep(.formula-aligned-body--compact) {
+.flow-calculation-detail :deep(.formula-aligned-body) {
   flex-wrap: wrap;
   overflow-x: visible;
 }

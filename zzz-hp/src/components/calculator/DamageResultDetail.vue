@@ -1858,6 +1858,7 @@ const formulaValueTips = computed(() => {
 .formula-block {
   display: flex;
   flex-direction: column;
+  font-size: 1rem;
   gap: 0.35rem;
   margin: 0.35rem 0 0.6rem;
   padding: 0.85rem 1rem;
@@ -1931,7 +1932,7 @@ const formulaValueTips = computed(() => {
 }
 
 .formula-aligned-term-label {
-  font-size: 0.75rem;
+  font-size: inherit;
   line-height: 1.35;
   color: var(--calc-text, #1c212a);
   text-align: center;
@@ -1950,7 +1951,7 @@ const formulaValueTips = computed(() => {
 }
 
 .formula-aligned-term-value {
-  font-size: 0.85rem;
+  font-size: inherit;
   line-height: 1.4;
   color: var(--calc-text, #1c212a);
   text-align: center;
@@ -1967,13 +1968,13 @@ const formulaValueTips = computed(() => {
   flex: 0 0 auto;
   align-self: center;
   color: var(--calc-text, #1c212a);
-  font-size: 0.78rem;
+  font-size: inherit;
 }
 
 .formula-aligned-result {
   flex: 0 0 auto;
   align-self: center;
-  font-size: 0.85rem;
+  font-size: inherit;
   font-weight: 700;
   color: var(--calc-accent, #c9a55c);
   font-variant-numeric: tabular-nums;
