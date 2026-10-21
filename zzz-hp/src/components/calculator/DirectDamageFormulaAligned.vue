@@ -110,10 +110,10 @@ const formulaSegments = computed((): DirectFormulaTerm[][] => {
 
 .formula-aligned-result--inline {
   flex-shrink: 0;
-  font-size: inherit;
+  font-size: var(--calc-formula-result-font-size);
   line-height: 1.35;
   white-space: nowrap;
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
 }
 </style>

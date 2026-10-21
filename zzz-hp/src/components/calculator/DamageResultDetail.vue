@@ -1812,6 +1812,8 @@ const formulaValueTips = computed(() => {
 
 <style scoped>
 .damage-result-detail {
+  --calc-formula-result-color: #3c82af;
+  --calc-formula-result-font-size: 1.25rem;
   display: flex;
   flex-direction: column;
 }
@@ -1974,10 +1976,15 @@ const formulaValueTips = computed(() => {
 .formula-aligned-result {
   flex: 0 0 auto;
   align-self: center;
-  font-size: inherit;
+  font-size: var(--calc-formula-result-font-size);
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
   font-variant-numeric: tabular-nums;
+}
+
+.damage-result-detail :deep(.formula-aligned-result .stat-value > strong) {
+  font-weight: inherit;
+  border-bottom-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
 .formula-aligned-dual {
@@ -2061,6 +2068,7 @@ const formulaValueTips = computed(() => {
 
 /* 暗夜模式：组件根重定义 --calc-*（照抄仓库既有约定：AffixBenefitTable 的 benefit-workbench 写法） */
 :global([data-theme='dark'] .damage-result-detail) {
+  --calc-formula-result-color: #8fc9ee;
   --calc-surface-2: rgba(0, 0, 0, 0.25);
   --calc-border: #2a2f37;
   --calc-text: #e8eaed;
