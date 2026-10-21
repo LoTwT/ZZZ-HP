@@ -44,7 +44,7 @@ import {
   unableSlotsOf,
 } from './nanoka/nanokaBuffExtractor.js'
 import { normalizeSkillName } from './nanoka/nanokaSkillMapper.js'
-import { listCalculatorBuffs, upsertAgent, upsertWengine } from './calculatorBuffService.js'
+import { listCalculatorBuffs, normalizeEffectList, upsertAgent, upsertWengine } from './calculatorBuffService.js'
 import { listSkills, upsertSkill } from './skillLibraryService.js'
 import { upsertSkillSubcategory } from './skillSubcategoryService.js'
 
@@ -270,10 +270,17 @@ export function sanitizeEffect(input, index = 0) {
   return effect
 }
 
-/** 所有结算字段参与判重；只忽略 id、来源说明、备注及展示分组。 */
+/** 同块判重：先按正式写库规则归一化；不比较 id、来源文案及展示分组。 */
 function effectSignature(input) {
-  const effect = sanitizeEffect(input)
-  const sorted = (values) => [...(values ?? [])].sort()
+  const sanitized = sanitizeEffect(input)
+  // 回读会清空无职业限制的人数档，比较时必须与写库规则一致，否则每次重试都会追加。
+  const effect = normalizeEffectList([sanitized])[0] ?? sanitized
+  const sorted = (values) => [...new Set(values ?? [])].sort()
+  const skillTargets = effect.skillTargets?.length
+    ? effect.skillTargets
+    : effect.skillCategory
+      ? [{ category: effect.skillCategory, subcategoryId: effect.skillSubcategoryId ?? null }]
+      : []
   return JSON.stringify({
     stat: effect.stat, kind: effect.kind,
     applyTarget: effect.applyTarget, applySituation: effect.applySituation,
@@ -282,9 +289,7 @@ function effectSignature(input) {
     value: effect.value, valuePerStack: effect.valuePerStack,
     maxStacks: effect.maxStacks, defaultStacks: effect.defaultStacks, stackable: effect.stackable,
     elementFilter: Array.isArray(effect.elementFilter) ? sorted(effect.elementFilter) : effect.elementFilter,
-    skillTargets: sorted((effect.skillTargets ?? []).map((target) => `${target.category}:${target.subcategoryId ?? ''}`)),
-    skillCategory: effect.skillTargets?.length ? null : effect.skillCategory ?? null,
-    skillSubcategoryId: effect.skillTargets?.length ? null : effect.skillSubcategoryId,
+    skillTargets: sorted(skillTargets.map((target) => JSON.stringify([target.category, target.subcategoryId ?? null]))),
     damageTypes: effect.conditions?.damageTypes ?? [],
     convert: effect.convert ?? null,
     appliesToAnomaly: effect.appliesToAnomaly ?? null,
