@@ -1,5 +1,6 @@
-import type { AnomalyDamageSubKind } from '@/types/calculator'
+import type { AnomalyDamageSubKind, DamageEventCritMode } from '@/types/calculator'
 import type { DamageCalcResult } from '@/utils/damageCalc'
+import { pickEventCritMultiplier, pickEventDamage } from '@/utils/damageEvent'
 
 export interface AnomalyFormulaAgentLabels {
   /**
@@ -80,6 +81,7 @@ export function buildAlignedAnomalyFormulaGroups(
   formatFormulaNumber: (v: number, precision?: number) => string,
   formatNumber: (v: number) => string,
   labels?: AnomalyFormulaAgentLabels,
+  critMode: DamageEventCritMode = 'expected',
 ): AlignedAnomalyFormulaGroup[] {
   const remielSelf = p.remielSelfRadianceActive
   const baseWithMutation = resolveAnomalyBaseWithMutation(p)
@@ -146,16 +148,16 @@ export function buildAlignedAnomalyFormulaGroups(
       { label: '异常倍率区', value: formatFormulaNumber(p.anomalyMultZone), tipsKey: 'anomalyMultZone' },
       {
         label: '异常暴击区',
-        value: formatFormulaNumber(p.anomalyCritZone),
+        value: formatFormulaNumber(pickEventCritMultiplier(p, 'anomaly', critMode)),
         tipsKey: 'anomalyCritZone',
       },
     ],
-    result: formatNumber(p.anomalyExpected),
+    result: formatNumber(pickEventDamage(p, 'anomaly', critMode)),
     dualResults: expectedTriple(p.anomalyExpected, p.anomalyExpectedNoCrit, p.anomalyExpectedFullCrit, formatNumber),
   }
   const disorder: AlignedAnomalyFormulaGroup = {
     key: 'disorderExpected',
-    title: `${disorderLabel}期望`,
+    title: disorderLabel,
     agentLabel: labels?.bonusAgent,
     terms: [
       { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
@@ -164,11 +166,11 @@ export function buildAlignedAnomalyFormulaGroups(
       // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
       {
         label: '紊乱暴击区',
-        value: formatFormulaNumber(p.disorderCritZone),
+        value: formatFormulaNumber(pickEventCritMultiplier(p, 'disorder', critMode)),
         tipsKey: 'disorderCritZone',
       },
     ],
-    result: formatNumber(p.disorderExpected),
+    result: formatNumber(pickEventDamage(p, 'disorder', critMode)),
     dualResults: expectedTriple(p.disorderExpected, p.disorderExpectedNoCrit, p.disorderExpectedFullCrit, formatNumber),
   }
   const turbulence: AlignedAnomalyFormulaGroup = {
@@ -186,11 +188,11 @@ export function buildAlignedAnomalyFormulaGroups(
       {
         // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用异常暴击区
         label: '乱流暴击区',
-        value: formatFormulaNumber(p.turbulenceCritZone),
+        value: formatFormulaNumber(pickEventCritMultiplier(p, 'turbulence', critMode)),
         tipsKey: 'turbulenceCritZone',
       },
     ],
-    result: formatNumber(p.turbulenceExpected),
+    result: formatNumber(pickEventDamage(p, 'turbulence', critMode)),
     dualResults: expectedTriple(p.turbulenceExpected, p.turbulenceExpectedNoCrit, p.turbulenceExpectedFullCrit, formatNumber),
   }
   const release: AlignedAnomalyFormulaGroup = {
@@ -212,11 +214,11 @@ export function buildAlignedAnomalyFormulaGroups(
       // 「异常综合暴击区」已删除（用户 2026-10-16：暴击按子类拆开，异放只吃自己的暴击字段）
       {
         label: '异放暴击区',
-        value: formatFormulaNumber(p.anomalyReleaseCritZone),
+        value: formatFormulaNumber(pickEventCritMultiplier(p, 'anomalyRelease', critMode)),
         tipsKey: 'anomalyReleaseCritZone',
       },
     ],
-    result: formatNumber(p.anomalyReleaseExpected),
+    result: formatNumber(pickEventDamage(p, 'anomalyRelease', critMode)),
     dualResults: expectedTriple(
       p.anomalyReleaseExpected,
       p.anomalyReleaseExpectedNoCrit,
@@ -278,7 +280,7 @@ export function buildAlignedAnomalyFormulaGroups(
           {
             // 耀变的触发者无论是蕾米还是其他人都允许暴击（游戏规则）
             label: '耀变暴击区',
-            value: formatFormulaNumber(p.radianceCritZone),
+            value: formatFormulaNumber(pickEventCritMultiplier(p, 'radiance', critMode)),
             tipsKey: 'radianceCritZone',
           },
         ]
@@ -296,11 +298,11 @@ export function buildAlignedAnomalyFormulaGroups(
           },
           {
             label: '耀变暴击区',
-            value: formatFormulaNumber(p.radianceCritZone),
+            value: formatFormulaNumber(pickEventCritMultiplier(p, 'radiance', critMode)),
             tipsKey: 'radianceCritZone',
           },
         ],
-    result: formatNumber(p.radianceExpected),
+    result: formatNumber(pickEventDamage(p, 'radiance', critMode)),
     dualResults: expectedTriple(p.radianceExpected, p.radianceExpectedNoCrit, p.radianceExpectedFullCrit, formatNumber),
   }
 

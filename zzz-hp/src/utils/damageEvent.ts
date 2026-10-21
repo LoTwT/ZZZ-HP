@@ -60,6 +60,33 @@ export function mapEventKindToCalc(
   return { damageKind: 'anomaly', anomalySubKind: 'turbulence' }
 }
 
+/** 公式展示只选择引擎已经算好的暴击乘区，不重新推导伤害。 */
+export function pickEventCritMultiplier(
+  result: DamageCalcResult,
+  kind: DamageEventKind,
+  critMode: DamageEventCritMode,
+): number {
+  if (kind === 'direct' || kind === 'sharpen') {
+    if (result.useSharpenFormula) {
+      if (critMode === 'noCrit') return result.sharpenCritZoneNoCrit
+      if (critMode === 'fullCrit') return result.sharpenCritZoneFullCrit
+      return result.sharpenCritZone
+    }
+    if (critMode === 'noCrit') return 1
+    if (critMode === 'fullCrit') return 1 + result.critDmgRatio
+    return result.critMultiplier
+  }
+  if (critMode === 'noCrit') return 1
+  const zones = {
+    anomaly: [result.anomalyCritZone, result.anomalyFullCritZone],
+    anomalyRelease: [result.anomalyReleaseCritZone, result.anomalyReleaseFullCritZone],
+    disorder: [result.disorderCritZone, result.disorderFullCritZone],
+    turbulence: [result.turbulenceCritZone, result.turbulenceFullCritZone],
+    radiance: [result.radianceCritZone, result.radianceFullCritZone],
+  }
+  return zones[kind][critMode === 'fullCrit' ? 1 : 0]!
+}
+
 export function pickEventDamage(
   result: DamageCalcResult,
   kind: DamageEventKind,

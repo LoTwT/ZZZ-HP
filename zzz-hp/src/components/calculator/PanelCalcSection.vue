@@ -73,7 +73,7 @@ import {
 } from '@/utils/resolvedHit'
 import {
   buildOptimalEvalContext,
-  evaluateOptimalEventDetail,
+  withAffixLibraryExtraGains,
 } from '@/utils/optimalAffixAlloc'
 import {
   buildHitEvalFingerprint,
@@ -83,6 +83,7 @@ import {
   writeHitEvalCache,
   type HitEvalCacheEntry,
 } from '@/utils/hitEvalCache'
+import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import {
   normalizeExtraGain,
 } from '@/utils/extraBuffCalc'
@@ -162,6 +163,8 @@ const props = defineProps<{
    * 为 null / 省略时用角色配置那份激活面板。见 `utils/skillFlowPanelSource.ts`。
    */
   skillFlowMainExternalOverride?: PanelStats | null
+  /** 三选项 ②③ 的局内词条增益，必须与覆盖面板一同参与结算。 */
+  skillFlowSourceExtraGains?: ExtraBuffGain[] | null
 }>()
 
 const extraGains = defineModel<ExtraBuffGain[]>('extraGains', { default: () => [] })
@@ -689,6 +692,13 @@ const skillFlowMainExternal = computed(
   () => props.skillFlowMainExternalOverride ?? resolveExternalPanelForSlotIndex(mainSlotIndex.value),
 )
 
+const skillFlowCalculationContext = computed(() =>
+  withAffixLibraryExtraGains(
+    skillFlowEvalCtx.value,
+    props.skillFlowMainExternalOverride ? (props.skillFlowSourceExtraGains ?? []) : [],
+  ),
+)
+
 
 /**
  * 「配置变了没」的指纹：**必须从响应式来源直接读**。
@@ -732,6 +742,7 @@ const hitCalcGlobalSignature = computed(() =>
     anomaly: resolvedActiveSlotPanels.value,
     env: (props.environmentBuffs ?? []).map((item) => item.id),
     extra: extraGains.value,
+    sourceExtraGains: props.skillFlowSourceExtraGains,
     enemy: enemyInput.value,
     ext: externalPanel,
     affix: affixCounts,
@@ -785,12 +796,10 @@ function syncHitSummary(
     let entry = readHitEvalCache(key)
     if (!entry) {
       try {
-        const detail = evaluateOptimalEventDetail(
-          skillFlowEvalCtx.value,
+        const detail = evaluateSkillFlowHit(
+          skillFlowCalculationContext.value,
           skillFlowMainExternal.value,
           hit,
-          // requirePanel：这四条伤害页入口统一要求「有面板才出伤害」（没面板 → 没有伤害）
-          { includeDetails: false, requirePanel: true },
         )
         if (detail) {
           entry = {
@@ -1025,6 +1034,14 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 }
 
 defineExpose({
+  resolveFlowCalculationDetail(hitId: string) {
+    if (props.calcSuspended || !damageCalcEnabled.value) return null
+    void hitCalcGlobalSignature.value
+    const hit = props.hits?.find((item) => item.id === hitId)
+    return hit
+      ? resolveSkillFlowCalculationDetail(skillFlowCalculationContext.value, skillFlowMainExternal.value, hit)
+      : null
+  },
   getSnapshot,
   loadSnapshot,
   beginRestore,

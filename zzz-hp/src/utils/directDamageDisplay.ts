@@ -1,7 +1,8 @@
-import type { SkillSubcategory } from '@/types/calculator'
+import type { DamageEventCritMode, SkillSubcategory } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 import { multFactorPercentToRatio } from '@/utils/multFactorPercent'
+import { pickEventCritMultiplier, pickEventDamage } from '@/utils/damageEvent'
 import {
   normalizeSkillSubcategoryMultFields,
   unsetSkillMult,
@@ -55,12 +56,13 @@ export function buildSharpenCritZoneLines(
   return lines
 }
 
-export function computeDirectBaseChain(p: DamageCalcResult): number {
+export function computeDirectBaseChain(p: DamageCalcResult, critMode: DamageEventCritMode = 'expected'): number {
+  const critMultiplier = pickEventCritMultiplier(p, 'direct', critMode)
   if (p.useSharpenFormula) {
     return (
       p.generalMultiplier *
       Math.max(0, p.directVulnerableMultiplier) *
-      p.critMultiplier *
+      critMultiplier *
       Math.max(0, p.specialMultiplier) *
       Math.max(0, p.sharpenDmgMultiplier)
     )
@@ -68,7 +70,7 @@ export function computeDirectBaseChain(p: DamageCalcResult): number {
   return (
     p.generalMultiplier *
     Math.max(0, p.directVulnerableMultiplier) *
-    p.critMultiplier *
+    critMultiplier *
     Math.max(0, p.specialMultiplier) *
     Math.max(0, p.pierceDmgMultiplier)
   )
@@ -94,6 +96,7 @@ export function buildAlignedDirectFormulaGroup(
   formatFormulaNumber: (value: number, precision?: number) => string,
   formatNumber: (value: number) => string,
   resultValue?: string,
+  critMode: DamageEventCritMode = 'expected',
 ): AlignedDirectFormulaGroup {
   const baseTerms: DirectFormulaTerm[] = [
     {
@@ -108,7 +111,7 @@ export function buildAlignedDirectFormulaGroup(
     },
     {
       label: p.useSharpenFormula ? '锐爆区' : '暴击区',
-      value: formatFormulaNumber(p.critMultiplier),
+      value: formatFormulaNumber(pickEventCritMultiplier(p, 'direct', critMode)),
       tipsKey: 'critMultiplier',
     },
     {
@@ -150,7 +153,7 @@ export function buildAlignedDirectFormulaGroup(
       key: 'directDamageExpected',
       title: '公式',
       terms: [...baseTerms, directZone],
-      result: resultValue ?? formatNumber(p.directDamageExpected),
+      result: resultValue ?? formatNumber(pickEventDamage(p, 'direct', critMode)),
     }
   }
 
@@ -159,8 +162,8 @@ export function buildAlignedDirectFormulaGroup(
     title: '公式',
     terms: baseTerms,
     sumMultZones: [directZone, settlementZone],
-    baseChainValue: computeDirectBaseChain(p),
-    result: resultValue ?? formatNumber(p.directDamageExpected),
+    baseChainValue: computeDirectBaseChain(p, critMode),
+    result: resultValue ?? formatNumber(pickEventDamage(p, 'direct', critMode)),
   }
 }
 

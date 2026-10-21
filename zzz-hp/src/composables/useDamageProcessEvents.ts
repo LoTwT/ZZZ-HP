@@ -1,16 +1,9 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { AgentBuffDoc } from '@/types/calculator'
-import type { PanelStats } from '@/types/calculatorPanel'
 import type { ResolvedHit } from '@/utils/resolvedHit'
 import { getHitSkipReason } from '@/utils/resolvedHit'
 import { summarizeDamageByOwner } from '@/utils/damageEventOwner'
-import {
-  evaluateOptimalEventDetail,
-  withAffixLibraryExtraGains,
-  type OptimalEventEvalDetail,
-  type OptimalEvalContext,
-} from '@/utils/optimalAffixAlloc'
-import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
+import type { OptimalEventEvalDetail } from '@/utils/optimalAffixAlloc'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 
 /** 计算过程页签的单条事件行 */
@@ -18,21 +11,13 @@ export interface DamageProcessEventRow {
   hit: ResolvedHit
   eventId: string
   displayName: string
-  detail: OptimalEventEvalDetail | null
   skipReason: string | null
 }
 
 /** 计算过程数据源：由调用方提供「当前评估结果」与「纳入统计的事件 id」 */
 export interface DamageProcessSource {
-  /** 当前上下文（事件明细按它重算） */
-  ctx: ComputedRef<OptimalEvalContext>
-  /** 当前评估结果的局外面板；为空时按 ctx + counts 兜底 */
-  external: ComputedRef<PanelStats | null | undefined>
-  /**
-   * 选 ②③ 时该次分配的 `gain:`（不在局外面板上）。
-   * 详情重算必须并入，否则总伤来自流程 hit map、乘区分解仍是页级 extraGains。
-   */
-  allocatedExtraGains?: ComputedRef<ExtraBuffGain[] | null | undefined>
+  /** 与流程详情共用当前计算模块的上下文；对比区不再另行组装上下文。 */
+  resolveDetail: (eventId: string) => OptimalEventEvalDetail | null
   /** 总伤期望（产生者占比区顶部数值） */
   grandTotal: ComputedRef<number>
   /** 事件明细列表（用于推导占比与跳过原因） */
@@ -96,12 +81,6 @@ export function useDamageProcessEvents(source: DamageProcessSource) {
   /** 事件明细行：仅在页签可见时重算 */
   const eventRows = computed((): DamageProcessEventRow[] => {
     if (!source.enabled.value || !source.active.value || !source.hasEvents.value) return []
-    const ctx = source.ctx.value
-    if (!ctx) return []
-    // external 为空 = 「角色配置面板」（3 选 1 的 null 口径）；evaluateOptimalEventDetail 内部用主槽激活面板兜底
-    const external = source.external.value ?? null
-    // 与招式流程 hit map 同一口径：②③ 的 gain: 不在局外面板上，详情必须并入
-    const evalCtx = withAffixLibraryExtraGains(ctx, source.allocatedExtraGains?.value ?? [])
     return (source.hits.value ?? [])
       .filter((hit) => inScope(hit.id))
       .map((hit) => {
@@ -110,9 +89,6 @@ export function useDamageProcessEvents(source: DamageProcessSource) {
           hit,
           eventId: hit.id,
           displayName: displayNameOf(hit),
-          detail: skipReason
-            ? null
-            : evaluateOptimalEventDetail(evalCtx, external, hit, { requirePanel: true }),
           skipReason,
         }
       })
@@ -121,7 +97,7 @@ export function useDamageProcessEvents(source: DamageProcessSource) {
   watch(
     eventRows,
     (rows) => {
-      const selectable = rows.filter((row) => row.detail)
+      const selectable = rows.filter((row) => !row.skipReason)
       if (!selectable.length) {
         selectedEventId.value = null
         return
@@ -137,7 +113,10 @@ export function useDamageProcessEvents(source: DamageProcessSource) {
     () => eventRows.value.find((row) => row.eventId === selectedEventId.value) ?? null,
   )
 
-  const selectedDetail = computed(() => selectedRow.value?.detail ?? null)
+  const selectedDetail = computed(() => {
+    const row = selectedRow.value
+    return row && !row.skipReason ? source.resolveDetail(row.eventId) : null
+  })
 
   /** 产生者伤害占比：只统计纳入口径的事件 */
   const ownerShareSummary = computed(() => {
@@ -190,7 +169,7 @@ export function useDamageProcessEvents(source: DamageProcessSource) {
       return
     }
     const row = eventRows.value.find((item) => item.eventId === eventId)
-    if (!row?.detail) return
+    if (!row || row.skipReason) return
     source.onSelectEvent?.(eventId)
     selectedEventId.value = eventId
   }
