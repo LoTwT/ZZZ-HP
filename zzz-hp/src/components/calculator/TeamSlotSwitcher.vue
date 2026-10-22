@@ -48,6 +48,32 @@ function showHover(index: number) {
   hoverIndex.value = index
 }
 
+/**
+ * 详情条（角色名 / 影画 / 精炼 / 导入·移除）的收起状态。
+ * 收起后整条只剩左下角一个「展开」按钮，把竖向空间让给下面的计算区。
+ * 选择只在本机记住（localStorage），不进入方案数据。
+ */
+const EDITOR_COLLAPSED_KEY = 'zzz-hp-team-slot-editor-collapsed'
+
+function readEditorCollapsed() {
+  try {
+    return localStorage.getItem(EDITOR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const editorCollapsed = ref(readEditorCollapsed())
+
+function toggleEditorCollapsed() {
+  editorCollapsed.value = !editorCollapsed.value
+  try {
+    localStorage.setItem(EDITOR_COLLAPSED_KEY, editorCollapsed.value ? '1' : '0')
+  } catch {
+    // localStorage 不可用时只影响下次进页面的默认状态
+  }
+}
+
 function scheduleHideHover() {
   clearHoverHideTimer()
   hoverHideTimer = setTimeout(() => {
@@ -345,58 +371,74 @@ const driveDiscLine = computed(() => {
       </div>
     </div>
 
-    <div class="slot-editor" :class="{ empty: !activeAgent }">
-      <template v-if="activeAgent && activeSlot">
-        <div class="editor-identity">
-          <strong class="identity-title">
-            {{ activeAgent.name }}
-            <span v-if="identityMetaLine" class="identity-meta"> · {{ identityMetaLine }}</span>
-          </strong>
-          <span class="identity-sub">{{ mindscapeWengineLine }}</span>
-          <span class="identity-sub gear-summary">{{ driveDiscLine }}</span>
-        </div>
-        <div class="editor-controls">
-          <label class="control">
-            <span>影画</span>
-            <input
-              class="slider"
-              type="range"
-              min="0"
-              max="6"
-              step="1"
-              :value="activeSlot.rank"
-              @input="updateRank(Number(($event.target as HTMLInputElement).value))"
-            />
-            <em>{{ activeSlot.rank }}影</em>
-          </label>
-          <label class="control">
-            <span>精炼</span>
-            <input
-              class="slider"
-              type="range"
-              min="1"
-              max="5"
-              step="1"
-              :disabled="!activeWengine || !wengineProfessionMatch"
-              :value="activeSlot.wengineRefine"
-              @input="updateRefine(Number(($event.target as HTMLInputElement).value))"
-            />
-            <em>{{ wengineProfessionMatch ? `精${activeSlot.wengineRefine}` : '精-' }}</em>
-          </label>
+    <div class="slot-editor" :class="{ empty: !activeAgent, collapsed: editorCollapsed }">
+      <!-- 左下角：收起 / 展开这一条（收起后只留它自己） -->
+      <button
+        type="button"
+        class="editor-collapse-btn"
+        :aria-expanded="!editorCollapsed"
+        :title="
+          editorCollapsed
+            ? '展开角色详情（影画 / 精炼 / 导入·移除）'
+            : '收起角色详情，只留展开按钮'
+        "
+        @click.stop="toggleEditorCollapsed"
+      >
+        {{ editorCollapsed ? '展开' : '收起' }}
+      </button>
+      <template v-if="!editorCollapsed">
+        <template v-if="activeAgent && activeSlot">
+          <div class="editor-identity">
+            <strong class="identity-title">
+              {{ activeAgent.name }}
+              <span v-if="identityMetaLine" class="identity-meta"> · {{ identityMetaLine }}</span>
+            </strong>
+            <span class="identity-sub">{{ mindscapeWengineLine }}</span>
+            <span class="identity-sub gear-summary">{{ driveDiscLine }}</span>
+          </div>
+          <div class="editor-controls">
+            <label class="control">
+              <span>影画</span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="6"
+                step="1"
+                :value="activeSlot.rank"
+                @input="updateRank(Number(($event.target as HTMLInputElement).value))"
+              />
+              <em>{{ activeSlot.rank }}影</em>
+            </label>
+            <label class="control">
+              <span>精炼</span>
+              <input
+                class="slider"
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                :disabled="!activeWengine || !wengineProfessionMatch"
+                :value="activeSlot.wengineRefine"
+                @input="updateRefine(Number(($event.target as HTMLInputElement).value))"
+              />
+              <em>{{ wengineProfessionMatch ? `精${activeSlot.wengineRefine}` : '精-' }}</em>
+            </label>
+          </div>
+        </template>
+        <p v-else class="empty-hint">当前槽位未配置角色，点「导入」选择角色、音擎、驱动盘和面板</p>
+        <div class="editor-actions">
+          <button type="button" class="import-btn" @click="emit('import', activeIndex)">导入</button>
+          <button
+            v-if="activeAgent"
+            type="button"
+            class="clear-btn"
+            @click="emit('clear', activeIndex)"
+          >
+            移除
+          </button>
         </div>
       </template>
-      <p v-else class="empty-hint">当前槽位未配置角色，点「导入」选择角色、音擎、驱动盘和面板</p>
-      <div class="editor-actions">
-        <button type="button" class="import-btn" @click="emit('import', activeIndex)">导入</button>
-        <button
-          v-if="activeAgent"
-          type="button"
-          class="clear-btn"
-          @click="emit('clear', activeIndex)"
-        >
-          移除
-        </button>
-      </div>
     </div>
   </div>
 </template>
@@ -533,6 +575,37 @@ const driveDiscLine = computed(() => {
 
 .slot-editor.empty {
   justify-content: space-between;
+}
+
+/* 详情条左下角的「收起 / 展开」：收起后这一条只剩它自己 */
+.editor-collapse-btn {
+  align-self: flex-end;
+  flex-shrink: 0;
+  appearance: none;
+  padding: 0.08rem 0.42rem;
+  border: 1px solid #3b434f;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa3b5;
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.editor-collapse-btn:hover {
+  border-color: rgba(201, 165, 92, 0.55);
+  background: rgba(201, 165, 92, 0.09);
+  color: #f3e6c4;
+}
+
+.slot-editor.collapsed {
+  padding: 0.22rem 0.4rem;
+  justify-content: flex-start;
 }
 
 .editor-identity {
