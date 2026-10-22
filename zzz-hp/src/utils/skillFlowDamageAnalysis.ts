@@ -2,6 +2,7 @@ import {
   BUFF_DAMAGE_TYPE_GROUPS,
   BUFF_DAMAGE_TYPE_OPTIONS,
   type BuffDamageType,
+  type StaggerPhase,
 } from '@/types/calculator'
 import type { SchemeSlot } from '@/types/damageCalcHistory'
 import type { ResolvedHit } from '@/utils/resolvedHit'
@@ -60,6 +61,71 @@ export interface SkillFlowSkillContribution {
   personalRatio: number
   teamRatio: number
   lines: SkillFlowDamageLine[]
+}
+
+export interface SkillFlowDamageFilter {
+  damageType?: BuffDamageType | null
+  damageKind?: 'direct' | 'anomaly' | null
+  staggerPhase?: StaggerPhase | null
+}
+
+export interface SkillFlowDamageCrossRow {
+  id: BuffDamageType
+  name: string
+  color: string
+  normal: number
+  stagger: number
+  total: number
+  staggerRatio: number
+}
+
+export function filterSkillFlowDamageLines(
+  lines: readonly SkillFlowDamageLine[],
+  filter: SkillFlowDamageFilter = {},
+): SkillFlowDamageLine[] {
+  return lines.filter(
+    (line) =>
+      (!filter.damageType || line.damageType === filter.damageType) &&
+      (!filter.damageKind || line.hit.damageKind === filter.damageKind) &&
+      (!filter.staggerPhase || line.hit.staggerPhase === filter.staggerPhase),
+  )
+}
+
+export function skillFlowDamageCrossRows(
+  lines: readonly SkillFlowDamageLine[],
+): SkillFlowDamageCrossRow[] {
+  return skillFlowDamageSlices(lines, 'type').map((slice) => {
+    const typeLines = lines.filter((line) => line.damageType === slice.id)
+    const stagger = typeLines.reduce(
+      (sum, line) => sum + (line.hit.staggerPhase === 'stagger' ? line.total : 0),
+      0,
+    )
+    return {
+      id: slice.id as BuffDamageType,
+      name: slice.name,
+      color: slice.color,
+      normal: slice.total - stagger,
+      stagger,
+      total: slice.total,
+      staggerRatio: slice.total > 0 ? stagger / slice.total : 0,
+    }
+  })
+}
+
+/** conic-gradient 从正上方顺时针开始；坐标为相对圆心的像素。 */
+export function skillFlowSliceAtPoint(
+  slices: readonly SkillFlowDamageSlice[],
+  x: number,
+  y: number,
+): SkillFlowDamageSlice | null {
+  if (!slices.length || (x === 0 && y === 0)) return null
+  const turn = ((Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI)
+  let cursor = 0
+  for (const slice of slices) {
+    cursor += slice.ratio
+    if (turn < cursor) return slice
+  }
+  return slices[slices.length - 1] ?? null
 }
 
 /**
@@ -161,9 +227,10 @@ export function skillFlowDamageSlices(
 export function skillFlowSkillContributions(
   analysis: SkillFlowDamageAnalysis,
   slotIndex: number | null,
+  filter: SkillFlowDamageFilter = {},
 ): SkillFlowSkillContribution[] {
   const groups = new Map<string, SkillFlowSkillContribution>()
-  for (const line of analysis.lines) {
+  for (const line of filterSkillFlowDamageLines(analysis.lines, filter)) {
     if (slotIndex != null && line.slotIndex !== slotIndex) continue
     const id = JSON.stringify([line.slotIndex, line.hit.skill.id])
     let group = groups.get(id)

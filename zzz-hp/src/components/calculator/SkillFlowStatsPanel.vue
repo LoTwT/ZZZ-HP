@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
+import SkillFlowDamageCrossAnalysis from '@/components/calculator/SkillFlowDamageCrossAnalysis.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { AgentBuffDoc } from '@/types/calculator'
+import type { AgentBuffDoc, BuffDamageType, StaggerPhase } from '@/types/calculator'
+import { damageTypeLabel } from '@/utils/buffDamageTypes'
 import type { SchemeSlot } from '@/types/damageCalcHistory'
 import type { ResolvedHit } from '@/utils/resolvedHit'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
 import {
   buildSkillFlowDamageAnalysis,
+  filterSkillFlowDamageLines,
+  skillFlowDamageCrossRows,
   skillFlowDamageSlices,
+  skillFlowSliceAtPoint,
   skillFlowSkillContributions,
   type SkillFlowDamageLine,
+  type SkillFlowDamageFilter,
   type SkillFlowDamageSlice,
   type SkillFlowSkillContribution,
 } from '@/utils/skillFlowDamageAnalysis'
@@ -43,6 +49,7 @@ const typeDimension = ref<'type' | 'category'>('type')
 const comparisonMode = ref<'damage' | 'percentage'>('damage')
 const expandedContributionIds = ref<Set<string>>(new Set())
 const selectedCalculationHitId = ref<string | null>(null)
+const damageFilter = ref<SkillFlowDamageFilter>({})
 
 watch(
   records,
@@ -111,10 +118,29 @@ const uncomputedCount = computed(() =>
 )
 const typeSlices = computed(() => skillFlowDamageSlices(scopedLines.value, typeDimension.value))
 const staggerSlices = computed(() => skillFlowDamageSlices(scopedLines.value, 'stagger'))
+const crossRows = computed(() => skillFlowDamageCrossRows(scopedLines.value))
+const filteredLines = computed(() =>
+  filterSkillFlowDamageLines(scopedLines.value, damageFilter.value),
+)
+const filteredTotal = computed(() => filteredLines.value.reduce((sum, line) => sum + line.total, 0))
+const filterChips = computed(() => {
+  const filter = damageFilter.value
+  const chips: Array<{ key: keyof SkillFlowDamageFilter; label: string }> = []
+  if (filter.damageType)
+    chips.push({ key: 'damageType', label: damageTypeLabel(filter.damageType) })
+  if (filter.damageKind)
+    chips.push({ key: 'damageKind', label: filter.damageKind === 'direct' ? '直伤类' : '异常类' })
+  if (filter.staggerPhase)
+    chips.push({
+      key: 'staggerPhase',
+      label: filter.staggerPhase === 'stagger' ? '失衡期' : '非失衡',
+    })
+  return chips
+})
 const comparisonLegend = computed(() => skillFlowDamageSlices(analysis.value.lines, 'type'))
 const largestSlotTotal = computed(() => Math.max(0, ...slotRows.value.map((row) => row.total)))
 const contributions = computed(() =>
-  skillFlowSkillContributions(analysis.value, analysisSlotIndex.value),
+  skillFlowSkillContributions(analysis.value, analysisSlotIndex.value, damageFilter.value),
 )
 const selectedCalculation = computed(() =>
   selectedCalculationHitId.value
@@ -128,10 +154,12 @@ function clearExpandedDetails() {
 }
 
 watch(analysisSlotIndex, clearExpandedDetails)
+watch(damageFilter, clearExpandedDetails)
 watch(
   () => props.teamSlots.map((slot) => slot.agentId).join('\0'),
   () => {
     analysisSlotIndex.value = null
+    damageFilter.value = {}
     clearExpandedDetails()
   },
 )
@@ -157,6 +185,72 @@ function toggleContribution(item: SkillFlowSkillContribution) {
 
 function toggleCalculation(hitId: string) {
   selectedCalculationHitId.value = selectedCalculationHitId.value === hitId ? null : hitId
+}
+
+function selectDamageType(type: BuffDamageType) {
+  damageFilter.value = {
+    ...damageFilter.value,
+    damageKind: null,
+    damageType: damageFilter.value.damageType === type ? null : type,
+  }
+}
+
+function selectTypeSlice(id: string) {
+  if (typeDimension.value === 'category') {
+    if (id !== 'direct' && id !== 'anomaly') return
+    damageFilter.value = {
+      ...damageFilter.value,
+      damageType: null,
+      damageKind: damageFilter.value.damageKind === id ? null : id,
+    }
+  } else selectDamageType(id as BuffDamageType)
+}
+
+function selectStaggerPhase(phase: StaggerPhase) {
+  damageFilter.value = {
+    ...damageFilter.value,
+    staggerPhase: damageFilter.value.staggerPhase === phase ? null : phase,
+  }
+}
+
+function selectCrossCell(type: BuffDamageType, phase: StaggerPhase) {
+  const clear = damageFilter.value.damageType === type && damageFilter.value.staggerPhase === phase
+  damageFilter.value = { damageType: clear ? null : type, staggerPhase: clear ? null : phase }
+}
+
+function selectRoleSegment(slotIndex: number, type: string) {
+  analysisSlotIndex.value = slotIndex
+  damageFilter.value = {
+    ...damageFilter.value,
+    damageKind: null,
+    damageType: type as BuffDamageType,
+  }
+}
+
+function onPieClick(
+  event: MouseEvent,
+  slices: SkillFlowDamageSlice[],
+  dimension: 'type' | 'stagger',
+) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const slice = skillFlowSliceAtPoint(
+    slices,
+    event.clientX - rect.left - rect.width / 2,
+    event.clientY - rect.top - rect.height / 2,
+  )
+  if (!slice) return
+  if (dimension === 'type') selectTypeSlice(slice.id)
+  else selectStaggerPhase(slice.id as StaggerPhase)
+}
+
+function typeSliceSelected(id: string) {
+  return typeDimension.value === 'type'
+    ? damageFilter.value.damageType === id
+    : damageFilter.value.damageKind === id
+}
+
+function removeFilter(key: keyof SkillFlowDamageFilter) {
+  damageFilter.value = { ...damageFilter.value, [key]: null }
 }
 
 function comparisonWidth(total: number) {
@@ -319,17 +413,19 @@ function clearRecords() {
       </div>
       <div v-for="row in slotRows" :key="row.index" class="sf-analysis-bar-row">
         <span class="sf-analysis-bar-label">{{ row.index + 1 }} · {{ row.name }}</span>
-        <div
-          class="sf-analysis-track"
-          role="img"
-          :aria-label="`${row.name}：总伤 ${formatNum(row.total)}；${sliceDescription(row.slices)}`"
-        >
+        <div class="sf-analysis-track" role="group" :aria-label="`${row.name}伤害构成，可筛选招式`">
           <div class="sf-analysis-bar" :style="{ width: comparisonWidth(row.total) }">
-            <span
+            <button
               v-for="slice in row.slices"
               :key="slice.id"
+              type="button"
               :style="{ width: `${slice.ratio * 100}%`, background: slice.color }"
               :title="`${row.name} · ${slice.name}：${formatNum(slice.total)}，占个人 ${formatPct(slice.ratio, 1)}`"
+              :aria-label="`筛选${row.name} · ${slice.name}`"
+              :aria-pressed="
+                analysisSlotIndex === row.index && damageFilter.damageType === slice.id
+              "
+              @click="selectRoleSegment(row.index, slice.id)"
             />
           </div>
         </div>
@@ -399,18 +495,29 @@ function clearRecords() {
             role="img"
             :aria-label="`${analysisName}伤害类型：${sliceDescription(typeSlices) || '暂无伤害'}`"
             :style="{ background: pieBackground(typeSlices) }"
+            @click="onPieClick($event, typeSlices, 'type')"
           />
           <ul class="sf-pie-legend">
             <li v-for="slice in typeSlices" :key="slice.id">
-              <i :style="{ background: slice.color }" />
-              <span>{{ slice.name }}</span>
-              <b>{{ formatNum(slice.total) }}</b>
-              <em>{{ formatPct(slice.ratio, 1) }}</em>
+              <button
+                type="button"
+                class="sf-pie-choice"
+                :aria-pressed="typeSliceSelected(slice.id)"
+                :aria-label="`筛选伤害类型：${slice.name}`"
+                @click="selectTypeSlice(slice.id)"
+              >
+                <i :style="{ background: slice.color }" />
+                <span>{{ slice.name }}</span>
+                <b>{{ formatNum(slice.total) }}</b>
+                <em>{{ formatPct(slice.ratio, 1) }}</em>
+              </button>
             </li>
             <li v-if="!typeSlices.length" class="muted">{{ analysisName }}流程暂无可统计伤害</li>
           </ul>
         </div>
-        <p class="sf-stats-hint">占{{ analysisName }}总伤 {{ formatNum(scopedTotal) }} 的比例。</p>
+        <p class="sf-stats-hint">
+          占{{ analysisName }}总伤 {{ formatNum(scopedTotal) }} 的比例；点击扇区或图例筛选招式。
+        </p>
       </div>
       <div class="sf-pie-block">
         <h4>{{ analysisName }} · 失衡状态</h4>
@@ -420,13 +527,22 @@ function clearRecords() {
             role="img"
             :aria-label="`${analysisName}失衡状态：${sliceDescription(staggerSlices) || '暂无伤害'}`"
             :style="{ background: pieBackground(staggerSlices) }"
+            @click="onPieClick($event, staggerSlices, 'stagger')"
           />
           <ul class="sf-pie-legend">
             <li v-for="slice in staggerSlices" :key="slice.id">
-              <i :style="{ background: slice.color }" />
-              <span>{{ slice.name }}</span>
-              <b>{{ formatNum(slice.total) }}</b>
-              <em>{{ formatPct(slice.ratio, 1) }}</em>
+              <button
+                type="button"
+                class="sf-pie-choice"
+                :aria-pressed="damageFilter.staggerPhase === slice.id"
+                :aria-label="`筛选失衡状态：${slice.name}`"
+                @click="selectStaggerPhase(slice.id as StaggerPhase)"
+              >
+                <i :style="{ background: slice.color }" />
+                <span>{{ slice.name }}</span>
+                <b>{{ formatNum(slice.total) }}</b>
+                <em>{{ formatPct(slice.ratio, 1) }}</em>
+              </button>
             </li>
             <li v-if="!staggerSlices.length" class="muted">{{ analysisName }}流程暂无可统计伤害</li>
           </ul>
@@ -435,10 +551,41 @@ function clearRecords() {
       </div>
     </div>
 
+    <SkillFlowDamageCrossAnalysis
+      :name="analysisName"
+      :rows="crossRows"
+      :filter="damageFilter"
+      @select-type="selectDamageType"
+      @select-cell="selectCrossCell"
+    />
+
     <section class="sf-analysis-ranking" aria-label="招式贡献排行">
       <h4>{{ analysisName }} · 招式贡献排行</h4>
       <p class="sf-stats-hint">
         按总伤降序；同一角色的同一招式合并，展开可查看各段状态与计算过程。
+      </p>
+      <div v-if="filterChips.length" class="sf-analysis-filter-bar" aria-label="当前招式筛选">
+        <span>筛选：</span>
+        <button
+          v-for="chip in filterChips"
+          :key="chip.key"
+          type="button"
+          class="sf-analysis-detail-button"
+          :aria-label="`移除筛选：${chip.label}`"
+          @click="removeFilter(chip.key)"
+        >
+          {{ chip.label }} ×
+        </button>
+        <button type="button" class="sf-analysis-detail-button" @click="damageFilter = {}">
+          清除全部筛选
+        </button>
+        <span
+          >命中 {{ filteredLines.length }} 段 · {{ formatNum(filteredTotal) }} · 占当前范围
+          {{ formatPct(filteredTotal, scopedTotal) }}</span
+        >
+      </div>
+      <p v-if="filterChips.length" class="sf-stats-hint">
+        上方图表保留完整范围；排行占个人／全队仍以各自完整总伤为分母。
       </p>
       <div
         v-if="contributions.length"
@@ -523,7 +670,13 @@ function clearRecords() {
           </tbody>
         </table>
       </div>
-      <p v-else class="sf-stats-hint">{{ analysisName }}流程暂无可统计招式。</p>
+      <p v-else class="sf-stats-hint">
+        {{
+          filterChips.length
+            ? '没有符合当前筛选的招式，可移除筛选条件。'
+            : `${analysisName}流程暂无可统计招式。`
+        }}
+      </p>
     </section>
 
     <div class="sf-stats-lift">
@@ -766,9 +919,25 @@ function clearRecords() {
   display: flex;
   height: 100%;
 }
-.sf-analysis-bar > span {
+.sf-analysis-bar > button {
   flex-shrink: 0;
   height: 100%;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+.sf-analysis-bar > button:focus-visible {
+  outline: 2px solid var(--sf-analysis-text);
+  outline-offset: -2px;
+}
+.sf-analysis-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  color: var(--sf-analysis-text);
+  font-size: 0.76rem;
 }
 .sf-analysis-bar-total {
   text-align: right;
@@ -873,6 +1042,31 @@ function clearRecords() {
   height: 5.6rem;
   border-radius: 50%;
   background: #2a3038;
+  cursor: pointer;
+}
+.sf-pie-choice {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 0.6rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sf-pie-choice:hover,
+.sf-pie-choice[aria-pressed='true'] {
+  border-color: var(--sf-analysis-accent);
+  background: var(--sf-analysis-selected);
+}
+.sf-pie-choice:focus-visible {
+  outline: 2px solid var(--sf-analysis-accent);
+  outline-offset: 2px;
 }
 .sf-pie-legend {
   list-style: none;
