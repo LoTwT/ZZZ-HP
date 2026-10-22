@@ -2073,6 +2073,32 @@ const pageRootRef = ref<HTMLElement | null>(null)
 const skillFlowSectionRef = ref<InstanceType<typeof SkillFlowSection> | null>(null)
 const historySectionRef = ref<InstanceType<typeof DamageCalcHistorySection> | null>(null)
 
+/**
+ * 顶部准备区（三个角色槽位 + 详情条 + 方案库/清空）整体收起。
+ * 收起后这一段只剩右下角一颗「展开」按钮，把竖向空间让给下面的计算区；
+ * 状态只记本机 localStorage，不进方案数据，也不影响任何计算口径。
+ */
+const TOP_AREA_COLLAPSED_KEY = 'zzz-hp-team-slot-editor-collapsed'
+
+function readTopAreaCollapsed() {
+  try {
+    return localStorage.getItem(TOP_AREA_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const topAreaCollapsed = ref(readTopAreaCollapsed())
+
+function toggleTopArea() {
+  topAreaCollapsed.value = !topAreaCollapsed.value
+  try {
+    localStorage.setItem(TOP_AREA_COLLAPSED_KEY, topAreaCollapsed.value ? '1' : '0')
+  } catch {
+    // localStorage 不可用时只影响下次进页面的默认状态
+  }
+}
+
 function openSchemeLibrary() {
   historySectionRef.value?.openModal()
 }
@@ -2103,8 +2129,9 @@ defineExpose({ scrollToSection })
 <template>
   <div ref="pageRootRef" class="damage-page">
     <p v-if="draftSaveWarning" class="draft-save-warning" role="alert">{{ draftSaveWarning }}</p>
-    <div class="team-slot-sticky">
+    <div class="team-slot-sticky" :class="{ 'is-folded': topAreaCollapsed }">
       <TeamSlotSwitcher
+        v-if="!topAreaCollapsed"
         :team-slots="teamSlots"
         :agents="agents"
         :wengines="wengines"
@@ -2118,14 +2145,30 @@ defineExpose({ scrollToSection })
         @clear="clearSlot"
       />
       <div class="scheme-lib-actions">
-        <button type="button" class="scheme-lib-btn" @click="openSchemeLibrary">方案库</button>
+        <template v-if="!topAreaCollapsed">
+          <button type="button" class="scheme-lib-btn" @click="openSchemeLibrary">方案库</button>
+          <button
+            type="button"
+            class="scheme-clear-btn"
+            title="清空当前页面配置，不删除方案库里的存档"
+            @click="clearCurrentScheme"
+          >
+            清空当前配置
+          </button>
+        </template>
+        <!-- 右下角：收起 / 展开整个顶部准备区 -->
         <button
           type="button"
-          class="scheme-clear-btn"
-          title="清空当前页面配置，不删除方案库里的存档"
-          @click="clearCurrentScheme"
+          class="scheme-fold-btn"
+          :aria-expanded="!topAreaCollapsed"
+          :title="
+            topAreaCollapsed
+              ? '展开顶部准备区（角色槽位 / 配装 / 方案库）'
+              : '收起整个顶部准备区，只保留这颗按钮'
+          "
+          @click="toggleTopArea"
         >
-          清空当前配置
+          {{ topAreaCollapsed ? '展开' : '收起' }}
         </button>
       </div>
     </div>
@@ -2467,7 +2510,8 @@ defineExpose({ scrollToSection })
 }
 
 .scheme-lib-btn,
-.scheme-clear-btn {
+.scheme-clear-btn,
+.scheme-fold-btn {
   appearance: none;
   border-radius: 8px;
   font: inherit;
@@ -2488,10 +2532,38 @@ defineExpose({ scrollToSection })
 }
 
 .scheme-lib-btn:hover,
-.scheme-clear-btn:hover {
+.scheme-clear-btn:hover,
+.scheme-fold-btn:hover {
   border-color: #c9a55c;
   color: #f0d7a2;
   background: #161b24;
+}
+
+/* 收起 / 展开：比上面两颗轻一档，收起来以后它就是这一条唯一的按钮 */
+.scheme-fold-btn {
+  padding: 0.26rem 0.8rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-color: #343a44;
+  background: transparent;
+  color: #9aa3b5;
+}
+
+.scheme-fold-btn:hover {
+  border-color: rgba(201, 165, 92, 0.55);
+  background: rgba(201, 165, 92, 0.1);
+  color: #f3e6c4;
+}
+
+/* 收起后整条只剩右下角那颗按钮 */
+.team-slot-sticky.is-folded {
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0.35rem 1rem 0.4rem;
+}
+
+.team-slot-sticky.is-folded .scheme-lib-actions {
+  justify-content: flex-end;
 }
 
 .skill-flow-anchor {
