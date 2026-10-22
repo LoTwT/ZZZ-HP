@@ -257,27 +257,78 @@ const identityMetaLine = computed(() => {
   return [agent.element, agent.profession].filter(Boolean).join(' · ')
 })
 
-const mindscapeWengineLine = computed(() => {
+/**
+ * 详情条那一行里的「小卡片」：音擎 / 4件套 / 2件套。
+ * 影画与精炼不再重复成文字 —— 右边滑杆已经把数值和档位摆在那里了。
+ */
+interface IdentityChip {
+  key: string
+  /** 卡面标签（音擎 / 4件套 / 2件套） */
+  tag: string
+  /** 卡面正文 */
+  text: string
+  /** 悬停说明 */
+  hint: string
+  kind: 'wengine' | 'disc'
+  /** 缺件 / 异职：淡红提示 */
+  warn?: boolean
+}
+
+const identityChips = computed<IdentityChip[]>(() => {
   const slot = activeSlot.value
-  if (!slot || !activeAgent.value) return ''
-  const parts = [`${slot.rank}影`]
-  if (activeWengine.value) {
+  const agent = activeAgent.value
+  if (!slot || !agent) return []
+  const chips: IdentityChip[] = []
+  const wengine = activeWengine.value
+  if (wengine) {
     if (wengineProfessionMatch.value) {
-      parts.push(`${activeWengine.value.name} · 精${slot.wengineRefine}`)
+      chips.push({
+        key: 'wengine',
+        tag: '音擎',
+        text: `${wengine.name} · 精${slot.wengineRefine}`,
+        hint: `音擎：${wengine.name}（精炼 ${slot.wengineRefine}）`,
+        kind: 'wengine',
+      })
     } else {
-      parts.push(`${activeWengine.value.name} · 异职`)
+      chips.push({
+        key: 'wengine',
+        tag: '音擎',
+        text: `${wengine.name} · 异职`,
+        hint: `异职音擎：只吃基础属性，增益与精炼不生效`,
+        kind: 'wengine',
+        warn: true,
+      })
     }
   } else {
-    parts.push('未佩戴音擎')
+    chips.push({
+      key: 'wengine',
+      tag: '音擎',
+      text: '未佩戴',
+      hint: '未佩戴音擎：点右侧「导入」选择',
+      kind: 'wengine',
+      warn: true,
+    })
   }
-  return parts.join(' · ')
-})
 
-const driveDiscLine = computed(() => {
-  const discParts: string[] = []
-  if (activeFourPiece.value?.name) discParts.push(`4件套 ${activeFourPiece.value.name}`)
-  if (activeTwoPiece.value?.name) discParts.push(`2件套 ${activeTwoPiece.value.name}`)
-  return discParts.length ? discParts.join(' · ') : '未选驱动盘'
+  const four = activeFourPiece.value?.name
+  const two = activeTwoPiece.value?.name
+  if (four) {
+    chips.push({ key: 'disc4', tag: '4件套', text: four, hint: `4 件驱动盘：${four}`, kind: 'disc' })
+  }
+  if (two) {
+    chips.push({ key: 'disc2', tag: '2件套', text: two, hint: `2 件驱动盘：${two}`, kind: 'disc' })
+  }
+  if (!four && !two) {
+    chips.push({
+      key: 'disc-none',
+      tag: '驱动盘',
+      text: '未选',
+      hint: '未选驱动盘：点右侧「导入」选择',
+      kind: 'disc',
+      warn: true,
+    })
+  }
+  return chips
 })
 </script>
 
@@ -389,12 +440,21 @@ const driveDiscLine = computed(() => {
       <template v-if="!editorCollapsed">
         <template v-if="activeAgent && activeSlot">
           <div class="editor-identity">
-            <strong class="identity-title">
-              {{ activeAgent.name }}
-              <span v-if="identityMetaLine" class="identity-meta"> · {{ identityMetaLine }}</span>
-            </strong>
-            <span class="identity-sub">{{ mindscapeWengineLine }}</span>
-            <span class="identity-sub gear-summary">{{ driveDiscLine }}</span>
+            <strong class="identity-title">{{ activeAgent.name }}</strong>
+            <span v-if="identityMetaLine" class="identity-meta">{{ identityMetaLine }}</span>
+            <span class="identity-divider" aria-hidden="true"></span>
+            <span class="identity-chips">
+              <span
+                v-for="chip in identityChips"
+                :key="chip.key"
+                class="identity-chip"
+                :class="[`is-${chip.kind}`, { 'is-warn': chip.warn }]"
+                :title="chip.hint"
+              >
+                <em class="chip-tag">{{ chip.tag }}</em>
+                <span class="chip-text">{{ chip.text }}</span>
+              </span>
+            </span>
           </div>
           <div class="editor-controls">
             <label class="control">
@@ -588,7 +648,7 @@ const driveDiscLine = computed(() => {
   background: transparent;
   color: #9aa3b5;
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   line-height: 1.4;
   cursor: pointer;
   transition:
@@ -610,29 +670,109 @@ const driveDiscLine = computed(() => {
 
 .editor-identity {
   display: flex;
-  flex-direction: column;
-  gap: 0.08rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .editor-identity strong,
 .editor-identity .identity-title {
-  font-size: 0.86rem;
+  font-size: 0.92rem;
   color: #e8edf5;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .editor-identity .identity-meta {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 550;
+  color: #9aa3b5;
+  white-space: nowrap;
+}
+
+/* 角色名/属性 与 装备小卡 之间的竖线 */
+.identity-divider {
+  width: 1px;
+  height: 0.95rem;
+  margin: 0 0.1rem;
+  background: #3b434f;
+  flex: 0 0 auto;
+}
+
+.identity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* 装备小卡：标签 + 名字，音擎与驱动盘用不同色温区分 */
+.identity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.1rem 0.45rem 0.1rem 0.32rem;
+  border: 1px solid #3b434f;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #dfe6f2;
+  white-space: nowrap;
+}
+
+.identity-chip .chip-tag {
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 0.24rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
   color: #9aa3b5;
 }
 
-.editor-identity span,
-.editor-identity .identity-sub {
-  font-size: 0.72rem;
-  color: #9aa3b5;
+.identity-chip .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.identity-chip.is-wengine {
+  border-color: rgba(201, 165, 92, 0.4);
+  background: rgba(201, 165, 92, 0.1);
+  color: #f0e2c2;
+}
+
+.identity-chip.is-wengine .chip-tag {
+  background: rgba(201, 165, 92, 0.2);
+  color: #dcc08a;
+}
+
+.identity-chip.is-disc {
+  border-color: rgba(140, 170, 220, 0.32);
+  background: rgba(140, 170, 220, 0.09);
+  color: #c8d6ec;
+}
+
+.identity-chip.is-disc .chip-tag {
+  background: rgba(140, 170, 220, 0.16);
+  color: #9fb3d2;
+}
+
+.identity-chip.is-warn {
+  border-color: rgba(214, 122, 122, 0.45);
+  background: rgba(214, 122, 122, 0.1);
+  color: #eec4c4;
+}
+
+.identity-chip.is-warn .chip-tag {
+  background: rgba(214, 122, 122, 0.18);
+  color: #e2a8a8;
 }
 
 .gear-summary {
@@ -652,7 +792,7 @@ const driveDiscLine = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   color: #d7dde8;
 }
 
@@ -690,7 +830,7 @@ const driveDiscLine = computed(() => {
   border-radius: 8px;
   padding: 0.32rem 0.7rem;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: none;
@@ -726,7 +866,7 @@ const driveDiscLine = computed(() => {
 
 .empty-hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: #9aa3b5;
 }
 
