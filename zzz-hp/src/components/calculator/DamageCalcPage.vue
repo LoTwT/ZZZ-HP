@@ -127,6 +127,7 @@ import {
   type EnvironmentBuffEntry,
 } from '@/utils/environmentBuffCalc'
 import type { EnvironmentBuffFilterMode } from '@/components/calculator/EnvironmentBuffFilterBar.vue'
+import { planNavScroll } from '@/utils/navScrollPlan'
 import { mapBossInfoToDamageEnemyInput } from '@/utils/enemyInputFromBoss'
 import {
   createDefaultDamageEnemyInput,
@@ -774,6 +775,8 @@ onUnmounted(() => {
   window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('visibilitychange', onDraftVisibilityChange)
   if (draftSaveTimer) clearTimeout(draftSaveTimer)
+  topAreaObserver?.disconnect()
+  topAreaObserver = null
 })
 
 function disableCollectedEffects(
@@ -2078,6 +2081,67 @@ const skillFlowSectionRef = ref<InstanceType<typeof SkillFlowSection> | null>(nu
 const historySectionRef = ref<InstanceType<typeof DamageCalcHistorySection> | null>(null)
 
 /**
+ * 顶部准备区的 DOM。只用来量高度 —— 收起/展开、窄屏换行、顶部提示条出现都会改它，
+ * 所以交给 ResizeObserver 维护一份缓存值，滚动时只读缓存，不在滚动里读布局。
+ */
+const topAreaRef = ref<HTMLElement | null>(null)
+const topAreaHeight = ref(0)
+/** 导航落地时顶栏下方再留的间隙（px） */
+const NAV_SCROLL_GAP = 10
+/** 距离超过这么多屏就直接瞬移，短距离仍平滑 */
+const NAV_INSTANT_SCREEN_RATIO = 1.6
+/** 连点导航时只认最后一次 */
+let navScrollToken = 0
+let topAreaObserver: ResizeObserver | null = null
+
+/**
+ * 导航滚动到区块：
+ * - 顶栏高度取 ResizeObserver 维护的缓存值（顶栏收起/展开、换行、提示条都不会算错）；
+ * - 跳跃距离超过 1.6 屏（或系统开了"减少动态效果"）直接瞬移，短距离仍平滑；
+ * - 瞬移落地给目标区块闪一下淡金描边，避免"跳完不知道落在哪"；
+ * - 目标已经整块露在可视区里就不动（连点同一项不会跳）。
+ */
+async function scrollToSection(sectionId: DamageCalcSectionId) {
+  const token = ++navScrollToken
+  await nextTick()
+  // 「面板导入 / 词条导入」入口已永久删除（2026-09-12，见 damageCalcNav.ts）；
+  // 「词条配比分析」区块即锚点本身（#damage-panel），无映射。
+  if (sectionId === 'skill-flow') {
+    // 流程区会先展开，展开后目标位置下移 —— 必须等这一帧之后再算位置
+    skillFlowSectionRef.value?.expand()
+    await nextTick()
+  }
+  if (token !== navScrollToken) return
+
+  const target = pageRootRef.value?.querySelector<HTMLElement>(`#${sectionId}`)
+  const scroller = resolveScrollContainer()
+  if (!target || !scroller) return
+
+  // 缓存值还没建好（首帧）时现场量一次兜底，正常路径不会走到这里
+  const offset =
+    (topAreaHeight.value || topAreaRef.value?.getBoundingClientRect().height || 0) + NAV_SCROLL_GAP
+  const scrollerRect = scroller.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+
+  const plan = planNavScroll({
+    scrollTop: scroller.scrollTop,
+    containerHeight: scroller.clientHeight,
+    containerTop: scrollerRect.top,
+    targetTop: targetRect.top,
+    targetBottom: targetRect.bottom,
+    targetHeight: targetRect.height,
+    offset,
+    instantScreenRatio: NAV_INSTANT_SCREEN_RATIO,
+    reduceMotion,
+  })
+  if (plan.action === 'skip') return
+
+  scroller.scrollTo({ top: plan.top, behavior: plan.behavior })
+  if (plan.instant) flashSection(target)
+}
+
+/**
  * 顶部准备区（三个角色槽位 + 详情条 + 方案库/清空）整体收起。
  * 收起后这一段只剩右下角一颗「展开」按钮，把竖向空间让给下面的计算区；
  * 状态只记本机 localStorage，不进方案数据，也不影响任何计算口径。
@@ -2115,17 +2179,58 @@ function onClearLoadedScheme() {
   resetPageSchemeConfig()
 }
 
-async function scrollToSection(sectionId: DamageCalcSectionId) {
-  await nextTick()
-  // 「面板导入 / 词条导入」入口已永久删除（2026-09-12，见 damageCalcNav.ts）；
-  // 「词条配比分析」区块即锚点本身（#damage-panel），无映射。
-  if (sectionId === 'skill-flow') {
-    skillFlowSectionRef.value?.expand()
-    await nextTick()
+/**
+ * 页面真正的滚动容器：外层 `.calculator-page` 是 `100vh + overflow:hidden`，
+ * 滚动发生在里面那块 `.content`（`overflow-y:auto`）上，所以不能用 window 的滚动量。
+ */
+function resolveScrollContainer(): HTMLElement | null {
+  const root = pageRootRef.value
+  if (!root) return null
+  let node: HTMLElement | null = root.parentElement
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+      return node
+    }
+    node = node.parentElement
   }
-  const target = pageRootRef.value?.querySelector<HTMLElement>(`#${sectionId}`)
-  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const doc = document.scrollingElement
+  return doc instanceof HTMLElement ? doc : null
 }
+
+/** 瞬移落地提示：给目标区块一圈淡金描边（outline 不参与布局，不会引起重排） */
+function flashSection(target: HTMLElement) {
+  target.classList.remove('nav-landed')
+  void target.offsetWidth
+  target.classList.add('nav-landed')
+  window.setTimeout(() => target.classList.remove('nav-landed'), 1000)
+}
+
+/** 顶栏高度变化时写入缓存，同时供 CSS 的 `scroll-margin-top` 使用 */
+function syncTopAreaHeight(height: number) {
+  const rounded = Math.max(0, Math.round(height))
+  topAreaHeight.value = rounded
+  pageRootRef.value?.style.setProperty('--top-area-h', `${rounded}px`)
+}
+
+function observeTopArea(el: HTMLElement | null) {
+  topAreaObserver?.disconnect()
+  topAreaObserver = null
+  if (!el) {
+    syncTopAreaHeight(0)
+    return
+  }
+  syncTopAreaHeight(el.getBoundingClientRect().height)
+  if (typeof ResizeObserver === 'undefined') return
+  topAreaObserver = new ResizeObserver((entries) => {
+    const entry = entries[entries.length - 1]
+    const blockSize = entry?.borderBoxSize?.[0]?.blockSize
+    syncTopAreaHeight(blockSize ?? el.getBoundingClientRect().height)
+  })
+  topAreaObserver.observe(el)
+}
+
+watch(topAreaRef, (el) => observeTopArea(el), { flush: 'post' })
 
 defineExpose({ scrollToSection })
 </script>
@@ -2133,7 +2238,7 @@ defineExpose({ scrollToSection })
 <template>
   <div ref="pageRootRef" class="damage-page">
     <p v-if="draftSaveWarning" class="draft-save-warning" role="alert">{{ draftSaveWarning }}</p>
-    <div class="team-slot-sticky" :class="{ 'is-folded': topAreaCollapsed }">
+    <div ref="topAreaRef" class="team-slot-sticky" :class="{ 'is-folded': topAreaCollapsed }">
       <TeamSlotSwitcher
         v-if="!topAreaCollapsed"
         :team-slots="teamSlots"
@@ -2588,7 +2693,27 @@ defineExpose({ scrollToSection })
 }
 
 .damage-page :deep(.damage-anchor) {
-  scroll-margin-top: 4.2rem;
+  /* 顶栏高度由 ResizeObserver 写到 --top-area-h（展开/收起、换行、提示条都会自动跟上） */
+  scroll-margin-top: calc(var(--top-area-h, 4.2rem) + 0.6rem);
+}
+
+/*
+ * 远距离瞬移落地提示：只画 outline，不参与布局、不触发重排。
+ * 由 scrollToSection() 在瞬移后临时挂 1 秒。
+ */
+.damage-page :deep(.damage-anchor.nav-landed) {
+  animation: nav-landed-flash 1s ease-out 1;
+}
+
+@keyframes nav-landed-flash {
+  0% {
+    outline: 2px solid rgba(201, 165, 92, 0.9);
+    outline-offset: 2px;
+  }
+  100% {
+    outline: 2px solid rgba(201, 165, 92, 0);
+    outline-offset: 2px;
+  }
 }
 
 .calc-mode-section {
@@ -2750,7 +2875,8 @@ defineExpose({ scrollToSection })
   }
 
   .damage-page :deep(.damage-anchor) {
-    scroll-margin-top: 0.65rem;
+    /* 窄屏同样吃测量值，只把间隙收小（原来写死 0.65rem，会把顶栏高度漏掉） */
+    scroll-margin-top: calc(var(--top-area-h, 4.2rem) + 0.35rem);
   }
 
   .calc-mode-section {
