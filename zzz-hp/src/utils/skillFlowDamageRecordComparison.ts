@@ -23,22 +23,65 @@ export interface SkillFlowDamageSnapshot {
   uncomputedCount: number
 }
 
-export interface SkillFlowDamageComparisonRow {
-  id: string
-  name: string
+export interface SkillFlowDamageMetricComparison {
   baseline: number
   comparison: number
   delta: number
   /** 基准为 0 且对照非 0 时为 null，不伪造无穷大百分比。 */
   changeRatio: number | null
+}
+
+export interface SkillFlowAverageDamageComparison {
+  baseline: number | null
+  comparison: number | null
+  delta: number | null
+  changeRatio: number | null
+}
+
+export interface SkillFlowSkillComparisonMetrics {
+  count: SkillFlowDamageMetricComparison
+  averageDamage: SkillFlowAverageDamageComparison
+}
+
+export interface SkillFlowDamageComparisonRow extends SkillFlowDamageMetricComparison {
+  id: string
+  name: string
   shareDelta: number
   state: 'added' | 'removed' | 'changed' | 'same'
+  skill?: SkillFlowSkillComparisonMetrics
 }
 
 type ComparisonRecord = {
   team: number
   agentNames: string[]
   snapshot?: SkillFlowDamageSnapshot
+}
+
+type SnapshotGroup = { name: string; total: number; count: number }
+
+function compareMetric(baseline: number, comparison: number): SkillFlowDamageMetricComparison {
+  const delta = comparison - baseline
+  return {
+    baseline,
+    comparison,
+    delta,
+    changeRatio: baseline > 0 ? delta / baseline : comparison === 0 ? 0 : null,
+  }
+}
+
+function compareAverageDamage(
+  baseline: SnapshotGroup | undefined,
+  comparison: SnapshotGroup | undefined,
+): SkillFlowAverageDamageComparison {
+  const before = baseline && baseline.count > 0 ? baseline.total / baseline.count : null
+  const after = comparison && comparison.count > 0 ? comparison.total / comparison.count : null
+  const metric = before != null && after != null ? compareMetric(before, after) : null
+  return {
+    baseline: before,
+    comparison: after,
+    delta: metric?.delta ?? null,
+    changeRatio: metric?.changeRatio ?? null,
+  }
 }
 
 export function captureSkillFlowDamageSnapshot(
@@ -131,10 +174,7 @@ export function skillFlowDamageComparisonRow(
   return {
     id,
     name,
-    baseline,
-    comparison,
-    delta,
-    changeRatio: baseline > 0 ? delta / baseline : comparison === 0 ? 0 : null,
+    ...compareMetric(baseline, comparison),
     shareDelta:
       (comparisonTotal > 0 ? comparison / comparisonTotal : 0) -
       (baselineTotal > 0 ? baseline / baselineTotal : 0),
@@ -143,12 +183,12 @@ export function skillFlowDamageComparisonRow(
 }
 
 function aggregateSnapshot(record: ComparisonRecord, dimension: 'agent' | 'type' | 'skill') {
-  const groups = new Map<string, { name: string; total: number }>()
+  const groups = new Map<string, SnapshotGroup>()
   const snapshot = record.snapshot
   if (!snapshot) return groups
   if (dimension === 'agent') {
     snapshot.agentIds.forEach((id, index) => {
-      if (id) groups.set(id, { name: record.agentNames[index] || id, total: 0 })
+      if (id) groups.set(id, { name: record.agentNames[index] || id, total: 0, count: 0 })
     })
   }
   for (const line of snapshot.lines) {
@@ -168,7 +208,11 @@ function aggregateSnapshot(record: ComparisonRecord, dimension: 'agent' | 'type'
             line.damageType)
           : `${agentName} · ${line.skillName}`
     const previous = groups.get(id)
-    groups.set(id, { name, total: (previous?.total ?? 0) + line.total })
+    groups.set(id, {
+      name,
+      total: (previous?.total ?? 0) + line.total,
+      count: (previous?.count ?? 0) + line.count,
+    })
   }
   return groups
 }
@@ -191,7 +235,7 @@ export function compareSkillFlowDamageRecords(
         .map((id) => {
           const a = before.get(id)
           const b = after.get(id)
-          return skillFlowDamageComparisonRow(
+          const row = skillFlowDamageComparisonRow(
             id,
             b?.name ?? a?.name ?? id,
             a?.total ?? 0,
@@ -201,6 +245,14 @@ export function compareSkillFlowDamageRecords(
             Boolean(a),
             Boolean(b),
           )
+          if (dimension === 'skill') {
+            row.skill = {
+              count: compareMetric(a?.count ?? 0, b?.count ?? 0),
+              averageDamage: compareAverageDamage(a, b),
+            }
+            if (row.state === 'same' && row.skill.count.delta !== 0) row.state = 'changed'
+          }
+          return row
         })
         .sort(
           (a, b) =>
@@ -212,6 +264,20 @@ export function compareSkillFlowDamageRecords(
   }
   return {
     hasDetails,
+    skillSummary: hasDetails
+      ? {
+          kinds: compareMetric(
+            dimensions.skill.filter((row) => row.state !== 'added').length,
+            dimensions.skill.filter((row) => row.state !== 'removed').length,
+          ),
+          uses: compareMetric(
+            dimensions.skill.reduce((sum, row) => sum + (row.skill?.count.baseline ?? 0), 0),
+            dimensions.skill.reduce((sum, row) => sum + (row.skill?.count.comparison ?? 0), 0),
+          ),
+          added: dimensions.skill.filter((row) => row.state === 'added').length,
+          removed: dimensions.skill.filter((row) => row.state === 'removed').length,
+        }
+      : null,
     total: skillFlowDamageComparisonRow(
       'team',
       '全队',

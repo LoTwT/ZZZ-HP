@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { SkillFlowDamageRecord } from '@/utils/skillFlowDamageRecords'
 import {
   compareSkillFlowDamageRecords,
-  type SkillFlowDamageComparisonRow,
+  type SkillFlowDamageMetricComparison,
 } from '@/utils/skillFlowDamageRecordComparison'
 
 const props = defineProps<{ records: SkillFlowDamageRecord[] }>()
@@ -41,12 +41,7 @@ const result = computed(() =>
 )
 const rows = computed(() =>
   (result.value?.[dimension.value] ?? []).filter(
-    (row) =>
-      !onlyChanges.value ||
-      row.delta !== 0 ||
-      Math.abs(row.shareDelta) > 1e-10 ||
-      row.state === 'added' ||
-      row.state === 'removed',
+    (row) => !onlyChanges.value || row.state !== 'same' || Math.abs(row.shareDelta) > 1e-10,
   ),
 )
 const missingNames = computed(() =>
@@ -56,13 +51,16 @@ const missingNames = computed(() =>
     .join('、'),
 )
 
-function number(value: number) {
-  return Math.round(value).toLocaleString('zh-CN')
+function number(value: number, maximumFractionDigits = 0) {
+  return value.toLocaleString('zh-CN', { maximumFractionDigits })
 }
-function signed(value: number) {
-  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${number(Math.abs(value))}`
+function signed(value: number, maximumFractionDigits = 0) {
+  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${number(Math.abs(value), maximumFractionDigits)}`
 }
-function change(row: SkillFlowDamageComparisonRow) {
+function averageDamage(value: number | null) {
+  return value == null ? '—' : number(value, 2)
+}
+function change(row: Pick<SkillFlowDamageMetricComparison, 'changeRatio'>) {
   if (row.changeRatio == null) return '从 0 增加'
   return `${row.changeRatio > 0 ? '+' : ''}${(row.changeRatio * 100).toFixed(2)}%`
 }
@@ -131,6 +129,31 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
             未计入伤害的段数：基准 {{ baseline?.snapshot?.uncomputedCount ?? 0 }}，对照
             {{ comparison?.snapshot?.uncomputedCount ?? 0 }}。
           </p>
+          <dl v-if="result.skillSummary" class="sf-record-count-summary" aria-label="招式数量差异">
+            <div>
+              <dt>招式种类</dt>
+              <dd>
+                <strong>{{ number(result.skillSummary.kinds.baseline) }}</strong> →
+                <strong>{{ number(result.skillSummary.kinds.comparison) }}</strong>
+                <span>{{ signed(result.skillSummary.kinds.delta) }} 种</span>
+                <small>
+                  新增 {{ result.skillSummary.added }} 种 · 移除
+                  {{ result.skillSummary.removed }} 种
+                </small>
+              </dd>
+            </div>
+            <div>
+              <dt>累计使用次数</dt>
+              <dd>
+                <strong>{{ number(result.skillSummary.uses.baseline, 6) }}</strong> →
+                <strong>{{ number(result.skillSummary.uses.comparison, 6) }}</strong>
+                <span>{{ signed(result.skillSummary.uses.delta, 6) }} 次</span>
+              </dd>
+            </div>
+          </dl>
+          <p class="sf-record-hint">
+            数量按已计入伤害的招式统计；同角色的同一招式合并为一种，技能组按展开的子招式累计次数。
+          </p>
           <div class="sf-record-toolbar">
             <div role="group" aria-label="记录对比维度">
               <button
@@ -149,13 +172,20 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
             </div>
             <label><input v-model="onlyChanges" type="checkbox" />只看变化</label>
           </div>
+          <p v-if="dimension === 'skill'" class="sf-record-hint">
+            平均单次伤害 = 累计伤害 ÷
+            使用次数，为按次数加权的期望值；失衡、增益等不同状态的构成变化也会影响均值。无有效次数时显示「—」。
+          </p>
           <div
             v-if="rows.length"
             class="sf-record-diff-scroll"
             tabindex="0"
             aria-label="伤害结构变化，可横向滚动"
           >
-            <table class="sf-record-diff-table">
+            <table
+              class="sf-record-diff-table"
+              :class="{ 'sf-record-skill-table': dimension === 'skill' }"
+            >
               <thead>
                 <tr>
                   <th scope="col">
@@ -167,10 +197,14 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
                           : '角色 · 招式'
                     }}
                   </th>
-                  <th scope="col">基准伤害</th>
-                  <th scope="col">对照伤害</th>
-                  <th scope="col">伤害变化</th>
-                  <th scope="col">变化率</th>
+                  <th scope="col">{{ dimension === 'skill' ? '基准总伤' : '基准伤害' }}</th>
+                  <th scope="col">{{ dimension === 'skill' ? '对照总伤' : '对照伤害' }}</th>
+                  <th scope="col">{{ dimension === 'skill' ? '总伤变化' : '伤害变化' }}</th>
+                  <th scope="col">{{ dimension === 'skill' ? '总伤变化率' : '变化率' }}</th>
+                  <template v-if="dimension === 'skill'">
+                    <th scope="col">平均单次伤害<small>基准 → 对照 / 变化</small></th>
+                    <th scope="col">使用次数<small>基准 → 对照 / 变化</small></th>
+                  </template>
                   <th scope="col">占全队变化</th>
                 </tr>
               </thead>
@@ -188,6 +222,40 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
                     {{ signed(row.delta) }}
                   </td>
                   <td>{{ change(row) }}</td>
+                  <template v-if="dimension === 'skill'">
+                    <td class="sf-record-metric sf-record-average-damage">
+                      <template v-if="row.skill">
+                        {{ averageDamage(row.skill.averageDamage.baseline) }} →
+                        {{ averageDamage(row.skill.averageDamage.comparison) }}
+                        <small
+                          v-if="row.skill.averageDamage.delta != null"
+                          :class="{
+                            'sf-record-up': row.skill.averageDamage.delta > 0,
+                            'sf-record-down': row.skill.averageDamage.delta < 0,
+                          }"
+                        >
+                          {{ signed(row.skill.averageDamage.delta, 2) }}（{{
+                            change(row.skill.averageDamage)
+                          }}）
+                        </small>
+                        <small v-else>单次变化无法比较</small>
+                      </template>
+                    </td>
+                    <td class="sf-record-metric sf-record-usage-count">
+                      <template v-if="row.skill">
+                        {{ number(row.skill.count.baseline, 6) }} →
+                        {{ number(row.skill.count.comparison, 6) }}
+                        <small
+                          :class="{
+                            'sf-record-up': row.skill.count.delta > 0,
+                            'sf-record-down': row.skill.count.delta < 0,
+                          }"
+                        >
+                          {{ signed(row.skill.count.delta, 6) }}（{{ change(row.skill.count) }}）
+                        </small>
+                      </template>
+                    </td>
+                  </template>
                   <td>
                     {{ row.shareDelta > 0 ? '+' : ''
                     }}{{ (row.shareDelta * 100).toFixed(2) }} 个百分点
@@ -271,6 +339,39 @@ select {
   margin: 0.6rem 0 0.4rem;
   font-size: 0.76rem;
 }
+.sf-record-count-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.sf-record-count-summary > div {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--sf-analysis-border);
+  border-radius: 5px;
+  background: var(--sf-analysis-surface);
+}
+.sf-record-count-summary dt {
+  color: var(--sf-analysis-muted);
+  margin-bottom: 0.25rem;
+}
+.sf-record-count-summary dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.4rem;
+  margin: 0;
+}
+.sf-record-count-summary dd > span {
+  margin-left: 0.3rem;
+}
+.sf-record-count-summary small {
+  margin-left: 0.3rem;
+}
 .sf-record-toolbar label {
   display: flex;
   align-items: center;
@@ -308,6 +409,9 @@ table {
   font-size: 0.77rem;
   font-variant-numeric: tabular-nums;
 }
+.sf-record-skill-table {
+  min-width: 1050px;
+}
 th,
 td {
   padding: 0.45rem;
@@ -329,5 +433,13 @@ small {
   margin-left: 0.4rem;
   font-size: 0.7rem;
   color: var(--sf-analysis-muted);
+}
+.sf-record-metric {
+  white-space: nowrap;
+}
+thead small,
+.sf-record-metric small {
+  display: block;
+  margin: 0.2rem 0 0;
 }
 </style>
