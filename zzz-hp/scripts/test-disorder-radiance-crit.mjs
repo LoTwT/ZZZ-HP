@@ -160,13 +160,13 @@ console.log('\n[4] 紊乱：pickEventDamage 三档 critMode 取到三个不同�
     `${noCrit} < ${expected} < ${fullCrit}`,
   )
   check(
-    '流程汇总不把紊乱改成必暴击（跟随条目 critMode）',
-    resolveFlowHitCritMode('disorder', 'expected') === 'expected',
-    resolveFlowHitCritMode('disorder', 'expected'),
+    '流程汇总：紊乱按期望',
+    resolveFlowHitCritMode() === 'expected',
+    resolveFlowHitCritMode(),
   )
   check(
-    '流程汇总对紊乱仍可显式要必暴击',
-    resolveFlowHitCritMode('disorder', 'fullCrit') === 'fullCrit',
+    '流程不允许指定必暴击（传 fullCrit 也仍是期望）',
+    resolveFlowHitCritMode('disorder', 'fullCrit') === 'expected',
     resolveFlowHitCritMode('disorder', 'fullCrit'),
   )
 }
@@ -217,21 +217,21 @@ console.log('\n[5] 耀变（普通链）暴击区：0% → 1；100% / 爆伤 50 
     halfValues.join(' / '),
   )
   check(
-    '流程汇总不把耀变改成必暴击（跟随条目 critMode）',
-    resolveFlowHitCritMode('radiance', 'expected') === 'expected',
-    resolveFlowHitCritMode('radiance', 'expected'),
+    '流程汇总：耀变按期望',
+    resolveFlowHitCritMode() === 'expected',
+    resolveFlowHitCritMode(),
   )
   check(
-    '流程汇总对耀变仍可显式要必暴击',
-    resolveFlowHitCritMode('radiance', 'fullCrit') === 'fullCrit',
+    '流程不允许指定必暴击（传 fullCrit 也仍是期望）',
+    resolveFlowHitCritMode('radiance', 'fullCrit') === 'expected',
     resolveFlowHitCritMode('radiance', 'fullCrit'),
   )
   check(
-    '既有三类仍是必暴击（口径未动）',
-    resolveFlowHitCritMode('anomaly', 'expected') === 'fullCrit' &&
-      resolveFlowHitCritMode('turbulence', 'expected') === 'fullCrit' &&
-      resolveFlowHitCritMode('anomalyRelease', 'expected') === 'fullCrit',
-    ['anomaly', 'turbulence', 'anomalyRelease']
+    '所有伤害类型流程口径一律期望（含属性异常/乱流/异放）',
+    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance'].every(
+      (kind) => resolveFlowHitCritMode(kind, 'expected') === 'expected',
+    ),
+    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
       .map((kind) => `${kind}=${resolveFlowHitCritMode(kind, 'expected')}`)
       .join(' '),
   )
