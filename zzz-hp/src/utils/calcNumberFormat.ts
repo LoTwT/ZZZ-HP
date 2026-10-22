@@ -34,3 +34,14 @@ export function formatCalcSigned(value: number, precision = CALC_NUMBER_PRECISIO
   if (rounded < 0) return `-${body}`
   return formatCalcDecimal(0, precision)
 }
+
+/**
+ * 公式左侧乘区因子（基础伤害、各类倍率区与期望基数）的展示：**不加千分号**、
+ * 最多 `precision` 位小数（默认 3）。用户 2026-10-22：左侧要方便照抄复算，
+ * 千分号与 4 位小数会和右侧「结果」混在一起看不出主次。
+ * 箭头右侧的结果值不走这里，用「取整 + 千分号」。
+ */
+export function formatCalcPlain(value: number, precision = 3): string {
+  if (!Number.isFinite(value)) return String(value)
+  return String(roundCalc(value, precision))
+}
