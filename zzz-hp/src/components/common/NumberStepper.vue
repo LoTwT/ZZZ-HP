@@ -1,39 +1,33 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { clampToStep, resolveButtonStep } from '@/utils/numberInputStep'
+
 const props = withDefaults(
   defineProps<{
     min?: number
     max?: number
+    /** 输入框精度：决定小数位数（1 = 整数、0.01 = 2 位、0.0001 = 4 位） */
     step?: number
+    /** ± 按钮的步长；不传则与 `step` 相同（保留各处旧行为） */
+    buttonStep?: number
     disabled?: boolean
   }>(),
   {
     min: 0,
     max: 999999,
     step: 1,
+    buttonStep: undefined,
     disabled: false,
   },
 )
 
 const model = defineModel<number>({ required: true })
 
-function stepDecimals(step: number) {
-  if (!Number.isFinite(step) || step <= 0) return 0
-  const text = String(step)
-  if (/e/i.test(text)) return 6
-  const idx = text.indexOf('.')
-  return idx === -1 ? 0 : text.length - idx - 1
-}
-
-function snap(value: number) {
-  const decimals = stepDecimals(props.step)
-  if (decimals <= 0) return Math.round(value)
-  const factor = 10 ** decimals
-  return Math.round(value * factor) / factor
-}
+/** 按钮步长：与输入精度解耦，例如「输入 2 位小数、按钮一次 ±1 层」 */
+const bumpStep = computed(() => resolveButtonStep(props.step, props.buttonStep))
 
 function clamp(value: number) {
-  const n = Number.isFinite(value) ? value : props.min
-  return snap(Math.min(props.max, Math.max(props.min, n)))
+  return clampToStep(value, props.min, props.max, props.step)
 }
 
 function bump(delta: number) {
@@ -73,7 +67,7 @@ function onBlur() {
         type="button"
         class="step-btn"
         :disabled="disabled || model <= min"
-        @click="bump(-step)"
+        @click="bump(-bumpStep)"
       >
         −
       </button>
@@ -81,7 +75,7 @@ function onBlur() {
         type="button"
         class="step-btn"
         :disabled="disabled || model >= max"
-        @click="bump(step)"
+        @click="bump(bumpStep)"
       >
         +
       </button>

@@ -140,7 +140,7 @@ const emit = defineEmits<{
 
 /** 本行增益例外只在流程行有；流程行 id（null = 关闭） */
 const buffOverrideEntryId = ref<string | null>(null)
-/** 组成员细调进来的成员键（null = 整行；组行的增益例外要区分整行 / 单成员） */
+/** 组成员从「技能组详情」（流程行）进来的成员键（null = 整行；组行的增益例外要区分整行 / 单成员） */
 const buffOverrideMemberKey = ref<string | null>(null)
 
 const buffOverrideOpen = computed({
@@ -897,7 +897,7 @@ function groupMultText(
   return formatGroupMultSum(sum)
 }
 
-/** 详情/细调里单段倍率：跟总倍率同一数据源 */
+/** 详情（含技能组详情弹窗）里单段倍率：跟总倍率同一数据源 */
 function groupMemberMultText(
   skill: Skill | null | undefined,
   member: import('@/types/calculator').SkillGroupMember,
@@ -2409,7 +2409,7 @@ const tuningGroup = computed(() => {
 })
 
 /**
- * 细调标题上的「第几项」：同一个技能组可以放很多次进流程，只有组名看不出调的是哪一条。
+ * 技能组详情（流程行）标题上的「第几项」：同一个技能组可以放很多次进流程，只有组名看不出调的是哪一条。
  * 序号与流程列表左侧的编号同一套（`index + 1`）。
  */
 const tuningFlowRowIndex = computed(() => {
@@ -2418,7 +2418,7 @@ const tuningFlowRowIndex = computed(() => {
   return currentSlot.value.flow.findIndex((item) => item.id === entry.id) + 1
 })
 
-/** 细调里这一段自己的例外条数（层数 / 转模覆盖也算，否则改完看不出是哪一段） */
+/** 技能组详情（流程行）里这一段自己的例外条数（层数 / 转模覆盖也算，否则改完看不出是哪一段） */
 function memberExceptionCount(entry: FlowEntry, member: { order: number; skillId: string }) {
   return flowBuffOverrideExceptionCount(
     memberOverrideFor(entry, member)?.buffOverrides ?? null,
@@ -2429,12 +2429,22 @@ function openFlowGroupTune(entryId: string) {
   flowGroupTuneId.value = entryId
 }
 
+/**
+ * 流程行「详情」的唯一入口（用户 2026-10-22：按钮一律叫「详情」、一律排最左）：
+ * - 技能组行 → 技能组详情（本行每段的次数 / 失衡 / 增益例外）
+ * - 普通招式行 → 招式详情
+ */
+function openFlowRowDetail(entry: FlowEntry) {
+  if (flowIsGroup(entry)) openFlowGroupTune(entry.id)
+  else openFlowDetail(entry.id)
+}
+
 function closeFlowGroupTune() {
   flowGroupTuneId.value = null
 }
 
 // 遮罩点击关闭：只有「按下 + 松开都在遮罩上」才关，拖选文字/拖滑块出界松手不误关。
-// 本组件有五个遮罩弹窗（细调 / 招式详情 / 新建招式 / 新建技能组 / 确认框），
+// 本组件有五个遮罩弹窗（技能组详情（流程行） / 招式详情 / 新建招式 / 新建技能组 / 确认框），
 // 各用一个独立实例，按下态不会互相串。
 const { onMaskPointerDown, onMaskClick } = useMaskClose(closeFlowGroupTune)
 const { onMaskPointerDown: onDetailMaskPointerDown, onMaskClick: onDetailMaskClick } =
@@ -2448,7 +2458,7 @@ const {
 const { onMaskPointerDown: onConfirmMaskPointerDown, onMaskClick: onConfirmMaskClick } =
   useMaskClose(closeConfirm)
 
-/** 细调里看招式详情：叠在细调之上，关闭后仍回细调；带上流程段 id 以便展示计算过程 */
+/** 技能组详情（流程行）里看招式详情：叠在其上，关闭后仍回该弹窗；带上流程段 id 以便展示计算过程 */
 function openTuneMemberDetail(
   member: { order: number; skillId: string },
   memberIndex: number,
@@ -2468,7 +2478,7 @@ function memberOverrideFor(entry: FlowEntry, member: { order: number; skillId: s
   return findMemberOverride(entry.memberOverrides, member as import('@/types/calculator').SkillGroupMember)
 }
 
-/** 细调展示次数：覆盖优先，否则组定义默认 */
+/** 技能组详情（流程行）展示次数：覆盖优先，否则组定义默认 */
 function memberTuneCount(
   entry: FlowEntry,
   member: { order: number; skillId: string; count: number },
@@ -2500,7 +2510,7 @@ function flowMemberAgents(
   }
 }
 
-/** 细调展示失衡：覆盖优先，否则继承整组流程行 */
+/** 技能组详情（流程行）展示失衡：覆盖优先，否则继承整组流程行 */
 function memberTuneStagger(
   entry: FlowEntry,
   member: { order: number; skillId: string },
@@ -2528,7 +2538,7 @@ function setMemberOverride(
     skillId: member.skillId,
     count: prev?.count ?? null,
     staggerPhase: prev?.staggerPhase ?? null,
-    // 组内细调不再提供暴击覆盖
+    // 技能组详情（流程行）不再提供暴击覆盖
     critMode: null,
     anomalyPowerAgentId: prev?.anomalyPowerAgentId ?? null,
     triggerAgentId: prev?.triggerAgentId ?? null,
@@ -3389,6 +3399,15 @@ const showcaseTitle = computed(() => {
                     @dragend="onFlowDragEnd"
                   >
                     <template #actions>
+                      <!-- 顺序统一（用户 2026-10-22）：详情一律最左，其次增益，危险操作最右 -->
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        draggable="false"
+                        @click="openFlowRowDetail(entry)"
+                      >
+                        详情
+                      </button>
                       <button
                         type="button"
                         class="mini-btn"
@@ -3405,24 +3424,6 @@ const showcaseTitle = computed(() => {
                           style="margin-left: 0.25rem; color: #ffd479"
                           >{{ buffExceptionCount(entry) }}</span
                         >
-                      </button>
-                      <button
-                        v-if="flowIsGroup(entry)"
-                        type="button"
-                        class="mini-btn"
-                        draggable="false"
-                        @click="openFlowGroupTune(entry.id)"
-                      >
-                        细调
-                      </button>
-                      <button
-                        v-else
-                        type="button"
-                        class="mini-btn"
-                        draggable="false"
-                        @click="openFlowDetail(entry.id)"
-                      >
-                        详情
                       </button>
                       <button
                         type="button"
@@ -3479,6 +3480,7 @@ const showcaseTitle = computed(() => {
             :hits="hits"
             :hit-damages="hitDamages"
             :active-slot-index="activeSlotIndex"
+            :resolve-calculation-detail="resolveCalculationDetail"
             :scheme-name="schemeName"
           />
         </div>
@@ -3494,7 +3496,7 @@ const showcaseTitle = computed(() => {
         <div class="skill-detail-panel group-tune-panel" role="dialog" aria-modal="true">
           <header class="skill-detail-head">
             <h3>
-              组内细调 · {{ tuningGroup.name }}
+              技能组详情 · {{ tuningGroup.name }}
               <span v-if="tuningFlowRowIndex" class="muted">
                 （流程第 {{ tuningFlowRowIndex }} 项）
               </span>
@@ -3976,7 +3978,7 @@ const showcaseTitle = computed(() => {
                 }}
               </p>
               <p v-else-if="detail.kind === 'flow'" class="empty-hint">
-                次数和失衡在流程行改。招式定义请回招式库，双代理人请回准备或组内细调详情。备注可在此本机修改。
+                次数和失衡在流程行改。招式定义请回招式库。备注可在此本机修改。
               </p>
 
               <p class="detail-section-title">招式设置</p>

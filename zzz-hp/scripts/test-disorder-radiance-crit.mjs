@@ -160,13 +160,13 @@ console.log('\n[4] 紊乱：pickEventDamage 三档 critMode 取到三个不同�
     `${noCrit} < ${expected} < ${fullCrit}`,
   )
   check(
-    '流程汇总不把紊乱改成必暴击（跟随条目 critMode）',
-    resolveFlowHitCritMode('disorder', 'expected') === 'expected',
-    resolveFlowHitCritMode('disorder', 'expected'),
+    '流程汇总：紊乱按期望',
+    resolveFlowHitCritMode() === 'expected',
+    resolveFlowHitCritMode(),
   )
   check(
-    '流程汇总对紊乱仍可显式要必暴击',
-    resolveFlowHitCritMode('disorder', 'fullCrit') === 'fullCrit',
+    '流程不允许指定必暴击（传 fullCrit 也仍是期望）',
+    resolveFlowHitCritMode('disorder', 'fullCrit') === 'expected',
     resolveFlowHitCritMode('disorder', 'fullCrit'),
   )
 }
@@ -217,21 +217,21 @@ console.log('\n[5] 耀变（普通链）暴击区：0% → 1；100% / 爆伤 50 
     halfValues.join(' / '),
   )
   check(
-    '流程汇总不把耀变改成必暴击（跟随条目 critMode）',
-    resolveFlowHitCritMode('radiance', 'expected') === 'expected',
-    resolveFlowHitCritMode('radiance', 'expected'),
+    '流程汇总：耀变按期望',
+    resolveFlowHitCritMode() === 'expected',
+    resolveFlowHitCritMode(),
   )
   check(
-    '流程汇总对耀变仍可显式要必暴击',
-    resolveFlowHitCritMode('radiance', 'fullCrit') === 'fullCrit',
+    '流程不允许指定必暴击（传 fullCrit 也仍是期望）',
+    resolveFlowHitCritMode('radiance', 'fullCrit') === 'expected',
     resolveFlowHitCritMode('radiance', 'fullCrit'),
   )
   check(
-    '既有三类仍是必暴击（口径未动）',
-    resolveFlowHitCritMode('anomaly', 'expected') === 'fullCrit' &&
-      resolveFlowHitCritMode('turbulence', 'expected') === 'fullCrit' &&
-      resolveFlowHitCritMode('anomalyRelease', 'expected') === 'fullCrit',
-    ['anomaly', 'turbulence', 'anomalyRelease']
+    '所有伤害类型流程口径一律期望（含属性异常/乱流/异放）',
+    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance'].every(
+      (kind) => resolveFlowHitCritMode(kind, 'expected') === 'expected',
+    ),
+    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
       .map((kind) => `${kind}=${resolveFlowHitCritMode(kind, 'expected')}`)
       .join(' '),
   )
@@ -341,7 +341,7 @@ console.log('\n[8] 招式详情「计算过程」出现暴击区行，且带三�
   check('本人链耀变暴击区取值 1.5', remielRow?.value === '1.5', remielRow?.value)
 }
 
-console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击区」一项 + 期望/不暴击/暴击三档')
+console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击区」一项，结果只显示当前口径一档')
 {
   const fmt = (v) => String(Math.round(v * 1000) / 1000)
   const num = (v) => String(v)
@@ -353,19 +353,25 @@ console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击�
   check('紊乱暴击区标签正确', disorderTerm?.label === '紊乱暴击区', disorderTerm?.label)
   // 2026-10-18：乘区显示**期望**（暴击率 100% × 爆伤 50% → 1 + 0.5 = 1.5），不再是「1 / 1.5」两档
   check('紊乱暴击区取值 = 期望 1.5', disorderTerm?.value === '1.5', disorderTerm?.value)
+  // 2026-10-22（用户）：公式行不再重复「期望 / 不暴击 / 暴击」三档 —— 下方明细已有三档，
+  // 公式行只保留当前暴击口径的一档结果，避免同一行出现多种风格。
   check(
-    '紊乱结果区三档：期望 / 不暴击 / 暴击',
-    disorderGroup.dualResults?.length === 3 &&
-      disorderGroup.dualResults[0].label === '期望' &&
-      disorderGroup.dualResults[1].label === '不暴击' &&
-      disorderGroup.dualResults[2].label === '暴击',
-    (disorderGroup.dualResults ?? []).map((item) => `${item.label}=${item.value}`).join(' / '),
+    '紊乱公式行不再重复三档（dualResults 已移除）',
+    disorderGroup.dualResults === undefined,
+    disorderGroup.dualResults === undefined ? '无三档块' : '仍有三档块',
   )
   check(
-    '紊乱三档数值与 result 对得上（期望=result，不暴击<暴击）',
-    disorderGroup.dualResults?.[0].value === disorderGroup.result &&
-      Number(disorderGroup.dualResults?.[1].value) < Number(disorderGroup.dualResults?.[2].value),
-    `${disorderGroup.result} | ${(disorderGroup.dualResults ?? []).map((i) => i.value).join(' / ')}`,
+    '紊乱结果 = 当前口径（期望）伤害',
+    Number(disorderGroup.result) === Number(pickEventDamage(disorder, 'disorder', 'expected')),
+    `${disorderGroup.result} vs ${pickEventDamage(disorder, 'disorder', 'expected')}`,
+  )
+  check(
+    '三档数值仍可算且不暴击 < 期望 ≤ 暴击',
+    pickEventDamage(disorder, 'disorder', 'noCrit') <
+      pickEventDamage(disorder, 'disorder', 'expected') &&
+      pickEventDamage(disorder, 'disorder', 'expected') <=
+        pickEventDamage(disorder, 'disorder', 'fullCrit'),
+    `${pickEventDamage(disorder, 'disorder', 'noCrit')} / ${pickEventDamage(disorder, 'disorder', 'expected')} / ${pickEventDamage(disorder, 'disorder', 'fullCrit')}`,
   )
 
   for (const [label, extra] of [
@@ -378,12 +384,14 @@ console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击�
     check(`${label}：公式有「耀变暴击区」一项`, Boolean(term), term?.label ?? '缺失')
     check(`${label}：耀变暴击区取值 = 期望 1.5`, term?.value === '1.5', term?.value)
     check(
-      `${label}：结果区三档（期望 / 不暴击 / 暴击）`,
-      group.dualResults?.length === 3 &&
-        group.dualResults[0].label === '期望' &&
-        group.dualResults[1].label === '不暴击' &&
-        group.dualResults[2].label === '暴击',
-      (group.dualResults ?? []).map((item) => `${item.label}=${item.value}`).join(' / '),
+      `${label}：公式行不再重复三档（dualResults 已移除）`,
+      group.dualResults === undefined,
+      group.dualResults === undefined ? '无三档块' : '仍有三档块',
+    )
+    check(
+      `${label}：结果 = 当前口径（期望）伤害`,
+      Number(group.result) === Number(pickEventDamage(radiance, 'radiance', 'expected')),
+      `${group.result} vs ${pickEventDamage(radiance, 'radiance', 'expected')}`,
     )
   }
 }

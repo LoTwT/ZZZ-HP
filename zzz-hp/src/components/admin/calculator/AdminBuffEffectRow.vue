@@ -958,9 +958,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
         <div v-if="kind === 'stacked'" class="value-row">
           <span class="line-sub">最大</span>
-          <NumberStepper v-model="maxStacks" :min="1" :max="99" />
+          <!-- 层数允许 2 位小数（2026-10-22 用户口径：填了就是真值）；± 按钮仍按 1 层 -->
+          <NumberStepper v-model="maxStacks" :min="1" :max="99" :step="0.01" :button-step="1" />
           <span class="line-sub">默认</span>
-          <NumberStepper v-model="defaultStacks" :min="0" :max="99" />
+          <NumberStepper v-model="defaultStacks" :min="0" :max="99" :step="0.01" :button-step="1" />
         </div>
 
         <div v-else-if="kind === 'convert'" class="convert-block">

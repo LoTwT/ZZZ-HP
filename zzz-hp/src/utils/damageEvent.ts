@@ -136,25 +136,17 @@ export function pickEventDamage(
 }
 
 /**
- * 流程卡外侧汇总用暴击模式：
- * 属性异常 / 乱流 / 异放固定必暴击；**紊乱、耀变跟随条目 critMode（默认期望）**。
+ * 流程汇总的暴击口径：**一律按「期望」**（2026-10-22 用户裁定）。
  *
- * 2026-10-18：给紊乱/耀变补暴击区时曾顺手把这两类也并进必暴击名单，等于改了它们
- * 既有的汇总口径（单次/合计/饼图/总伤都从「期望」变「必暴击」，约高 9%）。
- * 用户裁定撤销：这两类本来就不是必暴击，补暴击区不该顺带改口径。
+ * 流程计算不允许指定「必暴击 / 必不暴击」—— 以前属性异常 / 乱流 / 异放被硬编码成
+ * `fullCrit`，导致流程卡数字（必暴击）与详情「期望伤害」对不上，且各类型口径不一致。
+ * 现在所有伤害类型统一取期望值（`1 + 暴击率 × 爆伤`）。
+ *
+ * 「必暴击 / 不暴击」只保留在**展示层**：详情里的「暴击率=0 / 暴击率=1」对照值
+ * （`pickEventDamage` 的三档）不参与流程汇总。
  */
-export function resolveFlowHitCritMode(
-  damageType: DamageEventKind,
-  entryCritMode: DamageEventCritMode,
-): DamageEventCritMode {
-  if (
-    damageType === 'anomaly' ||
-    damageType === 'turbulence' ||
-    damageType === 'anomalyRelease'
-  ) {
-    return 'fullCrit'
-  }
-  return entryCritMode
+export function resolveFlowHitCritMode(): DamageEventCritMode {
+  return 'expected'
 }
 
 export function disorderLabelFromResult(result: DamageCalcResult): string {

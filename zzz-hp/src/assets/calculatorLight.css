@@ -80,7 +80,8 @@
 
 .calculator-page.theme-light .team-slot-sticky .control span,
 .calculator-page.theme-light .team-slot-sticky .control em {
-  color: #8a6a2e !important;
+  /* 2026-10-22：淡蓝底上的黄字原为 #8a6a2e（约 4.63:1，用户反馈看不清），压深到约 6.9:1 */
+  color: #6b511a !important;
 }
 
 .calculator-page.theme-light .team-slot-sticky .editing-dot {
@@ -124,6 +125,86 @@
 .calculator-page.theme-light .team-slot-sticky .clear-btn:hover {
   border-color: #8eb9d8 !important;
   background: color-mix(in srgb, #f7fbfe 70%, transparent) !important;
+  color: #16324a !important;
+}
+
+/*
+ * 详情条那一行的装备小卡（2026-10-22）。
+ * 深色底稿写在 TeamSlotSwitcher.vue 的 scoped 样式里，这里给浅色一套：
+ * 浅底 + 深字，标签用实心浅底压住，避免金字压在淡蓝底上看不清。
+ */
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip {
+  border-color: #b7d3e8 !important;
+  background: #f7fbfe !important;
+  color: #16324a !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip .chip-text {
+  color: #16324a !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip .chip-tag {
+  background: #dceaf5 !important;
+  color: #274f70 !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-wengine {
+  border-color: #cfa459 !important;
+  background: #fdf4e2 !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-wengine .chip-text {
+  color: #5a3f0c !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-wengine .chip-tag {
+  background: #f3e1b8 !important;
+  color: #5a3f0c !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-disc {
+  border-color: #a9c7e4 !important;
+  background: #eef6fd !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-disc .chip-text {
+  color: #1c3a52 !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-disc .chip-tag {
+  background: #d7e9f8 !important;
+  color: #2b5474 !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-warn {
+  border-color: #e0a0a0 !important;
+  background: #fdeeee !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-warn .chip-text {
+  color: #8a2b2b !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-chip.is-warn .chip-tag {
+  background: #f7dcdc !important;
+  color: #8a2b2b !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .editor-identity .identity-divider {
+  background: #a9c7e4 !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .scheme-fold-btn {
+  border-color: #b7d3e8 !important;
+  background: transparent !important;
+  /* 原来 #4d6a80 在 #d5eaf8 顶栏上只有 4.60:1，压深到约 5.8:1 */
+  color: #3f5a73 !important;
+  box-shadow: none !important;
+}
+
+.calculator-page.theme-light .team-slot-sticky .scheme-fold-btn:hover {
+  border-color: #6ea8d0 !important;
+  background: #e7f4fc !important;
   color: #16324a !important;
 }
 

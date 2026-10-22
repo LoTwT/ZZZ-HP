@@ -603,6 +603,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     :model-value="stacksModel(item, item.effect.defaultStacks ?? 1)"
                     :min="0"
                     :max="item.effect.maxStacks ?? 99"
+                    :step="0.01"
+                    :button-step="1"
                     :disabled="!isEnabled(item)"
                     @update:model-value="setStacks(item, $event)"
                   />

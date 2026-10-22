@@ -24,7 +24,7 @@ import {
   buildResistanceZoneProcessItems,
   buildSharpenDmgZoneProcessItems,
 } from '@/utils/zoneSourceTips'
-import { formatCalcDecimal } from '@/utils/calcNumberFormat'
+import { formatCalcDecimal, formatCalcPlain } from '@/utils/calcNumberFormat'
 import {
   buildAlignedAnomalyFormulaGroups,
   resolveAnomalyBaseWithMutation,
@@ -115,6 +115,7 @@ function formatFormulaNumber(v: number, precision = 4) {
   }
   return formatCalcDecimal(v, precision)
 }
+
 
 const generalFormulaParts = computed(() => {
   const p = props.calcParts
@@ -277,7 +278,6 @@ interface AlignedFormulaGroup {
   agentLabel?: string
   terms: AlignedFormulaTerm[]
   result: string
-  dualResults?: { label: string; value: string }[]
 }
 
 const alignedGeneralFormula = computed((): AlignedFormulaGroup => {
@@ -286,18 +286,19 @@ const alignedGeneralFormula = computed((): AlignedFormulaGroup => {
     key: 'generalMultiplier',
     title: '公式',
     terms: [
-      { label: '基础伤害', value: formatFormulaNumber(p.baseDamage, 2), tipsKey: 'baseDamage' },
-      { label: '增伤区', value: formatFormulaNumber(p.dmgMultiplier), tipsKey: 'dmgMultiplier' },
-      { label: '防御区', value: formatFormulaNumber(p.defenseMultiplier), tipsKey: 'defenseMultiplier' },
-      { label: '抗性区', value: formatFormulaNumber(p.resistanceMultiplier), tipsKey: 'resistanceMultiplier' },
-      { label: '失衡易伤区', value: formatFormulaNumber(p.staggerMultiplier), tipsKey: 'staggerMultiplier' },
+      { label: '基础伤害', value: formatCalcPlain(p.baseDamage, 2), tipsKey: 'baseDamage' },
+      { label: '增伤区', value: formatCalcPlain(p.dmgMultiplier), tipsKey: 'dmgMultiplier' },
+      { label: '防御区', value: formatCalcPlain(p.defenseMultiplier), tipsKey: 'defenseMultiplier' },
+      { label: '抗性区', value: formatCalcPlain(p.resistanceMultiplier), tipsKey: 'resistanceMultiplier' },
+      { label: '失衡易伤区', value: formatCalcPlain(p.staggerMultiplier), tipsKey: 'staggerMultiplier' },
     ],
-    result: formatFormulaNumber(p.generalMultiplier, 2),
+    // 结果（蓝色加粗）与下面两行同口径：取整 + 千分号
+    result: formatNumber(p.generalMultiplier),
   }
 })
 
 const alignedDirectFormula = computed(() =>
-  buildAlignedDirectFormulaGroup(props.calcParts, formatFormulaNumber, formatNumber, undefined, critMode.value),
+  buildAlignedDirectFormulaGroup(props.calcParts, formatCalcPlain, formatNumber, undefined, critMode.value),
 )
 
 const anomalyFormulaLabels = computed((): AnomalyFormulaAgentLabels => ({
@@ -311,7 +312,7 @@ const alignedAnomalyFormulas = computed((): AlignedFormulaGroup[] =>
     props.calcParts,
     anomalySubKind.value,
     props.calcParts.hasPolarDisorder ? '极性紊乱' : '紊乱伤害',
-    formatFormulaNumber,
+    formatCalcPlain,
     formatNumber,
     anomalyFormulaLabels.value,
     critMode.value,
@@ -1583,13 +1584,13 @@ const formulaValueTips = computed(() => {
     <details v-if="!calcParts.remielSelfRadianceActive" class="calculation-parameters">
       <summary>通用乘区明细</summary>
       <div class="result-grid">
-      <p>基础伤害（局内）：<StatValueWithSources :value="calcParts.baseDamage" :groups="valueTips.baseDamage" /></p>
-      <p>增伤区：<StatValueWithSources :value="calcParts.dmgMultiplier" :groups="valueTips.dmgMultiplier" /></p>
-      <p>防御区：<StatValueWithSources :value="calcParts.defenseMultiplier" :groups="valueTips.defenseMultiplier" /></p>
-      <p>抗性区：<StatValueWithSources :value="calcParts.resistanceMultiplier" :groups="valueTips.resistanceMultiplier" /></p>
-      <p>易伤区（含增益）：<StatValueWithSources :value="formatFormulaNumber(displayVulnerableMultiplier)" :groups="valueTips.vulnerableMultiplier" /></p>
-      <p>失衡易伤区（含增益）：<StatValueWithSources :value="calcParts.staggerMultiplier" :groups="valueTips.staggerMultiplier" /></p>
-      <p class="result-subtotal">通用乘区：<StatValueWithSources :value="formatFormulaNumber(calcParts.generalMultiplier, 2)" :groups="valueTips.generalMultiplier" /></p>
+      <p>基础伤害（局内）：<StatValueWithSources :value="formatCalcPlain(calcParts.baseDamage, 2)" :groups="valueTips.baseDamage" /></p>
+      <p>增伤区：<StatValueWithSources :value="formatCalcPlain(calcParts.dmgMultiplier)" :groups="valueTips.dmgMultiplier" /></p>
+      <p>防御区：<StatValueWithSources :value="formatCalcPlain(calcParts.defenseMultiplier)" :groups="valueTips.defenseMultiplier" /></p>
+      <p>抗性区：<StatValueWithSources :value="formatCalcPlain(calcParts.resistanceMultiplier)" :groups="valueTips.resistanceMultiplier" /></p>
+      <p>易伤区（含增益）：<StatValueWithSources :value="formatCalcPlain(displayVulnerableMultiplier)" :groups="valueTips.vulnerableMultiplier" /></p>
+      <p>失衡易伤区（含增益）：<StatValueWithSources :value="formatCalcPlain(calcParts.staggerMultiplier)" :groups="valueTips.staggerMultiplier" /></p>
+      <p class="result-subtotal">通用乘区：<StatValueWithSources :value="formatNumber(calcParts.generalMultiplier)" :groups="valueTips.generalMultiplier" /></p>
       </div>
     </details>
 
@@ -1604,15 +1605,15 @@ const formulaValueTips = computed(() => {
       <details class="calculation-parameters">
         <summary>直伤乘区明细与期望值</summary>
         <div class="result-grid">
-        <p>暴击率（计入上限 {{ calcParts.useSharpenFormula ? '2' : '1' }}）：<StatValueWithSources :value="calcParts.critRateRatio" :groups="valueTips.critRateRatio" /></p>
-        <p>{{ calcParts.useSharpenFormula ? '锐爆区' : '暴击区' }}：<StatValueWithSources :value="calcParts.critMultiplier" :groups="valueTips.critMultiplier" /></p>
-        <p>特殊乘区（含增益）：<StatValueWithSources :value="calcParts.specialMultiplier" :groups="valueTips.specialMultiplier" /></p>
-        <p>直伤倍率区：<StatValueWithSources :value="calcParts.directDmgMultZone" :groups="valueTips.directDmgMultZone" /></p>
+        <p>暴击率（计入上限 {{ calcParts.useSharpenFormula ? '2' : '1' }}）：<StatValueWithSources :value="formatCalcPlain(calcParts.critRateRatio)" :groups="valueTips.critRateRatio" /></p>
+        <p>{{ calcParts.useSharpenFormula ? '锐爆区' : '暴击区' }}：<StatValueWithSources :value="formatCalcPlain(calcParts.critMultiplier)" :groups="valueTips.critMultiplier" /></p>
+        <p>特殊乘区（含增益）：<StatValueWithSources :value="formatCalcPlain(calcParts.specialMultiplier)" :groups="valueTips.specialMultiplier" /></p>
+        <p>直伤倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.directDmgMultZone)" :groups="valueTips.directDmgMultZone" /></p>
         <p v-if="calcParts.settlementDmgMultZone > 0">
-          决算倍率区：<StatValueWithSources :value="calcParts.settlementDmgMultZone" :groups="valueTips.settlementDmgMultZone" />
+          决算倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.settlementDmgMultZone)" :groups="valueTips.settlementDmgMultZone" />
         </p>
-        <p>穿透率（计入）：<StatValueWithSources :value="calcParts.penRateRatio" :groups="valueTips.penRateRatio" /></p>
-        <p>有效防御项：<StatValueWithSources :value="calcParts.effectiveDefense" :groups="valueTips.effectiveDefense" /></p>
+        <p>穿透率（计入）：<StatValueWithSources :value="formatCalcPlain(calcParts.penRateRatio)" :groups="valueTips.penRateRatio" /></p>
+        <p>有效防御项：<StatValueWithSources :value="formatCalcPlain(calcParts.effectiveDefense)" :groups="valueTips.effectiveDefense" /></p>
         <p>贯穿力（局内）：<StatValueWithSources :value="Math.round(piercePower).toLocaleString('en-US')" :groups="valueTips.piercePower" /></p>
         <p class="result-total">直伤期望伤害：<StatValueWithSources :value="Math.round(calcParts.directDamageExpected).toLocaleString('en-US')" :groups="valueTips.directDamageExpected" /></p>
         </div>
@@ -1646,17 +1647,6 @@ const formulaValueTips = computed(() => {
             <div class="formula-aligned-result">
               <StatValueWithSources :value="group.result" :groups="formulaValueTips[group.key]" />
             </div>
-            <details v-if="group.dualResults?.length" class="calculation-parameters formula-comparison">
-              <summary>暴击口径对照</summary>
-              <div
-                v-for="item in group.dualResults"
-                :key="`${group.key}-${item.label}`"
-                class="formula-aligned-result formula-aligned-result--dual"
-              >
-                <span class="formula-aligned-term-label">{{ item.label }}</span>
-                <strong>{{ item.value }}</strong>
-              </div>
-            </details>
           </div>
         </div>
       </div>
@@ -1664,33 +1654,33 @@ const formulaValueTips = computed(() => {
         <summary>异常乘区明细与暴击对照</summary>
         <div class="result-grid">
         <h4 class="result-subsection-title">异常基础期望</h4>
-        <p>精通区：<StatValueWithSources :value="calcParts.masteryZone" :groups="valueTips.masteryZone" /></p>
-        <p>等级区：<StatValueWithSources :value="calcParts.levelZone" :groups="valueTips.levelZone" /></p>
+        <p>精通区：<StatValueWithSources :value="formatCalcPlain(calcParts.masteryZone)" :groups="valueTips.masteryZone" /></p>
+        <p>等级区：<StatValueWithSources :value="formatCalcPlain(calcParts.levelZone)" :groups="valueTips.levelZone" /></p>
         <p v-if="calcParts.mutationZone > 1">
           异化系数区：
-          <StatValueWithSources :value="formatFormulaNumber(calcParts.mutationZone)" :groups="valueTips.mutationZone" />
+          <StatValueWithSources :value="formatCalcPlain(calcParts.mutationZone)" :groups="valueTips.mutationZone" />
         </p>
         <p class="result-total">异常基础期望：<StatValueWithSources :value="Math.round(anomalyBaseWithMutation).toLocaleString('en-US')" :groups="valueTips.anomalyBaseExpected" /></p>
 
         <template v-if="anomalySubKind === 'anomaly'">
         <h4 class="result-subsection-title">异常伤害</h4>
-        <p>异常增伤区：<StatValueWithSources :value="calcParts.anomalyDmgBonusZone" :groups="valueTips.anomalyDmgBonusZone" /></p>
-        <p>异常倍率区：<StatValueWithSources :value="calcParts.anomalyMultZone" :groups="valueTips.anomalyMultZone" /></p>
+        <p>异常增伤区：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyDmgBonusZone)" :groups="valueTips.anomalyDmgBonusZone" /></p>
+        <p>异常倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyMultZone)" :groups="valueTips.anomalyMultZone" /></p>
         <p>异常暴击区（暴击率=0）：1</p>
-        <p>异常暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.anomalyFullCritZone" :groups="valueTips.anomalyCritZone" /></p>
+        <p>异常暴击区（暴击率=1）：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyFullCritZone)" :groups="valueTips.anomalyCritZone" /></p>
         <p class="result-total">异常伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.anomalyExpectedNoCrit)" :groups="valueTips.anomalyExpected" /></p>
         <p class="result-total">异常伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.anomalyExpectedFullCrit)" :groups="valueTips.anomalyExpected" /></p>
         </template>
 
         <template v-else-if="anomalySubKind === 'disorder'">
         <h4 class="result-subsection-title">紊乱期望伤害</h4>
-        <p>紊乱基础倍率：<StatValueWithSources :value="calcParts.disorderBaseMultRatio" :groups="valueTips.disorderBaseMult" /></p>
-        <p>异常持续时间(有效)：<StatValueWithSources :value="calcParts.effectiveAnomalyDuration" :groups="valueTips.anomalyDuration" /></p>
-        <p>紊乱补偿倍率：<StatValueWithSources :value="calcParts.disorderCompMultRatio" :groups="valueTips.disorderCompMult" /></p>
-        <p>紊乱倍率区：<StatValueWithSources :value="calcParts.disorderZone" :groups="valueTips.disorderZone" /></p>
-        <p>紊乱增伤区：<StatValueWithSources :value="calcParts.disorderDmgBonusZone" :groups="valueTips.disorderDmgBonusZone" /></p>
+        <p>紊乱基础倍率：<StatValueWithSources :value="formatCalcPlain(calcParts.disorderBaseMultRatio)" :groups="valueTips.disorderBaseMult" /></p>
+        <p>异常持续时间(有效)：<StatValueWithSources :value="formatCalcPlain(calcParts.effectiveAnomalyDuration)" :groups="valueTips.anomalyDuration" /></p>
+        <p>紊乱补偿倍率：<StatValueWithSources :value="formatCalcPlain(calcParts.disorderCompMultRatio)" :groups="valueTips.disorderCompMult" /></p>
+        <p>紊乱倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.disorderZone)" :groups="valueTips.disorderZone" /></p>
+        <p>紊乱增伤区：<StatValueWithSources :value="formatCalcPlain(calcParts.disorderDmgBonusZone)" :groups="valueTips.disorderDmgBonusZone" /></p>
         <p>紊乱暴击区（暴击率=0）：1</p>
-        <p>紊乱暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.disorderFullCritZone" :groups="valueTips.disorderCritZone" /></p>
+        <p>紊乱暴击区（暴击率=1）：<StatValueWithSources :value="formatCalcPlain(calcParts.disorderFullCritZone)" :groups="valueTips.disorderCritZone" /></p>
         <p class="result-total">紊乱伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.disorderExpectedNoCrit)" :groups="valueTips.disorderExpected" /></p>
         <p class="result-total">紊乱伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.disorderExpectedFullCrit)" :groups="valueTips.disorderExpected" /></p>
         <p class="result-total">紊乱期望伤害：<StatValueWithSources :value="Math.round(calcParts.disorderExpected).toLocaleString('en-US')" :groups="valueTips.disorderExpected" /></p>
@@ -1698,18 +1688,18 @@ const formulaValueTips = computed(() => {
 
         <template v-else-if="anomalySubKind === 'turbulence'">
         <h4 class="result-subsection-title">乱流伤害</h4>
-        <p>乱流基础倍率：<StatValueWithSources :value="calcParts.turbulenceBaseMultRatio" :groups="valueTips.turbulenceBaseMult" /></p>
-        <p>异常持续时间(有效)：<StatValueWithSources :value="calcParts.effectiveAnomalyDuration" :groups="valueTips.anomalyDuration" /></p>
-        <p>乱流补偿倍率：<StatValueWithSources :value="calcParts.turbulenceCompMultRatio" :groups="valueTips.turbulenceCompMult" /></p>
-        <p>乱流倍率区：<StatValueWithSources :value="calcParts.turbulenceZone" :groups="valueTips.turbulenceZone" /></p>
+        <p>乱流基础倍率：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceBaseMultRatio)" :groups="valueTips.turbulenceBaseMult" /></p>
+        <p>异常持续时间(有效)：<StatValueWithSources :value="formatCalcPlain(calcParts.effectiveAnomalyDuration)" :groups="valueTips.anomalyDuration" /></p>
+        <p>乱流补偿倍率：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceCompMultRatio)" :groups="valueTips.turbulenceCompMult" /></p>
+        <p>乱流倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceZone)" :groups="valueTips.turbulenceZone" /></p>
         <p>
           乱流增伤区+异常增伤区：<StatValueWithSources
-            :value="calcParts.turbulenceCombinedDmgBonusZone"
+            :value="formatCalcPlain(calcParts.turbulenceCombinedDmgBonusZone)"
             :groups="valueTips.turbulenceCombinedDmgBonusZone"
           />
         </p>
         <p>乱流暴击区（暴击率=0）：1</p>
-        <p>乱流暴击区（暴击率=1）：<StatValueWithSources :value="calcParts.turbulenceFullCritZone" :groups="valueTips.turbulenceCritZone" /></p>
+        <p>乱流暴击区（暴击率=1）：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceFullCritZone)" :groups="valueTips.turbulenceCritZone" /></p>
         <p class="result-total">乱流伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.turbulenceExpectedNoCrit)" :groups="valueTips.turbulenceExpected" /></p>
         <p class="result-total">乱流伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.turbulenceExpectedFullCrit)" :groups="valueTips.turbulenceExpected" /></p>
         </template>
@@ -1719,26 +1709,26 @@ const formulaValueTips = computed(() => {
         <p>
           异放综合增伤区：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.anomalyReleaseCombinedDmgBonusZone)"
+            :value="formatCalcPlain(calcParts.anomalyReleaseCombinedDmgBonusZone)"
             :groups="valueTips.anomalyReleaseCombinedDmgBonusZone"
           />
         </p>
         <p>
           异放倍率区：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.anomalyReleaseMultZone)"
+            :value="formatCalcPlain(calcParts.anomalyReleaseMultZone)"
             :groups="valueTips.anomalyReleaseMultZone"
           />
         </p>
         <p>
-          异放暴击区公式：1 + ({{ formatFormulaNumber(calcParts.anomalyReleaseCritRateRatio ?? 0) }})
-          × ({{ formatFormulaNumber(calcParts.anomalyReleaseCritDmgRatio ?? 0) }})
+          异放暴击区公式：1 + ({{ formatCalcPlain(calcParts.anomalyReleaseCritRateRatio ?? 0) }})
+          × ({{ formatCalcPlain(calcParts.anomalyReleaseCritDmgRatio ?? 0) }})
         </p>
         <p>异放暴击区（暴击率=0）：1</p>
         <p>
           异放暴击区（暴击率=1）：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.anomalyReleaseFullCritZone)"
+            :value="formatCalcPlain(calcParts.anomalyReleaseFullCritZone)"
             :groups="valueTips.anomalyReleaseCritZone"
           />
         </p>
@@ -1763,14 +1753,14 @@ const formulaValueTips = computed(() => {
         <p>
           耀变综合增伤区：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.radianceCombinedDmgBonusZone)"
+            :value="formatCalcPlain(calcParts.radianceCombinedDmgBonusZone)"
             :groups="valueTips.radianceCombinedDmgBonusZone"
           />
         </p>
         <p>
           耀变倍率区：
           <StatValueWithSources
-            :value="formatFormulaNumber(calcParts.radianceMultZone)"
+            :value="formatCalcPlain(calcParts.radianceMultZone)"
             :groups="valueTips.radianceMultZone"
           />
         </p>
@@ -1778,7 +1768,7 @@ const formulaValueTips = computed(() => {
         <p>
           耀变暴击区（暴击率=1）：
           <StatValueWithSources
-            :value="calcParts.radianceFullCritZone"
+            :value="formatCalcPlain(calcParts.radianceFullCritZone)"
             :groups="valueTips.radianceCritZone"
           />
         </p>
@@ -1826,9 +1816,6 @@ const formulaValueTips = computed(() => {
 .calculation-parameters > summary {
   cursor: pointer;
   color: var(--calc-muted, #697588);
-}
-.formula-comparison {
-  flex-basis: 100%;
 }
 
 /* ===== 标题层：墨色、字重对比（editorial 风格） ===== */
@@ -1987,18 +1974,11 @@ const formulaValueTips = computed(() => {
   border-bottom-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
-.formula-aligned-dual {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  align-self: center;
-}
-
-.formula-aligned-result--dual {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  align-items: flex-start;
+/* 参数表里的汇总/结果行与公式结果同色（用户 2026-10-22：蓝字加粗、不要金色） */
+.damage-result-detail :deep(.result-total .stat-value > strong),
+.damage-result-detail :deep(.result-subtotal .stat-value > strong) {
+  font-weight: inherit;
+  border-bottom-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
 /* ===== 参数表：两列（参数名称左对齐 | 数值右对齐），每行一项，行分隔线 ===== */
@@ -2027,7 +2007,7 @@ const formulaValueTips = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 汇总行：整行跨列 + 上边框强调 + 结果加粗高亮 */
+/* 汇总行：整行跨列 + 上边框强调 + 结果加粗高亮（与公式结果同色，不再用金色） */
 .result-total {
   grid-column: 1 / -1;
   margin-top: 0.45rem !important;
@@ -2035,7 +2015,7 @@ const formulaValueTips = computed(() => {
   border-bottom: none !important;
   padding-top: 0.55rem;
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
 }
 
 .result-subtotal {
@@ -2045,7 +2025,7 @@ const formulaValueTips = computed(() => {
   border-bottom: none !important;
   padding-top: 0.45rem;
   font-weight: 700;
-  color: var(--calc-accent, #c9a55c);
+  color: var(--calc-formula-result-color);
 }
 
 @media (max-width: 980px) {

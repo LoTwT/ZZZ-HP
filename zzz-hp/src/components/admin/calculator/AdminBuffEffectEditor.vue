@@ -22,6 +22,14 @@ import {
   validateEffectGroups,
   type EffectRow,
 } from '@/utils/buffEffectRows'
+import {
+  blockOnlySelection,
+  effectRowAnchor,
+  pickRowAfterRemoval,
+  resolveEffectSelection,
+  toSelectionRowRefs,
+  type EffectRowAnchor,
+} from '@/utils/buffEffectSelection'
 
 /** 工具条「当前编辑」下拉里的可切换对象（代理人 / 音擎 / 邦布…） */
 interface BuffEditorOwnerOption {
@@ -188,13 +196,7 @@ const collapsedBlocks = ref<Record<string, boolean>>({})
  * （勾/取消伤害类型、拆开、合并时 effect id / groupId 会重建），
  * 所以额外记住「块 id + 乘区 + groupId + 序号」，数据变了也能落回同一行。
  */
-interface RowAnchor {
-  blockId: string
-  zoneId: string
-  groupId?: string
-  index: number
-}
-const selectedAnchor = ref<RowAnchor | null>(null)
+const selectedAnchor = ref<EffectRowAnchor | null>(null)
 
 type RowItem = { block: BuffEffectBlock; row: EffectRow }
 
@@ -203,12 +205,23 @@ function applySelection(item: RowItem) {
   selectedBlockId.value = item.block.id
   const rows = rowsOf(item.block)
   const index = rows.findIndex((row) => row.key === item.row.key)
-  selectedAnchor.value = {
-    blockId: item.block.id,
-    zoneId: item.row.zone?.id ?? '',
-    groupId: item.row.groupId,
-    index: index < 0 ? 0 : index,
-  }
+  selectedAnchor.value = effectRowAnchor(item.row, item.block.id, index)
+}
+
+/** 选中块本身（该块没有效果行）：右列显示块信息，不显示效果行 */
+function selectBlockOnly(block: BuffEffectBlock) {
+  const resolved = blockOnlySelection(block.id)
+  selectedRowKey.value = resolved.rowKey
+  selectedBlockId.value = resolved.blockId
+  selectedAnchor.value = resolved.anchor
+}
+
+/** 让一个块可继续编辑：有行选第一行，没行就选中块本身 */
+function focusBlock(block: BuffEffectBlock | null | undefined) {
+  if (!block) return
+  const firstRow = rowsOf(block)[0]
+  if (firstRow) applySelection({ block, row: firstRow })
+  else selectBlockOnly(block)
 }
 
 function isBlockCollapsed(blockId: string) {
@@ -231,39 +244,27 @@ const activeRow = computed(
   () => allRows.value.find((item) => item.row.key === selectedRowKey.value) ?? null,
 )
 
+/**
+ * 右列当前要编辑的块：优先取选中行的块；选中态落在块上（空块）时取该块。
+ * 没有块时为空 → 右列显示空态提示。
+ */
+const activeCardBlock = computed<BuffEffectBlock | null>(
+  () => activeRow.value?.block ?? activeBlock.value ?? null,
+)
+
 /** 数据 patch 后重新落位：优先同 key，其次按锚点（同块同乘区 → 同 groupId / 同序号） */
 function resolveSelection() {
-  const list = allRows.value
-  if (!list.length) {
-    selectedRowKey.value = ''
-    selectedAnchor.value = null
-    return
-  }
-
-  const current = list.find((item) => item.row.key === selectedRowKey.value)
-  if (current) {
-    // 仍是同一行：只刷新锚点（序号/groupId 可能变了）
-    applySelection(current)
-    return
-  }
-
-  const anchor = selectedAnchor.value
-  if (anchor) {
-    const inBlock = list.filter((item) => item.block.id === anchor.blockId)
-    const sameZone = inBlock.filter((item) => (item.row.zone?.id ?? '') === anchor.zoneId)
-    const hit =
-      sameZone.find((item) => anchor.groupId && item.row.groupId === anchor.groupId) ??
-      sameZone[anchor.index] ??
-      sameZone[0] ??
-      inBlock[anchor.index] ??
-      inBlock[0]
-    if (hit) {
-      applySelection(hit)
-      return
-    }
-  }
-
-  applySelection(list[0]!)
+  const rows = allRows.value
+  const resolved = resolveEffectSelection({
+    rows: toSelectionRowRefs(rows),
+    blockIds: orderedBlocks.value.map((block) => block.id),
+    selectedRowKey: selectedRowKey.value,
+    anchor: selectedAnchor.value,
+    selectedBlockId: selectedBlockId.value,
+  })
+  selectedRowKey.value = resolved.rowKey
+  selectedBlockId.value = resolved.blockId
+  selectedAnchor.value = resolved.anchor
 }
 
 watch(allRows, resolveSelection, { immediate: true })
@@ -300,9 +301,7 @@ function selectRow(block: BuffEffectBlock, row: EffectRow) {
 }
 
 function selectBlock(block: BuffEffectBlock) {
-  selectedBlockId.value = block.id
-  const firstRow = rowsOf(block)[0]
-  if (firstRow) applySelection({ block, row: firstRow })
+  focusBlock(block)
 }
 
 /** 窄条模式下的块图标：取块名前两个字 */
@@ -415,27 +414,51 @@ function addBlock() {
 function removeBlock(block: BuffEffectBlock) {
   const index = model.value.findIndex((item) => item.id === block.id)
   if (index < 0) return
+  // 删除后落到原显示位置的邻近块（没有就落到剩余的最后一个块）
+  const displayIndex = Math.max(
+    0,
+    orderedBlocks.value.findIndex((item) => item.id === block.id),
+  )
+  const wasActive = activeCardBlock.value?.id === block.id
   delete suppressedByBlock.value[block.id]
   model.value = model.value.filter((_, i) => i !== index)
-  if (selectedBlockId.value === block.id) {
-    selectedBlockId.value = orderedBlocks.value[0]?.id ?? ''
+  if (!wasActive) return
+
+  const remaining = orderedBlocks.value
+  const neighbour = remaining[Math.min(displayIndex, remaining.length - 1)] ?? null
+  if (neighbour) {
+    focusBlock(neighbour)
+    return
   }
+  selectedRowKey.value = ''
+  selectedBlockId.value = ''
+  selectedAnchor.value = null
 }
 
 function addEffect(block: BuffEffectBlock) {
-  block.effects.push(
-    createEmptyBuffEffect({
-      applyTarget: props.lockApplyTarget ?? 'self',
-      stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
-    }),
-  )
+  const effect = createEmptyBuffEffect({
+    applyTarget: props.lockApplyTarget ?? 'self',
+    stat: props.energyRegenFlatOnly ? 'energyRegen' : 'dmgBonus',
+  })
+  block.effects.push(effect)
+  // 新行就地选中（行 key 由 effect id 派生，push 后即可查到）
+  const row = rowsOf(block).find((item) => item.effects.some((entry) => entry.id === effect.id))
+  if (row) applySelection({ block, row })
 }
 
 function removeRow(block: BuffEffectBlock, row: EffectRow) {
+  const rowsBefore = rowsOf(block)
+  const removedIndex = rowsBefore.findIndex((item) => item.key === row.key)
   const ids = new Set(row.effects.map((effect) => effect.id))
   block.effects = block.effects.filter((effect) => !ids.has(effect.id))
   clearSuppressed(block.id, row.effects)
   selectedRowKeys.value = selectedRowKeys.value.filter((key) => key !== row.key)
+
+  // 删完这块的最后一行时，选中态留在「块」上（否则右列无处显示块名 / 删除块 / 加效果）
+  const rowsAfter = rowsOf(block)
+  const nextRow = pickRowAfterRemoval(rowsAfter, removedIndex < 0 ? 0 : removedIndex)
+  if (nextRow) applySelection({ block, row: nextRow })
+  else selectBlockOnly(block)
 }
 
 function onChangeZone(
@@ -681,69 +704,72 @@ defineExpose({
         <button type="button" class="block-add" title="添加效果块" @click="addBlock">＋ 块</button>
       </nav>
 
-      <!-- 右列：选中行的完整内容（永远展开，没有任何折叠控件） -->
+      <!-- 右列：选中行的完整内容（永远展开，没有任何折叠控件）；空块显示块信息 -->
       <section class="block-work">
-        <template v-if="activeRow">
-          <article class="block-card">
-            <header class="block-head">
-              <label class="field name-field">
-                <span>效果块名称</span>
-                <input
-                  v-model="activeRow.block.name"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="可自定义名称"
-                />
-              </label>
-              <button type="button" class="danger-btn" @click="removeBlock(activeRow.block)">
-                删除块
-              </button>
-            </header>
-
-            <label class="field note-field">
-              <span>块备注 / 注释</span>
-              <textarea
-                v-model="activeRow.block.note"
-                class="note-input"
-                rows="2"
+        <article v-if="activeCardBlock" class="block-card">
+          <header class="block-head">
+            <label class="field name-field">
+              <span>效果块名称</span>
+              <input
+                v-model="activeCardBlock.name"
+                type="text"
                 autocomplete="off"
-                placeholder="可选说明、触发条件等"
+                placeholder="可自定义名称"
               />
             </label>
-
-            <p v-if="mergeMode" class="merge-block-actions">
-              <button
-                type="button"
-                class="ghost-btn"
-                :disabled="selectedRowKeys.length < 2"
-                @click="mergeSelected(activeRow.block)"
-              >
-                合并选中（{{ selectedRowKeys.length }}）
-              </button>
-            </p>
-
-            <AdminBuffEffectRow
-              :key="activeRow.row.key"
-              :row="activeRow.row"
-              :agent-id="agentId"
-              :lock-apply-target="lockApplyTarget"
-              :merge-mode="mergeMode"
-              :selected="selectedRowKeys.includes(activeRow.row.key)"
-              :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
-              @change-zone="(zoneId, types) => onChangeZone(activeRow!.block, activeRow!.row, zoneId, types)"
-              @toggle-type="(type, checked) => onToggleType(activeRow!.block, activeRow!.row, type, checked)"
-              @split="onSplit(activeRow!.block, activeRow!.row)"
-              @remove="removeRow(activeRow!.block, activeRow!.row)"
-              @confirm-merge="onConfirmMerge(activeRow!.block, activeRow!.row)"
-              @align="onAlign(activeRow!.block, activeRow!.row)"
-              @toggle-select="toggleSelect(activeRow!.row)"
-            />
-
-            <button type="button" class="add-btn" @click="addEffect(activeRow.block)">
-              ＋ 在此块添加效果
+            <button type="button" class="danger-btn" @click="removeBlock(activeCardBlock)">
+              删除块
             </button>
-          </article>
-        </template>
+          </header>
+
+          <label class="field note-field">
+            <span>块备注 / 注释</span>
+            <textarea
+              v-model="activeCardBlock.note"
+              class="note-input"
+              rows="2"
+              autocomplete="off"
+              placeholder="可选说明、触发条件等"
+            />
+          </label>
+
+          <p v-if="mergeMode" class="merge-block-actions">
+            <button
+              type="button"
+              class="ghost-btn"
+              :disabled="selectedRowKeys.length < 2"
+              @click="mergeSelected(activeCardBlock)"
+            >
+              合并选中（{{ selectedRowKeys.length }}）
+            </button>
+          </p>
+
+          <AdminBuffEffectRow
+            v-if="activeRow"
+            :key="activeRow.row.key"
+            :row="activeRow.row"
+            :agent-id="agentId"
+            :lock-apply-target="lockApplyTarget"
+            :merge-mode="mergeMode"
+            :selected="selectedRowKeys.includes(activeRow.row.key)"
+            :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
+            @change-zone="(zoneId, types) => onChangeZone(activeRow!.block, activeRow!.row, zoneId, types)"
+            @toggle-type="(type, checked) => onToggleType(activeRow!.block, activeRow!.row, type, checked)"
+            @split="onSplit(activeRow!.block, activeRow!.row)"
+            @remove="removeRow(activeRow!.block, activeRow!.row)"
+            @confirm-merge="onConfirmMerge(activeRow!.block, activeRow!.row)"
+            @align="onAlign(activeRow!.block, activeRow!.row)"
+            @toggle-select="toggleSelect(activeRow!.row)"
+          />
+
+          <p v-else class="block-empty-hint">
+            这个块还没有效果行（空块）：点下面的「＋ 在此块添加效果」加一条，或点右上「删除块」删掉它。
+          </p>
+
+          <button type="button" class="add-btn" @click="addEffect(activeCardBlock)">
+            ＋ 在此块添加效果
+          </button>
+        </article>
 
         <div v-else class="empty">
           <span>从左侧选择一个效果</span>
@@ -1212,6 +1238,17 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   margin: 0;
+}
+
+/* 空块（块内已无效果行）：右列仍显示块信息，用一条淡色提示说明下一步 */
+.block-empty-hint {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: var(--buff-editor-meta-size);
+  opacity: 0.75;
 }
 
 .block-card {
