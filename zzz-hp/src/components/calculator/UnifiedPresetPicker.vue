@@ -1522,20 +1522,19 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
   background: #1a1f27;
 }
 
-/* 高级设置：次要入口（本页自身的增益），视觉弱于「取消」 */
+/* 高级设置：与「取消」同款正常按钮（用户 2026-10-22：不要虚线） */
 .advanced-buff-btn {
   padding: 0.42rem 0.9rem;
-  border: 1px dashed #3a3e47;
+  border: 1px solid #3a3e47;
   border-radius: 8px;
-  background: transparent;
-  color: #b7c0cd;
+  background: #12161d;
+  color: #d5dae4;
   font-size: 0.84rem;
   cursor: pointer;
 }
 
 .advanced-buff-btn:hover {
-  border-color: #c9a55c;
-  color: #e8d4a8;
+  background: #1a1f27;
 }
 
 .confirm-btn {
