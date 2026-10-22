@@ -4,6 +4,13 @@ import {
   type StaggerPhase,
 } from '@/types/calculator'
 import type { SkillFlowDamageAnalysis } from '@/utils/skillFlowDamageAnalysis'
+import {
+  captureSkillFlowDamageSnapshotContext,
+  compareSkillFlowDamageSegments,
+  normalizeSkillFlowDamageSnapshotContext,
+  type SkillFlowDamageSnapshotContext,
+  type SkillFlowDamageSegmentComparison,
+} from '@/utils/skillFlowDamageRecordSegments'
 
 export interface SkillFlowDamageSnapshotLine {
   slotIndex: number
@@ -13,6 +20,7 @@ export interface SkillFlowDamageSnapshotLine {
   staggerPhase: StaggerPhase
   count: number
   total: number
+  context?: SkillFlowDamageSnapshotContext
 }
 
 /** 只保存数值与稳定身份；比例在比较时按各自全队总伤计算。 */
@@ -41,6 +49,7 @@ export interface SkillFlowAverageDamageComparison {
 export interface SkillFlowSkillComparisonMetrics {
   count: SkillFlowDamageMetricComparison
   averageDamage: SkillFlowAverageDamageComparison
+  segments: SkillFlowDamageSegmentComparison[]
 }
 
 export interface SkillFlowDamageComparisonRow extends SkillFlowDamageMetricComparison {
@@ -57,7 +66,12 @@ type ComparisonRecord = {
   snapshot?: SkillFlowDamageSnapshot
 }
 
-type SnapshotGroup = { name: string; total: number; count: number }
+type SnapshotGroup = {
+  name: string
+  total: number
+  count: number
+  lines: SkillFlowDamageSnapshotLine[]
+}
 
 function compareMetric(baseline: number, comparison: number): SkillFlowDamageMetricComparison {
   const delta = comparison - baseline
@@ -99,6 +113,7 @@ export function captureSkillFlowDamageSnapshot(
       staggerPhase: line.hit.staggerPhase,
       count: line.hit.count,
       total: line.total,
+      context: captureSkillFlowDamageSnapshotContext(line),
     })),
     uncomputedCount: analysis.slots.reduce((sum, slot) => sum + slot.uncomputedCount, 0),
   }
@@ -147,6 +162,7 @@ export function normalizeSkillFlowDamageSnapshot(
       staggerPhase: item.staggerPhase,
       count: item.count,
       total: item.total,
+      context: normalizeSkillFlowDamageSnapshotContext(item.context),
     })
   }
   const sum = lines.reduce((total, line) => total + line.total, 0)
@@ -188,7 +204,8 @@ function aggregateSnapshot(record: ComparisonRecord, dimension: 'agent' | 'type'
   if (!snapshot) return groups
   if (dimension === 'agent') {
     snapshot.agentIds.forEach((id, index) => {
-      if (id) groups.set(id, { name: record.agentNames[index] || id, total: 0, count: 0 })
+      if (id)
+        groups.set(id, { name: record.agentNames[index] || id, total: 0, count: 0, lines: [] })
     })
   }
   for (const line of snapshot.lines) {
@@ -207,12 +224,12 @@ function aggregateSnapshot(record: ComparisonRecord, dimension: 'agent' | 'type'
           ? (BUFF_DAMAGE_TYPE_OPTIONS.find((item) => item.id === line.damageType)?.label ??
             line.damageType)
           : `${agentName} · ${line.skillName}`
-    const previous = groups.get(id)
-    groups.set(id, {
-      name,
-      total: (previous?.total ?? 0) + line.total,
-      count: (previous?.count ?? 0) + line.count,
-    })
+    const group = groups.get(id) ?? { name, total: 0, count: 0, lines: [] }
+    group.name = name
+    group.total += line.total
+    group.count += line.count
+    group.lines.push(line)
+    groups.set(id, group)
   }
   return groups
 }
@@ -249,6 +266,7 @@ export function compareSkillFlowDamageRecords(
             row.skill = {
               count: compareMetric(a?.count ?? 0, b?.count ?? 0),
               averageDamage: compareAverageDamage(a, b),
+              segments: compareSkillFlowDamageSegments(a?.lines ?? [], b?.lines ?? []),
             }
             if (row.state === 'same' && row.skill.count.delta !== 0) row.state = 'changed'
           }
