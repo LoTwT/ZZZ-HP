@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import PanelScreenshotUploadSection from '@/components/calculator/PanelScreenshotUploadSection.vue'
 import SlotPanelEntryForm from '@/components/calculator/SlotPanelEntryForm.vue'
 import { useMaskClose } from '@/composables/useMaskClose'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
+import type {
+  AgentBuffDoc,
+  CharacterAttrKey,
+  DriveDiscBuffDoc,
+  SkillSubcategory,
+  WengineBuffDoc,
+} from '@/types/calculator'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import {
   createEmptyAffixCounts,
@@ -48,6 +54,14 @@ import {
 } from '@/utils/skillTalentLevels'
 import { shouldResetDraftsOnAgentChange } from '@/utils/presetPickerDraftReset'
 import { resolvePresetPickerAutoFilters } from '@/utils/presetPickerAutoFilter'
+import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
+import { MULTI_SLOT_BUFF_SELECTION_KEY, filterPresetBuffEffects } from '@/utils/presetBuffScope'
+import {
+  collectAllBuffEffects,
+  type CollectedEffect,
+  type MultiSlotBuffSelection,
+  type PanelSourceValues,
+} from '@/utils/panelBuffCalc'
 
 const EMPTY_BANGBOO: BangbooBuffDoc = {
   id: 'none',
@@ -91,6 +105,11 @@ const props = defineProps<{
   finalPanelToken?: string
   /** 用当前草稿局外 + 页级增益上下文实时算局内 */
   resolveFinalPanel?: (external: PanelStats) => PanelStats | null
+  /** 高级设置（本页自身增益）里转模用的属性默认值 / 面板取值：与局内 Buff 选择器同一套口径 */
+  buffAttrDefaults?: Partial<Record<CharacterAttrKey, number>>
+  buffPanelSourceValues?: PanelSourceValues
+  buffSkillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
+  buffSkillSubcategories?: SkillSubcategory[]
   hideTrigger?: boolean
 }>()
 
@@ -485,6 +504,77 @@ const selectedAgent = computed(() => props.agents.find((a) => a.id === selected.
 const selectedWengine = computed(() => props.wengines.find((w) => w.id === selected.value.wengineId))
 const selectedTwoPiece = computed(() => props.driveDiscs.find((d) => d.id === selected.value.twoPieceId))
 const selectedFourPiece = computed(() => props.driveDiscs.find((d) => d.id === selected.value.fourPieceId))
+
+// --- 高级设置：本页「对自身」的增益（用户口径 2026-10-22） ---
+/**
+ * 页面的「按槽位 Buff 勾选」由宿主注入（与局内 Buff 选择器同一份，勾选即时生效）。
+ * 没有注入的宿主（如编队卡片里的入口）不显示这个按钮 —— 不猜、不另建一份状态。
+ */
+const multiSlotBuffSelection = inject<MultiSlotBuffSelection | null>(
+  MULTI_SLOT_BUFF_SELECTION_KEY,
+  null,
+)
+const buffAdvancedOpen = ref(false)
+/** 高级设置里勾的是哪个槽位：跟当前编辑槽位一致，弹窗内部不再给切人入口 */
+const buffAdvancedSlotIndex = ref(props.activeSlot)
+watch(
+  () => props.activeSlot,
+  (index) => {
+    buffAdvancedSlotIndex.value = index
+  },
+)
+
+/**
+ * 按**弹窗里的草稿**收集自身增益：用户可能正在把音擎换成另一把，
+ * 拿槽位当前（还没导入）的配装去收集，列表会显示成旧音擎的增益。
+ */
+const draftSelfBuffEffects = computed((): CollectedEffect[] => {
+  const slotIndex = props.activeSlot
+  const draft = selected.value
+  const draftSlots = props.teamSlots.map((slot, index) =>
+    index === slotIndex
+      ? {
+          ...slot,
+          agentId: draft.agentId,
+          rank: draft.rank,
+          wengineId: draft.wengineId,
+          wengineRefine: draft.wengineRefine,
+          twoPieceDriveDiscId: draft.twoPieceId,
+          fourPieceDriveDiscId: draft.fourPieceId,
+        }
+      : slot,
+  )
+  return collectAllBuffEffects({
+    teamSlots: draftSlots,
+    agents: props.agents,
+    wengines: props.wengines,
+    driveDiscs: props.driveDiscs,
+    // 高级设置只调本页对自身的增益：邦布 / 场地 / 额外 Buff 都不在这份列表里
+    bangboo: EMPTY_BANGBOO,
+    bangbooRefine: 1,
+    environmentBuffs: [],
+    extraGains: [],
+    mainSlotIndex: slotIndex,
+  })
+})
+
+/** 转模基数：宿主给了就用宿主的（与局内 Buff 选择器同一口径），否则退回该角色的初始面板 */
+const advancedAttrDefaults = computed(
+  () =>
+    props.buffAttrDefaults ??
+    ((selectedAgent.value?.basePanel ?? {}) as Partial<Record<CharacterAttrKey, number>>),
+)
+
+/** 当前页签允许调的增益（角色页=自身、武器页=自身音擎、驱动盘页=自身驱动盘、面板页=三者） */
+const advancedBuffEffects = computed(() =>
+  filterPresetBuffEffects(draftSelfBuffEffects.value, activeTab.value),
+)
+
+function openBuffAdvanced() {
+  if (!multiSlotBuffSelection || !advancedBuffEffects.value.length) return
+  buffAdvancedSlotIndex.value = props.activeSlot
+  buffAdvancedOpen.value = true
+}
 
 /** 面板 Tab：确定导入前不画 √（基础面板有攻/生命时也不算已填） */
 const panelTabFilled = computed(() => false)
@@ -964,12 +1054,34 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
             <p v-if="confirmHint" class="summary-hint">{{ confirmHint }}</p>
           </div>
           <div class="footer-actions">
+            <button
+              v-if="multiSlotBuffSelection && advancedBuffEffects.length"
+              type="button"
+              class="advanced-buff-btn"
+              title="只列出本页物件作用在自己身上的增益；队友 / 全队增益仍到「选择 Buff」里调"
+              @click="openBuffAdvanced"
+            >
+              高级设置
+            </button>
             <button type="button" class="cancel-btn" @click="open = false">取消</button>
             <button type="button" class="confirm-btn" :disabled="!canConfirm" @click="confirm">
               确定导入
             </button>
           </div>
         </footer>
+
+        <!-- 高级设置：复用「选择 Buff」界面，只喂本页自身的增益（勾选即时生效，改的是同一份状态） -->
+        <BuffEffectPickerModal
+          v-if="multiSlotBuffSelection"
+          v-model:open="buffAdvancedOpen"
+          :multi-selection="multiSlotBuffSelection"
+          v-model:view-slot-index="buffAdvancedSlotIndex"
+          :effects="advancedBuffEffects"
+          :attr-defaults="advancedAttrDefaults"
+          :panel-source-values="buffPanelSourceValues"
+          :skill-talent-levels-by-agent="buffSkillTalentLevelsByAgent"
+          :skill-subcategories="buffSkillSubcategories"
+        />
       </div>
     </div>
   </Teleport>
@@ -1410,6 +1522,22 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
   background: #1a1f27;
 }
 
+/* 高级设置：次要入口（本页自身的增益），视觉弱于「取消」 */
+.advanced-buff-btn {
+  padding: 0.42rem 0.9rem;
+  border: 1px dashed #3a3e47;
+  border-radius: 8px;
+  background: transparent;
+  color: #b7c0cd;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.advanced-buff-btn:hover {
+  border-color: #c9a55c;
+  color: #e8d4a8;
+}
+
 .confirm-btn {
   padding: 0.42rem 1.25rem;
   border: none;
@@ -1498,6 +1626,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
 :global([data-theme='light']) .search,
 :global([data-theme='light']) .item-cell,
 :global([data-theme='light']) .chip,
+:global([data-theme='light']) .advanced-buff-btn,
 :global([data-theme='light']) .cancel-btn {
   border-color: #b7d3e8;
   background: #ffffff;
