@@ -639,7 +639,7 @@ const identityChips = computed<IdentityChip[]>(() => {
   width: 1px;
   height: 0.95rem;
   margin: 0 0.1rem;
-  background: #3b434f;
+  background: #4c5563;
   flex: 0 0 auto;
 }
 
@@ -651,19 +651,23 @@ const identityChips = computed<IdentityChip[]>(() => {
   min-width: 0;
 }
 
-/* 装备小卡：标签 + 名字，音擎与驱动盘用不同色温区分 */
+/*
+ * 装备小卡：标签 + 名字，音擎与驱动盘用不同色温区分。
+ * 颜色都按「深色底稿」给足对比（2026-10-22 用户：黄字在深浅两个模式下都看不清）；
+ * 浅色模式的那一套在 assets/calculatorLight.css 里同参覆盖。
+ */
 .identity-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   max-width: 100%;
   padding: 0.1rem 0.45rem 0.1rem 0.32rem;
-  border: 1px solid #3b434f;
+  border: 1px solid #4c5563;
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.06);
   font-size: 0.8rem;
   line-height: 1.45;
-  color: #dfe6f2;
+  color: #eaf0fa;
   white-space: nowrap;
 }
 
@@ -672,10 +676,10 @@ const identityChips = computed<IdentityChip[]>(() => {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  padding: 0 0.24rem;
+  padding: 0 0.26rem;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.07);
-  color: #9aa3b5;
+  background: rgba(255, 255, 255, 0.14);
+  color: #dbe4f2;
 }
 
 .identity-chip .chip-text {
@@ -684,36 +688,36 @@ const identityChips = computed<IdentityChip[]>(() => {
 }
 
 .identity-chip.is-wengine {
-  border-color: rgba(201, 165, 92, 0.4);
-  background: rgba(201, 165, 92, 0.1);
-  color: #f0e2c2;
+  border-color: rgba(214, 178, 104, 0.62);
+  background: rgba(201, 165, 92, 0.18);
+  color: #faeed2;
 }
 
 .identity-chip.is-wengine .chip-tag {
-  background: rgba(201, 165, 92, 0.2);
-  color: #dcc08a;
+  background: rgba(214, 178, 104, 0.34);
+  color: #ffe9bd;
 }
 
 .identity-chip.is-disc {
-  border-color: rgba(140, 170, 220, 0.32);
-  background: rgba(140, 170, 220, 0.09);
-  color: #c8d6ec;
+  border-color: rgba(150, 182, 232, 0.5);
+  background: rgba(140, 170, 220, 0.16);
+  color: #e2ebfa;
 }
 
 .identity-chip.is-disc .chip-tag {
-  background: rgba(140, 170, 220, 0.16);
-  color: #9fb3d2;
+  background: rgba(150, 182, 232, 0.28);
+  color: #d3e2f8;
 }
 
 .identity-chip.is-warn {
-  border-color: rgba(214, 122, 122, 0.45);
-  background: rgba(214, 122, 122, 0.1);
-  color: #eec4c4;
+  border-color: rgba(228, 138, 138, 0.62);
+  background: rgba(214, 122, 122, 0.18);
+  color: #ffdede;
 }
 
 .identity-chip.is-warn .chip-tag {
-  background: rgba(214, 122, 122, 0.18);
-  color: #e2a8a8;
+  background: rgba(228, 138, 138, 0.32);
+  color: #ffd2d2;
 }
 
 .gear-summary {
@@ -738,7 +742,7 @@ const identityChips = computed<IdentityChip[]>(() => {
 }
 
 .control span {
-  color: #c9a55c;
+  color: #e8c07a;
   font-weight: 700;
 }
 
@@ -746,7 +750,7 @@ const identityChips = computed<IdentityChip[]>(() => {
   min-width: 2.4rem;
   font-style: normal;
   font-weight: 700;
-  color: #e8d5a8;
+  color: #f7ecd2;
 }
 
 .slider {

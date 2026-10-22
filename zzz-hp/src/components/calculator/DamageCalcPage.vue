@@ -2544,15 +2544,15 @@ defineExpose({ scrollToSection })
   padding: 0.26rem 0.8rem;
   font-size: 0.74rem;
   font-weight: 600;
-  border-color: #343a44;
+  border-color: #4c5563;
   background: transparent;
-  color: #9aa3b5;
+  color: #c3ccdb;
 }
 
 .scheme-fold-btn:hover {
-  border-color: rgba(201, 165, 92, 0.55);
-  background: rgba(201, 165, 92, 0.1);
-  color: #f3e6c4;
+  border-color: rgba(214, 178, 104, 0.7);
+  background: rgba(201, 165, 92, 0.16);
+  color: #ffe9bd;
 }
 
 /* 收起后整条只剩右下角那颗按钮 */
