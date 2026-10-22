@@ -6,6 +6,7 @@ import {
   onDeactivated,
   onMounted,
   onUnmounted,
+  provide,
   reactive,
   ref,
   watch,
@@ -106,6 +107,7 @@ import {
   type BuffSelectionState,
 } from '@/utils/panelBuffCalc'
 import { computeExternalPanelFromTeamSlot } from '@/utils/affixPanelCalc'
+import { MULTI_SLOT_BUFF_SELECTION_KEY } from '@/utils/presetBuffScope'
 import {
   migrateLegacyPanelsToSources,
   panelSourceKindsWithData,
@@ -300,6 +302,8 @@ const extraBuffModalOpen = ref(false)
 const teamPresetPickerOpen = ref(false)
 const buffPickerViewSlotIndex = ref(0)
 const multiSlotBuffSelection = reactive<MultiSlotBuffSelection>(createEmptyMultiSlotBuffSelection())
+// 导入弹窗的「高级设置」直接用这一份勾选（勾选即时生效，与局内 Buff 选择器同源）
+provide(MULTI_SLOT_BUFF_SELECTION_KEY, multiSlotBuffSelection)
 
 const envBuffMode = ref<EnvironmentBuffFilterMode>('none')
 const envBuffVersion = ref('')
@@ -2142,6 +2146,18 @@ defineExpose({ scrollToSection })
       :final-panel-preview="activeFinalPanelPreview"
       :final-panel-token="importFinalPanelToken"
       :resolve-final-panel="resolveImportFinalPanel"
+      :buff-attr-defaults="
+        panelCalcSectionRef?.getAttrDefaultsForSlot?.(activeSlot) ??
+        panelCalcSectionRef?.convertAttrDefaults ??
+        {}
+      "
+      :buff-panel-source-values="
+        panelCalcSectionRef?.getPanelSourceValuesForSlot?.(activeSlot) ??
+        panelCalcSectionRef?.convertPanelSourceValues ??
+        undefined
+      "
+      :buff-skill-talent-levels-by-agent="skillTalentLevelsByAgent"
+      :buff-skill-subcategories="skillSubcategories"
       @confirm="applyUnifiedImport"
       @update:active-panel-source="setSlotPanelActiveSource"
     />
