@@ -47,6 +47,7 @@ import {
   type SkillTalentLevels,
 } from '@/utils/skillTalentLevels'
 import { shouldResetDraftsOnAgentChange } from '@/utils/presetPickerDraftReset'
+import { resolvePresetPickerAutoFilters } from '@/utils/presetPickerAutoFilter'
 
 const EMPTY_BANGBOO: BangbooBuffDoc = {
   id: 'none',
@@ -300,10 +301,16 @@ watch(open, (isOpen) => {
     twoPieceId: slot.twoPieceDriveDiscId,
     fourPieceId: slot.fourPieceDriveDiscId,
   }
-  agentRoleFilter.value = ''
-  agentElementFilter.value = ''
-  wengineRoleFilter.value = ''
-  wengineRarityFilter.value = ''
+  // 筛选随选中项自动打开（用户口径 2026-10-22）：角色页按角色特性，武器页按音擎的特性 + 稀有度。
+  // 取值不在既有筛选项里时留空（不筛），不会出现点不亮的假筛选；规则见 utils/presetPickerAutoFilter.ts。
+  const autoFilters = resolvePresetPickerAutoFilters({
+    agent: props.agents.find((item) => item.id === selected.value.agentId) ?? null,
+    wengine: props.wengines.find((item) => item.id === selected.value.wengineId) ?? null,
+  })
+  agentRoleFilter.value = autoFilters.agentRoleFilter
+  agentElementFilter.value = autoFilters.agentElementFilter
+  wengineRoleFilter.value = autoFilters.wengineRoleFilter
+  wengineRarityFilter.value = autoFilters.wengineRarityFilter
   agentSearch.value = ''
   wengineSearch.value = ''
   discSearch.value = ''
