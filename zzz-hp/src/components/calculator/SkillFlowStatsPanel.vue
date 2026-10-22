@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
 import SkillFlowDamageCrossAnalysis from '@/components/calculator/SkillFlowDamageCrossAnalysis.vue'
+import SkillFlowDamageRecordComparison from '@/components/calculator/SkillFlowDamageRecordComparison.vue'
+import { captureSkillFlowDamageSnapshot } from '@/utils/skillFlowDamageRecordComparison'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, BuffDamageType, StaggerPhase } from '@/types/calculator'
 import { damageTypeLabel } from '@/utils/buffDamageTypes'
@@ -44,6 +46,7 @@ const MAX_RECORDS = MAX_SKILL_FLOW_DAMAGE_RECORDS
 const UNSAVED_SCHEME_LABEL = '未保存'
 
 const records = ref<SkillFlowDamageRecord[]>(loadSkillFlowDamageRecords())
+const recordSaveError = ref(false)
 const analysisSlotIndex = ref<number | null>(null)
 const typeDimension = ref<'type' | 'category'>('type')
 const comparisonMode = ref<'damage' | 'percentage'>('damage')
@@ -54,7 +57,7 @@ const damageFilter = ref<SkillFlowDamageFilter>({})
 watch(
   records,
   (list) => {
-    saveSkillFlowDamageRecords(list)
+    recordSaveError.value = !saveSkillFlowDamageRecords(list)
   },
   { deep: true },
 )
@@ -320,6 +323,10 @@ function recordNow() {
     agentName: agentName(props.teamSlots[props.activeSlotIndex]?.agentId),
     schemeName: currentSchemeLabel(),
     agentNames,
+    snapshot: captureSkillFlowDamageSnapshot(
+      analysis.value,
+      props.teamSlots.map((slot) => slot.agentId),
+    ),
   })
 }
 
@@ -703,46 +710,63 @@ function clearRecords() {
       </div>
       <p class="sf-stats-hint">
         最多
-        {{ MAX_RECORDS }} 条，全局存在浏览器，不会被方案记录。悬停在方案列可看全称、三人与当前角色。
+        {{
+          MAX_RECORDS
+        }}
+        条，全局存在浏览器，不会被方案记录。新记录保存完整全队快照，不受当前筛选影响；旧记录仅保留总伤。悬停在方案列可看全称、三人与当前角色。
       </p>
-      <table v-if="records.length" class="sf-rec-table">
-        <thead>
-          <tr>
-            <th class="sf-rec-num">#</th>
-            <th class="sf-rec-ctx">方案</th>
-            <th class="sf-rec-time">时间</th>
-            <th>全队</th>
-            <th>当前角色</th>
-            <th>全队较上一条</th>
-            <th>当前较上一条</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(rec, index) in records" :key="rec.id">
-            <td class="sf-rec-num">{{ index + 1 }}</td>
-            <td class="sf-rec-ctx">
-              <span class="sf-rec-clip" :title="recordTip(rec)">{{ rec.schemeName }}</span>
-            </td>
-            <td class="sf-rec-time">{{ formatRecordTime(rec.savedAt) }}</td>
-            <td class="sf-rec-dmg">
-              <span class="sf-rec-who">{{ teamInitials(rec) }}</span>
-              <span>{{ formatNum(rec.team) }}</span>
-            </td>
-            <td class="sf-rec-dmg">
-              <span class="sf-rec-who">{{ firstNameChar(rec.agentName) }}</span>
-              <span>{{ formatNum(rec.current) }}</span>
-            </td>
-            <td>{{ teamDelta(index) }}</td>
-            <td>{{ currentDelta(index) }}</td>
-            <td class="sf-rec-actions">
-              <button type="button" class="mini-btn danger" @click="removeRecord(rec.id)">
-                删除
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <p v-if="recordSaveError" class="sf-analysis-notice" role="alert">
+        浏览器未能保存伤害记录，当前页仍可查看；刷新前请检查浏览器存储空间或隐私设置。
+      </p>
+      <div
+        v-if="records.length"
+        class="sf-rec-scroll"
+        tabindex="0"
+        aria-label="伤害历史记录，可横向滚动"
+      >
+        <table class="sf-rec-table">
+          <thead>
+            <tr>
+              <th class="sf-rec-num">#</th>
+              <th class="sf-rec-ctx">方案</th>
+              <th class="sf-rec-time">时间</th>
+              <th>全队</th>
+              <th>当前角色</th>
+              <th>全队较上一条</th>
+              <th>当前较上一条</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(rec, index) in records" :key="rec.id">
+              <td class="sf-rec-num">{{ index + 1 }}</td>
+              <td class="sf-rec-ctx">
+                <span class="sf-rec-clip" :title="recordTip(rec)">{{ rec.schemeName }}</span>
+                <small class="sf-record-detail-status">{{
+                  rec.snapshot ? '含结构明细' : '仅总伤'
+                }}</small>
+              </td>
+              <td class="sf-rec-time">{{ formatRecordTime(rec.savedAt) }}</td>
+              <td class="sf-rec-dmg">
+                <span class="sf-rec-who">{{ teamInitials(rec) }}</span>
+                <span>{{ formatNum(rec.team) }}</span>
+              </td>
+              <td class="sf-rec-dmg">
+                <span class="sf-rec-who">{{ firstNameChar(rec.agentName) }}</span>
+                <span>{{ formatNum(rec.current) }}</span>
+              </td>
+              <td>{{ teamDelta(index) }}</td>
+              <td>{{ currentDelta(index) }}</td>
+              <td class="sf-rec-actions">
+                <button type="button" class="mini-btn danger" @click="removeRecord(rec.id)">
+                  删除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <SkillFlowDamageRecordComparison :records="records" />
     </div>
   </section>
 </template>
@@ -1136,6 +1160,17 @@ function clearRecords() {
   table-layout: fixed;
   font-size: 0.75rem;
   color: #d5dae4;
+  min-width: 850px;
+}
+.sf-rec-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.sf-record-detail-status {
+  display: block;
+  color: var(--sf-analysis-muted);
+  font-size: 0.67rem;
+  margin-top: 0.12rem;
 }
 .sf-rec-table th,
 .sf-rec-table td {
@@ -1194,6 +1229,8 @@ function clearRecords() {
   }
 }
 :global([data-theme='light']) .sf-stats {
+  --sf-record-up: #28734e;
+  --sf-record-down: #a43d44;
   --sf-analysis-text: var(--calc-text, #24324a);
   --sf-analysis-muted: var(--calc-text-muted, #5c6570);
   --sf-analysis-border: var(--calc-border, #d5dae3);

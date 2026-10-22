@@ -1,0 +1,225 @@
+import {
+  BUFF_DAMAGE_TYPE_OPTIONS,
+  type BuffDamageType,
+  type StaggerPhase,
+} from '@/types/calculator'
+import type { SkillFlowDamageAnalysis } from '@/utils/skillFlowDamageAnalysis'
+
+export interface SkillFlowDamageSnapshotLine {
+  slotIndex: number
+  skillId: string
+  skillName: string
+  damageType: BuffDamageType
+  staggerPhase: StaggerPhase
+  count: number
+  total: number
+}
+
+/** 只保存数值与稳定身份；比例在比较时按各自全队总伤计算。 */
+export interface SkillFlowDamageSnapshot {
+  version: 1
+  agentIds: string[]
+  lines: SkillFlowDamageSnapshotLine[]
+  uncomputedCount: number
+}
+
+export interface SkillFlowDamageComparisonRow {
+  id: string
+  name: string
+  baseline: number
+  comparison: number
+  delta: number
+  /** 基准为 0 且对照非 0 时为 null，不伪造无穷大百分比。 */
+  changeRatio: number | null
+  shareDelta: number
+  state: 'added' | 'removed' | 'changed' | 'same'
+}
+
+type ComparisonRecord = {
+  team: number
+  agentNames: string[]
+  snapshot?: SkillFlowDamageSnapshot
+}
+
+export function captureSkillFlowDamageSnapshot(
+  analysis: SkillFlowDamageAnalysis,
+  agentIds: readonly string[],
+): SkillFlowDamageSnapshot {
+  return {
+    version: 1,
+    agentIds: [...agentIds],
+    lines: analysis.lines.map((line) => ({
+      slotIndex: line.slotIndex,
+      skillId: line.hit.skill.id,
+      skillName: line.hit.skill.name,
+      damageType: line.damageType,
+      staggerPhase: line.hit.staggerPhase,
+      count: line.hit.count,
+      total: line.total,
+    })),
+    uncomputedCount: analysis.slots.reduce((sum, slot) => sum + slot.uncomputedCount, 0),
+  }
+}
+
+/** 坏明细只降级为「仅总伤」，不丢弃合法的旧记录或凭当前配置补数据。 */
+export function normalizeSkillFlowDamageSnapshot(
+  value: unknown,
+  teamTotal: number,
+): SkillFlowDamageSnapshot | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Partial<SkillFlowDamageSnapshot>
+  if (
+    raw.version !== 1 ||
+    !Array.isArray(raw.agentIds) ||
+    !raw.agentIds.every((id) => typeof id === 'string') ||
+    !Array.isArray(raw.lines)
+  )
+    return undefined
+  if (!Number.isInteger(raw.uncomputedCount) || !(Number(raw.uncomputedCount) >= 0))
+    return undefined
+  const types = new Set<string>(BUFF_DAMAGE_TYPE_OPTIONS.map((item) => item.id))
+  const lines: SkillFlowDamageSnapshotLine[] = []
+  for (const item of raw.lines) {
+    if (!item || typeof item !== 'object') return undefined
+    if (
+      !Number.isInteger(item.slotIndex) ||
+      item.slotIndex < 0 ||
+      item.slotIndex >= raw.agentIds.length ||
+      typeof item.skillId !== 'string' ||
+      !item.skillId ||
+      typeof item.skillName !== 'string' ||
+      !types.has(item.damageType) ||
+      !['normal', 'stagger'].includes(item.staggerPhase) ||
+      !Number.isFinite(item.count) ||
+      item.count < 0 ||
+      !Number.isFinite(item.total) ||
+      item.total < 0
+    )
+      return undefined
+    lines.push({
+      slotIndex: item.slotIndex,
+      skillId: item.skillId,
+      skillName: item.skillName,
+      damageType: item.damageType,
+      staggerPhase: item.staggerPhase,
+      count: item.count,
+      total: item.total,
+    })
+  }
+  const sum = lines.reduce((total, line) => total + line.total, 0)
+  if (!Number.isFinite(sum) || Math.abs(sum - teamTotal) > Math.max(1, Math.abs(teamTotal)) * 1e-9)
+    return undefined
+  return {
+    version: 1,
+    agentIds: [...raw.agentIds],
+    lines,
+    uncomputedCount: Number(raw.uncomputedCount),
+  }
+}
+
+export function skillFlowDamageComparisonRow(
+  id: string,
+  name: string,
+  baseline: number,
+  comparison: number,
+  baselineTotal: number,
+  comparisonTotal: number,
+  existedBefore = true,
+  existsNow = true,
+): SkillFlowDamageComparisonRow {
+  const delta = comparison - baseline
+  return {
+    id,
+    name,
+    baseline,
+    comparison,
+    delta,
+    changeRatio: baseline > 0 ? delta / baseline : comparison === 0 ? 0 : null,
+    shareDelta:
+      (comparisonTotal > 0 ? comparison / comparisonTotal : 0) -
+      (baselineTotal > 0 ? baseline / baselineTotal : 0),
+    state: !existedBefore ? 'added' : !existsNow ? 'removed' : delta !== 0 ? 'changed' : 'same',
+  }
+}
+
+function aggregateSnapshot(record: ComparisonRecord, dimension: 'agent' | 'type' | 'skill') {
+  const groups = new Map<string, { name: string; total: number }>()
+  const snapshot = record.snapshot
+  if (!snapshot) return groups
+  if (dimension === 'agent') {
+    snapshot.agentIds.forEach((id, index) => {
+      if (id) groups.set(id, { name: record.agentNames[index] || id, total: 0 })
+    })
+  }
+  for (const line of snapshot.lines) {
+    const agentId = snapshot.agentIds[line.slotIndex] ?? ''
+    const agentName = record.agentNames[line.slotIndex] || agentId || '未选'
+    const id =
+      dimension === 'agent'
+        ? agentId
+        : dimension === 'type'
+          ? line.damageType
+          : JSON.stringify([agentId, line.skillId])
+    const name =
+      dimension === 'agent'
+        ? agentName
+        : dimension === 'type'
+          ? (BUFF_DAMAGE_TYPE_OPTIONS.find((item) => item.id === line.damageType)?.label ??
+            line.damageType)
+          : `${agentName} · ${line.skillName}`
+    const previous = groups.get(id)
+    groups.set(id, { name, total: (previous?.total ?? 0) + line.total })
+  }
+  return groups
+}
+
+export function compareSkillFlowDamageRecords(
+  baseline: ComparisonRecord,
+  comparison: ComparisonRecord,
+) {
+  const hasDetails = Boolean(baseline.snapshot && comparison.snapshot)
+  const dimensions = {
+    agent: [] as SkillFlowDamageComparisonRow[],
+    type: [] as SkillFlowDamageComparisonRow[],
+    skill: [] as SkillFlowDamageComparisonRow[],
+  }
+  if (hasDetails) {
+    for (const dimension of ['agent', 'type', 'skill'] as const) {
+      const before = aggregateSnapshot(baseline, dimension)
+      const after = aggregateSnapshot(comparison, dimension)
+      dimensions[dimension] = [...new Set([...before.keys(), ...after.keys()])]
+        .map((id) => {
+          const a = before.get(id)
+          const b = after.get(id)
+          return skillFlowDamageComparisonRow(
+            id,
+            b?.name ?? a?.name ?? id,
+            a?.total ?? 0,
+            b?.total ?? 0,
+            baseline.team,
+            comparison.team,
+            Boolean(a),
+            Boolean(b),
+          )
+        })
+        .sort(
+          (a, b) =>
+            Math.abs(b.delta) - Math.abs(a.delta) ||
+            b.comparison - a.comparison ||
+            a.name.localeCompare(b.name, 'zh-CN'),
+        )
+    }
+  }
+  return {
+    hasDetails,
+    total: skillFlowDamageComparisonRow(
+      'team',
+      '全队',
+      baseline.team,
+      comparison.team,
+      baseline.team,
+      comparison.team,
+    ),
+    ...dimensions,
+  }
+}
