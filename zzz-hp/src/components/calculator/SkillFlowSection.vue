@@ -3480,6 +3480,7 @@ const showcaseTitle = computed(() => {
             :hits="hits"
             :hit-damages="hitDamages"
             :active-slot-index="activeSlotIndex"
+            :resolve-calculation-detail="resolveCalculationDetail"
             :scheme-name="schemeName"
           />
         </div>
