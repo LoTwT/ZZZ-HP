@@ -23,6 +23,7 @@ import deductionAdminRoutes from './routes/deductionAdminRoutes.js'
 import nanokaBasicsRoutes from './routes/nanokaBasicsRoutes.js'
 import nanokaBuffRoutes from './routes/nanokaBuffRoutes.js'
 import affixPresetRoutes from './routes/affixPresetRoutes.js'
+import sharedSchemeRoutes from './routes/sharedSchemeRoutes.js'
 import pool from './config/db.js'
 import { ensureRuntimeSchema } from './bootstrap/ensureRuntimeSchema.js'
 import { fail, failInternal } from './utils/response.js'
@@ -153,6 +154,8 @@ app.use('/api/admin/nanoka', nanokaBasicsRoutes)
 // nanoka 增益（关键字 → 增益块）：extract / simplify / parse 只算不写，apply 才写库
 app.use('/api/admin/nanoka-buffs', nanokaBuffRoutes)
 app.use('/api/affix-preset', affixPresetRoutes)
+// 共用方案（服务端预设）：读公开、管理端导入/启停/删除
+app.use('/api/shared-schemes', sharedSchemeRoutes)
 
 app.use((_req, res) => {
   fail(res, '接口不存在', 404)
