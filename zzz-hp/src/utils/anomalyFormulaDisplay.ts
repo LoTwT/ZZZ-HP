@@ -52,26 +52,6 @@ export interface AlignedAnomalyFormulaGroup {
   agentLabel?: string
   terms: AlignedFormulaTerm[]
   result: string
-  dualResults?: { label: string; value: string }[]
-}
-
-/**
- * 结果区展示三档：**期望 / 不暴击 / 暴击**（用户 2026-10-18 口径）。
- *
- * 期望是主口径，后两个是"如果这次没暴击 / 必定暴击"的边界值。
- * 之前这里只有后两档，且乘区里写死 `1 / 满暴击区`，导致看起来"不显示期望"。
- */
-function expectedTriple(
-  expected: number,
-  noCrit: number,
-  fullCrit: number,
-  formatNumber: (v: number) => string,
-): { label: string; value: string }[] {
-  return [
-    { label: '期望', value: formatNumber(expected) },
-    { label: '不暴击', value: formatNumber(noCrit) },
-    { label: '暴击', value: formatNumber(fullCrit) },
-  ]
 }
 
 export function buildAlignedAnomalyFormulaGroups(
@@ -143,7 +123,7 @@ export function buildAlignedAnomalyFormulaGroups(
     title: '异常伤害',
     agentLabel: labels?.bonusAgent,
     terms: [
-      { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
+      { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       { label: '异常增伤区', value: formatFormulaNumber(p.anomalyDmgBonusZone), tipsKey: 'anomalyDmgBonusZone' },
       { label: '异常倍率区', value: formatFormulaNumber(p.anomalyMultZone), tipsKey: 'anomalyMultZone' },
       {
@@ -153,14 +133,13 @@ export function buildAlignedAnomalyFormulaGroups(
       },
     ],
     result: formatNumber(pickEventDamage(p, 'anomaly', critMode)),
-    dualResults: expectedTriple(p.anomalyExpected, p.anomalyExpectedNoCrit, p.anomalyExpectedFullCrit, formatNumber),
   }
   const disorder: AlignedAnomalyFormulaGroup = {
     key: 'disorderExpected',
     title: disorderLabel,
     agentLabel: labels?.bonusAgent,
     terms: [
-      { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
+      { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       { label: '紊乱倍率区', value: formatFormulaNumber(p.disorderZone), tipsKey: 'disorderZone' },
       { label: '紊乱增伤区', value: formatFormulaNumber(p.disorderDmgBonusZone), tipsKey: 'disorderDmgBonusZone' },
       // 紊乱只吃自己的暴击字段（紊乱暴击率/爆伤），与乱流同构
@@ -171,14 +150,13 @@ export function buildAlignedAnomalyFormulaGroups(
       },
     ],
     result: formatNumber(pickEventDamage(p, 'disorder', critMode)),
-    dualResults: expectedTriple(p.disorderExpected, p.disorderExpectedNoCrit, p.disorderExpectedFullCrit, formatNumber),
   }
   const turbulence: AlignedAnomalyFormulaGroup = {
     key: 'turbulenceExpected',
     title: '乱流伤害',
     agentLabel: labels?.bonusAgent,
     terms: [
-      { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
+      { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       { label: '乱流倍率区', value: formatFormulaNumber(p.turbulenceZone), tipsKey: 'turbulenceZone' },
       {
         label: '乱流增伤区+异常增伤区',
@@ -193,14 +171,13 @@ export function buildAlignedAnomalyFormulaGroups(
       },
     ],
     result: formatNumber(pickEventDamage(p, 'turbulence', critMode)),
-    dualResults: expectedTriple(p.turbulenceExpected, p.turbulenceExpectedNoCrit, p.turbulenceExpectedFullCrit, formatNumber),
   }
   const release: AlignedAnomalyFormulaGroup = {
     key: 'anomalyReleaseExpected',
     title: '异放伤害',
     agentLabel: labels?.bonusAgent,
     terms: [
-      { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
+      { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       {
         label: '异放综合增伤区',
         value: formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone),
@@ -219,12 +196,6 @@ export function buildAlignedAnomalyFormulaGroups(
       },
     ],
     result: formatNumber(pickEventDamage(p, 'anomalyRelease', critMode)),
-    dualResults: expectedTriple(
-      p.anomalyReleaseExpected,
-      p.anomalyReleaseExpectedNoCrit,
-      p.anomalyReleaseExpectedFullCrit,
-      formatNumber,
-    ),
   }
   const radianceChain: AlignedAnomalyFormulaGroup = {
     key: 'radianceExpected',
@@ -234,7 +205,7 @@ export function buildAlignedAnomalyFormulaGroups(
       ? [
           {
             label: '蕾米埃尔异常基础',
-            value: formatNumber(baseWithMutation),
+            value: formatFormulaNumber(baseWithMutation),
             tipsKey: 'anomalyBaseExpected',
           },
           {
@@ -285,7 +256,7 @@ export function buildAlignedAnomalyFormulaGroups(
           },
         ]
       : [
-          { label: '异常基础期望', value: formatNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
+          { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
           {
             label: '耀变综合增伤区',
             value: formatFormulaNumber(p.radianceCombinedDmgBonusZone),
@@ -303,7 +274,6 @@ export function buildAlignedAnomalyFormulaGroups(
           },
         ],
     result: formatNumber(pickEventDamage(p, 'radiance', critMode)),
-    dualResults: expectedTriple(p.radianceExpected, p.radianceExpectedNoCrit, p.radianceExpectedFullCrit, formatNumber),
   }
 
   if (sub === 'disorder') return [base, disorder]

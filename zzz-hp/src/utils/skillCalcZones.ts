@@ -31,10 +31,10 @@ function isActiveZone(value: number) {
 
 /**
  * 流程「计算过程」最终格（仅异常类）：
- * - 有暴击区 → 同时展示暴击伤害 / 期望伤害 / 不暴击伤害
+ * - 有暴击区 → 同时展示暴击伤害 / 期望伤害 / 不暴击伤害（**展示层对照**，不参与汇总）
  * - 无暴击区 → 只展示期望伤害
  * 直伤仍始终展示期望暴击区 + 期望伤害。
- * 流程卡外侧数字对异常类取必暴击，见 resolveFlowHitCritMode。
+ * 流程卡外侧数字与所有汇总一律取**期望**（2026-10-22 用户裁定：流程不允许指定必暴/必不暴）。
  */
 function pushAnomalyFinalDamages(
   rows: SkillCalcZoneRow[],

@@ -257,7 +257,6 @@ function resolveOne(
 
   const defaults = defaultAnomalyAgents(skill.damageType, ownerAgentId)
   const stagger = overrides?.staggerPhase ?? entry.staggerPhase
-  const crit = overrides?.critMode ?? entry.critMode
   const count =
     overrides?.count != null
       ? Math.max(0, Number(overrides.count) || 0)
@@ -292,7 +291,7 @@ function resolveOne(
     triggerAgentId: triggerRaw?.trim() || defaults.triggerAgentId,
     count,
     staggerPhase: stagger,
-    critMode: resolveFlowHitCritMode(skill.damageType, crit),
+    critMode: resolveFlowHitCritMode(),
     damageKind,
     anomalySubKind,
     directSubKind,

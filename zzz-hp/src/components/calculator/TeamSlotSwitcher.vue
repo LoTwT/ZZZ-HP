@@ -231,27 +231,84 @@ const identityMetaLine = computed(() => {
   return [agent.element, agent.profession].filter(Boolean).join(' · ')
 })
 
-const mindscapeWengineLine = computed(() => {
+/**
+ * 详情条那一行里的「小卡片」：音擎 / 4件套 / 2件套。
+ * 影画与精炼不再重复成文字 —— 右边滑杆已经把数值和档位摆在那里了。
+ */
+interface IdentityChip {
+  key: string
+  /** 卡面标签（音擎 / 4件套 / 2件套） */
+  tag: string
+  /** 卡面正文 */
+  text: string
+  /** 悬停说明 */
+  hint: string
+  kind: 'wengine' | 'disc'
+  /** 缺件 / 异职：淡红提示 */
+  warn?: boolean
+}
+
+const identityChips = computed<IdentityChip[]>(() => {
   const slot = activeSlot.value
-  if (!slot || !activeAgent.value) return ''
-  const parts = [`${slot.rank}影`]
-  if (activeWengine.value) {
+  const agent = activeAgent.value
+  if (!slot || !agent) return []
+  const chips: IdentityChip[] = []
+  const wengine = activeWengine.value
+  if (wengine) {
     if (wengineProfessionMatch.value) {
-      parts.push(`${activeWengine.value.name} · 精${slot.wengineRefine}`)
+      chips.push({
+        key: 'wengine',
+        tag: '音擎',
+        text: `${wengine.name} · 精${slot.wengineRefine}`,
+        hint: `音擎：${wengine.name}（精炼 ${slot.wengineRefine}）`,
+        kind: 'wengine',
+      })
     } else {
-      parts.push(`${activeWengine.value.name} · 异职`)
+      chips.push({
+        key: 'wengine',
+        tag: '音擎',
+        text: `${wengine.name} · 异职`,
+        hint: `异职音擎：只吃基础属性，增益与精炼不生效`,
+        kind: 'wengine',
+        warn: true,
+      })
     }
   } else {
-    parts.push('未佩戴音擎')
+    chips.push({
+      key: 'wengine',
+      tag: '音擎',
+      text: '未佩戴',
+      hint: '未佩戴音擎：点右侧「导入」选择',
+      kind: 'wengine',
+      warn: true,
+    })
   }
-  return parts.join(' · ')
-})
 
-const driveDiscLine = computed(() => {
-  const discParts: string[] = []
-  if (activeFourPiece.value?.name) discParts.push(`4件套 ${activeFourPiece.value.name}`)
-  if (activeTwoPiece.value?.name) discParts.push(`2件套 ${activeTwoPiece.value.name}`)
-  return discParts.length ? discParts.join(' · ') : '未选驱动盘'
+  const four = activeFourPiece.value?.name
+  const two = activeTwoPiece.value?.name
+  if (four) {
+    chips.push({
+      key: 'disc4',
+      tag: '4件套',
+      text: four,
+      hint: `4 件驱动盘：${four}`,
+      kind: 'disc',
+    })
+  }
+  if (two) {
+    chips.push({ key: 'disc2', tag: '2件套', text: two, hint: `2 件驱动盘：${two}`, kind: 'disc' })
+  }
+  if (!four && !two) {
+    chips.push({
+      key: 'disc-none',
+      tag: '驱动盘',
+      text: '未选',
+      hint: '未选驱动盘：点右侧「导入」选择',
+      kind: 'disc',
+      warn: true,
+    })
+  }
+  return chips
 })
 </script>
 
@@ -280,7 +337,12 @@ const driveDiscLine = computed(() => {
             :name="agentOf(slot)!.name"
           />
           <span class="slot-name">{{ label(slot, index) }}</span>
-          <span v-if="isConvertSlot(index)" class="convert-dot" title="该角色影画/音擎/驱动盘含局外或局内转模">转模</span>
+          <span
+            v-if="isConvertSlot(index)"
+            class="convert-dot"
+            title="该角色影画/音擎/驱动盘含局外或局内转模"
+            >转模</span
+          >
           <!-- 当前生效的面板来源（**只读**）：只显示激活那一份，没导入过不显示；切换在下方「局外面板」块 -->
           <span
             v-if="panelSourceLabelOf(index)"
@@ -299,7 +361,10 @@ const driveDiscLine = computed(() => {
           @mouseleave="scheduleHideHover"
         >
           <div v-if="identityLinesOf(index).length" class="panel-hover-identity">
-            <p v-for="(line, lineIndex) in identityLinesOf(index)" :key="`identity-${index}-${lineIndex}`">
+            <p
+              v-for="(line, lineIndex) in identityLinesOf(index)"
+              :key="`identity-${index}-${lineIndex}`"
+            >
               {{ line }}
             </p>
           </div>
@@ -348,12 +413,21 @@ const driveDiscLine = computed(() => {
     <div class="slot-editor" :class="{ empty: !activeAgent }">
       <template v-if="activeAgent && activeSlot">
         <div class="editor-identity">
-          <strong class="identity-title">
-            {{ activeAgent.name }}
-            <span v-if="identityMetaLine" class="identity-meta"> · {{ identityMetaLine }}</span>
-          </strong>
-          <span class="identity-sub">{{ mindscapeWengineLine }}</span>
-          <span class="identity-sub gear-summary">{{ driveDiscLine }}</span>
+          <strong class="identity-title">{{ activeAgent.name }}</strong>
+          <span v-if="identityMetaLine" class="identity-meta">{{ identityMetaLine }}</span>
+          <span class="identity-divider" aria-hidden="true"></span>
+          <span class="identity-chips">
+            <span
+              v-for="chip in identityChips"
+              :key="chip.key"
+              class="identity-chip"
+              :class="[`is-${chip.kind}`, { 'is-warn': chip.warn }]"
+              :title="chip.hint"
+            >
+              <em class="chip-tag">{{ chip.tag }}</em>
+              <span class="chip-text">{{ chip.text }}</span>
+            </span>
+          </span>
         </div>
         <div class="editor-controls">
           <label class="control">
@@ -537,29 +611,113 @@ const driveDiscLine = computed(() => {
 
 .editor-identity {
   display: flex;
-  flex-direction: column;
-  gap: 0.08rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .editor-identity strong,
 .editor-identity .identity-title {
-  font-size: 0.86rem;
+  font-size: 0.92rem;
   color: #e8edf5;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .editor-identity .identity-meta {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 550;
   color: #9aa3b5;
+  white-space: nowrap;
 }
 
-.editor-identity span,
-.editor-identity .identity-sub {
-  font-size: 0.72rem;
-  color: #9aa3b5;
+/* 角色名/属性 与 装备小卡 之间的竖线 */
+.identity-divider {
+  width: 1px;
+  height: 0.95rem;
+  margin: 0 0.1rem;
+  background: #4c5563;
+  flex: 0 0 auto;
+}
+
+.identity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/*
+ * 装备小卡：标签 + 名字，音擎与驱动盘用不同色温区分。
+ * 颜色都按「深色底稿」给足对比（2026-10-22 用户：黄字在深浅两个模式下都看不清）；
+ * 浅色模式的那一套在 assets/calculatorLight.css 里同参覆盖。
+ */
+.identity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.1rem 0.45rem 0.1rem 0.32rem;
+  border: 1px solid #4c5563;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #eaf0fa;
+  white-space: nowrap;
+}
+
+.identity-chip .chip-tag {
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 0.26rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #dbe4f2;
+}
+
+.identity-chip .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.identity-chip.is-wengine {
+  border-color: rgba(214, 178, 104, 0.62);
+  background: rgba(201, 165, 92, 0.18);
+  color: #faeed2;
+}
+
+.identity-chip.is-wengine .chip-tag {
+  background: rgba(214, 178, 104, 0.34);
+  color: #ffe9bd;
+}
+
+.identity-chip.is-disc {
+  border-color: rgba(150, 182, 232, 0.5);
+  background: rgba(140, 170, 220, 0.16);
+  color: #e2ebfa;
+}
+
+.identity-chip.is-disc .chip-tag {
+  background: rgba(150, 182, 232, 0.28);
+  color: #d3e2f8;
+}
+
+.identity-chip.is-warn {
+  border-color: rgba(228, 138, 138, 0.62);
+  background: rgba(214, 122, 122, 0.18);
+  color: #ffdede;
+}
+
+.identity-chip.is-warn .chip-tag {
+  background: rgba(228, 138, 138, 0.32);
+  color: #ffd2d2;
 }
 
 .gear-summary {
@@ -579,12 +737,12 @@ const driveDiscLine = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   color: #d7dde8;
 }
 
 .control span {
-  color: #c9a55c;
+  color: #e8c07a;
   font-weight: 700;
 }
 
@@ -592,7 +750,7 @@ const driveDiscLine = computed(() => {
   min-width: 2.4rem;
   font-style: normal;
   font-weight: 700;
-  color: #e8d5a8;
+  color: #f7ecd2;
 }
 
 .slider {
@@ -617,7 +775,7 @@ const driveDiscLine = computed(() => {
   border-radius: 8px;
   padding: 0.32rem 0.7rem;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: none;
@@ -653,7 +811,7 @@ const driveDiscLine = computed(() => {
 
 .empty-hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: #9aa3b5;
 }
 
