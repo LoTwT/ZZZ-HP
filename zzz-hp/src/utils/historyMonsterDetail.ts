@@ -88,13 +88,11 @@ export function findPreviousMonsterTraits(
     if (!phase) continue
     const enemy = phase.enemies.find((item) => matchesLookupKey(item, key))
     if (!enemy) continue
-    const weakness = enemy.weakness?.trim() ?? ''
-    const resistance = enemy.resistance?.trim() ?? ''
-    if (!weakness && !resistance) continue
+    // 不跳过空值：原来没有弱点/抗性、本期新增，也算一次变化
     return {
       phaseLabel: buildPhaseLabel(phase),
-      weakness,
-      resistance,
+      weakness: enemy.weakness?.trim() ?? '',
+      resistance: enemy.resistance?.trim() ?? '',
       resistanceHigh: enemy.resistanceHigh,
     }
   }

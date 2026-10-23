@@ -20,16 +20,19 @@ test('多套弱点/抗性：保留抗性与高抗性子集', () => {
   })
 })
 
-test('多套弱点/抗性：空套丢弃，缺 id 用序号兜底', () => {
+test('多套弱点/抗性：空套也保留，缺 id 用序号兜底', () => {
   const sets = parseWeaknessSetsJson([
     { weakness: '火' },
     { weakness: '', resistance: '' },
     { resistance: '物理' },
   ])
-  assert.equal(sets.length, 2)
+  assert.equal(sets.length, 3)
   assert.equal(sets[0].id, 'set-1')
-  assert.equal(sets[1].id, 'set-3')
-  assert.equal(sets[1].resistance, '物理')
+  assert.equal(sets[1].id, 'set-2')
+  assert.equal(sets[1].weakness, null)
+  assert.equal(sets[1].resistance, null)
+  assert.equal(sets[2].id, 'set-3')
+  assert.equal(sets[2].resistance, '物理')
 })
 
 test('多套弱点/抗性：JSON 字符串与数组同口径，重复 id 顺延', () => {

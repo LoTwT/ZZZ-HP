@@ -519,6 +519,8 @@ export async function getBossChartHistory(
   const dateMap = await getSeasonDateMap('crisis')
   const trashMap = await getSeasonContentTrashMap('crisis')
   const baseHpByName = await loadCrisisBaseHpMap()
+  const resistanceHighByName = await loadBossResistanceHighMap()
+  const weaknessSetsByName = await loadBossWeaknessSetsMap()
 
   return bossRows
     .filter((boss) => isCrisisBossId(boss.id))
@@ -536,7 +538,11 @@ export async function getBossChartHistory(
     )
     .map((boss) => {
       const dateInfo = dateMap.get(seasonDateKey(boss.version, boss.phase))
-      const enriched = enrichBoss(boss, { baseHpByName })
+      const enriched = enrichBoss(boss, {
+        baseHpByName,
+        resistanceHighByName,
+        weaknessSetsByName,
+      })
       const startDate = formatDateValue(dateInfo?.start_date)
       const listed = isSeasonPubliclyVisible(startDate)
       const isHidden = isSeasonUnreleased(startDate)
@@ -548,6 +554,12 @@ export async function getBossChartHistory(
         totalHpConverted953: enriched.hp_converted_953,
         hpCoeffPercent: enriched.hp_coeff_percent,
         crisisBaseHp: enriched.crisis_base_hp,
+        /** 该期实际使用的弱点/抗性（怪物库多套已解析成一套），供数据库图表标记对应期数 */
+        weakness: enriched.weakness,
+        resistance: enriched.resistance,
+        resistance_high: enriched.resistance_high,
+        weakness_set_id: enriched.weakness_set_id,
+        weakness_set_label: enriched.weakness_set_label,
         version: boss.version,
         phase: String(boss.phase),
         boss_image: boss.boss_image,
