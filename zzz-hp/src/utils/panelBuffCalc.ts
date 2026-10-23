@@ -1943,19 +1943,32 @@ export function resolveCollectedEffectSourceSlot(item: CollectedEffect): number 
 }
 
 /**
+ * 局内 Buff 选择器只列普通增益（Spec §4.3 第 3 项、§5.1 第 6 项）：
+ * 额外 Buff 由自己的模块管理，不进选择器列表（流程表仍按同一收集走）。
+ */
+export function excludeExtraGainEntries(
+  items: readonly CollectedEffect[],
+): CollectedEffect[] {
+  return items.filter((item) => !item.sourceKey.startsWith('extra-'))
+}
+
+/**
  * 行级例外是否关掉了这个额外 Buff。
  *
  * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
  * （见下），所以必须单独判一次 —— 否则会出现"表里关得掉、结算里关不掉"。
  */
 export function isExtraGainDisabledByRowOverride(
-  gain: Pick<ExtraBuffGain, 'id'>,
+  gain: Pick<ExtraBuffGain, 'id'> & Partial<Pick<ExtraBuffGain, 'effects'>>,
   override: FlowBuffOverride | null | undefined,
 ): boolean {
   if (!override) return false
   if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
-  // 额外 Buff 的底层效果 id 见 `extraGainToEffects`；单条禁用按效果 id 判（卡片级键仍是 blockKey）
-  return (override.disabledEffectIds ?? []).some((effectId) => effectId === gain.id)
+  // 单条禁用按**底层效果 id**判；旧数据里可能存的是卡片 id，一并认（Spec §5.1 第 1 项）
+  const effectIds = new Set((gain.effects ?? []).map((effect) => effect.id))
+  return (override.disabledEffectIds ?? []).some(
+    (effectId) => effectId === gain.id || effectIds.has(effectId),
+  )
 }
 
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {

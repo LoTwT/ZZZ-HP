@@ -175,5 +175,176 @@ console.log('\n[5] 来源槽位：转模读卡片来源槽位，来源不可用�
   check('来源槽位无角色 → 0，不回退受益槽位面板', noSource === 0, `实际 ${noSource}`)
 }
 
+console.log('\n[6] 选择器列表只列普通增益（§4.3 第 3 项、§5.1 第 6 项）')
+{
+  const { collectAllBuffEffects, excludeExtraGainEntries, invalidateBuffCatalogCache } = await import(
+    '../src/utils/panelBuffCalc.ts'
+  )
+  const { makePanelCtx, testAgent, testSlot } = await import('./_effectPipelineHarness.mjs')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const card = api.createExtraBuffGain({
+    id: 'picker-extra',
+    name: '不该进选择器',
+    applySlot: 'team',
+    effects: [createEmptyBuffEffect({ id: 'picker-extra-eff', stat: 'atk', value: 10 })],
+  })
+  invalidateBuffCatalogCache()
+  const ctx = makePanelCtx({
+    teamSlots: [testSlot('a')],
+    agents: [testAgent('a')],
+    extraGains: [card],
+  })
+  const all = collectAllBuffEffects(ctx)
+  const picker = excludeExtraGainEntries(all)
+  check('收集结果里有额外 Buff', all.some((item) => item.sourceKey === 'extra-picker-extra'))
+  check(
+    '选择器列表里没有额外 Buff',
+    !picker.some((item) => item.sourceKey === 'extra-picker-extra'),
+  )
+  check(
+    '选择器列表其余条目数量不变',
+    picker.length === all.length - 1,
+    `${picker.length}/${all.length}`,
+  )
+}
+
+console.log('\n[7] 同 id 卡片逐字段改动：缓存与清缓存结果一致（§7.2 第 21 项）')
+{
+  const { collectPanelBuffMods, invalidateBuffCatalogCache } = await import(
+    '../src/utils/panelBuffCalc.ts'
+  )
+  const { makePanelCtx, testAgent, testSlot } = await import('./_effectPipelineHarness.mjs')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const baseEffect = {
+    id: 'cache-eff',
+    kind: 'fixed',
+    stat: 'atk',
+    value: 10,
+  }
+  /** 每次改动都造**新对象 + 新数组**（编辑器就是这么广播的） */
+  const variants = [
+    { label: '初始', card: { applySlot: 0, sourceSlot: 0 }, effect: {} },
+    { label: '作用对象→全队', card: { applySlot: 'team', sourceSlot: 0 }, effect: {} },
+    { label: '来源槽位→2', card: { applySlot: 'team', sourceSlot: 1 }, effect: {} },
+    { label: '属性→增伤', card: { applySlot: 'team', sourceSlot: 1 }, effect: { stat: 'dmgBonus' } },
+    {
+      label: '招式限定→普攻',
+      card: { applySlot: 'team', sourceSlot: 1 },
+      effect: { stat: 'dmgBonus', skillTargets: [{ category: 'basic', subcategoryId: null }] },
+    },
+    {
+      label: '人数档→2人',
+      card: { applySlot: 'team', sourceSlot: 1 },
+      effect: {
+        stat: 'dmgBonus',
+        skillTargets: [{ category: 'basic', subcategoryId: null }],
+        teamProfession: '强攻',
+        teamProfessionValues: [null, 0, null],
+      },
+    },
+    {
+      label: '小数层数→2.5',
+      card: { applySlot: 'team', sourceSlot: 1 },
+      effect: {
+        kind: 'stacked',
+        stat: 'dmgBonus',
+        valuePerStack: 5,
+        maxStacks: 5,
+        defaultStacks: 2.5,
+        skillTargets: [{ category: 'basic', subcategoryId: null }],
+        teamProfession: '强攻',
+        teamProfessionValues: [null, 0, null],
+      },
+    },
+    {
+      label: '转模比例→20%',
+      card: { applySlot: 'team', sourceSlot: 1 },
+      effect: {
+        kind: 'convert',
+        stat: 'dmgBonus',
+        convert: {
+          from: 'atk',
+          panelSource: 'external',
+          ratioPercent: 20,
+          initialBase: 0,
+          cap: null,
+          defaultBase: null,
+        },
+      },
+    },
+  ]
+
+  const results = []
+  for (const variant of variants) {
+    const card = api.createExtraBuffGain({
+      id: 'cache-card',
+      name: '缓存探针',
+      applySlot: variant.card.applySlot,
+      sourceSlot: variant.card.sourceSlot,
+      effects: [createEmptyBuffEffect({ ...baseEffect, ...variant.effect })],
+    })
+    const makeCtx = () =>
+      makePanelCtx({
+        teamSlots: [testSlot('a'), testSlot('b')],
+        agents: [testAgent('a'), testAgent('b')],
+        mainSlotIndex: 0,
+        extraGains: [card],
+        panelSourceValues: { external: { atk: 2000 }, final: { atk: 2000 } },
+      })
+
+    invalidateBuffCatalogCache()
+    const warm = collectPanelBuffMods(makeCtx())
+    invalidateBuffCatalogCache()
+    const cold = collectPanelBuffMods(makeCtx())
+    const same =
+      warm.atk === cold.atk && warm.dmgBonus === cold.dmgBonus
+    check(`缓存命中与清缓存一致：${variant.label}`, same, `warm atk=${warm.atk} dmg=${warm.dmgBonus} / cold atk=${cold.atk} dmg=${cold.dmgBonus}`)
+    results.push(`${warm.atk}/${warm.dmgBonus}`)
+  }
+  check('改动确实逐次生效（结果序列不是同一个值）', new Set(results).size > 3, results.join(' → '))
+}
+
+console.log('\n[8] 词条入口：卡片绑定评估主角槽位（§7.2 第 22 项、§5.3 第 2 项）')
+{
+  const { withAffixLibraryExtraGains } = await import('../src/utils/optimalAffixAlloc.ts')
+  const { buildBuffCatalog } = await import('../src/utils/panelBuffCalc.ts')
+  const { makePanelCtx, testAgent, testSlot, dummyBangboo } = await import(
+    './_effectPipelineHarness.mjs'
+  )
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const card = api.createExtraBuffGain({
+    id: 'affix-card',
+    name: '词条增益',
+    applySlot: 2,
+    effects: [createEmptyBuffEffect({ id: 'affix-card-eff', stat: 'atk', value: 30 })],
+  })
+  const panelCtx = makePanelCtx({
+    teamSlots: [testSlot('a'), testSlot('b'), testSlot('c')],
+    agents: [testAgent('a'), testAgent('b'), testAgent('c')],
+    mainSlotIndex: 1,
+    extraGains: [],
+  })
+  // 词条评估上下文是 { panelContext, skillContext, ... }：只取它需要的两段
+  const bound = withAffixLibraryExtraGains(
+    { panelContext: { ...panelCtx }, skillContext: panelCtx.skillContext },
+    [card],
+  )
+  check('词条卡片绑定评估主角槽位', bound.extraGains[0]?.applySlot, 1)
+  const entries = buildBuffCatalog({
+    teamSlots: panelCtx.teamSlots,
+    agents: panelCtx.agents,
+    wengines: [],
+    driveDiscs: [],
+    bangboo: dummyBangboo(),
+    bangbooRefine: 1,
+    environmentBuffs: [],
+    extraGains: bound.extraGains,
+  }).entries.filter((entry) => entry.sourceKey === 'extra-affix-card')
+  check('词条卡片按评估主角槽位生效', JSON.stringify(entries[0]?.applicableSlots), '[1]')
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

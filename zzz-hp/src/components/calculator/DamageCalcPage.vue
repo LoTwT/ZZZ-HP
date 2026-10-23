@@ -97,6 +97,7 @@ import {
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
+  excludeExtraGainEntries,
   createEmptyMultiSlotBuffSelection,
   getBuffEffectConvertInput,
   getBuffEffectEnabled,
@@ -1022,7 +1023,7 @@ const buffPickerCollectContext = computed(() =>
 )
 
 const collectedEffectsForPicker = computed(() =>
-  collectAllBuffEffects(buffPickerCollectContext.value),
+  excludeExtraGainEntries(collectAllBuffEffects(buffPickerCollectContext.value)),
 )
 
 /** 每个槽位当主槽时收到的效果（流程增益表并集用；3 个槽位，代价可控） */
