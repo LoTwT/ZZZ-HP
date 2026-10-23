@@ -269,6 +269,12 @@ export interface HpChartPoint {
   phase?: string
   bosses?: ChartBossPreview[]
   roomBuff?: ChartRoomBuffPreview
+  /** 该期实际使用的弱点/抗性（怪物数据库按套标记期数用） */
+  weakness?: string | null
+  resistance?: string | null
+  resistanceHigh?: string | null
+  weaknessSetId?: string | null
+  weaknessSetLabel?: string | null
 }
 
 export function getChartPointPhaseKey(point: HpChartPoint): string {
@@ -488,6 +494,11 @@ export async function fetchBossChart(
       HpChartPoint & {
         hpCoeffPercent?: number | null
         crisisBaseHp?: number | null
+        weakness?: string | null
+        resistance?: string | null
+        resistance_high?: string | null
+        weakness_set_id?: string | null
+        weakness_set_label?: string | null
       }
     >
   }
@@ -505,6 +516,11 @@ export async function fetchBossChart(
     phase: row.phase,
     bosses: row.bosses,
     roomBuff: row.roomBuff,
+    weakness: row.weakness ?? null,
+    resistance: row.resistance ?? null,
+    resistanceHigh: row.resistance_high ?? null,
+    weaknessSetId: row.weakness_set_id ?? null,
+    weaknessSetLabel: row.weakness_set_label ?? null,
   }))
 }
 

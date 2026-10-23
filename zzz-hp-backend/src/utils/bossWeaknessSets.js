@@ -20,7 +20,7 @@ export function normalizeWeaknessSet(raw, fallbackId) {
   const weakness = asText(raw.weakness)
   const resistance = asText(raw.resistance)
   const resistanceHigh = asText(raw.resistanceHigh ?? raw.resistance_high)
-  if (!weakness && !resistance && !resistanceHigh) return null
+  // 空套同样保留（管理器里新增即保留，不按内容过滤）
   return {
     id: asText(raw.id) ?? fallbackId,
     label: asText(raw.label),
@@ -76,14 +76,14 @@ export function mirrorWeaknessLegacyColumns(sets) {
 /** 旧单套三列 → 一套（id 固定 legacy），供没有多套的怪物继续沿用之前的格式 */
 export function weaknessSetsFromLegacy(row) {
   if (!row || typeof row !== 'object') return []
-  const set = normalizeWeaknessSet(
-    {
-      id: 'legacy',
-      weakness: row.weakness,
-      resistance: row.resistance,
-      resistanceHigh: row.resistanceHigh ?? row.resistance_high,
-    },
-    'legacy',
-  )
-  return set ? [set] : []
+  const weakness = asText(row.weakness)
+  const resistance = asText(row.resistance)
+  const resistanceHigh = asText(row.resistanceHigh ?? row.resistance_high)
+  if (!weakness && !resistance && !resistanceHigh) return []
+  return [
+    normalizeWeaknessSet(
+      { id: 'legacy', weakness, resistance, resistanceHigh },
+      'legacy',
+    ),
+  ]
 }

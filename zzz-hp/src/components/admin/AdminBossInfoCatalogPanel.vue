@@ -82,25 +82,22 @@ function createEmptyWeaknessSet(partial?: Partial<WeaknessSetDraft>): WeaknessSe
 
 function weaknessSetsFromRecord(row: BossInfoRecord): WeaknessSetDraft[] {
   const sets = Array.isArray(row.weakness_sets) ? row.weakness_sets : []
-  const drafts = sets
-    .map((set: BossInfoWeaknessSet) =>
-      createEmptyWeaknessSet({
-        id: set.id,
-        label: set.label ?? '',
-        weakness: set.weakness ?? '',
-        resistance: set.resistance ?? '',
-        resistanceHigh: set.resistanceHigh ?? '',
-      }),
-    )
-    .filter((set) => set.weakness || set.resistance || set.resistanceHigh)
+  const drafts = sets.map((set: BossInfoWeaknessSet) =>
+    createEmptyWeaknessSet({
+      id: set.id,
+      label: set.label ?? '',
+      weakness: set.weakness ?? '',
+      resistance: set.resistance ?? '',
+      resistanceHigh: set.resistanceHigh ?? '',
+    }),
+  )
   if (drafts.length) return drafts
-  // 旧基础三列 → 第一套（没有多套的怪物继续沿用之前的格式）；三项都空则不生成空套
+  // 旧基础三列 → 第一套；三项都空也保留一套空套（便于直接新增/填写）
   const legacy = {
     weakness: row.weakness ?? '',
     resistance: row.resistance ?? '',
     resistanceHigh: row.resistance_high ?? '',
   }
-  if (!legacy.weakness && !legacy.resistance && !legacy.resistanceHigh) return []
   return [createEmptyWeaknessSet({ id: 'legacy', ...legacy })]
 }
 
@@ -113,15 +110,14 @@ function removeWeaknessSet(index: number) {
 }
 
 function packWeaknessSetsPayload(): BossInfoWeaknessSet[] {
-  return weaknessSets.value
-    .map((set) => ({
-      id: set.id,
-      label: set.label.trim() || null,
-      weakness: set.weakness.trim() || null,
-      resistance: set.resistance.trim() || null,
-      resistanceHigh: set.resistanceHigh.trim() || null,
-    }))
-    .filter((set) => set.weakness || set.resistance || set.resistanceHigh)
+  // 只要在编辑器里新增过就保留，空套也提交（不再按内容过滤）
+  return weaknessSets.value.map((set) => ({
+    id: set.id,
+    label: set.label.trim() || null,
+    weakness: set.weakness.trim() || null,
+    resistance: set.resistance.trim() || null,
+    resistanceHigh: set.resistanceHigh.trim() || null,
+  }))
 }
 
 const editPanelRef = ref<HTMLElement | null>(null)

@@ -52,6 +52,8 @@ const listError = ref('')
 const chartError = ref('')
 const bossInfoRecords = ref<BossInfoRecord[]>([])
 const selectedBossDetail = ref<BossInfoRecord | null>(null)
+/** 怪物库多套弱点/抗性的当前查看套（默认第一套） */
+const selectedWeaknessSetId = ref('')
 const pickerModalOpen = ref(false)
 const { visible: detailVisible, point: detailPoint, open: openPhaseDetail, close: closePhaseDetail } =
   usePhaseDetailModal()
@@ -119,14 +121,51 @@ const bossExistedByMultiplierVersion = computed(() =>
   points.value.some((point) => isVersionAtMost(point.version, ANOMALY_BAR_VERSION_MULTIPLIER_FROM)),
 )
 
+/** 怪物库多套弱点/抗性：有配置才提供切换 */
+const weaknessSetOptions = computed(() => selectedBossDetail.value?.weakness_sets ?? [])
+
+const selectedWeaknessSet = computed(() => {
+  const sets = weaknessSetOptions.value
+  if (!sets.length) return null
+  return sets.find((set) => set.id === selectedWeaknessSetId.value) ?? sets[0] ?? null
+})
+
+/** 选中套对应的期数：每期实际属性由 boss-chart 按当期绑定解析后下发 */
+const markedPhaseLabels = computed(() => {
+  const set = selectedWeaknessSet.value
+  if (!set || weaknessSetOptions.value.length < 2) return []
+  const norm = (value?: string | null) => (value ?? '').trim()
+  return points.value
+    .filter((point) => {
+      if (point.weaknessSetId) return point.weaknessSetId === set.id
+      return (
+        norm(point.weakness) === norm(set.weakness) &&
+        norm(point.resistance) === norm(set.resistance) &&
+        norm(point.resistanceHigh) === norm(set.resistanceHigh)
+      )
+    })
+    .map((point) => point.label)
+})
+
+/** 切换怪物后默认看第一套 */
+watch(selectedBossDetail, (detail) => {
+  selectedWeaknessSetId.value = detail?.weakness_sets?.[0]?.id ?? ''
+})
+
 /**
  * 名称已在数据块上方单独展示，数据行不再重复 boss_name；
  * 类别 / 版本 / 「2.1 前已存在」三项基础库不带，由本页按图表与选择器算出后补进数据行。
  */
 const detailRecord = computed<MonsterDetailRecord | null>(() => {
-  if (!selectedBossDetail.value) return null
+  const detail = selectedBossDetail.value
+  if (!detail) return null
+  const set = selectedWeaknessSet.value
   return {
-    ...selectedBossDetail.value,
+    ...detail,
+    // 多套弱点/抗性：按当前选中的那套展示（无多套时沿用基础三列）
+    weakness: set ? (set.weakness ?? null) : detail.weakness,
+    resistance: set ? (set.resistance ?? null) : detail.resistance,
+    resistance_high: set ? (set.resistanceHigh ?? null) : detail.resistance_high,
     boss_name: null,
     monster_category: detailMonsterCategory.value,
     version: chartLatestVersion.value,
@@ -148,6 +187,24 @@ const bossSelectLabel = computed(() =>
         ? '选择绝境 Boss'
         : '选择 boss',
 )
+
+/** 多套下拉的选项文案：备注（或套序号）+ 弱点/抗性摘要；空套标注「空」 */
+function weaknessSetOptionLabel(
+  set: {
+    id: string
+    label?: string | null
+    weakness?: string | null
+    resistance?: string | null
+  },
+  index: number,
+) {
+  const title = set.label?.trim() || `套 ${index + 1}`
+  const traits = [
+    set.weakness?.trim() ? `弱 ${set.weakness.trim()}` : '',
+    set.resistance?.trim() ? `抗 ${set.resistance.trim()}` : '',
+  ].filter(Boolean)
+  return traits.length ? `${title} · ${traits.join(' / ')}` : `${title}（空）`
+}
 
 const pickerItems = computed(() => joinBossOptionsWithInfo(bossList.value, bossInfoRecords.value))
 
@@ -312,6 +369,18 @@ watch(selectedBoss, () => {
         {{ selectedBoss || '未选择' }}
       </p>
 
+      <div v-if="weaknessSetOptions.length > 1" class="weakness-set-toolbar">
+        <label class="selector-label" for="weakness-set-select">弱点 / 抗性套</label>
+        <select id="weakness-set-select" v-model="selectedWeaknessSetId" class="boss-select">
+          <option v-for="(set, setIndex) in weaknessSetOptions" :key="set.id" :value="set.id">
+            {{ weaknessSetOptionLabel(set, setIndex) }}
+          </option>
+        </select>
+      </div>
+      <p v-if="weaknessSetOptions.length > 1" class="weakness-set-hint">
+        蓝色底纹 = 该套对应期数<span v-if="markedPhaseLabels.length">：{{ markedPhaseLabels.join('、') }}</span>
+      </p>
+
       <MonsterDetailStats
         class="monster-compare-stats"
         :record="detailRecord"
@@ -342,6 +411,7 @@ watch(selectedBoss, () => {
         :enable-boss-preview="false"
         :enable-room-buff-preview="isDefenseMode"
         :enable-hp-converted953-toggle="!isDefenseMode"
+        :marked-labels="markedPhaseLabels"
         :page-scroll="true"
         @point-click="openPhaseDetail"
       />
@@ -462,6 +532,31 @@ watch(selectedBoss, () => {
 .boss-selected-name--empty {
   font-weight: 500;
   opacity: 0.6;
+}
+
+/* 多套弱点/抗性切换：只在库里有 2 套以上时出现 */
+.weakness-set-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 auto 0.5rem;
+  flex-shrink: 0;
+}
+
+.weakness-set-toolbar .boss-select {
+  min-width: 220px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.88rem;
+}
+
+.weakness-set-hint {
+  margin: -0.15rem auto 0.6rem;
+  font-size: 0.74rem;
+  color: var(--color-text);
+  opacity: 0.7;
+  text-align: center;
 }
 
 .monster-compare-stats {
