@@ -3690,6 +3690,40 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .zone-display-val {
   color: #1c212a !important;
 }
+/*
+ * 招式详情 → 计算过程：数值悬停弹出的「组成 / 乘区明细」（StatValueWithSources）。
+ * 弹层 teleport 到 body、样式里写死深色，白天模式必须单独给一套浅色，
+ * 否则白底面板上会浮出一块深色卡片。
+ */
+[data-theme='light'] .stat-value-tip {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #1c212a !important;
+  box-shadow: 0 10px 24px rgba(40, 48, 60, 0.18) !important;
+}
+[data-theme='light'] .stat-value-tip::after {
+  border-top-color: #d5dae3 !important;
+}
+[data-theme='light'] .stat-value-tip .tip-title {
+  color: #1c212a !important;
+}
+[data-theme='light'] .stat-value-tip .tip-label {
+  color: #7a5a12 !important;
+}
+[data-theme='light'] .stat-value-tip .tip-items li {
+  color: #3a4250 !important;
+}
+[data-theme='light'] .stat-value-tip .tip-items--process li:last-child {
+  border-top-color: #e4e8ef !important;
+  color: #7a5a12 !important;
+}
+[data-theme='light'] .stat-value-tip.tip-empty {
+  color: #667085 !important;
+}
+/* 可悬停数值的虚线下划线：深金 #e8d4a8 在白底上几乎看不见 */
+[data-theme='light'] .stat-value > strong {
+  border-bottom-color: color-mix(in srgb, #b5892f 60%, transparent) !important;
+}
 [data-theme='light'] .skill-flow-modal .warn-hint,
 [data-theme='light'] .skill-detail-panel .warn-hint {
   color: #b42318 !important;

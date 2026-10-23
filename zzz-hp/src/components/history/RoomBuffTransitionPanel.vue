@@ -19,15 +19,18 @@ const changed = computed(() =>
   isFieldBuffChanged(props.previousFieldBuff?.fieldBuff ?? null, props.currentFieldBuff?.fieldBuff ?? null),
 )
 
-/** 与 HistoryDetailPanel 的原文/效果块去重口径一致：注释与原文相同时去掉注释 */
+/** 场地 Buff：只保留效果块注释；与原文重复的注释去掉 */
 function blocksForDisplay(fieldBuff: FieldBuff | null) {
   const blocks = fieldBuff?.effectBlocks
   if (!blocks?.length) return null
   const text = fieldBuff?.text?.trim() ?? ''
-  return blocks.map((block) => ({
-    ...block,
-    note: block.note?.trim() && block.note.trim() !== text ? block.note : '',
-  }))
+  const noteBlocks = blocks
+    .map((block) => ({
+      ...block,
+      note: block.note?.trim() && block.note.trim() !== text ? block.note : '',
+    }))
+    .filter((block) => block.note)
+  return noteBlocks.length ? noteBlocks : null
 }
 
 function linesFor(fieldBuff: FieldBuff | null) {
@@ -67,9 +70,15 @@ function nameFor(fieldBuff: FieldBuff | null) {
             <BuffRichText :text="line" />
           </li>
         </ul>
+        <div
+          v-if="linesFor(previousFieldBuff?.fieldBuff ?? null).length && blocksForDisplay(previousFieldBuff?.fieldBuff ?? null)?.length"
+          class="room-buff-divider"
+          aria-hidden="true"
+        />
         <BuffEffectBlocksDisplay
           v-if="blocksForDisplay(previousFieldBuff?.fieldBuff ?? null)?.length"
           compact
+          notes-only
           :blocks="blocksForDisplay(previousFieldBuff?.fieldBuff ?? null)"
           :title="nameFor(previousFieldBuff?.fieldBuff ?? null)"
           empty-text="暂无场地 Buff 效果块"
@@ -95,9 +104,15 @@ function nameFor(fieldBuff: FieldBuff | null) {
             <BuffRichText :text="line" />
           </li>
         </ul>
+        <div
+          v-if="linesFor(currentFieldBuff?.fieldBuff ?? null).length && blocksForDisplay(currentFieldBuff?.fieldBuff ?? null)?.length"
+          class="room-buff-divider"
+          aria-hidden="true"
+        />
         <BuffEffectBlocksDisplay
           v-if="blocksForDisplay(currentFieldBuff?.fieldBuff ?? null)?.length"
           compact
+          notes-only
           :blocks="blocksForDisplay(currentFieldBuff?.fieldBuff ?? null)"
           :title="nameFor(currentFieldBuff?.fieldBuff ?? null)"
           empty-text="暂无场地 Buff 效果块"
@@ -199,11 +214,14 @@ function nameFor(fieldBuff: FieldBuff | null) {
   opacity: 0.88;
 }
 
+.room-buff-divider {
+  margin: 0.35rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+}
+
 .room-buff-transition :deep(.effect-blocks-display) {
   width: 100%;
-  margin-top: 0.1rem;
-  padding-top: 0.3rem;
-  border-top: 1px dashed color-mix(in srgb, var(--color-border) 65%, transparent);
+  margin-top: 0;
 }
 
 @media (max-width: 768px) {

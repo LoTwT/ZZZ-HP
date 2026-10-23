@@ -10,9 +10,11 @@
  *
  * 运行：npx vite-node scripts/test-panel-image-export.mjs
  */
+import { readFileSync } from 'node:fs'
 import {
   buildCaptureStyleProperties,
   buildPanelImageFilename,
+  CAPTURE_HIDE_CLASS,
   CAPTURE_SIZE_EXCLUDED_PROPERTIES,
   formatCaptureStamp,
   isSingleLineFlexRow,
@@ -42,6 +44,16 @@ const portal = { id: PANEL_PORTAL_ID }
 // 真实面板的根节点没有 id（HTMLElement.id === ''）
 const panel = { id: '', tag: 'panel' }
 const otherPanel = { id: '', tag: 'other' }
+
+const captureCss = readFileSync(
+  new URL('../src/assets/panelImageExport.css', import.meta.url),
+  'utf8',
+)
+check('导出隐藏类名稳定', CAPTURE_HIDE_CLASS === 'zzz-capture-hide', CAPTURE_HIDE_CLASS)
+check(
+  '截图样式包含隐藏规则',
+  captureCss.includes(`.zzz-capture-expand .${CAPTURE_HIDE_CLASS}`),
+)
 
 console.log('\n[截图目标解析：必须排除传送门]')
 {

@@ -83,6 +83,8 @@ const staggerTime = ref('')
 const anomalyBarCoefficient = ref('')
 const fieldBuffSetId = ref('')
 const fieldBuffSetOptions = ref<Array<{ id: string; label: string }>>([])
+const weaknessSetId = ref('')
+const weaknessSetOptions = ref<Array<{ id: string; label: string }>>([])
 const imageFile = ref<File | null>(null)
 const imagePickerRef = ref<InstanceType<typeof AdminImagePicker> | null>(null)
 const imagePreview = ref('')
@@ -194,6 +196,13 @@ function applyBossInfo(info: {
     name: string
   }> | null
   field_buff_name?: string | null
+  weakness_sets?: Array<{
+    id: string
+    label?: string | null
+    weakness?: string | null
+    resistance?: string | null
+    resistanceHigh?: string | null
+  }> | null
 }) {
   defense.value = String(info.defense ?? 0)
   level.value = String(applyReusedMonsterLevel(level.value, info.level ?? 0))
@@ -225,6 +234,42 @@ function applyBossInfo(info: {
   imagePickerRef.value?.reset()
   syncAutoCoeff()
   applyFieldBuffSetOptions(info.field_buff_sets, fieldBuffSetId.value)
+  applyWeaknessSetOptions(info.weakness_sets, weaknessSetId.value)
+}
+
+function applyWeaknessSetOptions(
+  sets:
+    | Array<{
+        id: string
+        label?: string | null
+        weakness?: string | null
+        resistance?: string | null
+        resistanceHigh?: string | null
+      }>
+    | null
+    | undefined,
+  preferredId?: string | null,
+) {
+  const list = Array.isArray(sets) ? sets : []
+  weaknessSetOptions.value = list.map((set) => {
+    const parts = [
+      set.weakness?.trim() ? `弱 ${set.weakness.trim()}` : '',
+      set.resistance?.trim() ? `抗 ${set.resistance.trim()}` : '',
+    ].filter(Boolean)
+    const summary = parts.join(' / ')
+    const label = set.label?.trim()
+    return {
+      id: set.id,
+      label: [label, summary].filter(Boolean).join(' · ') || set.id,
+    }
+  })
+  const preferred = String(preferredId ?? '').trim()
+  if (preferred && list.some((set) => set.id === preferred)) {
+    weaknessSetId.value = preferred
+    return
+  }
+  if (weaknessSetId.value && list.some((set) => set.id === weaknessSetId.value)) return
+  weaknessSetId.value = list[0]?.id ?? ''
 }
 
 function applyFieldBuffSetOptions(
@@ -255,6 +300,8 @@ async function fetchBossInfoByName(name: string) {
     nameSuggestions.value = []
     fieldBuffSetOptions.value = []
     fieldBuffSetId.value = ''
+    weaknessSetOptions.value = []
+    weaknessSetId.value = ''
     return
   }
 
@@ -278,6 +325,8 @@ async function fetchBossInfoByName(name: string) {
 
     fieldBuffSetOptions.value = []
     fieldBuffSetId.value = ''
+    weaknessSetOptions.value = []
+    weaknessSetId.value = ''
     lookupHint.value = '未找到已有 boss_info，提交时将新增基础信息'
   } catch (err) {
     lookupHint.value = err instanceof Error ? err.message : 'Boss 信息检索失败'
@@ -420,6 +469,7 @@ function applySlotContext(ctx: AdminMonsterSlotContext) {
   imageUrl.value = ''
   imagePreview.value = ''
   fieldBuffSetId.value = ctx.fieldBuffSetId ?? ''
+  weaknessSetId.value = ctx.weaknessSetId ?? ''
   if (ctx.bossImage) {
     const preview = resolveAssetUrl(ctx.bossImage) ?? ctx.bossImage
     imagePreview.value = preview
@@ -630,6 +680,8 @@ async function submitForm() {
       anomalyBarCoefficient.value = ''
       fieldBuffSetId.value = ''
       fieldBuffSetOptions.value = []
+      weaknessSetId.value = ''
+      weaknessSetOptions.value = []
       imageFile.value = null
       imagePickerRef.value?.reset()
       imagePreview.value = ''
@@ -679,6 +731,10 @@ async function submitForm() {
         !isDefense.value && !isDeduction.value && fieldText(fieldBuffSetId.value)
           ? fieldText(fieldBuffSetId.value)
           : null,
+      weakness_set_id:
+        !isDefense.value && !isDeduction.value && fieldText(weaknessSetId.value)
+          ? fieldText(weaknessSetId.value)
+          : null,
       ...defensePayload,
     })
 
@@ -715,6 +771,8 @@ async function submitForm() {
     anomalyBarCoefficient.value = ''
     fieldBuffSetId.value = ''
     fieldBuffSetOptions.value = []
+    weaknessSetId.value = ''
+    weaknessSetOptions.value = []
     imageFile.value = null
     imagePickerRef.value?.reset()
     imagePreview.value = ''
@@ -1019,6 +1077,23 @@ watch(
           </option>
         </select>
         <p class="field-hint">选项来自该 Boss 怪物库多套配置；详情与计算器只读本期绑定结果。</p>
+      </label>
+
+      <label v-if="!isDefense && !isDeduction" class="field">
+        <span class="field-label">弱点 / 抗性套（本期绑定）</span>
+        <select
+          v-model="weaknessSetId"
+          class="field-input"
+          :disabled="!weaknessSetOptions.length"
+        >
+          <option value="">
+            {{ weaknessSetOptions.length ? '自动（第一套）' : '请先在怪物库配置多套弱点/抗性' }}
+          </option>
+          <option v-for="opt in weaknessSetOptions" :key="opt.id" :value="opt.id">
+            {{ opt.label }}
+          </option>
+        </select>
+        <p class="field-hint">选项来自该 Boss 怪物库的多套弱点/抗性；危局按本期绑定展示。</p>
       </label>
 
       <div class="field">

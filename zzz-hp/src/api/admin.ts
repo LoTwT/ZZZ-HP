@@ -39,6 +39,8 @@ export interface CreateBossPayload {
   anomaly_bar_coefficient?: number | null
   /** 危局当期绑定的场地 Buff 套 id */
   field_buff_set_id?: string | null
+  /** 危局当期绑定的弱点/抗性套 id */
+  weakness_set_id?: string | null
 }
 
 export interface CreateBuffPayload {

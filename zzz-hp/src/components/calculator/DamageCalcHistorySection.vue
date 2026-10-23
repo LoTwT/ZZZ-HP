@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AgentBuffDoc } from '@/types/calculator'
-import type { DamageCalcHistoryEntry, DamageCalcHistoryImportResult } from '@/types/damageCalcHistory'
+import type {
+  DamageCalcHistoryEntry,
+  DamageCalcHistoryImportResult,
+} from '@/types/damageCalcHistory'
+import { fetchSharedSchemes, type SharedSchemeDoc } from '@/api/sharedSchemes'
+import { buildSharedSchemePack } from '@/utils/sharedSchemePack'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 import { useMaskClose } from '@/composables/useMaskClose'
 import { isCustomSkillGroup } from '@/utils/skillGroup'
@@ -35,6 +40,7 @@ import {
   reorderScheme,
   schemePath,
   schemeStats,
+  saveDamageCalcHistory,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
 
@@ -152,6 +158,15 @@ const formMessage = ref('')
 /** 从伤害事件弹窗「新建方案」打开时为 true：保存成功后自动关闭方案库 */
 const openedForEventSave = ref(false)
 
+// ============ 共用方案（服务端预设）============
+const libraryTab = ref<'mine' | 'presets'>('mine')
+const sharedSchemes = ref<SharedSchemeDoc[]>([])
+const sharedSearch = ref('')
+const sharedCurrentFolder = ref('')
+const sharedLoading = ref(false)
+const sharedError = ref('')
+let sharedLoaded = false
+
 // ============ localStorage 占用提示（常驻显示，接近上限时弹窗顶部额外红字，不干涉保存）============
 const STORAGE_LIMIT_MB = 5
 const STORAGE_WARN_MB = 4
@@ -223,6 +238,138 @@ function openModal() {
   modalOpen.value = true
   formMessage.value = ''
   openedForEventSave.value = false
+  libraryTab.value = 'mine'
+  sharedCurrentFolder.value = ''
+  sharedSearch.value = ''
+  void loadSharedSchemes()
+}
+
+/** 预设区：首次打开时拉取；强制刷新按钮走 force */
+async function loadSharedSchemes(force = false) {
+  if (sharedLoading.value) return
+  if (sharedLoaded && !force) return
+  sharedLoading.value = true
+  sharedError.value = ''
+  try {
+    sharedSchemes.value = await fetchSharedSchemes()
+    sharedLoaded = true
+  } catch (err) {
+    sharedError.value = err instanceof Error ? err.message : '读取预设方案失败'
+  } finally {
+    sharedLoading.value = false
+  }
+}
+
+function openPresetTab() {
+  libraryTab.value = 'presets'
+  sharedCurrentFolder.value = ''
+  void loadSharedSchemes()
+}
+
+const sharedFolderIndex = computed(() => {
+  const dirs = new Set<string>()
+  const byFolder = new Map<string, SharedSchemeDoc[]>()
+  for (const preset of sharedSchemes.value) {
+    const folder = normFolder(preset.folder || '')
+    const list = byFolder.get(folder) ?? []
+    list.push(preset)
+    byFolder.set(folder, list)
+    let current = folder
+    while (current) {
+      dirs.add(current)
+      current = parentFolder(current)
+    }
+  }
+  return { dirs, byFolder }
+})
+
+const sharedSubFolders = computed(() => {
+  const folder = sharedCurrentFolder.value
+  const prefix = folder === '' ? '/' : `${folder}/`
+  const children = new Set<string>()
+  for (const dir of sharedFolderIndex.value.dirs) {
+    if (!dir.startsWith(prefix)) continue
+    const rest = dir.slice(prefix.length)
+    const segment = rest.split('/')[0]
+    if (segment) children.add(folder === '' ? `/${segment}` : `${folder}/${segment}`)
+  }
+  return [...children].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
+
+const sharedEntriesInFolder = computed(() => {
+  const q = sharedSearch.value.trim().toLowerCase()
+  const list = sharedFolderIndex.value.byFolder.get(sharedCurrentFolder.value) ?? []
+  return list
+    .filter((preset) => !q || `${preset.name} ${preset.description}`.toLowerCase().includes(q))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'zh-CN'))
+})
+
+const sharedBreadcrumbSegments = computed(() => {
+  const parts = sharedCurrentFolder.value.split('/').filter(Boolean)
+  return parts.map((name, index) => ({
+    name,
+    path: `/${parts.slice(0, index + 1).join('/')}`,
+  }))
+})
+
+function sharedFolderCount(folder: string): number {
+  let count = 0
+  for (const [path, list] of sharedFolderIndex.value.byFolder) {
+    if (path === folder || path.startsWith(`${folder}/`)) count += list.length
+  }
+  return count
+}
+
+function enterSharedFolder(path: string) {
+  sharedCurrentFolder.value = path
+}
+
+/**
+ * 使用预设：把它复制进本机方案库（必要时合并自建招式 / 技能组），再交给父组件加载。
+ * 服务端预设本身不改；本机这份之后可正常改名 / 覆盖 / 删除。
+ */
+function useSharedScheme(preset: SharedSchemeDoc) {
+  if (!preset.payload) {
+    formMessage.value = '该预设缺少方案内容，无法使用'
+    return
+  }
+  const before = new Set(listAllDamageCalcHistory().map((entry) => entry.id))
+  const pack = buildSharedSchemePack(preset)
+  const result = importDamageCalcHistory(JSON.stringify(pack), {
+    mode: 'merge',
+    presetGroupIds: presetGroupIds(),
+  })
+  if (result.errors.length) {
+    formMessage.value = result.errors.join('；')
+    return
+  }
+  const added = listAllDamageCalcHistory().filter((entry) => !before.has(entry.id))
+  const addedPick =
+    added.find((entry) => entry.name === preset.name) ??
+    added.find((entry) => entry.name.startsWith(preset.name)) ??
+    added[0]
+  const existingPick = listAllDamageCalcHistory().find(
+    (entry) => entry.name === preset.name && (entry.folder || '') === (preset.folder || ''),
+  )
+  const picked = addedPick ?? existingPick
+  if (!picked) {
+    formMessage.value = '预设已导入，但没有找到新增的方案，请刷新后重试'
+    emit('changed')
+    return
+  }
+  if (addedPick) {
+    saveDamageCalcHistory({
+      ...picked,
+      origin: 'preset',
+      sharedPresetId: preset.id,
+    })
+  }
+  emit('changed')
+  emit('imported', picked.id)
+  libraryTab.value = 'mine'
+  formMessage.value = addedPick
+    ? `已把预设「${preset.name}」复制到我的方案并加载`
+    : `预设「${preset.name}」已在本机方案中，已直接加载`
 }
 
 function closeModal() {
@@ -810,6 +957,8 @@ defineExpose({
     modalOpen.value = true
     openedForEventSave.value = true
     formMessage.value = hint
+    libraryTab.value = 'mine'
+    void loadSharedSchemes()
     void nextTick(() => {
       const el = document.querySelector<HTMLInputElement>('.scheme-save-row .field-input')
       el?.focus()
@@ -883,6 +1032,30 @@ defineExpose({
         </header>
         <p class="history-modal-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
 
+        <div class="scheme-lib-tabs" role="tablist" aria-label="方案来源">
+          <button
+            type="button"
+            class="scheme-lib-tab"
+            :class="{ active: libraryTab === 'mine' }"
+            role="tab"
+            :aria-selected="libraryTab === 'mine'"
+            @click="libraryTab = 'mine'"
+          >
+            我的方案
+          </button>
+          <button
+            type="button"
+            class="scheme-lib-tab"
+            :class="{ active: libraryTab === 'presets' }"
+            role="tab"
+            :aria-selected="libraryTab === 'presets'"
+            @click="openPresetTab"
+          >
+            预设方案
+            <span v-if="sharedSchemes.length" class="tab-count">{{ sharedSchemes.length }}</span>
+          </button>
+        </div>
+
         <!-- 顶部提示条：固定占位，消息出现/消失不抖动，始终可见 -->
         <div class="history-message-slot">
           <p v-show="formMessage || message" class="history-message">
@@ -890,6 +1063,7 @@ defineExpose({
           </p>
         </div>
 
+        <div v-show="libraryTab === 'mine'">
         <!-- 保存当前配置 -->
         <div class="scheme-save-row">
           <label class="field field-grow">
@@ -1092,6 +1266,11 @@ defineExpose({
                   <div class="scheme-meta" @click="onSchemeMetaClick(entry)">
                     <div class="scheme-name-row">
                       <span v-if="entry.id === loadedId" class="scheme-cur-tag">当前</span>
+                      <span
+                        v-if="entry.origin === 'preset'"
+                        class="scheme-preset-tag"
+                        title="从共用方案复制的副本"
+                      >预设副本</span>
                       <input
                         v-if="renamingSchemePath === entry.id"
                         v-model="renamingSchemeValue"
@@ -1121,6 +1300,113 @@ defineExpose({
                 </div>
             </li>
           </ul>
+        </div>
+        </div>
+
+        <div v-if="libraryTab === 'presets'" class="shared-scheme-panel">
+          <div class="shared-scheme-toolbar">
+            <input
+              v-model="sharedSearch"
+              type="text"
+              class="field-input scheme-search"
+              placeholder="搜索当前目录预设"
+            />
+            <button
+              type="button"
+              class="save-btn"
+              :disabled="sharedLoading"
+              @click="loadSharedSchemes(true)"
+            >
+              {{ sharedLoading ? '刷新中…' : '刷新' }}
+            </button>
+          </div>
+
+          <nav class="scheme-breadcrumb" aria-label="预设目录路径">
+            <button
+              type="button"
+              class="bc-seg"
+              :class="{ current: sharedCurrentFolder === '' }"
+              @click="enterSharedFolder('')"
+            >
+              全部预设
+            </button>
+            <template v-for="seg in sharedBreadcrumbSegments" :key="seg.path">
+              <span class="bc-sep">/</span>
+              <button
+                type="button"
+                class="bc-seg"
+                :class="{ current: sharedCurrentFolder === seg.path }"
+                @click="enterSharedFolder(seg.path)"
+              >
+                {{ seg.name }}
+              </button>
+            </template>
+            <span class="bc-count">
+              {{ sharedSubFolders.length + sharedEntriesInFolder.length }} 项
+            </span>
+          </nav>
+
+          <p v-if="sharedError" class="history-warn">{{ sharedError }}</p>
+          <p v-else-if="sharedLoading && !sharedSchemes.length" class="history-empty">
+            正在读取预设方案…
+          </p>
+          <div
+            v-else-if="!sharedSubFolders.length && !sharedEntriesInFolder.length"
+            class="history-empty"
+          >
+            {{
+              sharedSearch.trim()
+                ? '当前目录没有匹配的预设方案。'
+                : sharedSchemes.length
+                  ? '此目录暂无预设方案。'
+                  : '管理员暂未发布预设方案。'
+            }}
+          </div>
+          <ul v-else class="scheme-list shared-scheme-list" role="list">
+            <li
+              v-for="dir in sharedSubFolders"
+              :key="dir"
+              class="scheme-dir-card"
+            >
+              <div class="scheme-card-main">
+                <div class="scheme-meta dir-meta" @click="enterSharedFolder(dir)">
+                  <div class="dir-head">
+                    <span class="dir-icon">📁</span>
+                    <div class="dir-title">
+                      <span class="dir-tag">目录</span>
+                      <span class="scheme-name" :title="baseName(dir)">{{ baseName(dir) }}</span>
+                    </div>
+                  </div>
+                  <div class="scheme-time placeholder-line">&nbsp;</div>
+                  <span class="scheme-stats">{{ sharedFolderCount(dir) }} 个预设</span>
+                </div>
+              </div>
+            </li>
+            <li
+              v-for="preset in sharedEntriesInFolder"
+              :key="preset.id"
+              class="scheme-card shared-scheme-card"
+            >
+              <div class="scheme-card-main">
+                <div class="scheme-meta">
+                  <div class="scheme-name-row">
+                    <span class="scheme-preset-tag">预设</span>
+                    <span class="scheme-name" :title="preset.name">{{ preset.name }}</span>
+                  </div>
+                  <span class="scheme-time">{{ preset.folder || '根目录' }}</span>
+                  <span class="scheme-stats">{{ preset.description || '管理员发布的共用方案' }}</span>
+                </div>
+              </div>
+              <div class="scheme-actions">
+                <button type="button" class="card-btn card-load" @click="useSharedScheme(preset)">
+                  使用
+                </button>
+              </div>
+            </li>
+          </ul>
+          <p class="shared-scheme-hint">
+            「使用」会复制一份到「我的方案」，之后可自由改名 / 覆盖，不影响其他人和服务端预设。
+          </p>
         </div>
       </div>
     </div>
@@ -2036,5 +2322,83 @@ defineExpose({
 .scheme-confirm-ok.danger:hover {
   border-color: #d88a8a;
   background: #341a1a;
+}
+
+/* ============ 共用方案（预设） ============ */
+.scheme-lib-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #2a2d33;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.scheme-lib-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #9aa0a8;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.scheme-lib-tab:hover {
+  color: #d8c39a;
+}
+
+.scheme-lib-tab.active {
+  color: #f0d78c;
+  border-bottom-color: #f0d78c;
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 1.2em;
+  margin-left: 0.3em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: rgba(240, 215, 140, 0.16);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.scheme-preset-tag {
+  display: inline-block;
+  flex: 0 0 auto;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid rgba(120, 180, 140, 0.5);
+  border-radius: 4px;
+  background: rgba(80, 150, 100, 0.12);
+  color: #9fd3ad;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.shared-scheme-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.shared-scheme-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.shared-scheme-toolbar .scheme-search {
+  flex: 1 1 auto;
+}
+
+.shared-scheme-card .scheme-stats {
+  color: #8f969f;
+}
+
+.shared-scheme-hint {
+  margin: 0.2rem 0 0;
+  color: #8f969f;
+  font-size: 0.75rem;
 }
 </style>

@@ -24,6 +24,9 @@ interface ApiBoss {
   weakness: string | null
   resistance: string | null
   resistance_high?: string | null
+  /** 危局 Boss 多套弱点/抗性（怪物库配置）；后端按当期绑定解析后下发单套结果 */
+  weakness_set_id?: string | null
+  weakness_set_label?: string | null
   boss_image: string | null
   crisis_base_hp?: number | null
   hp_coeff_percent?: number | null
@@ -161,6 +164,8 @@ function mapBossToEnemy(boss: ApiBoss): EnemySlot {
     anomalyBarCoefficient: boss.anomaly_bar_coefficient ?? null,
     resistance: boss.resistance || undefined,
     resistanceHigh: boss.resistance_high || undefined,
+    weaknessSetId: boss.weakness_set_id ?? null,
+    weaknessSetLabel: boss.weakness_set_label ?? null,
     crisisBaseHp: boss.crisis_base_hp ?? null,
     hpCoeffPercent: boss.hp_coeff_percent ?? null,
     hpCoeffLabel: boss.hp_coeff_label ?? null,

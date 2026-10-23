@@ -9,8 +9,16 @@ import {
 } from '@/data/crisisScoreHpTable'
 import { historyData } from '@/data/historyData'
 import { modeTitles, type ModeKey, type PhaseData } from '@/types/history'
-import { formatHp, formatHpDelta, formatHpExpansionPercent, parseHpString, splitBuffLines } from '@/utils/gameData'
+import {
+  formatHp,
+  formatHpDelta,
+  formatHpExpansionPercent,
+  parseHpString,
+  splitBuffLines,
+} from '@/utils/gameData'
+import { CAPTURE_HIDE_CLASS } from '@/utils/panelImageExport'
 import { createRequestEpoch } from '@/utils/requestEpoch'
+import { DEFAULT_ENEMY_STAGGER_MULTIPLIER } from '@/utils/enemyResistance'
 import {
   buildQueryWithValues,
   findIndexBySelectionKey,
@@ -27,8 +35,10 @@ import PhasePickerModal from '@/components/history/PhasePickerModal.vue'
 import {
   buildPhaseLabel,
   findPreviousFieldBuff,
+  findPreviousMonsterTraits,
   getBossHpCoeffComparison,
   getBossHpComparison,
+  isMonsterTraitsChanged,
   listMonsterAppearanceVersions,
   type MonsterFieldBuffSnapshot,
 } from '@/utils/historyMonsterDetail'
@@ -261,17 +271,33 @@ function fieldBuffTitle(enemy: PhaseData['enemies'][number]) {
   return '场地 Buff'
 }
 
-/** 往期详情：原文照常展示；效果块注释与原文相同时去掉，避免重复 */
+/** 失衡易伤展示：150%（1.5）；缺省按 1.5，与怪物详情弹窗同口径 */
+function formatStaggerMultiplier(value: number | null | undefined) {
+  const multiplier = value ?? DEFAULT_ENEMY_STAGGER_MULTIPLIER
+  return `${Math.round(multiplier * 100)}%（${multiplier}）`
+}
+
+/** 往期详情场地 Buff：只保留效果块注释；与原文重复的注释去掉 */
 function blocksForHistoryDisplay(
   blocks: NonNullable<PhaseData['buffs'][number]['effectBlocks']> | null | undefined,
   content: string,
 ) {
   if (!blocks?.length) return null
   const text = content.trim()
-  return blocks.map((block) => ({
-    ...block,
-    note: block.note?.trim() && block.note.trim() !== text ? block.note : '',
-  }))
+  const noteBlocks = blocks
+    .map((block) => ({
+      ...block,
+      note: block.note?.trim() && block.note.trim() !== text ? block.note : '',
+    }))
+    .filter((block) => block.note)
+  return noteBlocks.length ? noteBlocks : null
+}
+
+/** 场地 Buff 是否有可导出的注释（导出截图只带注释，原文仍隐藏） */
+function hasFieldBuffNotes(enemy: PhaseData['enemies'][number]) {
+  return Boolean(
+    blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length,
+  )
 }
 
 function buildCrisisMonsterContext(
@@ -301,6 +327,7 @@ function buildCrisisMonsterContext(
     hpCoeffPercent: enemy.hpCoeffPercent,
     hpCoeffManual: enemy.hpCoeffPercent != null,
     fieldBuffSetId: enemy.fieldBuffSetId ?? null,
+    weaknessSetId: enemy.weaknessSetId ?? null,
   }
 }
 
@@ -421,6 +448,25 @@ const monsterDetailPreviousFieldBuff = computed(() => {
     bossName: enemy.bossName,
     room: enemy.room ?? '',
   })
+})
+
+/** 弱点 / 抗性转变：与场地 Buff 同口径，取同一 Boss + 房间的上一期出现 */
+const monsterDetailTraitTransition = computed(() => {
+  const enemy = monsterDetailEnemy.value
+  const phase = currentPhase.value
+  if (!enemy?.bossName || !phase) return null
+  const previous = findPreviousMonsterTraits(phases.value, currentIndex.value, {
+    bossName: enemy.bossName,
+    room: enemy.room ?? '',
+  })
+  if (!previous) return null
+  const current = {
+    phaseLabel: buildPhaseLabel(phase),
+    weakness: enemy.weakness,
+    resistance: enemy.resistance,
+    resistanceHigh: enemy.resistanceHigh,
+  }
+  return isMonsterTraitsChanged(previous, current) ? { previous, current } : null
 })
 
 // 与卡片同一口径的血量 / 系数对比，供详情弹窗展示增长
@@ -640,11 +686,19 @@ function closePhasePicker() {
                   <span class="hp-tag hp-tag--ghost" aria-hidden="true">HP</span>
                   <span class="hp-delta">{{ formatHpDelta(phaseTotalHpComparison.diff) }}</span>
                 </div>
-                <div v-if="showConvertedTotalHp" class="hp-metric-row">
+                <div
+                  v-if="showConvertedTotalHp"
+                  class="hp-metric-row"
+                  :class="CAPTURE_HIDE_CLASS"
+                >
                   <span class="hp-tag hp-tag--converted">953</span>
                   <span class="hp-number">{{ currentPhase.rawHpConverted953 }}</span>
                 </div>
-                <div v-if="phaseFsHp" class="hp-metric-row hp-metric-row--score">
+                <div
+                  v-if="phaseFsHp"
+                  class="hp-metric-row hp-metric-row--score"
+                  :class="CAPTURE_HIDE_CLASS"
+                >
                   <span class="hp-tag hp-tag--fs">FS</span>
                   <span class="hp-number">{{ formatHp(phaseFsHp.hp) }}</span>
                   <span class="hp-score-hint">2万满星S</span>
@@ -652,6 +706,7 @@ function closePhasePicker() {
                 <div
                   v-if="phaseFsHp?.converted != null && showConvertedTotalHp"
                   class="hp-metric-row hp-metric-row--score"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <span class="hp-tag hp-tag--converted">953</span>
                   <span class="hp-number">{{ formatHp(phaseFsHp.converted) }}</span>
@@ -674,7 +729,11 @@ function closePhasePicker() {
                   <span class="hp-tag hp-tag--ghost" aria-hidden="true">H-HP</span>
                   <span class="hp-delta">{{ formatHpDelta(phaseHardTotalHpComparison.diff) }}</span>
                 </div>
-                <div v-if="showConvertedHardTotalHp" class="hp-metric-row">
+                <div
+                  v-if="showConvertedHardTotalHp"
+                  class="hp-metric-row"
+                  :class="CAPTURE_HIDE_CLASS"
+                >
                   <span class="hp-tag hp-tag--converted">953</span>
                   <span class="hp-number">{{ currentPhase.rawHardHpConverted953 }}</span>
                 </div>
@@ -682,6 +741,7 @@ function closePhasePicker() {
                   v-for="item in phaseHardScoreHps"
                   :key="item.id"
                   class="hp-metric-row hp-metric-row--score"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <span class="hp-tag hp-tag--star" :style="{ color: item.color }">{{ item.shortLabel }}</span>
                   <span class="hp-number">{{ formatHp(item.hp) }}</span>
@@ -691,6 +751,7 @@ function closePhasePicker() {
                     v-for="item in phaseHardScoreHps"
                     :key="`953-${item.id}`"
                     class="hp-metric-row hp-metric-row--score"
+                    :class="CAPTURE_HIDE_CLASS"
                   >
                     <span class="hp-tag hp-tag--converted">953</span>
                     <span class="hp-number">{{ formatHp(item.converted ?? 0) }}</span>
@@ -758,13 +819,6 @@ function closePhasePicker() {
                 <BuffRichText :text="line" />
               </li>
             </ul>
-            <BuffEffectBlocksDisplay
-              v-if="blocksForHistoryDisplay(buff.effectBlocks, buff.buffText ?? buff.lines.join('\n'))?.length"
-              compact
-              :blocks="blocksForHistoryDisplay(buff.effectBlocks, buff.buffText ?? buff.lines.join('\n'))"
-              :title="buff.name || '危局 Buff'"
-              empty-text="暂无效果块"
-            />
           </article>
         </div>
 
@@ -814,7 +868,13 @@ function closePhasePicker() {
                 添加怪物
               </button>
             </div>
-            <div class="enemy-main">
+            <div
+              class="enemy-main"
+              :class="{
+                'enemy-main--with-field-buff':
+                  enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length,
+              }"
+            >
               <div class="enemy-body">
                 <div class="enemy-image">
                   <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
@@ -847,11 +907,11 @@ function closePhasePicker() {
                       <span class="enemy-hp-prefix">953防御换算：</span>
                       <span class="enemy-hp-number">{{ enemy.hpConverted953 }}</span>
                     </p>
-                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta">
+                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta" :class="CAPTURE_HIDE_CLASS">
                       <span class="enemy-hp-prefix">基础血量：</span>
                       <span class="enemy-hp-number">{{ formatHp(enemy.crisisBaseHp) }}</span>
                     </p>
-                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta">
+                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta" :class="CAPTURE_HIDE_CLASS">
                       <span class="enemy-hp-prefix">危局血量系数：</span>
                       <span class="enemy-hp-number">{{ enemy.hpCoeffLabel }}</span>
                       <span
@@ -873,6 +933,12 @@ function closePhasePicker() {
                     <p v-if="enemy.defense !== undefined" class="enemy-defense">防御：{{ enemy.defense }}</p>
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
+                    </p>
+                    <p class="enemy-stagger-multiplier">
+                      失衡易伤：{{ formatStaggerMultiplier(enemy.staggerMultiplier) }}
+                    </p>
+                    <p v-if="enemy.weaknessSetLabel" class="enemy-trait-set-title">
+                      弱点 / 抗性 · {{ enemy.weaknessSetLabel }}
                     </p>
                     <p class="enemy-weakness">
                       <ElementTraitIcons
@@ -899,19 +965,28 @@ function closePhasePicker() {
               <div
                 v-if="enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length"
                 class="enemy-field-buff"
+                :class="hasFieldBuffNotes(enemy) ? '' : CAPTURE_HIDE_CLASS"
               >
                 <p class="enemy-field-buff-title">{{ fieldBuffTitle(enemy) }}</p>
                 <ul
                   v-if="fieldBuffLines(enemy).length"
                   class="enemy-field-buff-lines"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <li v-for="(line, lineIndex) in fieldBuffLines(enemy)" :key="lineIndex">
                     <BuffRichText :text="line" />
                   </li>
                 </ul>
+                <div
+                  v-if="fieldBuffLines(enemy).length && blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
+                  class="enemy-field-buff-divider"
+                  :class="CAPTURE_HIDE_CLASS"
+                  aria-hidden="true"
+                />
                 <BuffEffectBlocksDisplay
                   v-if="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
                   compact
+                  notes-only
                   :blocks="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')"
                   :title="enemy.fieldBuff?.name || '场地 Buff'"
                   empty-text="暂无场地 Buff 效果块"
@@ -919,6 +994,7 @@ function closePhasePicker() {
                 <p
                   v-else-if="!fieldBuffLines(enemy).length && enemy.fieldBuff?.text"
                   class="enemy-field-buff-meta"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <BuffRichText :text="enemy.fieldBuff.text" />
                 </p>
@@ -970,7 +1046,13 @@ function closePhasePicker() {
                 添加怪物
               </button>
             </div>
-            <div class="enemy-main">
+            <div
+              class="enemy-main"
+              :class="{
+                'enemy-main--with-field-buff':
+                  enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length,
+              }"
+            >
               <div class="enemy-body">
                 <div class="enemy-image">
                   <img v-if="enemy.imageUrl" :src="enemy.imageUrl" :alt="enemy.label" />
@@ -1003,11 +1085,11 @@ function closePhasePicker() {
                       <span class="enemy-hp-prefix">953防御换算：</span>
                       <span class="enemy-hp-number">{{ enemy.hpConverted953 }}</span>
                     </p>
-                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta">
+                    <p v-if="enemy.crisisBaseHp != null" class="enemy-hp-row enemy-hp-row--meta" :class="CAPTURE_HIDE_CLASS">
                       <span class="enemy-hp-prefix">基础血量：</span>
                       <span class="enemy-hp-number">{{ formatHp(enemy.crisisBaseHp) }}</span>
                     </p>
-                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta">
+                    <p v-if="enemy.hpCoeffLabel" class="enemy-hp-row enemy-hp-row--meta" :class="CAPTURE_HIDE_CLASS">
                       <span class="enemy-hp-prefix">危局血量系数：</span>
                       <span class="enemy-hp-number">{{ enemy.hpCoeffLabel }}</span>
                       <span
@@ -1029,6 +1111,12 @@ function closePhasePicker() {
                     <p v-if="enemy.defense !== undefined" class="enemy-defense">防御：{{ enemy.defense }}</p>
                     <p v-if="enemy.staggerTime != null" class="enemy-stagger-time">
                       失衡时间：{{ enemy.staggerTime }} 秒
+                    </p>
+                    <p class="enemy-stagger-multiplier">
+                      失衡易伤：{{ formatStaggerMultiplier(enemy.staggerMultiplier) }}
+                    </p>
+                    <p v-if="enemy.weaknessSetLabel" class="enemy-trait-set-title">
+                      弱点 / 抗性 · {{ enemy.weaknessSetLabel }}
                     </p>
                     <p class="enemy-weakness">
                       <ElementTraitIcons
@@ -1055,19 +1143,28 @@ function closePhasePicker() {
               <div
                 v-if="enemy.fieldBuff?.name || enemy.fieldBuff?.text || enemy.fieldBuff?.effectBlocks?.length"
                 class="enemy-field-buff"
+                :class="hasFieldBuffNotes(enemy) ? '' : CAPTURE_HIDE_CLASS"
               >
                 <p class="enemy-field-buff-title">{{ fieldBuffTitle(enemy) }}</p>
                 <ul
                   v-if="fieldBuffLines(enemy).length"
                   class="enemy-field-buff-lines"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <li v-for="(line, lineIndex) in fieldBuffLines(enemy)" :key="lineIndex">
                     <BuffRichText :text="line" />
                   </li>
                 </ul>
+                <div
+                  v-if="fieldBuffLines(enemy).length && blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
+                  class="enemy-field-buff-divider"
+                  :class="CAPTURE_HIDE_CLASS"
+                  aria-hidden="true"
+                />
                 <BuffEffectBlocksDisplay
                   v-if="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')?.length"
                   compact
+                  notes-only
                   :blocks="blocksForHistoryDisplay(enemy.fieldBuff?.effectBlocks, enemy.fieldBuff?.text ?? '')"
                   :title="enemy.fieldBuff?.name || '场地 Buff'"
                   empty-text="暂无场地 Buff 效果块"
@@ -1075,6 +1172,7 @@ function closePhasePicker() {
                 <p
                   v-else-if="!fieldBuffLines(enemy).length && enemy.fieldBuff?.text"
                   class="enemy-field-buff-meta"
+                  :class="CAPTURE_HIDE_CLASS"
                 >
                   <BuffRichText :text="enemy.fieldBuff.text" />
                 </p>
@@ -1107,6 +1205,7 @@ function closePhasePicker() {
       :boss-existed-by-multiplier-version="monsterDetailBossExistedByMultiplierVersion"
       :previous-field-buff="monsterDetailPreviousFieldBuff"
       :current-field-buff="monsterDetailCurrentFieldBuff"
+      :trait-transition="monsterDetailTraitTransition"
       :hp-comparison="monsterDetailHpComparison"
       :hp-coeff-comparison="monsterDetailHpCoeffComparison"
       @close="closeMonsterDetail"
@@ -1286,6 +1385,7 @@ function closePhasePicker() {
 .content-grid--embedded .enemy-defense,
 .content-grid--embedded .enemy-weakness,
 .content-grid--embedded .enemy-stagger-time,
+.content-grid--embedded .enemy-stagger-multiplier,
 .content-grid--embedded .enemy-resistance {
   font-size: clamp(0.72rem, 1.2vh, 0.84rem);
   line-height: 1.35;
@@ -1574,7 +1674,7 @@ function closePhasePicker() {
 
 .enemy-card--hard {
   width: 100%;
-  max-width: min(780px, 100%);
+  max-width: 80%;
   min-width: 0;
   margin-inline: auto;
   border-width: 2px;
@@ -1595,6 +1695,37 @@ function closePhasePicker() {
 
 .enemy-card--hard.enemy-card--empty {
   border-style: dashed;
+}
+
+/* 绝境 Boss 图（无场地 Buff 的单行布局）：3:4，约 200–280px 高 */
+.enemy-card--hard .enemy-image {
+  width: clamp(150px, 32%, 210px);
+}
+
+/* 绝境：图片 22% / 数据 28% / 场地 Buff 50% 同一行 */
+.enemy-card--hard .enemy-main--with-field-buff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.enemy-card--hard .enemy-main--with-field-buff .enemy-body {
+  display: grid;
+  /* 左半 50% 内再按 22:28 分，换算到整行即图片 22% / 数据 28% */
+  grid-template-columns: minmax(0, 11fr) minmax(0, 14fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.enemy-card--hard .enemy-main--with-field-buff .enemy-image {
+  width: 100%;
+  max-width: none;
+}
+
+.enemy-card--hard .enemy-main--with-field-buff .enemy-field-buff {
+  margin-top: 0;
+  align-self: start;
 }
 
 .enemy-main {
@@ -1664,13 +1795,6 @@ function closePhasePicker() {
   line-height: 1.5;
   color: var(--color-text);
   flex: 1;
-}
-
-.buff-card :deep(.effect-blocks-display) {
-  width: 100%;
-  margin-top: 0.1rem;
-  padding-top: 0.35rem;
-  border-top: 1px dashed color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .enemy-card {
@@ -1853,6 +1977,7 @@ function closePhasePicker() {
 .enemy-defense,
 .enemy-weakness,
 .enemy-stagger-time,
+.enemy-stagger-multiplier,
 .enemy-resistance {
   margin: 0;
   font-size: clamp(0.74rem, 1.35vw, 0.84rem);
@@ -1861,6 +1986,15 @@ function closePhasePicker() {
   line-height: 1.4;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* 危局多套弱点/抗性：卡片上标注当期绑定的套名 */
+.enemy-trait-set-title {
+  margin: 0 0 0.1rem;
+  font-size: clamp(0.66rem, 1.2vw, 0.74rem);
+  font-weight: 650;
+  color: var(--color-heading);
+  opacity: 0.75;
 }
 
 .enemy-field-buff {
@@ -1893,10 +2027,13 @@ function closePhasePicker() {
   opacity: 0.7;
 }
 
+.enemy-field-buff-divider {
+  margin: 0.4rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+}
+
 .enemy-field-buff :deep(.effect-blocks-display) {
-  margin-top: 0.3rem;
-  padding-top: 0.3rem;
-  border-top: 1px dashed color-mix(in srgb, var(--color-border) 65%, transparent);
+  margin-top: 0;
 }
 
 @container enemy-card (max-width: 520px) {
@@ -1908,6 +2045,24 @@ function closePhasePicker() {
   .enemy-image {
     width: min(200px, 72%);
     max-width: 220px;
+  }
+
+  .enemy-card--hard .enemy-image {
+    width: min(180px, 60%);
+  }
+
+  .enemy-card--hard .enemy-main--with-field-buff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .enemy-card--hard .enemy-main--with-field-buff .enemy-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .enemy-card--hard .enemy-main--with-field-buff .enemy-image {
+    width: min(180px, 60%);
   }
 
   .enemy-info {

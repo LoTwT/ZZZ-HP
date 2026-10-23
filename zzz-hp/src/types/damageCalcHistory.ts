@@ -315,6 +315,10 @@ export interface DamageCalcHistoryEntry {
   folder: string
   /** 同目录内排序权重（小在前） */
   order: number
+  /** 来源：缺省 = 用户自己保存；preset = 从共用方案复制来的只读副本 */
+  origin?: 'preset' | 'user'
+  /** 来源共用方案 id（仅展示 / 溯源；不参与计算） */
+  sharedPresetId?: string
 }
 
 /** 目录节点元数据 */

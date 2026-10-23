@@ -29,3 +29,8 @@
   min-height: auto !important;
   overflow: visible !important;
 }
+
+/* 导出图片时隐藏：buff 结构化块、场地 buff、怪物基础血量 / 危局血量系数 */
+.zzz-capture-expand .zzz-capture-hide {
+  display: none !important;
+}

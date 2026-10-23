@@ -88,6 +88,14 @@ check(
 console.log('\n[4] 类3 都可选；不改字段')
 const class3 = BUFF_STAT_ZONES.filter((zone) => zone.tier === 3)
 check('类3 共 55 项', class3.length === 55, `${class3.length}`)
+check(
+  '异常掌控（固定）带「（数值）」',
+  findBuffStatZoneById('zone:anomalyControl')?.label === '异常掌控（数值）',
+)
+check(
+  '异常掌控（百分比）带「%」',
+  findBuffStatZoneById('zone:anomalyControlPercent')?.label === '异常掌控%',
+)
 check('类3 允许全部 8 项', allowedDamageTypesOf(class3[0]).length === 8)
 check('锐爆伤害加成仍是类3 独立项', findBuffStatZoneById('zone:sharpenCritDmgBonus')?.tier === 3)
 check(

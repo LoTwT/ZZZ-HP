@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import IkModalShell from '@/components/common/IkModalShell.vue'
 import DualLineChartView from '@/components/history/DualLineChartView.vue'
 import RoomBuffTransitionPanel from '@/components/history/RoomBuffTransitionPanel.vue'
+import TraitTransitionPanel from '@/components/history/TraitTransitionPanel.vue'
 import MonsterDetailStats, {
   type MonsterDetailRecord,
 } from '@/components/history/MonsterDetailStats.vue'
@@ -35,6 +36,21 @@ const props = defineProps<{
   previousFieldBuff?: MonsterFieldBuffSnapshot | null
   /** 现场地 Buff（当期），由父组件从 phases 解析 */
   currentFieldBuff?: MonsterFieldBuffSnapshot | null
+  /** 弱点/抗性转变（原 / 现两侧），无变化时为 null */
+  traitTransition?: {
+    previous: {
+      phaseLabel: string
+      weakness?: string
+      resistance?: string
+      resistanceHigh?: string
+    }
+    current: {
+      phaseLabel: string
+      weakness?: string
+      resistance?: string
+      resistanceHigh?: string
+    }
+  } | null
   /** 血量与往期对比，由父组件用与怪物卡片相同的口径计算；无往期出现时为 null */
   hpComparison?: BossHpComparison | null
   /** 危局血量系数与往期对比；无往期出现时为 null */
@@ -135,6 +151,13 @@ watch(
         :image-url="enemy.imageUrl"
         :image-alt="enemy.bossName || enemy.label"
         :show-resistance-table="true"
+      />
+
+      <TraitTransitionPanel
+        v-if="traitTransition"
+        class="monster-detail-buff-transition"
+        :previous="traitTransition.previous"
+        :current="traitTransition.current"
       />
 
       <RoomBuffTransitionPanel
