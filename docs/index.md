@@ -78,6 +78,7 @@
 ## 规格文档
 
 - [规格文档索引](./specs/index.md)：当前功能与技术规格、历史实现记录及编写约定。
+- [增益功能链路](./specs/buff-pipeline.md) · [链路图](./specs/buff-pipeline.svg)：管理侧增益、额外 Buff、全局面板、行级管理及事件详情的统一功能关系。
 
 ## 规划与维护
 
