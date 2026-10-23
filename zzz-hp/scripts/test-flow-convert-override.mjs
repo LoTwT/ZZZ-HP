@@ -249,5 +249,55 @@ console.log('\n[7] G4 manual 技能等级转模接受手填基数；非 manual �
   check('非 manual 仍按等级 12 × 10% = 1.2（忽略手填）', Math.abs(levelValue - 1.2) < 1e-6, `实际 ${levelValue}`)
 }
 
+console.log('\n[8] 同一转模配置：常规增益与额外 Buff 结果一致（§7.2 第 23 项）')
+{
+  const { createExtraBuffGain } = await import('../src/utils/extraBuffCalc.ts')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const sharedConvert = {
+    from: 'atk',
+    panelSource: 'external',
+    ratioPercent: 10,
+    initialBase: 0,
+    cap: null,
+    defaultBase: null,
+  }
+
+  invalidateBuffCatalogCache()
+  const normalCtx = buildCtx()
+  const normalMods = collectPanelBuffMods(normalCtx)
+
+  invalidateBuffCatalogCache()
+  const extraCtx = makePanelCtx({
+    teamSlots: [testSlot('a')],
+    agents: [testAgent('a')],
+    bangboo: dummyBangboo(),
+    mainSlotIndex: 0,
+    panelSourceValues: { external: { atk: 2000 }, final: { atk: 2000 } },
+    extraGains: [
+      createExtraBuffGain({
+        id: 'equiv-conv',
+        name: '等价转模',
+        applySlot: 0,
+        sourceSlot: 0,
+        effects: [
+          createEmptyBuffEffect({
+            id: 'equiv-conv-eff',
+            kind: 'convert',
+            stat: 'atk',
+            convert: sharedConvert,
+          }),
+        ],
+      }),
+    ],
+  })
+  const extraMods = collectPanelBuffMods(extraCtx)
+  check(
+    '常规与额外 Buff 的攻击增量相同（都是 200）',
+    normalMods.atk === 200 && extraMods.atk === 200,
+    `常规 ${normalMods.atk} / 额外 ${extraMods.atk}`,
+  )
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

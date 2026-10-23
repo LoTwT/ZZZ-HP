@@ -323,6 +323,78 @@ check('换号后流程覆盖跟着改', incomingOverride?.skillId === incomingPr
 check('换号后 memberKey 跟着改', incomingOverride?.memberKey === `0:${incomingPreparedId}`, true)
 check('本机原招式仍在', loadCustomSkills().some((item) => item.id === 'skill-same' && item.baseMult === 10), true)
 
+// ---------- 额外 Buff 随方案包往返（Spec §6 第 1 项、§7.2 第 19 项） ----------
+{
+  const { createExtraBuffGain, normalizeExtraGains, serializeExtraGains } = await import(
+    '../src/utils/extraBuffCalc.ts'
+  )
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  /** 稳定序列化：结构比较不比键顺序（Spec §7.1 递归比较） */
+  const stable = (value) =>
+    Array.isArray(value)
+      ? `[${value.map(stable).join(',')}]`
+      : value && typeof value === 'object'
+        ? `{${Object.keys(value)
+            .filter((key) => value[key] !== undefined)
+            .sort()
+            .map((key) => `${key}:${stable(value[key])}`)
+            .join(',')}}`
+        : JSON.stringify(value ?? null)
+
+  const cards = [
+    createExtraBuffGain({
+      id: 'pack-fixed',
+      name: '包内固定',
+      applySlot: 'team',
+      effects: [createEmptyBuffEffect({ id: 'pack-fixed-eff', stat: 'atk', value: 88 })],
+    }),
+    createExtraBuffGain({
+      id: 'pack-convert',
+      name: '包内转模',
+      applySlot: 1,
+      sourceSlot: 1,
+      effects: [
+        createEmptyBuffEffect({
+          id: 'pack-convert-eff',
+          kind: 'convert',
+          stat: 'dmgBonus',
+          convert: {
+            from: 'atk',
+            panelSource: 'external',
+            ratioPercent: 10,
+            initialBase: 0,
+            cap: null,
+            defaultBase: null,
+          },
+          conditions: { damageTypes: ['normal'] },
+        }),
+      ],
+    }),
+  ]
+  const expected = serializeExtraGains(cards)
+
+  reset()
+  importDamageCalcHistory(
+    pack({
+      schemes: {
+        's:/带额外': scheme('带额外', { panelState: { extraGains: expected } }),
+      },
+    }),
+  )
+  const entry = listAllDamageCalcHistory().find((item) => item.name === '带额外')
+  const afterImport = entry?.panelState?.extraGains ?? []
+  check('方案包导入后额外 Buff 条数不变', afterImport.length, 2)
+  check('导入后结构与包内一致', stable(afterImport), stable(expected))
+  check('导入后归一化不丢卡', normalizeExtraGains(afterImport).discardedCount, 0)
+
+  const exportedWithExtras = JSON.parse(exportDamageCalcHistory([]))
+  const exportedScheme =
+    Object.values(exportedWithExtras.schemes ?? {}).find((item) => item?.name === '带额外') ?? null
+  const exportedCards = exportedScheme?.panelState?.extraGains ?? []
+  check('导出方案包保留额外 Buff', exportedCards.length, 2)
+  check('导出结构与导入前一致', stable(exportedCards), stable(expected))
+}
+
 reset()
 if (failed) {
   console.error(`\n${failed} failed`)
