@@ -92,6 +92,7 @@ import {
   buildFlowBuffTableColumns,
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
+  effectiveRowOverride,
   flowBuffOverrideExceptionCount,
   isFlowBuffOverrideEmpty,
   resolveRowBeneficiarySlots,
@@ -128,6 +129,11 @@ const props = defineProps<{
   buffEffects?: CollectedEffect[]
   /** 每条增益的显示文本（`effect.id` → `+123 攻击力（数值）`）；与勾选器同一套取值，转模才看得到数 */
   buffEffectTexts?: Record<string, string>
+  /**
+   * 单元格文本：按**该行合并后的例外**（组 + 成员）取事件值。
+   * 与 `buffEffectTexts`（列级说明）分开：单元格显示"这一行吃多少"，列头说明保留全局口径。
+   */
+  buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null) => string | null
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
   /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
@@ -353,8 +359,20 @@ const flowBuffTableStates = computed(() =>
   }),
 )
 
-const flowBuffTableSubtitle = computed(() => {
-  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
+/**
+ * 单元格文本：行键 → 该行有效例外（组 + 成员合并）→ 页面给的按行求值函数。
+ * 列级说明（`buffEffectTexts`）不含行级覆盖，二者不能混用。
+ */
+function flowBuffCellText(rowKey: string, effectId: string): string | null {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  const entry = row
+    ? ((currentSlot.value?.flow ?? []).find((item) => item.id === row.entryId) ?? null)
+    : null
+  const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
+  return props.buffEffectTextFor?.(effectId, rowOverride) ?? null
+}
+
+const flowBuffTableSubtitle = computed(() => {  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
   const agentName = props.agents.find((item) => item.id === agentId)?.name
   return [props.schemeName, agentName].filter(Boolean).join(' · ')
 })
@@ -3476,6 +3494,7 @@ const showcaseTitle = computed(() => {
               :columns="flowBuffTableColumns"
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
+              :cell-text="flowBuffCellText"
               @toggle="toggleFlowBuffCell"
               @set-column="setFlowBuffColumn"
             />

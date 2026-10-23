@@ -42,6 +42,7 @@ import type {
   DamageCalcHistoryEntry,
   DamageCalcSchemePanelSnapshot,
   DamageCalcWorkingDraft,
+  FlowBuffOverride,
   SchemeSlot,
 } from '@/types/damageCalcHistory'
 import type { PanelCalcMode, PanelStats } from '@/types/calculatorPanel'
@@ -88,7 +89,11 @@ import {
   saveWorkingDraft,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
-import { buildFlowBuffEffectTexts } from '@/utils/flowBuffTable'
+import {
+  buildFlowBuffEffectText,
+  buildFlowBuffEffectTexts,
+  type FlowBuffEffectTextOptions,
+} from '@/utils/flowBuffTable'
 import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
@@ -1077,32 +1082,45 @@ const collectedEffectsForFlowTable = computed(() => {
 /**
  * 表里每条增益的显示文本（与局内 Buff 勾选器**同一套取值**：转模要算出值，否则显示成 0）。
  * 输入取自勾选器正在用的那几个（属性默认值 / 槽位面板取值 / 技能等级表）。
+ * **视角固定为当前编辑槽位**（流程属于它），不跟随选择器里切换的查看槽位。
  */
+const flowBuffTextOptions = computed<FlowBuffEffectTextOptions>(() => ({
+  selection: multiSlotBuffSelection,
+  slotIndex: activeSlot.value,
+  agentIdBySlot: teamSlots.map((slot) => slot.agentId),
+  attrDefaults:
+    panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(activeSlot.value) ??
+    panelCalcSectionRef.value?.convertAttrDefaults ??
+    {},
+  panelSourceValues:
+    panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(activeSlot.value) ?? undefined,
+  panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+  // 选择器里手填的转模基数也要进表格文本：否则填了以后表格仍按面板显示（与结算不一致）
+  convertInputFor: (effect) =>
+    getBuffEffectConvertInput(
+      multiSlotBuffSelection,
+      activeSlot.value,
+      effect.id,
+      effect.applyTarget,
+    ),
+  skillTalentLevelsByAgent,
+  skillSubcategories: skillSubcategories.value,
+}))
+
+/** 列级说明：只反映全局（选择器/面板），不含某一行的事件级覆盖 */
 const flowBuffEffectTexts = computed(() =>
-  buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, {
-    selection: multiSlotBuffSelection,
-    slotIndex: activeSlot.value,
-    agentIdBySlot: teamSlots.map((slot) => slot.agentId),
-    attrDefaults:
-      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(buffPickerViewSlotIndex.value) ??
-      panelCalcSectionRef.value?.convertAttrDefaults ??
-      {},
-    panelSourceValues:
-      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(buffPickerViewSlotIndex.value) ??
-      undefined,
-    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
-    // 选择器里手填的转模基数也要进表格文本：否则填了以后表格仍按面板显示（与结算不一致）
-    convertInputFor: (effect) =>
-      getBuffEffectConvertInput(
-        multiSlotBuffSelection,
-        buffPickerViewSlotIndex.value,
-        effect.id,
-        effect.applyTarget,
-      ),
-    skillTalentLevelsByAgent,
-    skillSubcategories: skillSubcategories.value,
-  }),
+  buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, flowBuffTextOptions.value),
 )
+
+/** 单元格文本：按**该行合并后的例外**取事件值（组 + 成员，成员优先） */
+function flowBuffEffectTextFor(
+  effectId: string,
+  rowOverride: FlowBuffOverride | null,
+): string | null {
+  const item = collectedEffectsForFlowTable.value.find((entry) => entry.effect.id === effectId)
+  if (!item) return null
+  return buildFlowBuffEffectText(item, flowBuffTextOptions.value, rowOverride)
+}
 
 /**
  * 本行增益例外弹窗的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）。
@@ -2546,6 +2564,7 @@ defineExpose({ scrollToSection })
         :resolve-calculation-detail="resolveFlowCalculationDetail"
         :buff-effects="collectedEffectsForFlowTable"
         :buff-effect-texts="flowBuffEffectTexts"
+        :buff-effect-text-for="flowBuffEffectTextFor"
         :convert-resolve-inputs="buffConvertResolveInputsForSlot"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"

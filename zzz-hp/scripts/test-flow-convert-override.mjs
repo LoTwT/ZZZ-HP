@@ -19,7 +19,8 @@ import {
   collectPanelBuffMods,
   invalidateBuffCatalogCache,
 } from '../src/utils/panelBuffCalc.ts'
-import { buildFlowBuffEffectTexts } from '../src/utils/flowBuffTable.ts'
+import { buildFlowBuffEffectText, buildFlowBuffEffectTexts, mergeFlowBuffOverride } from '../src/utils/flowBuffTable.ts'
+import { resolveConvertValue } from '../src/utils/buffEffect.ts'
 import { convertEffect, dummyBangboo, makePanelCtx, testAgent, testSlot } from './_effectPipelineHarness.mjs'
 
 let passed = 0
@@ -177,6 +178,75 @@ console.log('\n[4] 技能等级来源：手填基数不生效（共享函数忽�
   })
   const mods = collectPanelBuffMods(ctx)
   check('等级 12 × 10% = 1.2（不吃手填 3000）', Math.abs((mods.dmgBonus ?? 0) - 1.2) < 1e-6, `实际 ${mods.dmgBonus}`)
+}
+
+console.log('\n[5] G1 单元格按行取事件值（列级说明保留全局）')
+{
+  invalidateBuffCatalogCache()
+  const probe = buildCtx()
+  const id = instancedId(probe)
+  const globalSelection = {
+    enabledIds: {},
+    stacksByEffectId: {},
+    convertInputs: { [id]: 3000 },
+    manualTouchedIds: {},
+  }
+  invalidateBuffCatalogCache()
+  const ctx = buildCtx({ buffSelection: globalSelection })
+  const items = collectAllBuffEffects(ctx)
+  const textOptions = {
+    selection: globalSelection,
+    slotIndex: 0,
+    attrDefaults: { atk: 2000 },
+    panelSourceValues: ctx.panelSourceValues,
+    convertInputFor: (effect) => globalSelection.convertInputs[effect.id],
+  }
+  const item = items.find((entry) => entry.effect.id === id)
+  const columnText = buildFlowBuffEffectTexts(items, textOptions)[id]
+  const rowText = buildFlowBuffEffectText(item, textOptions, {
+    convertInputsByEffectId: { [id]: 5000 },
+  })
+  check('列级说明仍是全局 300', columnText.includes('300'), columnText)
+  check('单元格按行取 500', rowText.includes('500'), rowText)
+  check('两者不相等（不得用列级冒充事件值）', columnText !== rowText)
+}
+
+console.log('\n[6] G2 成员读父组数值、写回只写本层')
+{
+  const group = { convertInputsByEffectId: { conv: 5000 }, stacksByEffectId: { stk: 4 } }
+  const memberEmpty = null
+  const memberOwn = { convertInputsByEffectId: { conv: 7000 }, stacksByEffectId: { stk: 1 } }
+  const mergedInherit = mergeFlowBuffOverride(group, memberEmpty)
+  const mergedOwn = mergeFlowBuffOverride(group, memberOwn)
+  check('成员无覆盖 → 合并后取父组基数', mergedInherit?.convertInputsByEffectId?.conv === 5000)
+  check('成员无覆盖 → 合并后取父组层数', mergedInherit?.stacksByEffectId?.stk === 4)
+  check('成员有覆盖 → 基数取成员', mergedOwn?.convertInputsByEffectId?.conv === 7000)
+  check('成员有覆盖 → 层数取成员', mergedOwn?.stacksByEffectId?.stk === 1)
+  check('父组记录未被改动', group.convertInputsByEffectId.conv === 5000 && group.stacksByEffectId.stk === 4)
+}
+
+console.log('\n[7] G4 manual 技能等级转模接受手填基数；非 manual 忽略')
+{
+  const effect = convertEffect('conv-level-manual', 'dmgBonus', {
+    from: 'skillLevelBasic',
+    panelSource: 'manual',
+    ratioPercent: 10,
+    initialBase: 0,
+    cap: null,
+    defaultBase: 30,
+  })
+  const manualValue = resolveConvertValue(effect, {}, 50, undefined, null)
+  check('manual 基数 50 × 10% = 5', Math.abs(manualValue - 5) < 1e-6, `实际 ${manualValue}`)
+  const nonManual = convertEffect('conv-level-ext', 'dmgBonus', {
+    from: 'skillLevelBasic',
+    panelSource: 'external',
+    ratioPercent: 10,
+    initialBase: 0,
+    cap: null,
+    defaultBase: null,
+  })
+  const levelValue = resolveConvertValue(nonManual, {}, 50, undefined, { basic: 12 })
+  check('非 manual 仍按等级 12 × 10% = 1.2（忽略手填）', Math.abs(levelValue - 1.2) < 1e-6, `实际 ${levelValue}`)
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

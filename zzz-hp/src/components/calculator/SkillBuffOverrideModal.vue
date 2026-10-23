@@ -183,17 +183,23 @@ function setStacks(effect: BuffEffect, value: number) {
   write({ stacksByEffectId: next })
 }
 
-/** 该效果在这条行里能不能改「转模基数」（技能等级来源的基数是等级，不可手填） */
+/** 该效果在这条行里能不能改「转模基数」（技能等级来源只有 manual 才手填基数） */
 function isConvertBaseEditable(item: CollectedEffect): boolean {
   const convert = item.effect.convert
   if (!convert || item.effect.kind !== 'convert') return false
-  return !isSkillConvertFromKey(convert.from)
+  if (!isSkillConvertFromKey(convert.from)) return true
+  return (convert.panelSource ?? 'external') === 'manual'
 }
 
-/** 本行当前生效的转模基数：行级覆盖 ?? 继承全局手填 ?? 面板/默认（与结算同一份取值顺序） */
+/**
+ * 本行当前生效的转模基数：
+ * 本层覆盖 ?? 父组（组行）覆盖 ?? 继承全局手填 ?? 面板/默认 —— 与结算的合并顺序一致。
+ */
 function convertBaseModel(item: CollectedEffect): number {
   const overridden = override.value?.convertInputsByEffectId?.[item.effect.id]
   if (overridden != null) return overridden
+  const fromParent = props.parentOverride?.convertInputsByEffectId?.[item.effect.id]
+  if (fromParent != null) return fromParent
   const inherited = props.globalConvertInput?.(item.effect)
   if (inherited != null) return inherited
   return convertLiveBase(item)
