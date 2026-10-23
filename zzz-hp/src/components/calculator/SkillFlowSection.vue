@@ -190,8 +190,14 @@ const buffOverrideModel = computed<FlowBuffOverride | null>({
   },
 })
 
-/** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
- *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
+/** 成员行编辑时：整组那一层的例外（父级关掉的项在这一段同样不吃，也开不回来） */
+const buffOverrideParent = computed<FlowBuffOverride | null>(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry || !buffOverrideMember.value) return null
+  return entry.buffOverrides ?? null
+})
+
+/** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** —— *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
  *  表里是 na 的不列（na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
 /** 本行弹窗的「继承全局」读取函数：与局内增益同一份按槽合并的勾选状态（multi → 槽位合并） */
 
@@ -3455,6 +3461,7 @@ const showcaseTitle = computed(() => {
               :row-label="buffOverrideRowLabel"
               :global-stacks-for="globalStacksFor"
               :global-convert-input="globalConvertInput"
+              :parent-override="buffOverrideParent"
               :slot-index="activeSlotIndex"
               :convert-resolve-inputs="convertResolveInputs"
               :skill-talent-levels-by-agent="skillTalentLevelsByAgent"

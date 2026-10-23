@@ -67,7 +67,6 @@ const viewSlotIndex = defineModel<number>('viewSlotIndex', { default: 0 })
 
 const search = ref('')
 const activeGroup = ref('全部')
-const showConvertOverride = ref<Record<string, boolean>>({})
 
 interface BuffCardGroup {
   key: string
@@ -228,7 +227,6 @@ function setConvert(item: CollectedEffect, value: number) {
     item.effect.applyTarget,
     Math.max(0, value),
   )
-  showConvertOverride.value[item.effect.id] = true
 }
 
 function clearConvertOverride(item: CollectedEffect) {
@@ -247,7 +245,6 @@ function clearConvertOverride(item: CollectedEffect) {
     ? multiSelection.value.team
     : multiSelection.value.bySlot[viewSlotIndex.value]
   if (store) delete store.convertInputs[id]
-  showConvertOverride.value[id] = false
 }
 
 function convertResult(item: CollectedEffect) {
@@ -263,10 +260,9 @@ function convertResult(item: CollectedEffect) {
   let override: number | null | undefined
   if (source === 'manual') {
     override = saved ?? convert?.defaultBase ?? 0
-  } else if (showConvertOverride.value[id] && saved != null) {
-    override = saved
   } else {
-    override = null
+    // 非自行设置：有手填基数就按它算（与结算同一份数据），没有就按面板/默认
+    override = saved ?? null
   }
   return resolveConvertValue(
     item.effect,
@@ -619,11 +615,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     → {{ formatSigned(convertResult(item)) }}
                   </span>
                   <template
-                    v-if="
-                      isManualConvert(item) ||
-                      hasConvertOverride(item) ||
-                      showConvertOverride[item.effect.id]
-                    "
+                    v-if="isManualConvert(item) || hasConvertOverride(item)"
                   >
                     <NumberStepper
                       :model-value="convertOverrideModel(item)"
@@ -655,7 +647,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     type="button"
                     class="convert-clear"
                     :disabled="!isEnabled(item)"
-                    @click="showConvertOverride[item.effect.id] = true"
+                    @click="setConvert(item, convertLiveBase(item))"
                   >
                     覆盖
                   </button>

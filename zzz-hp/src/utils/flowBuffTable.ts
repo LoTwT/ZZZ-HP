@@ -145,6 +145,11 @@ export function buildFlowBuffEffectTexts(
     attrDefaults?: Parameters<typeof resolveConvertValue>[1]
     panelSourceValues?: Parameters<typeof resolveConvertValue>[3]
     panelSourceValuesBySlot?: Record<number, Parameters<typeof resolveConvertValue>[3]>
+    /**
+     * 全局（「选择局内 Buff」）手填的转模基数，按效果 id 取；缺省/返回 undefined = 按面板或默认值。
+     * 与结算同一份输入：结算把 `BuffSelectionState.convertInputs` 作为覆盖值传给 `resolveConvertValue`。
+     */
+    convertInputFor?: (effect: CollectedEffect['effect']) => number | undefined
     skillTalentLevelsByAgent?: Record<string, Parameters<typeof resolveConvertValue>[4]>
     skillSubcategories?: NonNullable<
       Parameters<typeof formatBuffEffectResultText>[2]
@@ -181,7 +186,7 @@ export function buildFlowBuffEffectTexts(
       amount = resolveConvertValue(
         effect,
         options.attrDefaults ?? {},
-        null,
+        options.convertInputFor?.(effect) ?? null,
         panelSourceValues,
         agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
       )

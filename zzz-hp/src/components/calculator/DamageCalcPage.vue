@@ -93,6 +93,7 @@ import {
   buildDefaultBuffSelection,
   collectAllBuffEffects,
   createEmptyMultiSlotBuffSelection,
+  getBuffEffectConvertInput,
   getBuffEffectEnabled,
   isEnvironmentBuffSourceKey,
   mergeDefaultBuffSelectionIntoMulti,
@@ -1090,6 +1091,14 @@ const flowBuffEffectTexts = computed(() =>
       panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(buffPickerViewSlotIndex.value) ??
       undefined,
     panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+    // 选择器里手填的转模基数也要进表格文本：否则填了以后表格仍按面板显示（与结算不一致）
+    convertInputFor: (effect) =>
+      getBuffEffectConvertInput(
+        multiSlotBuffSelection,
+        buffPickerViewSlotIndex.value,
+        effect.id,
+        effect.applyTarget,
+      ),
     skillTalentLevelsByAgent,
     skillSubcategories: skillSubcategories.value,
   }),
