@@ -80,7 +80,8 @@
     "test:skill-flow-damage-analysis": "npx vite-node scripts/test-skill-flow-damage-analysis.mjs",
     "test:skill-flow-damage-drilldown": "npx vite-node scripts/test-skill-flow-damage-drilldown.mjs",
     "test:skill-flow-damage-records": "npx vite-node scripts/test-skill-flow-damage-records.mjs",
-    "test:flow-convert-override": "npx vite-node scripts/test-flow-convert-override.mjs"
+    "test:flow-convert-override": "npx vite-node scripts/test-flow-convert-override.mjs",
+    "test:extra-buff-contract": "npx vite-node scripts/test-extra-buff-contract.mjs"
   },
   "dependencies": {
     "html-to-image": "^1.11.13",
