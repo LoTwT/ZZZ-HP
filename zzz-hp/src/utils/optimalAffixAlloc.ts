@@ -1,5 +1,5 @@
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { ExtraBuffGain } from '@/types/extraBuff'
+import type { ExtraBuffApplySlot, ExtraBuffGain } from '@/types/extraBuff'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type {
   AgentBuffDoc,
@@ -1856,15 +1856,19 @@ export function withAffixLibraryExtraGains(
 ): OptimalEvalContext {
   if (!extraGains?.length) return ctx
   const applySlot = ctx.panelContext.mainSlotIndex
-  // 词条生成的增益绑定评估主角槽位；页级手工额外 Buff 的固定目标不被覆盖（`??` 只在缺失时兜底）
-  const tagged = extraGains.map((gain) => ({
-    ...gain,
-    applySlot: gain.applySlot ?? applySlot,
-    effects: gain.effects.map((effect) => ({
-      ...effect,
-      applyTarget: (gain.applySlot ?? applySlot) === 'team' ? ('team' as const) : ('self' as const),
-    })),
-  }))
+  /**
+   * 只重绑**词条生成**的卡片（`extraGainFromLibraryEntry` / `applyAllocatedAffixEffects` 产出，
+   * id 以 `affix-gain:` 开头）：页级手工额外 Buff 的固定目标保持不变（Spec §5.3 第 2 项）。
+   */
+  const tagged = extraGains.map((gain) => {
+    if (!gain.id.startsWith('affix-gain:')) return gain
+    return {
+      ...gain,
+      applySlot: applySlot as ExtraBuffApplySlot,
+      // 评估主角永远是具体槽位（不是全队），目标固定派生为 self
+      effects: gain.effects.map((effect) => ({ ...effect, applyTarget: 'self' as const })),
+    }
+  })
   return { ...ctx, extraGains: [...(ctx.extraGains ?? []), ...tagged] }
 }
 

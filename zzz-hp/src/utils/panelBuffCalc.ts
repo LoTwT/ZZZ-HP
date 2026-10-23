@@ -1190,6 +1190,8 @@ interface PackSourceOptions {
   sourceSlotIndex?: number | null
   /** 显式给出的来源面板值（例如来源不可用时全 0），优先于按槽位取 */
   panelSourceValuesOverride?: PanelSourceValues
+  /** 额外 Buff 运算包：不读选择器里的层数/转模输入 */
+  extraGainPack?: boolean
 }
 
 /** 来源不可用时的零值：只覆盖这些效果真正会读的 `from` 键，避免回落受益槽位的面板 */
@@ -1231,14 +1233,20 @@ function resolvePackMods(
     sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
   // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
   const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
+  const isExtraPack = sourceOptions?.extraGainPack === true
   return resolveEffectsToMods(effects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
     element: isMain ? skillCtx.element : slotElement,
     beneficiaryElement: resolveBeneficiaryElement(ctx),
     beneficiaryProfession,
-    stacksByEffectId: rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
-    convertInputs: rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
+    // 额外 Buff 不吃选择器的层数/转模输入，只吃**本行**覆盖（Spec §5.1 第 6 项）
+    stacksByEffectId: isExtraPack
+      ? rowOverlay?.stacksByEffectId
+      : (rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId),
+    convertInputs: isExtraPack
+      ? rowOverlay?.convertInputs
+      : (rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs),
     attrValues: ctx.attrValues,
     panelSourceValues,
     skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
@@ -2387,6 +2395,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
           panelSourceValuesOverride: extraSourceAvailable
             ? undefined
             : zeroSourceValuesFor(effects),
+          extraGainPack: true,
         }
       : undefined
     const mods = resolvePackModsViaEffectSpec(

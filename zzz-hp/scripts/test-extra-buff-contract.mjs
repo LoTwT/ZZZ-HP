@@ -316,7 +316,7 @@ console.log('\n[8] 词条入口：卡片绑定评估主角槽位（§7.2 第 22 
   const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
 
   const card = api.createExtraBuffGain({
-    id: 'affix-card',
+    id: 'affix-gain:test',
     name: '词条增益',
     applySlot: 2,
     effects: [createEmptyBuffEffect({ id: 'affix-card-eff', stat: 'atk', value: 30 })],
@@ -332,7 +332,7 @@ console.log('\n[8] 词条入口：卡片绑定评估主角槽位（§7.2 第 22 
     { panelContext: { ...panelCtx }, skillContext: panelCtx.skillContext },
     [card],
   )
-  check('词条卡片绑定评估主角槽位', bound.extraGains[0]?.applySlot, 1)
+  check('词条卡片绑定评估主角槽位', bound.extraGains[0]?.applySlot === 1, String(bound.extraGains[0]?.applySlot))
   const entries = buildBuffCatalog({
     teamSlots: panelCtx.teamSlots,
     agents: panelCtx.agents,
@@ -342,8 +342,200 @@ console.log('\n[8] 词条入口：卡片绑定评估主角槽位（§7.2 第 22 
     bangbooRefine: 1,
     environmentBuffs: [],
     extraGains: bound.extraGains,
-  }).entries.filter((entry) => entry.sourceKey === 'extra-affix-card')
-  check('词条卡片按评估主角槽位生效', JSON.stringify(entries[0]?.applicableSlots), '[1]')
+  }).entries.filter((entry) => entry.sourceKey === 'extra-affix-gain:test')
+  check('词条卡片按评估主角槽位生效', JSON.stringify(entries[0]?.applicableSlots) === '[1]', JSON.stringify(entries[0]?.applicableSlots))
+
+console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻击 1000/2000/3000）')
+{
+  const { collectPanelBuffMods, computeFinalPanel, buildBuffCatalog } = await import('../src/utils/panelBuffCalc.ts')
+  const { makePanelCtx, makePanel, testAgent, testSlot, dummyBangboo } = await import('./_effectPipelineHarness.mjs')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const jia = testAgent('a', { profession: '强攻', element: '电', name: '甲' })
+  const yi = testAgent('b', { profession: '支援', element: '火', name: '乙' })
+  const bing = testAgent('c', { profession: '支援', element: '冰', name: '丙' })
+  const slots = [testSlot('a'), testSlot('b'), testSlot('c')]
+  const agents = [jia, yi, bing]
+  const ctxFor = (mainSlotIndex, extraGains, extra = {}) =>
+    makePanelCtx({ teamSlots: slots, agents, mainSlotIndex, extraGains, ...extra })
+  const mk = (id, effect = {}, card = {}) =>
+    api.createExtraBuffGain({
+      id,
+      name: id,
+      applySlot: card.applySlot ?? 0,
+      sourceSlot: card.sourceSlot ?? 0,
+      effects: [createEmptyBuffEffect({ id: `${id}-e`, stat: 'atk', kind: 'fixed', value: 50, ...effect })],
+    })
+  const atkOf = (mainSlotIndex, extraGains, extra) =>
+    collectPanelBuffMods(ctxFor(mainSlotIndex, extraGains, extra)).atk ?? 0
+  const near = (a, b) => Math.abs(a - b) < 1e-6
+
+  // 1. 固定值
+  {
+    const g = mk('p1')
+    check('#1 甲增量 50', near(atkOf(0, [g]), 50), String(atkOf(0, [g])))
+    const finalAtk = computeFinalPanel(makePanel({ atk: 1000 }), ctxFor(0, [g])).finalPanel.atk
+    check('#1 最终攻击 1050', near(finalAtk, 1050), String(finalAtk))
+    check('#1 乙/丙 0', near(atkOf(1, [g]), 0) && near(atkOf(2, [g]), 0))
+  }
+
+  // 2. 受益槽位
+  {
+    const slot2 = mk('p2', {}, { applySlot: 1 })
+    check('#2 目标槽位2：0/50/0',
+      near(atkOf(0, [slot2]), 0) && near(atkOf(1, [slot2]), 50) && near(atkOf(2, [slot2]), 0))
+    const team = mk('p2t', {}, { applySlot: 'team' })
+    check('#2 全队：50/50/50',
+      near(atkOf(0, [team]), 50) && near(atkOf(1, [team]), 50) && near(atkOf(2, [team]), 50))
+  }
+
+  // 3. 槽位换人：只认 applySlot，不跟随具体角色
+  {
+    const swapped = testAgent('d', { profession: '强攻', element: '电', name: '丁' })
+    const card = mk('p3', {}, { applySlot: 1 })
+    const catalog = buildBuffCatalog({
+      teamSlots: [testSlot('a'), testSlot('d')],
+      agents: [jia, swapped],
+      wengines: [],
+      driveDiscs: [],
+      bangboo: dummyBangboo(),
+      bangbooRefine: 1,
+      environmentBuffs: [],
+      extraGains: [card],
+    }).entries.filter((entry) => entry.sourceKey === 'extra-p3')
+    check('#3 换人后仍为槽位 2', JSON.stringify(catalog[0]?.applicableSlots) === '[1]', JSON.stringify(catalog[0]?.applicableSlots))
+    const newAgentsCtx = makePanelCtx({
+      teamSlots: [testSlot('a'), testSlot('d')],
+      agents: [jia, swapped],
+      mainSlotIndex: 1,
+      extraGains: [mk('p3b', {}, { applySlot: 1 })],
+    })
+    check('#3 丁得到 +50', near(collectPanelBuffMods(newAgentsCtx).atk ?? 0, 50), String(collectPanelBuffMods(newAgentsCtx).atk))
+  }
+
+  // 4. 叠层
+  {
+    const stacked = (id, over) =>
+      mk(id, { kind: 'stacked', value: 50, valuePerStack: 10, maxStacks: 5, ...over })
+    check('#4 默认 3 层 → 30', near(atkOf(0, [stacked('p4a', { defaultStacks: 3 })]), 30), String(atkOf(0, [stacked('p4b', { defaultStacks: 3 })])))
+    check('#4 默认 1.33 层 → 13.3', near(atkOf(0, [stacked('p4c', { defaultStacks: 1.33 })]), 13.3))
+    check(
+      '#4 选择器残留层数 4 不改变结果',
+      near(atkOf(0, [stacked('p4d', { defaultStacks: 1.33 })], { buffSelection: { enabledIds: {}, stacksByEffectId: { 'p4d-e': 4 }, convertInputs: {} } }), 13.3),
+    )
+    check(
+      '#4 行级 1.66 层 → 16.6',
+      near(atkOf(0, [stacked('p4e', { defaultStacks: 1.33 })], { rowBuffOverride: { stacksByEffectId: { 'p4e-e': 1.66 } } }), 16.6),
+    )
+    check(
+      '#4 行级 8 层 → 夹到 5 层 = 50',
+      near(atkOf(0, [stacked('p4f', { defaultStacks: 1.33 })], { rowBuffOverride: { stacksByEffectId: { 'p4f-e': 8 } } }), 50),
+    )
+  }
+
+  // 5. 手动转模
+  {
+    const manual = (id, over) =>
+      mk(id, {
+        kind: 'convert',
+        value: 0,
+        convert: { from: 'atk', panelSource: 'manual', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null, ...over },
+      })
+    check('#5 defaultBase 1000 ×10% → 100', near(atkOf(0, [manual('p5a', { defaultBase: 1000 })]), 100))
+    check('#5 initialBase 200 / cap 60 → 60', near(atkOf(0, [manual('p5b', { initialBase: 200, cap: 60, defaultBase: 1000 })]), 60))
+    check('#5 defaultBase 100 < initialBase 200 → 0', near(atkOf(0, [manual('p5c', { defaultBase: 100, initialBase: 200 })]), 0))
+  }
+
+  // 6. 外部来源与受益对象分离
+  {
+    const srcCtx = { panelSourceValuesBySlot: new Map([[1, { external: { atk: 2000 }, final: { atk: 2000 } }]]) }
+    const external = (id, card) =>
+      mk(id, { kind: 'convert', value: 0, convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null } }, card)
+    check('#6 受益槽位1（甲）→ 200', near(atkOf(0, [external('p6a', { applySlot: 0, sourceSlot: 1 })], srcCtx), 200))
+    check('#6 受益槽位2 → 200', near(atkOf(1, [external('p6b', { applySlot: 1, sourceSlot: 1 })], srcCtx), 200))
+    check(
+      '#6 全队 → 三人都 200（不是 100/200/300）',
+      near(atkOf(0, [external('p6c', { applySlot: 'team', sourceSlot: 1 })], srcCtx), 200) &&
+        near(atkOf(1, [external('p6d', { applySlot: 'team', sourceSlot: 1 })], srcCtx), 200) &&
+        near(atkOf(2, [external('p6e', { applySlot: 'team', sourceSlot: 1 })], srcCtx), 200),
+    )
+  }
+
+  // 7. 非转模局内来源（final）
+  {
+    const finalCtx = { panelSourceValuesBySlot: new Map([[1, { external: { atk: 2000 }, final: { atk: 2500 } }]]) }
+    const conv = (id, source) =>
+      mk(id, { kind: 'convert', value: 0, convert: { from: 'atk', panelSource: source, ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null } }, { applySlot: 1, sourceSlot: 1 })
+    check('#7 final 2500 ×10% → 250', near(atkOf(1, [conv('p7a', 'final')], finalCtx), 250))
+    check('#7 改读 external → 200', near(atkOf(1, [conv('p7b', 'external')], finalCtx), 200))
+  }
+
+  // 8. 来源换人 / 空槽
+  {
+    const srcCtx = { panelSourceValuesBySlot: new Map([[1, { external: { atk: 4000 }, final: { atk: 4000 } }]]) }
+    const conv = (id, sourceSlot) =>
+      mk(id, { kind: 'convert', value: 0, convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null } }, { applySlot: 1, sourceSlot })
+    check('#8 来源 4000 ×10% → 400', near(atkOf(1, [conv('p8a', 1)], srcCtx), 400))
+    const emptyCtx = {
+      teamSlots: [testSlot('a'), testSlot('')],
+      agents: [jia],
+      mainSlotIndex: 1,
+      panelSourceValuesBySlot: new Map(),
+    }
+    check('#8 清空来源槽位 → 0（不回退甲）', near(atkOf(1, [conv('p8b', 1)], emptyCtx), 0))
+  }
+
+  // 9. 技能等级来源
+  {
+    const levels = {
+      a: { basic: 6, dodge: 6, assist: 6, special: 6, chainUltimate: 6 },
+      b: { basic: 12, dodge: 12, assist: 12, special: 12, chainUltimate: 12 },
+    }
+    const g = mk('p9', { kind: 'convert', value: 0, convert: { from: 'skillLevelBasic', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null } }, { applySlot: 0, sourceSlot: 1 })
+    check('#9 来源槽位普攻等级 12 → 1.2', near(atkOf(0, [g], { skillTalentLevelsByAgent: levels }), 1.2), String(atkOf(0, [g], { skillTalentLevelsByAgent: levels })))
+  }
+
+  // 10. 属性限定
+  {
+    const fire = mk('p10', { elementFilter: ['火'] }, { applySlot: 'team' })
+    check('#10 火限定：0/50/0',
+      near(atkOf(0, [fire]), 0) && near(atkOf(1, [fire]), 50) && near(atkOf(2, [fire]), 0))
+  }
+
+  // 11. 伤害类型
+  {
+    const types = mk('p11', { conditions: { damageTypes: ['normal', 'anomalyRelease'] } })
+    const anomalyCtx = (sub) => ({ skillContext: { damageKind: 'anomaly', anomalySubKind: sub, categoryId: 'basic', subcategoryId: null, coords: [{ category: 'basic', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } })
+    check('#11 普通直伤 50', near(atkOf(0, [types]), 50))
+    check('#11 异放 50', near(atkOf(0, [types], anomalyCtx('anomalyRelease')), 50))
+    check('#11 乱流 0', near(atkOf(0, [types], anomalyCtx('turbulence')), 0))
+    const all = mk('p11b', { conditions: null })
+    check('#11 空类型条件：三者都 50',
+      near(atkOf(0, [all]), 50) && near(atkOf(0, [all], anomalyCtx('anomalyRelease')), 50) && near(atkOf(0, [all], anomalyCtx('turbulence')), 50))
+  }
+
+  // 12. 招式多选
+  {
+    const twoTargets = mk('p12', {
+      stat: 'skillDmgBonus',
+      value: 30,
+      skillTargets: [{ category: 'basic', subcategoryId: null }, { category: 'ultimate', subcategoryId: null }],
+    })
+    const catCtx = (category) => ({ skillContext: { damageKind: 'direct', categoryId: category, subcategoryId: null, coords: [{ category, subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } })
+    const skillOf = (extra, ctx) => collectPanelBuffMods(ctxFor(0, [twoTargets], { ...ctx, ...extra })).skillDmgBonus ?? 0
+    check('#12 普攻 30', near(skillOf({}, catCtx('basic')), 30))
+    check('#12 终结技 30', near(skillOf({}, catCtx('ultimate')), 30))
+    check('#12 特殊技 0', near(skillOf({}, catCtx('special')), 0))
+    const oneTarget = mk('p12b', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }] })
+    check('#12 删除第二项后终结技 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], { skillContext: catCtx('ultimate').skillContext })).skillDmgBonus ?? 0, 0))
+    const anomalyWithBasic = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'anomaly', categoryId: 'basic', subcategoryId: null, coords: [{ category: 'basic', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
+    check('#12 异常坐标未勾异常生效 → 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], anomalyWithBasic)).skillDmgBonus ?? 0, 0))
+    const anomOn = mk('p12c', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }], appliesToAnomaly: true })
+    check('#12 勾选后 → 30', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
+    const anomSpecial = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'anomaly', categoryId: 'special', subcategoryId: null, coords: [{ category: 'special', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
+    check('#12 特殊技坐标即使勾选仍 0', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomSpecial)).skillDmgBonus ?? 0, 0))
+  }
+}
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
