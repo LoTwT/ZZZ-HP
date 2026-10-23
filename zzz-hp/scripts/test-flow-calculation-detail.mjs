@@ -10,7 +10,7 @@ import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDis
 import { pickEventDamage } from '../src/utils/damageEvent.ts'
 import { createDefaultAffixDriveDiscMainStats } from '../src/types/calculatorPanel.ts'
 import { invalidateBuffCatalogCache } from '../src/utils/panelBuffCalc.ts'
-import { makePanel, dummyBangboo, testAgent, testSlot } from './_effectPipelineHarness.mjs'
+import { makePanel, dummyBangboo, testAgent, testSlot, extraCard } from './_effectPipelineHarness.mjs'
 
 let passed = 0
 function check(name, action) {
@@ -65,7 +65,11 @@ const hits = resolveFlow({
   slots, teamSlots, findSkill: (id) => skills[id], findSkillGroup: () => group,
   resolveAgentProfession: (id) => agents.find((agent) => agent.id === id)?.profession,
 }).hits
-const gain = { id: 'allocated-dmg', name: '分配产生的局内增伤', stat: 'dmgBonus', value: 19, applySlot: 'team' }
+const gain = extraCard(
+  'allocated-dmg',
+  { stat: 'dmgBonus', value: 19, applyTarget: 'team' },
+  { name: '分配产生的局内增伤', applySlot: 'team' },
+)
 function context(overrides = {}) {
   invalidateBuffCatalogCache()
   return buildOptimalEvalContext({

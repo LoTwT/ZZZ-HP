@@ -139,7 +139,12 @@ console.log('\n[2] 词条 plan 不再扁平双算 penRate')
     energyRegen: 1.2,
   }, 0)
   check('局外只加 panel: 的 24', Math.abs(applied.external.penRate - 24) < 1e-6, `${applied.external.penRate}`)
-  check('gain:penRate 走 extraGains', applied.extraGains.some((g) => g.stat === 'penRate' && g.value === 24))
+  check(
+    'gain:penRate 走 extraGains',
+    applied.extraGains.some(
+      (gain) => gain.effects[0]?.stat === 'penRate' && gain.effects[0]?.value === 24,
+    ),
+  )
   check(
     '两实例不同 stage',
     applied.plan.byStage.external.length === 1 && applied.plan.byStage.combatPreConvert.length === 1,

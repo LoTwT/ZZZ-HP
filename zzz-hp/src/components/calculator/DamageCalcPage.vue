@@ -27,7 +27,7 @@ import {
 import OptimalAffixAllocSection from '@/components/calculator/OptimalAffixAllocSection.vue'
 import PanelCalcSection from '@/components/calculator/PanelCalcSection.vue'
 import ExtraBuffGainModal from '@/components/calculator/ExtraBuffGainModal.vue'
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import type { ExtraBuffGain } from '@/types/extraBuff'
 import EnemyEnvironmentSection from '@/components/calculator/EnemyEnvironmentSection.vue'
 import BuffModSourcesDisplay from '@/components/calculator/BuffModSourcesDisplay.vue'
 import TeamBuilderSection from '@/components/calculator/TeamBuilderSection.vue'

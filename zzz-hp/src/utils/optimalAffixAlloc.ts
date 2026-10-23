@@ -1,5 +1,5 @@
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import type { ExtraBuffGain } from '@/types/extraBuff'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type {
   AgentBuffDoc,
@@ -1541,12 +1541,25 @@ function affixCountsCacheKey(
  * 若把它们写进 `{ ...ctx, extraGains }` 再当缓存上下文，每次评估都会清整表。
  * 空数组 / undefined 不进键，默认库路径的键形态与改造前一致。
  */
+/** 稳定序列化（键排序）：缓存指纹不能受对象键顺序影响 */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${key}:${stableJson(record[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value ?? null)
+}
+
 function extraGainsCachePart(extraGains?: ExtraBuffGain[]): string {
   if (!extraGains?.length) return ''
   const parts = extraGains
     .map(
       (gain) =>
-        `${gain.id}:${gain.stat}:${gain.value}:${gain.applySituation ?? ''}:${gain.scope ?? ''}:${gain.skillCategory ?? ''}:${gain.skillSubcategoryId ?? ''}:${gain.appliesToAnomaly ? '1' : '0'}`,
+        `${gain.id}:${gain.applySlot}:${gain.sourceSlot}:${stableJson(gain.effects ?? [])}`,
     )
     .sort()
   return `|eg:${parts.join(',')}`
@@ -1843,10 +1856,14 @@ export function withAffixLibraryExtraGains(
 ): OptimalEvalContext {
   if (!extraGains?.length) return ctx
   const applySlot = ctx.panelContext.mainSlotIndex
+  // 词条生成的增益绑定评估主角槽位；页级手工额外 Buff 的固定目标不被覆盖（`??` 只在缺失时兜底）
   const tagged = extraGains.map((gain) => ({
     ...gain,
     applySlot: gain.applySlot ?? applySlot,
-    applyTarget: gain.applyTarget ?? 'self',
+    effects: gain.effects.map((effect) => ({
+      ...effect,
+      applyTarget: (gain.applySlot ?? applySlot) === 'team' ? ('team' as const) : ('self' as const),
+    })),
   }))
   return { ...ctx, extraGains: [...(ctx.extraGains ?? []), ...tagged] }
 }

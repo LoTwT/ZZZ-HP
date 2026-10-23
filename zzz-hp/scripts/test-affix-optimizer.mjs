@@ -1801,7 +1801,10 @@ console.log('\n[21] 词条分配：有条件 gain: 与局外词条同一套预�
     enabledByDefault: true,
   }
   const gain = extraGainFromLibraryEntry(scoped, 1)
-  check('库条目条件抄进 extraGain', sameScopes(gain?.scope, ['skill']) && gain.skillCategory === 'basic')
+  check(
+    '库条目条件抄进 extraGain',
+    gain?.effects[0]?.skillTargets?.[0]?.category === 'basic',
+  )
   check('条件摘要含普通攻击', affixEntryConditionSummary(scoped).includes('普通攻击'))
 
   const persisted = coerceAffixLibraryState({

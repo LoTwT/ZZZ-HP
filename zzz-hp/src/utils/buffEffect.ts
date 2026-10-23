@@ -272,6 +272,7 @@ export function createEmptyBuffEffect(
     appliesToAnomaly: overrides.appliesToAnomaly,
     enabledDefault: overrides.enabledDefault ?? true,
     note: overrides.note ?? '',
+    extraGain: overrides.extraGain,
   }
   const conditions = normalizeEffectConditionsForStat(overrides.conditions, overrides.scope, stat)
   if (conditions) effect.conditions = conditions

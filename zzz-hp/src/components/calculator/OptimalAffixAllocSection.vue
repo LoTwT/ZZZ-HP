@@ -15,7 +15,7 @@ import {
   readSingleQueryValue,
   buildQueryWithValues,
 } from '@/utils/panelUrlState'
-import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { type ExtraBuffGain } from '@/types/extraBuff'
 import BenefitCurvePanel from '@/components/calculator/BenefitCurvePanel.vue'
 import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart.vue'
 import IkModalShell from '@/components/common/IkModalShell.vue'

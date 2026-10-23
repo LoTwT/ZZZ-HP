@@ -173,7 +173,7 @@ console.log('\n[4] gain:inCombatAtkPercent 走 extraGains，与页级 extraGains
   const entry = affixEntry('g', 'gain:inCombatAtkPercent', 4)
   const input = entryRollsToEvalInput([entry], { g: 1 })
   check('gain: 不写进 deltas', input.deltas.inCombatAtkPercent == null)
-  check('gain: 合成一条 extraGain', input.extraGains.length === 1 && input.extraGains[0].value === 4)
+  check('gain: 合成一条 extraGain', input.extraGains.length === 1 && input.extraGains[0].effects[0]?.value === 4)
 
   const viaLib = evaluateAffixCounts(ctx, zeros, input.deltas, input.valuePerCount, input.extraGains)
   const viaPage = evaluateAffixCounts(
@@ -204,7 +204,11 @@ console.log('\n[5] 普攻 +15% 增伤：只改普攻，终结技不变')
   }
   const input = entryRollsToEvalInput([entry], { 'basic-dmg': 1 })
   const gain = extraGainFromLibraryEntry(entry, 1)
-  check('条件写进 extraGain', sameScopes(gain?.scope, ['skill']) && gain.skillCategory === 'basic')
+  const gainEffect = gain?.effects[0]
+  check(
+    '条件写进 extraGain',
+    gainEffect?.skillTargets?.[0]?.category === 'basic' && !gainEffect?.conditions,
+  )
   check('适配器带招式条件', sameEvalInput(input, entryRollsToEffectEvalInput([entry], { 'basic-dmg': 1 })))
 
   const ctxBasic = makeCtx({ skillContext: skillCtx('basic') })

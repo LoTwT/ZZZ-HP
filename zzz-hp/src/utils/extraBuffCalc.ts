@@ -1,167 +1,268 @@
+import type { BuffEffect, BuffScope } from '@/types/calculator'
 import type {
-  BuffEffect,
-  BuffScope,
-  BuffSkillTarget,
-  SkillCalcContext,
-  StaggerPhase,
-} from '@/types/calculator'
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
-import { buffScopeLabel, normalizeBuffScopes } from '@/utils/buffScope'
-import {
-  countTeamProfession,
-  createEmptyBuffEffect,
-  effectMatchesContext,
-  effectMatchesTeamProfessionGate,
-} from '@/utils/buffEffect'
+  ExtraBuffApplySlot,
+  ExtraBuffGain,
+  ExtraBuffSlotIndex,
+} from '@/types/extraBuff'
+import { buffScopeLabel } from '@/utils/buffScope'
+import { createEmptyBuffEffect, normalizeBuffEffect } from '@/utils/buffEffect'
+import { buildEffectRows } from '@/utils/buffEffectRows'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
 
-export type { ExtraBuffGain }
+export type { ExtraBuffApplySlot, ExtraBuffGain, ExtraBuffSlotIndex }
 
-export type ExtraBuffApplySlot = number | 'team'
+/** 默认卡片名（Spec §3.1 第 2 项） */
+const DEFAULT_EXTRA_GAIN_NAME = '自定义增益'
 
-/**
- * 额外 Buff 作用对象：全队，或固定槽位 0/1/2。
- * 旧数据 `applyTarget: 'self'`（跟编辑中角色走）视为角色1，避免切编辑者带动流程伤害。
- */
-export function resolveExtraGainApplySlot(
-  gain: Pick<ExtraBuffGain, 'applySlot' | 'applyTarget'>,
-): ExtraBuffApplySlot {
-  if (gain.applySlot === 'team' || gain.applyTarget === 'team') return 'team'
-  if (
-    typeof gain.applySlot === 'number' &&
-    Number.isInteger(gain.applySlot) &&
-    gain.applySlot >= 0 &&
-    gain.applySlot <= 2
-  ) {
-    return gain.applySlot
-  }
-  return 0
+function newGainId(): string {
+  return `extra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function isSlotIndex(value: unknown): value is ExtraBuffSlotIndex {
+  return value === 0 || value === 1 || value === 2
+}
+
+function readApplySlot(value: unknown): ExtraBuffApplySlot | null {
+  if (value === 'team') return 'team'
+  if (isSlotIndex(value)) return value
+  return null
+}
+
+function normalizeGainName(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return text || DEFAULT_EXTRA_GAIN_NAME
+}
+
+/** 深拷贝一条效果（不持有原对象里的数组/对象引用） */
+function cloneEffect(effect: BuffEffect): BuffEffect {
+  const clone: BuffEffect = {
+    ...effect,
+    skillTargets: effect.skillTargets?.map((item) => ({ ...item })),
+    elementFilter: Array.isArray(effect.elementFilter) ? [...effect.elementFilter] : effect.elementFilter,
+    convert: effect.convert ? { ...effect.convert } : undefined,
+    conditions: effect.conditions?.damageTypes
+      ? { damageTypes: [...effect.conditions.damageTypes] }
+      : undefined,
+    teamProfessionValues: effect.teamProfessionValues
+      ? [...effect.teamProfessionValues]
+      : effect.teamProfessionValues ?? null,
+  }
+  return clone
+}
+
+/** `applySlot` 的派生目标（Spec §3.1 第 7 项）：team → 'team'，数字 → 'self' */
+function applyTargetOf(applySlot: ExtraBuffApplySlot): BuffEffect['applyTarget'] {
+  return applySlot === 'team' ? 'team' : 'self'
+}
+
+/**
+ * 卡片结构校验：恰好一行、无字段冲突、效果 id 唯一且与卡片 id 不同（Spec §3.1 第 4–5 项）。
+ * 不通过返回原因文本，通过返回 null。
+ */
+function validateCardEffects(
+  cardId: string,
+  effects: readonly BuffEffect[],
+): string | null {
+  if (!effects.length) return 'effects 不能为空'
+  const ids = new Set<string>()
+  for (const effect of effects) {
+    if (!effect.id) return '底层效果缺少 id'
+    if (effect.id === cardId) return '底层效果 id 不能与卡片 id 相同'
+    if (ids.has(effect.id)) return '底层效果 id 重复'
+    ids.add(effect.id)
+  }
+  const rows = buildEffectRows(effects)
+  if (rows.length !== 1) return `effects 必须聚成恰好一行（实际 ${rows.length} 行）`
+  if (rows[0]!.issues.length) {
+    return `同一卡片内的条件不一致：${rows[0]!.issues.map((item) => item.label).join(' / ')}`
+  }
+  return null
+}
+
+/**
+ * 生成一张默认卡片（Spec §3.2 第 1 项）。
+ *
+ * 产物是**可编辑配置**：不承诺冗余字段已达到读取归一化后的形式；零值配置只在恢复时按共享规则处理。
+ * 覆盖值不符合 Spec §3.1 时抛 `TypeError`，不静默丢弃配置后返回默认卡片。
+ */
+export function createExtraBuffGain(overrides: Partial<ExtraBuffGain> = {}): ExtraBuffGain {
+  const id = typeof overrides.id === 'string' && overrides.id.trim() ? overrides.id.trim() : newGainId()
+  const applySlot = overrides.applySlot === undefined ? 0 : readApplySlot(overrides.applySlot)
+  if (applySlot == null) {
+    throw new TypeError(`额外 Buff 的作用槽位非法：${String(overrides.applySlot)}`)
+  }
+  const sourceSlot = overrides.sourceSlot === undefined ? 0 : overrides.sourceSlot
+  if (!isSlotIndex(sourceSlot)) {
+    throw new TypeError(`额外 Buff 的来源槽位非法：${String(sourceSlot)}`)
+  }
+
+  const rawEffects = overrides.effects
+  let effects: BuffEffect[]
+  if (Array.isArray(rawEffects) && rawEffects.length) {
+    effects = rawEffects.map((effect) =>
+      createEmptyBuffEffect({
+        ...effect,
+        applyTarget: applyTargetOf(applySlot),
+      }),
+    )
+  } else if (rawEffects != null && (!Array.isArray(rawEffects) || !rawEffects.length)) {
+    throw new TypeError('额外 Buff 的 effects 必须是非空数组')
+  } else {
+    effects = [
+      createEmptyBuffEffect({
+        stat: 'dmgBonus',
+        kind: 'fixed',
+        value: 0,
+        enabledDefault: true,
+        applyTarget: applyTargetOf(applySlot),
+      }),
+    ]
+  }
+
+  const issue = validateCardEffects(id, effects)
+  if (issue) throw new TypeError(`额外 Buff 结构不合法：${issue}`)
+
+  return {
+    id,
+    name: normalizeGainName(overrides.name),
+    applySlot,
+    sourceSlot,
+    effects,
+  }
+}
+
+/**
+ * 读取一条数据的归一化结果（Spec §3.2 第 2 项）。
+ *
+ * - 只接受**新结构**；旧扁平条目（顶层 stat/value）缺 effects → `null`（由上层计数丢弃）。
+ * - 底层效果走共享 `normalizeBuffEffect`；它返回 null（例如零值倍率修正）则整卡无效。
+ * - 已有的合法效果 id 保持不变；缺 id 由共享函数生成，不另加额外 Buff 专属拒绝规则。
+ * - 不把非法槽位静默改成本次编辑角色。
+ */
+export function normalizeExtraGain(raw: unknown): ExtraBuffGain | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const entry = raw as Record<string, unknown>
+  const id = typeof entry.id === 'string' ? entry.id.trim() : ''
+  if (!id) return null
+
+  const applySlot = readApplySlot(entry.applySlot)
+  if (applySlot == null) return null
+  if (!isSlotIndex(entry.sourceSlot)) return null
+
+  const rawEffects = entry.effects
+  if (!Array.isArray(rawEffects) || !rawEffects.length) return null
+
+  const effects: BuffEffect[] = []
+  for (const item of rawEffects) {
+    const normalized = normalizeBuffEffect(item)
+    if (!normalized) return null
+    effects.push({ ...normalized, applyTarget: applyTargetOf(applySlot) })
+  }
+
+  const issue = validateCardEffects(id, effects)
+  if (issue) return null
+
+  return {
+    id,
+    name: normalizeGainName(entry.name),
+    applySlot,
+    sourceSlot: entry.sourceSlot,
+    effects,
+  }
+}
+
+/**
+ * 批量归一化（Spec §3.2 第 3 项）：保留合法条目的原顺序，逐张计数丢弃。
+ * 后出现的重复卡片 id、跨卡片重复的效果 id，均整张丢弃并 +1。
+ */
+export function normalizeExtraGains(raw: unknown): {
+  gains: ExtraBuffGain[]
+  discardedCount: number
+} {
+  if (!Array.isArray(raw)) return { gains: [], discardedCount: 0 }
+  const gains: ExtraBuffGain[] = []
+  const cardIds = new Set<string>()
+  const effectIds = new Set<string>()
+  let discardedCount = 0
+  for (const item of raw) {
+    const gain = normalizeExtraGain(item)
+    if (!gain || cardIds.has(gain.id)) {
+      discardedCount += 1
+      continue
+    }
+    const conflict = gain.effects.some((effect) => effectIds.has(effect.id))
+    if (conflict) {
+      discardedCount += 1
+      continue
+    }
+    cardIds.add(gain.id)
+    for (const effect of gain.effects) effectIds.add(effect.id)
+    gains.push(gain)
+  }
+  return { gains, discardedCount }
+}
+
+/**
+ * 序列化（Spec §3.2 第 4 项）：只做完整深拷贝。
+ *
+ * 不归一化、不清零冗余值、不丢弃零值卡片、不生成新 id、不改顺序、不截断精度。
+ */
+export function serializeExtraGains(gains: readonly ExtraBuffGain[]): ExtraBuffGain[] {
+  return gains.map((gain) => ({
+    id: gain.id,
+    name: gain.name,
+    applySlot: gain.applySlot,
+    sourceSlot: gain.sourceSlot,
+    effects: gain.effects.map((effect) => cloneEffect(effect)),
+  }))
+}
+
+/** 受益槽位（Spec §3.2 第 5 项）：只读已归一化的 `applySlot` */
+export function resolveExtraGainApplySlot(
+  gain: Pick<ExtraBuffGain, 'applySlot'>,
+): ExtraBuffApplySlot {
+  return readApplySlot(gain?.applySlot) ?? 0
+}
+
+/** 该卡片是否作用于某个槽位（全队 = 0/1/2 全部命中） */
 export function extraGainAppliesToSlot(
-  gain: Pick<ExtraBuffGain, 'applySlot' | 'applyTarget'>,
+  gain: Pick<ExtraBuffGain, 'applySlot'>,
   slotIndex: number,
 ): boolean {
   const applySlot = resolveExtraGainApplySlot(gain)
-  return applySlot === 'team' || applySlot === slotIndex
+  if (applySlot === 'team') return isSlotIndex(slotIndex)
+  return applySlot === slotIndex
 }
 
-export function normalizeExtraGain<T extends ExtraBuffGain>(gain: T): T {
+/**
+ * 卡片 → 运行期效果（Spec §3.2 第 6 项）：每条底层效果一份深拷贝。
+ * 统一派生 `applyTarget` 并打上 `extraGain` 标记；不写死 `kind`、不缩减条件。
+ */
+export function extraGainToEffects(gain: ExtraBuffGain): BuffEffect[] {
   const applySlot = resolveExtraGainApplySlot(gain)
-  return {
-    ...gain,
-    applySlot,
-    applyTarget: applySlot === 'team' ? 'team' : 'self',
-  }
+  return gain.effects.map((effect) => ({
+    ...cloneEffect(effect),
+    applyTarget: applyTargetOf(applySlot),
+    extraGain: true,
+  }))
 }
 
+/**
+ * 卡片的目标展示名（界面/日志用）：全队，或「角色名（槽位 N）」，空槽位给「角色N」。
+ */
 export function extraGainApplySlotLabel(
-  gain: Pick<ExtraBuffGain, 'applySlot' | 'applyTarget'>,
+  gain: Pick<ExtraBuffGain, 'applySlot'>,
   teamSlots: Array<{ agentId?: string | null }>,
   agents: Array<{ id: string; name: string }>,
 ): string {
   const applySlot = resolveExtraGainApplySlot(gain)
   if (applySlot === 'team') return '全队'
   const slot = teamSlots[applySlot]
-  if (!slot) return `角色${applySlot + 1}`
-  return teamSlotDisplayLabel(slot, applySlot, agents)
+  const label = slot ? teamSlotDisplayLabel(slot, applySlot, agents) : `角色${applySlot + 1}`
+  return `${label}（槽位 ${applySlot + 1}）`
 }
 
-export function extraGainToEffect(gain: ExtraBuffGain): BuffEffect {
-  const applySlot = resolveExtraGainApplySlot(gain)
-  return createEmptyBuffEffect({
-    id: gain.id,
-    scope: normalizeBuffScopes(gain.scope),
-    applyTarget: applySlot === 'team' ? 'team' : 'self',
-    applySituation: gain.applySituation ?? 'global',
-    applyProfession: gain.applyProfession ?? null,
-    teamProfession: gain.teamProfession ?? null,
-    teamProfessionValues: gain.teamProfessionValues ?? null,
-    teamProfessionMinCount: gain.teamProfessionMinCount ?? null,
-    skillTargets: normalizeExtraGainSkillTargets(gain),
-    skillCategory: gain.skillCategory,
-    skillSubcategoryId: gain.skillSubcategoryId,
-    appliesToAnomaly: gain.appliesToAnomaly,
-    kind: 'fixed',
-    stat: gain.stat,
-    value: gain.value,
-    enabledDefault: true,
-    // 额外增益并入统一收集后，靠这个标志做到「加入即已勾选」（2026-09-24 阶段 3）
-    extraGain: true,
-  })
-}
-
-export function extraGainMatchesEvent(
-  gain: ExtraBuffGain,
-  skillCtx: SkillCalcContext,
-): boolean {
-  return effectMatchesContext(extraGainToEffect(gain), skillCtx)
-}
-
-export function extraGainMatchesProfession(
-  gain: Pick<{ applyProfession?: string | null }, 'applyProfession'>,
-  beneficiaryProfession: string | null | undefined,
-): boolean {
-  const required = gain.applyProfession?.trim()
-  if (!required) return true
-  const profession = String(beneficiaryProfession ?? '').trim()
-  return profession === required
-}
-
-export function extraGainMatchesTeamProfessionGate(
-  gain: Pick<
-    ExtraBuffGain,
-    'teamProfession' | 'teamProfessionValues' | 'teamProfessionMinCount' | 'value'
-  >,
-  teamSlots: Array<{ agentId?: string | null }>,
-  agents: Array<{ id: string; profession?: string | null }>,
-): boolean {
-  const required = gain.teamProfession?.trim()
-  if (!required) return true
-  const count = countTeamProfession(teamSlots, agents, required)
-  return effectMatchesTeamProfessionGate(gain, count)
-}
-
-export function resolveExtraGainValue(
-  gain: ExtraBuffGain,
-  teamSlots?: Array<{ agentId?: string | null }>,
-  agents?: Array<{ id: string; profession?: string | null }>,
-): number | null {
-  if (gain.teamProfession?.trim() && teamSlots && agents) {
-    if (!extraGainMatchesTeamProfessionGate(gain, teamSlots, agents)) return null
-  }
-  return gain.value
-}
-
-export type ExtraGainMergeOptions = {
-  /** 当前正在汇总面板的槽位 */
-  slotIndex: number
-  /** 当前正在汇总面板的 agentId */
-  slotAgentId: string
-  staggerPhase: StaggerPhase
-  resolveAgentProfession?: (agentId: string) => string | undefined
-  teamSlots?: Array<{ agentId?: string | null }>
-  agents?: Array<{ id: string; profession?: string | null; name?: string }>
-}
-
-/**
- * 额外增益走 BuffEffect 适配器再 `resolveEffectsToMods`。
- *
- * 勾选表强制全开：角色 Buff 的 `isEffectEnabled` 会把「有队内职业人数条件、未进勾选」
- * 默认关掉；额外增益没有勾选 UI，不能吃那条规则。
- */
+/** 旧口径的作用域文案（界面过渡期仍在用，额外 Buff 不再单独维护 scope 语义） */
 export function scopeLabel(scope: BuffScope | BuffScope[] | undefined | null): string {
   return buffScopeLabel(scope)
-}
-
-export function normalizeExtraGainSkillTargets(gain: ExtraBuffGain): BuffSkillTarget[] | undefined {
-  if (gain.skillCategory) {
-    return [
-      {
-        category: gain.skillCategory,
-        subcategoryId: gain.skillSubcategoryId ?? null,
-      },
-    ]
-  }
-  return undefined
 }

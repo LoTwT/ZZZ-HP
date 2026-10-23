@@ -1,4 +1,5 @@
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import type { ExtraBuffGain } from '@/types/extraBuff'
+import { createEmptyBuffEffect } from '@/utils/buffEffect'
 import { normalizeBuffScopes } from '@/utils/buffScope'
 import type { BuffStatKey, BuffStatModifiers, DriveDiscBuffDoc } from '@/types/calculator'
 import type { AffixCounts, AffixDriveDiscMainStats, PanelStats } from '@/types/calculatorPanel'
@@ -150,17 +151,23 @@ export function applyAllocatedAffixEffects(
     extraGains.push({
       id: inst.instanceId,
       name: inst.displayName ?? '词条增益',
-      stat: inst.stat as BuffStatKey,
-      value: inst.magnitude,
-      applySituation: inst.conditions.applySituation ?? 'global',
-      scope: normalizeBuffScopes(
-        inst.conditions.scope ?? (inst.conditions.skillTargets?.length ? 'skill' : 'general'),
-      ),
-      applyTarget: 'self',
-      applySlot,
-      skillCategory: inst.conditions.skillTargets?.[0]?.category,
-      skillSubcategoryId: inst.conditions.skillTargets?.[0]?.subcategoryId ?? null,
-      appliesToAnomaly: inst.conditions.appliesToAnomaly,
+      applySlot: applySlot as import('@/types/extraBuff').ExtraBuffApplySlot,
+      sourceSlot: 0,
+      effects: [
+        createEmptyBuffEffect({
+          stat: inst.stat as BuffStatKey,
+          kind: 'fixed',
+          value: inst.magnitude,
+          applyTarget: 'self',
+          applySituation: inst.conditions.applySituation ?? 'global',
+          scope: normalizeBuffScopes(
+            inst.conditions.scope ?? (inst.conditions.skillTargets?.length ? 'skill' : 'general'),
+          ),
+          skillTargets: inst.conditions.skillTargets ?? undefined,
+          appliesToAnomaly: inst.conditions.appliesToAnomaly,
+          enabledDefault: true,
+        }),
+      ],
     })
   }
 

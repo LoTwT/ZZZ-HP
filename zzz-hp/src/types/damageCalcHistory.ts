@@ -90,26 +90,8 @@ export interface DamageCalcPanelSnapshot {
    * （`PanelCalcSection` 的兼容分支）。新文件不再写它；彻底删除见代办 T23。
    */
   extraMods?: BuffStatModifiers
-  /** 额外 Buff 增益条目（优先于扁平 extraMods） */
-  extraGains?: Array<{
-    id: string
-    name: string
-    stat: keyof BuffStatModifiers
-    value: number
-    applySituation?: import('@/types/calculator').BuffApplySituation
-    /** 作用域（数组口径；历史数据里的单值字符串读时会归一化） */
-    scope?: import('@/types/calculator').BuffScope[]
-    applyTarget?: import('@/types/calculator').BuffApplyTarget
-    applySlot?: number | 'team'
-    skillCategory?: import('@/types/calculator').BuffSkillTargetId
-    skillSubcategoryId?: string | null
-    appliesToAnomaly?: boolean
-    applyProfession?: string | null
-    teamProfession?: string | null
-    teamProfessionValues?: Array<number | null> | null
-    /** @deprecated */
-    teamProfessionMinCount?: number | null
-  }>
+  /** 额外 Buff 卡片（类型定义唯一来源：`@/types/extraBuff`） */
+  extraGains?: import('@/types/extraBuff').ExtraBuffGain[]
   enemyInput: DamageCalcEnemyInputSnapshot
 }
 

@@ -52,10 +52,10 @@ import type { EnvironmentBuffEntry } from '@/utils/environmentBuffCalc'
 import { resolveAssetUrl } from '@/utils/gameData'
 import {
   extraGainAppliesToSlot,
-  extraGainToEffect,
+  extraGainToEffects,
   resolveExtraGainApplySlot,
-  type ExtraBuffGain,
 } from '@/utils/extraBuffCalc'
+import type { ExtraBuffGain, ExtraBuffSlotIndex } from '@/types/extraBuff'
 import {
   effectInstanceToBuffEffect,
   instantiateBuffEffect,
@@ -411,6 +411,8 @@ export function syncTeamProfessionAutoEnabled(
   }
 
   for (const item of effects) {
+    // 额外 Buff 不由选择器启用：不写 enabledIds / 层数 / 转模输入（Spec §5.1 第 6、8 项）
+    if (item.effect.extraGain) continue
     const effect = item.effect
     if (!effect.teamProfession?.trim()) continue
     const store = buffStoreForEffect(multi, slotIndex, effect.applyTarget)
@@ -1142,8 +1144,13 @@ export interface CollectedEffect {
    * 2026-09-24 起由收集器统一填（施工规格 `dev-docs/specs/buff-build-refactor-spec.md` §2.1）。
    */
   applicableSlots: number[]
-  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
+  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地 / 额外 Buff） */
   providerSlot: number | null
+  /**
+   * 额外 Buff 的**来源槽位**（读面板/技能等级的槽位）；非额外 Buff 不填。
+   * 用 `resolveCollectedEffectSourceSlot` 取值，别拿 `providerSlot` 冒充（会改变 restrictToSlotIndex 语义）。
+   */
+  extraGainSourceSlot?: ExtraBuffSlotIndex
 }
 
 function clampRefine(value: number) {
@@ -1763,22 +1770,28 @@ export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
       }
     }
   }
-  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。适用槽位用它自己的作用槽位折算；
-  // 提供者槽位 = null（无主）；行级例外由消费侧按 `extra-<id>` 判（键不变）。
+  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。**一条底层效果 = 一个条目**（Spec §5.1 第 1 项）；
+  // 适用槽位按卡片的 applySlot 折算；来源槽位写进 `extraGainSourceSlot`（providerSlot 仍为 null）；
+  // 行级例外由消费侧按 `extra-<id>` 判（键不变）。
   for (const gain of config.extraGains ?? []) {
     const applySlot = resolveExtraGainApplySlot(gain)
-    entries.push({
-      effect: extraGainToEffect(gain),
-      sourceKey: `extra-${gain.id}`,
-      sourceLabel: '额外 Buff',
-      providerName: gain.name || '额外 Buff',
-      providerAvatar: null,
-      group: '额外 Buff',
-      blockId: gain.id,
-      blockName: gain.name || '额外 Buff',
-      applicableSlots: applySlot === 'team' ? config.teamSlots.map((_, i) => i) : [applySlot],
-      providerSlot: null,
-    })
+    const applicableSlots =
+      applySlot === 'team' ? config.teamSlots.map((_, index) => index) : [applySlot]
+    for (const effect of extraGainToEffects(gain)) {
+      entries.push({
+        effect,
+        sourceKey: `extra-${gain.id}`,
+        sourceLabel: '额外 Buff',
+        providerName: gain.name || '额外 Buff',
+        providerAvatar: null,
+        group: '额外 Buff',
+        blockId: gain.id,
+        blockName: gain.name || '额外 Buff',
+        applicableSlots,
+        providerSlot: null,
+        extraGainSourceSlot: gain.sourceSlot,
+      })
+    }
   }
   const build: BuffBuild = { entries, key }
   // 淘汰策略沿用现有行为：超限删最旧
@@ -1894,6 +1907,17 @@ export function blockKeyOfCollected(item: CollectedEffect): string {
 }
 
 /**
+ * 收集条目的**来源槽位**（Spec §5.1 第 4 项）。
+ *
+ * 额外 Buff 用收集时写入的 `extraGainSourceSlot`；普通增益仍按 sourceKey 解析。
+ * 缺元数据返回 null（调用方按"来源不可用"处理，不回落当前受益槽位）。
+ */
+export function resolveCollectedEffectSourceSlot(item: CollectedEffect): number | null {
+  if (item.sourceKey.startsWith('extra-')) return item.extraGainSourceSlot ?? null
+  return parseSourceKeySlotIndex(item.sourceKey)
+}
+
+/**
  * 行级例外是否关掉了这个额外 Buff。
  *
  * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
@@ -1905,8 +1929,8 @@ export function isExtraGainDisabledByRowOverride(
 ): boolean {
   if (!override) return false
   if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
-  // 额外 Buff 的效果 id 就是 gain.id（见 extraGainToEffect），单条禁用也按它判
-  return (override.disabledEffectIds ?? []).includes(gain.id)
+  // 额外 Buff 的底层效果 id 见 `extraGainToEffects`；单条禁用按效果 id 判（卡片级键仍是 blockKey）
+  return (override.disabledEffectIds ?? []).some((effectId) => effectId === gain.id)
 }
 
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {
@@ -2353,7 +2377,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
           extraGainAppliesToSlot(gain, ctx.mainSlotIndex) &&
           !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
       )
-      .map((gain) => extraGainToEffect(gain))
+      .flatMap((gain) => extraGainToEffects(gain))
     sources.push({
       key: 'extra',
       label: '额外 Buff',
@@ -2786,6 +2810,8 @@ export function buildDefaultBuffSelection(
   const stacksByEffectId: Record<string, number> = {}
   const convertInputs: Record<string, number> = {}
   for (const item of collected) {
+    // 额外 Buff 直接参与计算，不进选择器状态（Spec §5.1 第 6、8 项）
+    if (item.effect.extraGain) continue
     // 危局 / Boss 场地 / 防线：目录默认不勾选；点效果块时按 enabledDefault + 队内职业人数开启
     // 非场地的队内职业人数条件：默认不勾，由 syncTeamProfessionAutoEnabled 按恰好 N 人写入
     const startEnabled = isEnvironmentBuffSourceKey(item.sourceKey)

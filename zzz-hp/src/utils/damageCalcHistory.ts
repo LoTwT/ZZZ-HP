@@ -29,7 +29,6 @@ import {
 } from '@/utils/schemePack'
 import { SCHEME_STORE_VERSION } from '@/types/damageCalcHistory'
 import type { AffixCounts, AffixDriveDiscMainStats, PanelStats } from '@/types/calculatorPanel'
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import {
   createDefaultAffixDriveDiscMainStats,
   createEmptyAffixCounts,
@@ -40,7 +39,6 @@ import {
   migrateLegacyPanelIntoSource,
   writeAffixInputsIntoSource,
 } from '@/utils/agentPanelSources'
-import { normalizeExtraGain } from '@/utils/extraBuffCalc'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
@@ -289,13 +287,13 @@ function sanitizeSchemePanelState(
   const ps = panelState as Record<string, unknown>
   const { baseDamageSource: _ignored, externalPanel, ...rest } = ps
   const nextExternalPanel = sanitizeSchemePanelLike(externalPanel)
-  const extraGains = Array.isArray(ps.extraGains)
-    ? ps.extraGains.map((item: unknown) => normalizeExtraGain(item as ExtraBuffGain))
-    : ps.extraGains
+  // 额外 Buff 的原始值原样保留：归一化只在 `PanelCalcSection.loadSnapshot`（唯一丢弃点）做，
+  // 这里删条或计数会让"跳过 N 条"丢失（Spec §6 第 3 项）。
+  const extraGains = ps.extraGains
 
   return {
     ...rest,
-    extraGains,
+    extraGains: extraGains as DamageCalcSchemePanelSnapshot['extraGains'],
     externalPanel: nextExternalPanel ?? externalPanel,
   } as DamageCalcSchemePanelSnapshot
 }

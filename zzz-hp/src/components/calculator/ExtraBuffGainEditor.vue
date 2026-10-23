@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import type {
   BuffApplySituation,
-  BuffApplyTarget,
   BuffScope,
   BuffSkillTargetId,
   BuffStatKey,
@@ -13,46 +12,18 @@ import {
   BUFF_SKILL_TARGET_OPTIONS,
 } from '@/types/calculator'
 import { BUFF_STAT_FIELDS, AGENT_ROLES, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatTeamProfessionGateLabel } from '@/utils/buffEffect'
+import { createEmptyBuffEffect, formatTeamProfessionGateLabel } from '@/utils/buffEffect'
 import {
+  createExtraBuffGain,
   extraGainApplySlotLabel,
-  normalizeExtraGain,
   resolveExtraGainApplySlot,
   scopeLabel,
   type ExtraBuffApplySlot,
+  type ExtraBuffGain,
 } from '@/utils/extraBuffCalc'
 import { hasBuffScope, normalizeBuffScopes } from '@/utils/buffScope'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
 import type { AgentBuffDoc } from '@/types/calculator'
-
-export interface ExtraBuffGain {
-  id: string
-  name: string
-  stat: BuffStatKey
-  value: number
-  /** 作用情况，默认全局 */
-  applySituation?: BuffApplySituation
-  /** 作用域（**数组**口径，多选；读时兼容单值字符串），默认通用 */
-  scope?: BuffScope[]
-  /** 作用目标；与 applySlot 同步，team=全队，self=指定槽位 */
-  applyTarget?: BuffApplyTarget
-  /** 作用槽位：'team' = 全队；0/1/2 = 角色1/2/3。旧 self 视为 0 */
-  applySlot?: ExtraBuffApplySlot
-  /** 受益职业；空 = 不限 */
-  applyProfession?: string | null
-  /** 队内职业人数条件；空 = 不限 */
-  teamProfession?: string | null
-  /** 启用的人数档（非 null = 该人数生效） */
-  teamProfessionValues?: Array<number | null> | null
-  /** @deprecated */
-  teamProfessionMinCount?: number | null
-  /** 招式 scope 时的大类（兼容字段） */
-  skillCategory?: BuffSkillTargetId
-  /** 招式 scope 时的小类；空 = 整大类 */
-  skillSubcategoryId?: string | null
-  /** 异常结算是否也吃这条效果（招式 scope） */
-  appliesToAnomaly?: boolean
-}
 
 const props = defineProps<{
   skillSubcategories?: Array<{
@@ -119,30 +90,39 @@ function setDraftTierOn(index: number, on: boolean) {
 
 function addGain() {
   const name = draftName.value.trim() || '自定义增益'
-  const gain: ExtraBuffGain = {
-    id: `extra-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    name,
+  // 界面过渡期：草稿表单 → 一张卡片 + 一条底层效果（P5 换成一维卡片 + 共享效果行）
+  const effect = createEmptyBuffEffect({
     stat: draftStat.value,
+    kind: 'fixed',
     value: Number.isFinite(draftValue.value) ? draftValue.value : 0,
+    applyTarget: draftApplySlot.value === 'team' ? 'team' : 'self',
     applySituation: draftSituation.value,
     // scope 数组口径（编辑器仍是单选，写出去统一数组）
     scope: normalizeBuffScopes(draftScope.value),
+    applyProfession: draftApplyProfession.value.trim() || null,
+    teamProfession: draftTeamProfession.value.trim() || null,
+    teamProfessionValues: draftTeamProfession.value.trim()
+      ? [...draftTeamProfessionValues.value]
+      : null,
+    skillTargets:
+      draftScope.value === 'skill'
+        ? [
+            {
+              category: draftSkillCategory.value,
+              subcategoryId: draftSkillSubcategoryId.value || null,
+            },
+          ]
+        : undefined,
+    appliesToAnomaly:
+      draftScope.value === 'skill' && draftAppliesToAnomaly.value ? true : undefined,
+    enabledDefault: true,
+  })
+  const gain = createExtraBuffGain({
+    name,
     applySlot: draftApplySlot.value,
-    applyTarget: draftApplySlot.value === 'team' ? 'team' : 'self',
-  }
-  if (draftApplyProfession.value.trim()) {
-    gain.applyProfession = draftApplyProfession.value.trim()
-  }
-  if (draftTeamProfession.value.trim()) {
-    gain.teamProfession = draftTeamProfession.value.trim()
-    gain.teamProfessionValues = [...draftTeamProfessionValues.value]
-  }
-  if (draftScope.value === 'skill') {
-    gain.skillCategory = draftSkillCategory.value
-    gain.skillSubcategoryId = draftSkillSubcategoryId.value || null
-    if (draftAppliesToAnomaly.value) gain.appliesToAnomaly = true
-  }
-  gains.value = [...gains.value, normalizeExtraGain(gain)]
+    effects: [effect],
+  })
+  gains.value = [...gains.value, gain]
   draftValue.value = 0
   draftSituation.value = 'global'
   draftScope.value = 'general'
@@ -159,18 +139,21 @@ function removeGain(id: string) {
 }
 
 function parseApplySlot(value: string): ExtraBuffApplySlot {
-  return value === 'team' ? 'team' : Number(value)
+  return value === 'team' ? 'team' : (Number(value) as ExtraBuffApplySlot)
 }
 
 function setGainApplySlot(id: string, value: string) {
   const applySlot = parseApplySlot(value)
   gains.value = gains.value.map((item) =>
     item.id === id
-      ? normalizeExtraGain({
+      ? {
           ...item,
           applySlot,
-          applyTarget: applySlot === 'team' ? 'team' : 'self',
-        })
+          effects: item.effects.map((effect) => ({
+            ...effect,
+            applyTarget: applySlot === 'team' ? ('team' as const) : ('self' as const),
+          })),
+        }
       : item,
   )
 }
@@ -179,31 +162,38 @@ function situationLabel(value?: BuffApplySituation) {
   return SITUATION_LABELS[value ?? 'global']
 }
 
+/** 列表摘要只看第一条底层效果（过渡期：一张卡片一条效果） */
+function primaryEffect(item: ExtraBuffGain) {
+  return item.effects[0]!
+}
+
 function skillTargetSummary(item: ExtraBuffGain): string {
-  if (!hasBuffScope(item.scope, 'skill')) return ''
+  const effect = primaryEffect(item)
+  if (!hasBuffScope(effect.scope, 'skill')) return ''
+  const category = effect.skillTargets?.[0]?.category ?? effect.skillCategory
+  const subcategoryId = effect.skillTargets?.[0]?.subcategoryId ?? effect.skillSubcategoryId
   const cat =
-    BUFF_SKILL_TARGET_OPTIONS.find((opt) => opt.id === item.skillCategory)?.label ??
-    item.skillCategory ??
-    '招式'
-  if (!item.skillSubcategoryId) return cat
-  const sub = props.skillSubcategories?.find((s) => s.id === item.skillSubcategoryId)
+    BUFF_SKILL_TARGET_OPTIONS.find((opt) => opt.id === category)?.label ?? category ?? '招式'
+  if (!subcategoryId) return cat
+  const sub = props.skillSubcategories?.find((s) => s.id === subcategoryId)
   return sub ? `${cat} · ${sub.name}` : cat
 }
 
 function gainMeta(item: ExtraBuffGain): string {
+  const effect = primaryEffect(item)
   const parts = [
-    scopeLabel(item.scope),
+    scopeLabel(effect.scope),
     extraGainApplySlotLabel(item, props.teamSlots ?? [], props.agents ?? []),
   ]
-  if (item.applyProfession?.trim()) {
-    parts.push(`职业·${item.applyProfession.trim()}`)
+  if (effect.applyProfession?.trim()) {
+    parts.push(`职业·${effect.applyProfession.trim()}`)
   }
-  const gate = formatTeamProfessionGateLabel(item)
+  const gate = formatTeamProfessionGateLabel(effect)
   if (gate) parts.push(gate)
-  parts.push(situationLabel(item.applySituation))
+  parts.push(situationLabel(effect.applySituation))
   const skill = skillTargetSummary(item)
   if (skill) parts.push(skill)
-  if (item.appliesToAnomaly) parts.push('异常也生效')
+  if (effect.appliesToAnomaly) parts.push('异常也生效')
   return parts.join(' · ')
 }
 </script>
@@ -325,15 +315,15 @@ function gainMeta(item: ExtraBuffGain): string {
           <span>
             {{
               buffStatFieldLabel(
-                BUFF_STAT_FIELDS.find((field) => field.key === item.stat) ?? {
-                  key: item.stat,
-                  label: item.stat,
+                BUFF_STAT_FIELDS.find((field) => field.key === primaryEffect(item).stat) ?? {
+                  key: primaryEffect(item).stat,
+                  label: primaryEffect(item).stat,
                   unit: 'flat',
                   hint: '',
                 },
               )
             }}
-            +{{ item.value }} · {{ gainMeta(item) }}
+            +{{ primaryEffect(item).value }} · {{ gainMeta(item) }}
           </span>
         </div>
         <select

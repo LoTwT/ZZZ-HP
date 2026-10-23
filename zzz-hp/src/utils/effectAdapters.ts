@@ -74,6 +74,7 @@ export function instantiateBuffEffect(
     defaultStacks: effect.defaultStacks,
     buffKind: effect.kind,
     legacyBuffEffect: effect,
+    extraGain: effect.extraGain,
   }
 }
 
@@ -105,6 +106,8 @@ export function effectInstanceToBuffEffect(instance: EffectInstance): BuffEffect
     convert: instance.convert,
     appliesToAnomaly: instance.conditions.appliesToAnomaly,
     enabledDefault: instance.enabledDefault,
+    // 运行期额外 Buff 标记必须过往返（Spec §5.1 第 8 项）
+    extraGain: instance.extraGain,
   })
 }
 

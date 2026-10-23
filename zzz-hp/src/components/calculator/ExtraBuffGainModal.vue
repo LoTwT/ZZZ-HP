@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import ExtraBuffGainEditor, {
-  type ExtraBuffGain,
-} from '@/components/calculator/ExtraBuffGainEditor.vue'
+import ExtraBuffGainEditor from '@/components/calculator/ExtraBuffGainEditor.vue'
+import type { ExtraBuffGain } from '@/types/extraBuff'
 import { useMaskClose } from '@/composables/useMaskClose'
 import type { SkillCategoryId } from '@/types/calculator'
 import type { AgentBuffDoc } from '@/types/calculator'
