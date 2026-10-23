@@ -41,6 +41,7 @@ import {
 } from '@/utils/buffStatZones'
 import { damageTypeLabel, damageTypesLabel, BUFF_DAMAGE_TYPE_IDS } from '@/utils/buffDamageTypes'
 import { canConfirmMerge, type EffectRow } from '@/utils/buffEffectRows'
+import type { ExtraBuffApplySlot, ExtraBuffSlotIndex } from '@/types/extraBuff'
 
 const props = defineProps<{
   row: EffectRow
@@ -49,6 +50,15 @@ const props = defineProps<{
   mergeMode?: boolean
   selected?: boolean
   onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
+  /**
+   * `catalog`（缺省）= 增益库编辑器；`extra` = 额外 Buff 卡片（一卡一行、目标按槽位）。
+   * extra 模式下隐藏块级操作（合并/拆开/对齐/默认启用/新建小类/行内删除），
+   * 目标控件换成「作用对象」，转模多一个「来源槽位」。
+   */
+  contextMode?: 'catalog' | 'extra'
+  applySlot?: ExtraBuffApplySlot
+  sourceSlot?: ExtraBuffSlotIndex
+  slotOptions?: Array<{ value: ExtraBuffSlotIndex; label: string }>
 }>()
 
 const emit = defineEmits<{
@@ -59,12 +69,24 @@ const emit = defineEmits<{
   'confirm-merge': []
   align: []
   'toggle-select': []
+  'update:applySlot': [value: ExtraBuffApplySlot]
+  'update:sourceSlot': [value: ExtraBuffSlotIndex]
 }>()
 
 const calculatorBuffStore = useCalculatorBuffStore()
 const { agents, skillSubcategories } = storeToRefs(calculatorBuffStore)
 
 const first = computed(() => props.row.effects[0]!)
+/** 额外 Buff 卡片模式：一卡一行，卡片级操作在卡片头部，不在这里 */
+const isExtraMode = computed(() => props.contextMode === 'extra')
+const applySlotModel = computed(() => String(props.applySlot ?? 0))
+function onApplySlotChange(event: Event) {
+  const raw = (event.target as HTMLSelectElement).value
+  emit('update:applySlot', raw === 'team' ? 'team' : (Number(raw) as ExtraBuffSlotIndex))
+}
+function onSourceSlotChange(event: Event) {
+  emit('update:sourceSlot', Number((event.target as HTMLSelectElement).value) as ExtraBuffSlotIndex)
+}
 const zone = computed(() => props.row.zone)
 const allowedTypes = computed(() =>
   zone.value ? allowedDamageTypesOf(zone.value) : undefined,
@@ -598,9 +620,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <div class="effect-title">
         <strong>{{ rowTitle }}</strong>
-        <span v-if="memberCount > 1" class="badge">{{ memberCount }} 条</span>
-        <span v-if="row.groupId" class="badge badge-group">组</span>
-        <span v-else-if="row.heuristic" class="badge badge-ungrouped">未分组</span>
+        <span v-if="!isExtraMode && memberCount > 1" class="badge">{{ memberCount }} 条</span>
+        <span v-if="!isExtraMode && row.groupId" class="badge badge-group">组</span>
+        <span v-else-if="!isExtraMode && row.heuristic" class="badge badge-ungrouped">未分组</span>
         <span v-if="row.issues.length" class="badge badge-warn">⚠ 不一致</span>
       </div>
 
@@ -608,7 +630,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <span class="summary-value">{{ amountText }}</span>
 
-      <div class="effect-actions">
+      <div v-if="!isExtraMode" class="effect-actions">
         <button
           v-if="canConfirmMerge(row)"
           type="button"
@@ -629,14 +651,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </div>
     </header>
 
-    <p v-if="row.issues.length" class="row-warn">
+    <p v-if="!isExtraMode && row.issues.length" class="row-warn">
       <span>⚠ {{ row.issues.map((issue) => issue.label).join(' / ') }}不一致</span>
       <button type="button" class="ghost-btn" @click="emit('align')">一键对齐</button>
     </p>
 
     <div class="row-body">
       <div class="body-main">
-        <p v-if="memberCount > 1" class="member-line">
+        <p v-if="!isExtraMode && memberCount > 1" class="member-line">
           <span class="muted">组内：</span>
           <span v-for="(label, index) in memberLabels" :key="index" class="member-chip">{{ label }}</span>
         </p>
@@ -645,7 +667,20 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <div class="cond-line">
           <span class="line-label">条件</span>
 
-          <label v-if="!lockApplyTarget" class="inline-field">
+          <label v-if="isExtraMode" class="inline-field">
+            <span>作用对象</span>
+            <select :value="applySlotModel" @change="onApplySlotChange">
+              <option value="team">全队</option>
+              <option
+                v-for="opt in slotOptions ?? []"
+                :key="`slot-${opt.value}`"
+                :value="String(opt.value)"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
+          <label v-else-if="!lockApplyTarget" class="inline-field">
             <span>目标</span>
             <select v-model="applyTarget">
               <option value="self">自身</option>
@@ -800,7 +835,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                   <button type="button" class="ghost-btn" @click="onAddSkillTarget">
                     ＋ 添加动作
                   </button>
-                  <button type="button" class="ghost-btn" @click="onCreateSubcatFromMenu">
+                  <button
+                    v-if="!isExtraMode"
+                    type="button"
+                    class="ghost-btn"
+                    @click="onCreateSubcatFromMenu"
+                  >
                     ＋ 新建小类
                   </button>
                 </div>
@@ -858,7 +898,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </button>
           </span>
 
-          <span v-if="showEnabledDefault" class="inline-check">
+          <span v-if="!isExtraMode && showEnabledDefault" class="inline-check">
             <input v-model="enabledDefault" type="checkbox" />
             <span>默认启用</span>
             <button
@@ -977,6 +1017,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               "
             >
               <option v-for="opt in CONVERT_PANEL_SOURCE_OPTIONS" :key="opt.id" :value="opt.id">
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
+          <label
+            v-if="isExtraMode && (convert.panelSource ?? 'external') !== 'manual'"
+            class="inline-field"
+          >
+            <span>来源槽位</span>
+            <select :value="String(sourceSlot ?? 0)" @change="onSourceSlotChange">
+              <option
+                v-for="opt in slotOptions ?? []"
+                :key="`src-${opt.value}`"
+                :value="String(opt.value)"
+              >
                 {{ opt.label }}
               </option>
             </select>
