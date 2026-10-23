@@ -9,6 +9,15 @@ export interface BossInfoFieldBuffSet {
   effectBlocks?: import('@/types/calculator').BuffEffectBlock[] | null
 }
 
+/** 危局 Boss 多套弱点/抗性（怪物库维护，危局按 boss 名读取） */
+export interface BossInfoWeaknessSet {
+  id: string
+  label?: string | null
+  weakness?: string | null
+  resistance?: string | null
+  resistanceHigh?: string | null
+}
+
 export interface BossInfoRecord {
   id: number
   boss_name: string
@@ -28,6 +37,7 @@ export interface BossInfoRecord {
   field_buff_image?: string | null
   field_buff_effect_blocks?: import('@/types/calculator').BuffEffectBlock[] | null
   field_buff_sets?: BossInfoFieldBuffSet[] | null
+  weakness_sets?: BossInfoWeaknessSet[] | null
 }
 
 export interface BossInfoListResult {

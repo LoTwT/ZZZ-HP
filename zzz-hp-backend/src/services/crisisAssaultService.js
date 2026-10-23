@@ -20,6 +20,7 @@ import {
   normalizeFieldBuffSet,
   parseEffectBlocksJson,
 } from '../utils/environmentBuffSchema.js'
+import { parseWeaknessSetsJson, weaknessSetsFromLegacy } from '../utils/bossWeaknessSets.js'
 import {
   loadGlobalBuffEffectMap,
   resolveEffectBlocksForName,
@@ -109,6 +110,7 @@ function enrichBoss(boss, context = {}) {
     staggerMultiplierByName = new Map(),
     resistanceHighByName = new Map(),
     anomalyBarCoefficientByName = new Map(),
+    weaknessSetsByName = new Map(),
   } = context
   const baseHp =
     baseHpByName.get(boss.boss_name) ??
@@ -123,6 +125,8 @@ function enrichBoss(boss, context = {}) {
   const hpConverted = roundConvertedHp(convertHpToDefense953(hp, defense))
   const sets = fieldBuffSetsByName.get(boss.boss_name) ?? []
   const resolvedBuff = resolveFieldBuffFromSets(sets, boss.field_buff_set_id)
+  const weaknessSets = weaknessSetsByName.get(boss.boss_name) ?? []
+  const resolvedWeakness = resolveWeaknessSetFromSets(weaknessSets, boss.weakness_set_id)
   const fieldBuff = resolvedBuff
     ? {
         name: resolvedBuff.name,
@@ -153,9 +157,15 @@ function enrichBoss(boss, context = {}) {
     defense,
     level: Number(boss.level),
     room: boss.room,
-    weakness: boss.weakness,
-    resistance: boss.resistance,
-    resistance_high,
+    weakness: resolvedWeakness ? (resolvedWeakness.weakness ?? null) : boss.weakness,
+    resistance: resolvedWeakness ? (resolvedWeakness.resistance ?? null) : boss.resistance,
+    resistance_high: resolvedWeakness
+      ? (resolvedWeakness.resistanceHigh ?? null)
+      : resistance_high,
+    /** 当期绑定的弱点/抗性套（怪物库多套配置）；未配置多套时为 null */
+    weakness_set_id: resolvedWeakness?.id ?? null,
+    weakness_set_label: resolvedWeakness?.label ?? null,
+    weakness_sets: weaknessSets,
     anomaly_bar_coefficient,
     stagger_time,
     stagger_multiplier,
@@ -291,6 +301,37 @@ async function loadBossFieldBuffMap() {
   return map
 }
 
+/** boss_info 的多套弱点/抗性（危局特殊机制）；没有多套的 boss 不下发 */
+async function loadBossWeaknessSetsMap() {
+  await ensureEnvironmentBuffSchema()
+  const map = new Map()
+  try {
+    const [rows] = await pool.execute(
+      `SELECT boss_name, weakness, resistance, resistance_high, weakness_sets FROM boss_info`,
+    )
+    for (const row of rows) {
+      let sets = parseWeaknessSetsJson(row.weakness_sets)
+      if (!sets.length) sets = weaknessSetsFromLegacy(row)
+      if (!sets.length) continue
+      map.set(row.boss_name, sets)
+    }
+  } catch (err) {
+    console.warn('[crisis] loadBossWeaknessSetsMap fallback:', err.message)
+  }
+  return map
+}
+
+/** 从怪物库多套里选一套：指定 id 优先，未指定/找不到时用第一套（与场地 Buff 自动口径一致） */
+function resolveWeaknessSetFromSets(sets, setId) {
+  if (!Array.isArray(sets) || !sets.length) return null
+  const id = String(setId ?? '').trim()
+  if (id) {
+    const match = sets.find((set) => String(set.id) === id)
+    if (match) return match
+  }
+  return sets[0]
+}
+
 function normalizeRoomType(roomType) {
   const value = String(roomType || 'all').trim().toLowerCase()
   if (value === 'normal' || value === 'hard') return value
@@ -322,6 +363,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
   const staggerTimeByName = await loadBossStaggerTimeMap()
   const staggerMultiplierByName = await loadBossStaggerMultiplierMap()
   const resistanceHighByName = await loadBossResistanceHighMap()
+  const weaknessSetsByName = await loadBossWeaknessSetsMap()
   const anomalyBarCoefficientByName = await loadBossAnomalyCoefficientMap()
   const globalBuffEffectMap = await loadGlobalBuffEffectMap()
 
@@ -379,6 +421,7 @@ export async function getCrisisAssaultPhases({ includeHidden = false } = {}) {
           staggerMultiplierByName,
           resistanceHighByName,
           anomalyBarCoefficientByName,
+          weaknessSetsByName,
         }),
       )
       const normalBosses = bosses.filter((boss) => !boss.is_hard_room)

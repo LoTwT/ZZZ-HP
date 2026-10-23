@@ -55,6 +55,8 @@ export interface AdminMonsterSlotContext {
   hpCoeffManual?: boolean
   /** 危局当期绑定的场地 Buff 套 id */
   fieldBuffSetId?: string | null
+  /** 危局当期绑定的弱点/抗性套 id */
+  weaknessSetId?: string | null
 }
 
 export type DefenseMonsterCategory = 'minion' | 'elite' | 'boss'

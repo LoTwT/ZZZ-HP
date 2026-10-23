@@ -107,12 +107,17 @@ const CLASS2_STATS = new Set(
   CLASS2_ZONES.flatMap((zone) => Object.values(zone.statsByType ?? {})),
 )
 
-/** 类3：其余字段，保留现有 label（不改名） */
+/** 类3：其余字段，保留现有 label（异常掌控的固定/百分比两个乘区在管理端加后缀区分） */
 const CLASS3_ZONES: BuffStatZone[] = BUFF_STAT_FIELDS.filter(
   (field) => !CLASS1_STATS.has(field.key) && !CLASS2_STATS.has(field.key),
 ).map((field) => ({
   id: `zone:${field.key}`,
-  label: field.label,
+  label:
+    field.key === 'anomalyControl'
+      ? '异常掌控（数值）'
+      : field.key === 'anomalyControlPercent'
+        ? '异常掌控%'
+        : field.label,
   tier: 3,
   stat: field.key,
 }))

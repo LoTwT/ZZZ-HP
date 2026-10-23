@@ -34,6 +34,10 @@ export interface EnemySlot {
   resistance?: string
   /** 高抗性（40%）属性，为 resistance 的子集。见 dev-docs/boss-resistance-level.md */
   resistanceHigh?: string
+  /** 危局多套弱点/抗性的当期绑定 id（怪物库配置）；null 表示沿用单套字段 */
+  weaknessSetId?: string | null
+  /** 绑定套的展示标签（如「第一阶段」），用于卡片/详情标注 */
+  weaknessSetLabel?: string | null
   /** 敌方失衡易伤区基础乘数（1.5 = 150%），来自 boss / boss_info */
   staggerMultiplier?: number | null
   /** 异常条系数（初始异常积蓄 = 基础异常条 × 系数），来自 boss_info；缺失时前端按 1 兜底 */

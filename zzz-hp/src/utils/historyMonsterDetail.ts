@@ -67,6 +67,54 @@ export function listMonsterAppearanceVersions(phases: PhaseData[], bossName: str
 }
 
 /**
+ * 从当前期往前找该怪物最近一次出现，取其弱点 / 抗性与期数标签。
+ * 只按 Boss 名 + 房间匹配（与场地 Buff 对比同口径）。
+ */
+export interface MonsterTraitSnapshot {
+  phaseLabel: string
+  weakness?: string
+  resistance?: string
+  resistanceHigh?: string
+}
+
+export function findPreviousMonsterTraits(
+  phases: PhaseData[],
+  currentPhaseIndex: number,
+  key: MonsterLookupKey,
+): MonsterTraitSnapshot | null {
+  if (!key.bossName) return null
+  for (let index = currentPhaseIndex - 1; index >= 0; index--) {
+    const phase = phases[index]
+    if (!phase) continue
+    const enemy = phase.enemies.find((item) => matchesLookupKey(item, key))
+    if (!enemy) continue
+    const weakness = enemy.weakness?.trim() ?? ''
+    const resistance = enemy.resistance?.trim() ?? ''
+    if (!weakness && !resistance) continue
+    return {
+      phaseLabel: buildPhaseLabel(phase),
+      weakness,
+      resistance,
+      resistanceHigh: enemy.resistanceHigh,
+    }
+  }
+  return null
+}
+
+/** 弱点 / 抗性是否发生变化（仅比较有内容的一侧） */
+export function isMonsterTraitsChanged(
+  previous: MonsterTraitSnapshot | null | undefined,
+  current: { weakness?: string; resistance?: string; resistanceHigh?: string } | null | undefined,
+): boolean {
+  if (!previous || !current) return false
+  return (
+    (previous.weakness ?? '') !== (current.weakness ?? '') ||
+    (previous.resistance ?? '') !== (current.resistance ?? '') ||
+    (previous.resistanceHigh ?? '') !== (current.resistanceHigh ?? '')
+  )
+}
+
+/**
  * 从当前期往前找最近的、场地 Buff 非空的该怪物出现，取其场地 Buff 与期数标签。
  * 往前不存在带内容的场地 Buff 时返回 null。
  */

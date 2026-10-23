@@ -18,6 +18,8 @@ const props = defineProps<{
   skillSubcategories?: SkillSubcategory[] | null
   /** 往期详情等：无套卡、紧凑单行效果 */
   compact?: boolean
+  /** 只展示效果块注释，不展示结构化增益条目 */
+  notesOnly?: boolean
 }>()
 
 const buffStore = useCalculatorBuffStore()
@@ -37,7 +39,9 @@ onMounted(() => {
 
 const displayBlocks = computed(() => {
   if (props.blocks?.length) {
-    return props.blocks.filter((block) => block.effects?.length)
+    return props.blocks.filter((block) =>
+      props.notesOnly ? Boolean(block.note?.trim()) : Boolean(block.effects?.length),
+    )
   }
   if (props.effects?.length) {
     return [
@@ -88,7 +92,10 @@ function showBlockHead(block: BuffEffectBlock) {
   <div
     v-if="displayBlocks.length"
     class="effect-blocks-display"
-    :class="{ 'effect-blocks-display--compact': compact }"
+    :class="{
+      'effect-blocks-display--compact': compact,
+      'effect-blocks-display--notes-only': notesOnly,
+    }"
   >
     <article
       v-for="block in displayBlocks"
@@ -103,7 +110,7 @@ function showBlockHead(block: BuffEffectBlock) {
           <BuffRichText :text="block.note" />
         </p>
       </header>
-      <ul class="effect-block-list">
+      <ul v-if="!notesOnly" class="effect-block-list">
         <li v-for="effect in block.effects" :key="effect.id" class="effect-item">
           <span v-if="situationLabel(effect)" class="effect-situation">{{
             situationLabel(effect)
@@ -218,6 +225,12 @@ function showBlockHead(block: BuffEffectBlock) {
   padding-bottom: 0;
   border-bottom: none;
   gap: 0.1rem;
+}
+
+/* 注释与结构化增益之间：仅有注释时加分割线，避免空注释出现悬空线 */
+.effect-blocks-display--compact .effect-block-head:has(.effect-block-note):has(+ .effect-block-list) {
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border, currentColor) 55%, transparent);
 }
 
 .effect-blocks-display--compact .effect-block-name {

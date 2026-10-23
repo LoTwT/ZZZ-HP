@@ -20,11 +20,17 @@ import {
   mirrorFieldBuffLegacyColumns,
   normalizeFieldBuffSet,
 } from '../utils/environmentBuffSchema.js'
+import {
+  mirrorWeaknessLegacyColumns,
+  parseWeaknessSetsJson,
+  serializeWeaknessSets,
+  weaknessSetsFromLegacy,
+} from '../utils/bossWeaknessSets.js'
 
 const BOSS_INFO_CATALOGS = new Set(['crisis', 'defense', 'deduction'])
 
 const BOSS_INFO_COLUMNS = `id, boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
-  field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets`
+  field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets, weakness_sets`
 
 function resolveIncomingFieldBuffSets(payload) {
   if ('field_buff_sets' in payload) {
@@ -72,14 +78,20 @@ function normalizeBossInfo(payload) {
   const setsOrNull = resolveIncomingFieldBuffSets(payload)
   const sets = setsOrNull ?? []
   const legacy = mirrorFieldBuffLegacyColumns(sets)
+  const weaknessSetsProvided = Object.prototype.hasOwnProperty.call(payload, 'weakness_sets')
+  const weaknessSets = weaknessSetsProvided ? parseWeaknessSetsJson(payload.weakness_sets) : []
+  // 多套是权威来源：第一套同时镜像回基础三列，旧读路径继续可用
+  const mirroredWeakness = mirrorWeaknessLegacyColumns(weaknessSets)
 
   return {
     boss_name: String(payload.boss_name ?? '').trim(),
     defense: Number(payload.defense ?? 0),
     level: Number(payload.level ?? 1),
-    weakness: asText(payload.weakness),
-    resistance: asText(payload.resistance),
-    resistance_high: asText(payload.resistance_high),
+    weakness: weaknessSets.length ? mirroredWeakness.weakness : asText(payload.weakness),
+    resistance: weaknessSets.length ? mirroredWeakness.resistance : asText(payload.resistance),
+    resistance_high: weaknessSets.length
+      ? mirroredWeakness.resistance_high
+      : asText(payload.resistance_high),
     boss_image: asText(payload.boss_image),
     crisis_base_hp,
     stagger_multiplier: normalizeStaggerMultiplier(
@@ -89,6 +101,8 @@ function normalizeBossInfo(payload) {
     stagger_time: normalizeStaggerTime(payload.stagger_time),
     anomaly_bar_coefficient: normalizeAnomalyBarCoefficient(payload.anomaly_bar_coefficient),
     field_buff_sets: serializeFieldBuffSets(sets),
+    weakness_sets: serializeWeaknessSets(weaknessSets),
+    _weaknessSetsProvided: weaknessSetsProvided,
     field_buff_name: legacy.field_buff_name,
     field_buff_text: legacy.field_buff_text,
     field_buff_image: legacy.field_buff_image,
@@ -116,7 +130,9 @@ function bossInfoDiffers(existing, incoming) {
     normalizeAnomalyBarCoefficient(existing.anomaly_bar_coefficient) !==
       normalizeAnomalyBarCoefficient(incoming.anomaly_bar_coefficient) ||
     JSON.stringify(existing.field_buff_sets ?? []) !==
-      JSON.stringify(parseFieldBuffSetsJson(incoming.field_buff_sets))
+      JSON.stringify(parseFieldBuffSetsJson(incoming.field_buff_sets)) ||
+    JSON.stringify(existing.weakness_sets ?? []) !==
+      JSON.stringify(parseWeaknessSetsJson(incoming.weakness_sets))
   )
 }
 
@@ -159,6 +175,9 @@ function mapBossInfoRow(row, { resolveAnomalyBarDefault = true } = {}) {
     field_buff_text: mirrored.field_buff_text,
     field_buff_image: mirrored.field_buff_image,
     field_buff_effect_blocks: parseEffectBlocksJson(mirrored.field_buff_effect_blocks),
+    weakness_sets: parseWeaknessSetsJson(row.weakness_sets).length
+      ? parseWeaknessSetsJson(row.weakness_sets)
+      : weaknessSetsFromLegacy(row),
   }
 }
 
@@ -173,11 +192,14 @@ function preferFieldBuffSetImages(nextSetsSerialized, existingSets) {
 
 function mapBossInfoWriteResult(info) {
   const sets = parseFieldBuffSetsJson(info.field_buff_sets)
+  const weaknessSets = parseWeaknessSetsJson(info.weakness_sets)
   return {
     ...info,
     field_buff_sets: sets,
     field_buff_effect_blocks: parseEffectBlocksJson(info.field_buff_effect_blocks),
+    weakness_sets: weaknessSets.length ? weaknessSets : weaknessSetsFromLegacy(info),
     _setsProvided: undefined,
+    _weaknessSetsProvided: undefined,
   }
 }
 
@@ -368,6 +390,14 @@ export async function updateBossInfoById(id, payload) {
     info.field_buff_effect_blocks = legacy.field_buff_effect_blocks
   }
 
+  // 未传弱点/抗性多套时保留库中原值（期数同步 / 导入通常不带）
+  if (!info._weaknessSetsProvided) {
+    info.weakness_sets = serializeWeaknessSets(existing.weakness_sets)
+    if (info.weakness == null) info.weakness = existing.weakness
+    if (info.resistance == null) info.resistance = existing.resistance
+    if (info.resistance_high == null) info.resistance_high = existing.resistance_high
+  }
+
   info.boss_image = preferExistingImage(info.boss_image, existing.boss_image)
 
   await pool.execute(
@@ -375,7 +405,7 @@ export async function updateBossInfoById(id, payload) {
      SET boss_name = ?, defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?,
          crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?, anomaly_bar_coefficient = ?,
          field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
-         field_buff_sets = ?
+         field_buff_sets = ?, weakness_sets = ?
      WHERE id = ?`,
     [
       info.boss_name,
@@ -394,6 +424,7 @@ export async function updateBossInfoById(id, payload) {
       info.field_buff_image,
       info.field_buff_effect_blocks,
       info.field_buff_sets,
+      info.weakness_sets,
       bossId,
     ],
   )
@@ -422,9 +453,9 @@ export async function upsertBossInfo(payload) {
     const [result] = await pool.execute(
       `INSERT INTO boss_info (
          boss_name, defense, level, boss_image, weakness, resistance, resistance_high, crisis_base_hp, stagger_multiplier, stagger_time, anomaly_bar_coefficient,
-         field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets
+         field_buff_name, field_buff_text, field_buff_image, field_buff_effect_blocks, field_buff_sets, weakness_sets
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         info.boss_name,
         info.defense,
@@ -442,6 +473,7 @@ export async function upsertBossInfo(payload) {
         info.field_buff_image,
         info.field_buff_effect_blocks,
         info.field_buff_sets,
+        info.weakness_sets,
       ],
     )
 
@@ -482,6 +514,14 @@ export async function upsertBossInfo(payload) {
     info.field_buff_effect_blocks = legacy.field_buff_effect_blocks
   }
 
+  // 未传弱点/抗性多套时保留库中原值（期数同步 / 导入通常不带）
+  if (!info._weaknessSetsProvided) {
+    info.weakness_sets = serializeWeaknessSets(existing.weakness_sets)
+    if (info.weakness == null) info.weakness = existing.weakness
+    if (info.resistance == null) info.resistance = existing.resistance
+    if (info.resistance_high == null) info.resistance_high = existing.resistance_high
+  }
+
   // JSON 导入只带路径不带文件：缺文件时保留已有图，避免再次裂图
   info.boss_image = preferExistingImage(info.boss_image, existing.boss_image)
 
@@ -502,7 +542,7 @@ export async function upsertBossInfo(payload) {
     `UPDATE boss_info
      SET defense = ?, level = ?, boss_image = ?, weakness = ?, resistance = ?, resistance_high = ?, crisis_base_hp = ?, stagger_multiplier = ?, stagger_time = ?, anomaly_bar_coefficient = ?,
          field_buff_name = ?, field_buff_text = ?, field_buff_image = ?, field_buff_effect_blocks = ?,
-         field_buff_sets = ?
+         field_buff_sets = ?, weakness_sets = ?
      WHERE id = ?`,
     [
       info.defense,
@@ -520,6 +560,7 @@ export async function upsertBossInfo(payload) {
       info.field_buff_image,
       info.field_buff_effect_blocks,
       info.field_buff_sets,
+      info.weakness_sets,
       existing.id,
     ],
   )

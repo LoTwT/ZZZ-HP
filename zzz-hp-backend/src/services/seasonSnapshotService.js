@@ -15,6 +15,7 @@ import {
   parseEffectBlocksJson,
   parseFieldBuffSetsJson,
 } from '../utils/environmentBuffSchema.js'
+import { parseWeaknessSetsJson } from '../utils/bossWeaknessSets.js'
 
 export const SEASON_SNAPSHOT_KIND = 'zzz-hp-season-snapshot'
 
@@ -105,6 +106,7 @@ function mapBossRow(row) {
     stagger_time:
       row.stagger_time == null || row.stagger_time === '' ? null : Number(row.stagger_time),
     field_buff_set_id: row.field_buff_set_id ? String(row.field_buff_set_id) : null,
+    weakness_set_id: row.weakness_set_id ? String(row.weakness_set_id) : null,
     mode: row.mode === 'defense' || row.mode === 'deduction' || row.mode === 'crisis' ? row.mode : null,
   }
 }
@@ -171,6 +173,7 @@ function mapBossInfoExport(row) {
     field_buff_image: row.field_buff_image ?? null,
     field_buff_effect_blocks: row.field_buff_effect_blocks ?? null,
     field_buff_sets: parseFieldBuffSetsJson(row.field_buff_sets),
+    weakness_sets: parseWeaknessSetsJson(row.weakness_sets),
   }
 }
 
@@ -353,7 +356,12 @@ export function coerceSeasonSnapshot(raw) {
   if ((doc.startDate || doc.start_date) && doc.version && doc.phase) {
     return { kind: SEASON_SNAPSHOT_KIND, scheme: doc.mode === 'defense' ? 'defense' : 'crisis', bosses: [], buffs: [], dates: [doc], bossInfos: [] }
   }
-  if (doc.field_buff_name != null || doc.field_buff_sets != null || doc.crisis_base_hp != null) {
+  if (
+    doc.field_buff_name != null ||
+    doc.field_buff_sets != null ||
+    doc.weakness_sets != null ||
+    doc.crisis_base_hp != null
+  ) {
     return { kind: SEASON_SNAPSHOT_KIND, scheme: 'crisis', bosses: [], buffs: [], dates: [], bossInfos: [doc] }
   }
 
@@ -394,6 +402,7 @@ function bossImportPayload(row) {
     hp_coeff_percent: row.hp_coeff_percent ?? null,
     hp_coeff_manual: row.hp_coeff_percent != null && row.hp_coeff_percent !== '',
     field_buff_set_id: row.field_buff_set_id ?? null,
+    weakness_set_id: row.weakness_set_id ?? null,
   }
 
   // 显式 mode / recordScheme 优先，避免临界 9 位 ID 被当成防卫战
