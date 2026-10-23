@@ -26,7 +26,7 @@ import type {
 import {
   availableBuffGroupTabs,
   blockKeyOfCollected,
-  parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
@@ -279,7 +279,7 @@ function statLabel(stat: string): string {
 
 /** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const slotIndex = resolveCollectedEffectSourceSlot(item)
   const inputs = resolveInputs.value
   if (slotIndex != null && inputs?.panelSourceValuesBySlot?.[slotIndex]) {
     return inputs.panelSourceValuesBySlot[slotIndex]
@@ -289,7 +289,7 @@ function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | 
 
 /** 技能等级转模的来源角色等级表（按效果所属槽位取） */
 function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLevels> | null {
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const slotIndex = resolveCollectedEffectSourceSlot(item)
   const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
   return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
 }

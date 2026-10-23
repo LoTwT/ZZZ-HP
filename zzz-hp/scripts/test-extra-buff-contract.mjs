@@ -121,5 +121,59 @@ console.log('\n[4] extraGainToEffects：多效果与派生字段')
   }
 }
 
+console.log('\n[5] 来源槽位：转模读卡片来源槽位，来源不可用算 0（§5.1 第 4 项、§5.2 第 6 项）')
+{
+  const { collectPanelBuffMods, invalidateBuffCatalogCache } = await import('../src/utils/panelBuffCalc.ts')
+  const { makePanelCtx, testAgent, testSlot } = await import('./_effectPipelineHarness.mjs')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const convertCard = (sourceSlot) =>
+    api.createExtraBuffGain({
+      id: 'conv-src',
+      name: '来源转模',
+      applySlot: 'team',
+      sourceSlot,
+      effects: [
+        createEmptyBuffEffect({
+          id: 'conv-src-eff',
+          kind: 'convert',
+          stat: 'dmgBonus',
+          value: 0,
+          convert: {
+            from: 'atk',
+            panelSource: 'external',
+            ratioPercent: 10,
+            initialBase: 0,
+            cap: null,
+            defaultBase: null,
+          },
+        }),
+      ],
+    })
+
+  invalidateBuffCatalogCache()
+  const ctx = makePanelCtx({
+    teamSlots: [testSlot('a'), testSlot('b')],
+    agents: [testAgent('a'), testAgent('b')],
+    extraGains: [convertCard(1)],
+    panelSourceValuesBySlot: new Map([
+      [0, { external: { atk: 1000 }, final: { atk: 1000 } }],
+      [1, { external: { atk: 2000 }, final: { atk: 2000 } }],
+    ]),
+  })
+  const withSource = collectPanelBuffMods(ctx).dmgBonus ?? 0
+  check('来源槽位 2 攻击 2000 × 10% = 200（不吃主槽 1000）', withSource === 200, `实际 ${withSource}`)
+
+  invalidateBuffCatalogCache()
+  const emptySourceCtx = makePanelCtx({
+    teamSlots: [testSlot('a'), testSlot('')],
+    agents: [testAgent('a')],
+    extraGains: [convertCard(1)],
+    panelSourceValuesBySlot: new Map([[0, { external: { atk: 1000 }, final: { atk: 1000 } }]]),
+  })
+  const noSource = collectPanelBuffMods(emptySourceCtx).dmgBonus ?? 0
+  check('来源槽位无角色 → 0，不回退受益槽位面板', noSource === 0, `实际 ${noSource}`)
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

@@ -1184,16 +1184,40 @@ function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
   return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
 }
 
+/** 运算包的来源侧覆盖：额外 Buff 的来源槽位与"来源不可用"的显式零值（Spec §5.1 第 4 项、§5.2 第 6 项） */
+interface PackSourceOptions {
+  /** 读面板/技能等级用的来源槽位（与"受益槽位"无关） */
+  sourceSlotIndex?: number | null
+  /** 显式给出的来源面板值（例如来源不可用时全 0），优先于按槽位取 */
+  panelSourceValuesOverride?: PanelSourceValues
+}
+
+/** 来源不可用时的零值：只覆盖这些效果真正会读的 `from` 键，避免回落受益槽位的面板 */
+function zeroSourceValuesFor(effects: readonly BuffEffect[]): PanelSourceValues {
+  const zero: Partial<Record<CharacterAttrKey, number>> = {}
+  for (const effect of effects) {
+    const convert = effect.convert
+    if (!convert || effect.kind !== 'convert') continue
+    if (isSkillConvertFromKey(convert.from)) continue
+    zero[convert.from] = 0
+  }
+  return { external: { ...zero }, final: { ...zero } }
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
   ctx: PanelCalcContext,
   slotIndex?: number,
+  sourceOptions?: PackSourceOptions,
 ): BuffStatModifiers {
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
+  const sourceSlotIndex = sourceOptions?.sourceSlotIndex ?? slotIndex
   let panelSourceValues = ctx.panelSourceValues
-  if (slotIndex != null && ctx.panelSourceValuesBySlot?.has(slotIndex)) {
-    panelSourceValues = ctx.panelSourceValuesBySlot.get(slotIndex)
+  if (sourceOptions?.panelSourceValuesOverride) {
+    panelSourceValues = sourceOptions.panelSourceValuesOverride
+  } else if (sourceSlotIndex != null && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
+    panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
   }
   const slotElement =
     slotIndex != null
@@ -1204,7 +1228,7 @@ function resolvePackMods(
   )?.profession
   // 技能等级转模：取「效果来源角色」的等级（self/team 效果都由来源槽位提供）
   const slotAgentId =
-    slotIndex != null ? ctx.teamSlots[slotIndex]?.agentId : undefined
+    sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
   // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
   const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   return resolveEffectsToMods(effects, {
@@ -1243,12 +1267,13 @@ export function resolvePackModsViaEffectSpec(
   isMain: boolean,
   ctx: PanelCalcContext,
   slotIndex?: number,
+  sourceOptions?: PackSourceOptions,
 ): BuffStatModifiers {
   if (!effects.length) return createEmptyBuffStatModifiers()
   const reconstructed = effects.map((effect) =>
     effectInstanceToBuffEffect(instantiateBuffEffect(effect, { sourceKey: 'buff' })),
   )
-  return resolvePackMods(reconstructed, isMain, ctx, slotIndex)
+  return resolvePackMods(reconstructed, isMain, ctx, slotIndex, sourceOptions)
 }
 
 export function collectSlotDriveDiscEffects(
@@ -2335,7 +2360,29 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
     const effects = items.map((item) => item.effect)
     const slotIndex = key === 'bangboo' ? ctx.mainSlotIndex : parseSourceKeySlotIndex(first.sourceKey)
     const isMain = slotIndex == null || slotIndex === ctx.mainSlotIndex
-    const mods = resolvePackModsViaEffectSpec(effects, isMain, ctxForResolve, slotIndex ?? undefined)
+    /**
+     * 额外 Buff：受益槽位由 `applicableSlots` 决定，**来源槽位**由卡片单独给（Spec §5.1 第 4 项）。
+     * 来源不可用时按显式零值算，不回退到受益槽位的面板（§5.2 第 6 项）。
+     */
+    const isExtraPack = first.sourceKey.startsWith('extra-')
+    const extraSourceSlot = isExtraPack ? (first.extraGainSourceSlot ?? null) : null
+    const extraSourceAvailable =
+      extraSourceSlot != null && Boolean(ctx.teamSlots[extraSourceSlot]?.agentId)
+    const sourceOptions = isExtraPack
+      ? {
+          sourceSlotIndex: extraSourceSlot,
+          panelSourceValuesOverride: extraSourceAvailable
+            ? undefined
+            : zeroSourceValuesFor(effects),
+        }
+      : undefined
+    const mods = resolvePackModsViaEffectSpec(
+      effects,
+      isMain,
+      ctxForResolve,
+      slotIndex ?? undefined,
+      sourceOptions,
+    )
     if (!hasNonZeroBuffMods(mods) && !effects.length && !first.blockNote) continue
     sources.push({
       key,

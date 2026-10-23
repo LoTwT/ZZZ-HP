@@ -21,7 +21,7 @@ import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue } from
 import {
   blockKeyOfCollected,
   getBuffEffectStacks,
-  parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
   type BuffSelectionState,
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
@@ -166,7 +166,7 @@ export function buildFlowBuffEffectText(
   rowOverride?: FlowBuffOverride | null,
 ): string {
   const effect = item.effect
-  const sourceSlot = parseSourceKeySlotIndex(item.sourceKey)
+  const sourceSlot = resolveCollectedEffectSourceSlot(item)
   let amount = 0
   if (effect.kind === 'stacked' || effect.stackable) {
     // ⚠️ 与局内 Buff 勾选器同一套调用：getBuffEffectStacks(全队勾选对象, 槽位, 效果 id, 作用目标, 兜底值)。
@@ -265,7 +265,7 @@ export function buildFlowBuffTableColumns(input: {
   const slotCount = input.slotLabels.length
   const groups = new Map<string, FlowBuffTableColumn[]>()
   for (const item of input.items ?? []) {
-    const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+    const slotIndex = resolveCollectedEffectSourceSlot(item)
     const isExtra = item.sourceKey.startsWith('extra-')
     const groupKey = isExtra
       ? 'extra'

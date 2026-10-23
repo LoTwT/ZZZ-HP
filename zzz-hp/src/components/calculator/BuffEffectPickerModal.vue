@@ -17,7 +17,7 @@ import {
   getBuffEffectStacks,
   isEnvironmentBuffGroup,
   isEnvironmentBuffSourceKey,
-  parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
   resolveEnvironmentBlockItemEnabled,
   setBuffEffectConvertInput,
   setBuffEffectEnabled,
@@ -54,7 +54,7 @@ const props = defineProps<{
 }>()
 
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const slotIndex = resolveCollectedEffectSourceSlot(item)
   if (slotIndex != null && props.panelSourceValuesBySlot?.[slotIndex]) {
     return props.panelSourceValuesBySlot[slotIndex]
   }
@@ -192,7 +192,7 @@ function skillTalentLevelsForItem(
 ): Partial<SkillTalentLevels> | null {
   const convert = item.effect.convert
   if (!convert || !isSkillConvertFromKey(convert.from)) return null
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const slotIndex = resolveCollectedEffectSourceSlot(item)
   const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
   return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
 }
