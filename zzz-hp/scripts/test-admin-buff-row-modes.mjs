@@ -37,6 +37,16 @@ function linesAround(needle, before = 14, after = 6) {
   return lines.slice(Math.max(0, index - before), index + after).join('\n')
 }
 
+/** 从标记所在行取到该 `<label>` 闭合为止（避免把紧随其后的另一分支也算进来） */
+function labelBlockOf(needle, before = 2) {
+  const lines = source.split(/\r?\n/)
+  const index = lines.findIndex((line) => line.includes(needle))
+  if (index < 0) return null
+  const end = lines.findIndex((line, i) => i > index && line.includes('</label>'))
+  if (end < 0) return null
+  return lines.slice(Math.max(0, index - before), end + 1).join('\n')
+}
+
 console.log('\n[1] 缺省模式（增益库）不受影响')
 {
   check(
@@ -86,7 +96,7 @@ console.log('\n[1] 缺省模式（增益库）不受影响')
 
 console.log('\n[2] extra 专属控件只在 extra 模式出现')
 {
-  const applyBlock = linesAround('<span>作用对象</span>', 3, 18)
+  const applyBlock = labelBlockOf('<span>作用对象</span>', 3)
   check('「作用对象」被 isExtraMode 关住', !!applyBlock && applyBlock.includes('v-if="isExtraMode"'))
   check(
     '「作用对象」选项含全队与槽位（不是只有自身/全队两项）',
@@ -100,6 +110,18 @@ console.log('\n[2] extra 专属控件只在 extra 模式出现')
       sourceSlotBlock.includes('v-if="isExtraMode') &&
       sourceSlotBlock.includes("!== 'manual'"),
     sourceSlotBlock ? '' : '未取到片段',
+  )
+
+  // 用户侧与管理侧的"生效目标"不是同一套：额外 Buff 只有 全队 / 槽位1–3，没有「自身」
+  check(
+    '额外 Buff 的「作用对象」里没有「自身」选项（与管理端刻意不同）',
+    !!applyBlock && !applyBlock.includes('value="self"') && !applyBlock.includes('>自身<'),
+    applyBlock ? '' : '未取到片段',
+  )
+  check(
+    '「作用对象」第一个选项固定是全队',
+    !!applyBlock && applyBlock.includes('>全队<'),
+    applyBlock ? '' : '未取到片段',
   )
 }
 
