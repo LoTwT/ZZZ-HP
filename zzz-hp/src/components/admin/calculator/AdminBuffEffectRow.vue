@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import NumberStepper from '@/components/common/NumberStepper.vue'
 import type {
@@ -420,6 +420,46 @@ function onSplit() {
 /** 下拉菜单开关（行本身不再有折叠态：行、条件、高级、块备注都常显） */
 const condMenuOpen = ref(false)
 const skillMenuOpen = ref(false)
+/**
+ * 「＋ 条件」菜单向上弹：按钮固定在条件行最左后，卡片贴近底部时菜单仍可能越过滚动容器底边，
+ * 所以打开后按实际位置决定朝上还是朝下（不写死，两种情况都要能完整看到）。
+ */
+const condMenuUp = ref(false)
+
+function scrollContainerOf(element: HTMLElement | null): HTMLElement | null {
+  let node = element?.parentElement ?? null
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll') return node
+    node = node.parentElement
+  }
+  return null
+}
+
+async function toggleCondMenu() {
+  condMenuOpen.value = !condMenuOpen.value
+  if (!condMenuOpen.value) return
+  condMenuUp.value = false
+  await nextTick()
+  const menu = document.querySelector('.cond-menu') as HTMLElement | null
+  const anchor = menu?.parentElement ?? null
+  const container = scrollContainerOf(menu)
+  if (!menu || !anchor || !container) return
+  // 先按默认「向下」量一次，再按上/下哪边空间更够决定方向，并把高度夹到可用空间内
+  menu.style.maxHeight = ''
+  const wanted = menu.getBoundingClientRect().height
+  const anchorRect = anchor.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const spaceBelow = containerRect.bottom - anchorRect.bottom - 8
+  const spaceAbove = anchorRect.top - containerRect.top - 8
+  if (wanted > spaceBelow && spaceAbove > spaceBelow) {
+    condMenuUp.value = true
+    menu.style.maxHeight = `${Math.max(140, spaceAbove)}px`
+  } else {
+    condMenuUp.value = false
+    menu.style.maxHeight = `${Math.max(140, spaceBelow)}px`
+  }
+}
 
 interface RevealState {
   situation: boolean
@@ -667,6 +707,34 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <div class="cond-line">
           <span class="line-label">条件</span>
 
+          <!--
+            「＋ 条件」固定在条件行最前：伤害类型多选后换行时，它不会跟着被挤下去，
+            下拉菜单也不会跑出容器（用户 2026-10-25 反馈）。
+          -->
+          <span class="add-cond">
+            <button
+              type="button"
+              class="ghost-btn add-cond-btn"
+              title="把默认不占位的条件控件加回来"
+              @click.stop="toggleCondMenu"
+            >
+              ＋ 条件
+            </button>
+            <div v-if="condMenuOpen" class="cond-menu" :class="{ 'is-up': condMenuUp }" @click.stop>
+              <button
+                v-for="item in condMenuItems"
+                :key="item.key"
+                type="button"
+                class="cond-item"
+                :disabled="item.shown"
+                @click="reveal(item.key)"
+              >
+                <span class="cond-item-mark">{{ item.shown ? '✓' : '＋' }}</span>
+                {{ item.label }}
+              </button>
+            </div>
+          </span>
+
           <label v-if="isExtraMode" class="inline-field">
             <span>作用对象</span>
             <select :value="applySlotModel" @change="onApplySlotChange">
@@ -854,30 +922,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             >
               ✕
             </button>
-          </span>
-
-          <span class="add-cond">
-            <button
-              type="button"
-              class="ghost-btn add-cond-btn"
-              title="把默认不占位的条件控件加回来"
-              @click.stop="condMenuOpen = !condMenuOpen"
-            >
-              ＋ 条件
-            </button>
-            <div v-if="condMenuOpen" class="cond-menu" @click.stop>
-              <button
-                v-for="item in condMenuItems"
-                :key="item.key"
-                type="button"
-                class="cond-item"
-                :disabled="item.shown"
-                @click="reveal(item.key)"
-              >
-                <span class="cond-item-mark">{{ item.shown ? '✓' : '＋' }}</span>
-                {{ item.label }}
-              </button>
-            </div>
           </span>
         </div>
 
@@ -1411,10 +1455,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 .cond-menu {
   position: absolute;
-  right: 0;
+  /* 按钮固定在条件行最左，菜单向左对齐，避免贴右边界时溢出容器 */
+  left: 0;
+  right: auto;
   top: calc(100% + 4px);
   z-index: 30;
   min-width: 11.5rem;
+  max-height: min(60vh, 22rem);
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.05rem;
@@ -1423,6 +1471,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border-radius: 10px;
   background: var(--color-background);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+}
+
+/* 贴着滚动容器底边时向上弹（位置由 toggleCondMenu 实测决定） */
+.cond-menu.is-up {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .cond-item {
