@@ -662,6 +662,155 @@ console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻
     )
   }
 }
+
+console.log('\n[10] §7.2 第 20 项：零值边界与共享归一化判定一致')
+{
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const build = (effectOverrides, cardId = 'zero-card') => ({
+    id: cardId,
+    name: '零值探针',
+    applySlot: 0,
+    sourceSlot: 0,
+    effects: [createEmptyBuffEffect({ id: `${cardId}-e`, ...effectOverrides })],
+  })
+  const countOf = (card) => {
+    const result = api.normalizeExtraGains([card])
+    return { n: result.gains.length, d: result.discardedCount }
+  }
+
+  const zeroAnomalyMult = countOf(build({ stat: 'anomalyMultFactor', kind: 'fixed', value: 0 }, 'zero-a'))
+  check('#20 anomalyMultFactor 固定 0 → 丢弃 1', zeroAnomalyMult.n === 0 && zeroAnomalyMult.d === 1, JSON.stringify(zeroAnomalyMult))
+  const zeroStacked = countOf(build({ stat: 'anomalyMultFactor', kind: 'stacked', valuePerStack: 0 }, 'zero-b'))
+  check('#20 anomalyMultFactor 叠层每层 0 → 丢弃 1', zeroStacked.n === 0 && zeroStacked.d === 1, JSON.stringify(zeroStacked))
+  const zeroAtk = countOf(build({ stat: 'atk', kind: 'fixed', value: 0 }, 'zero-c'))
+  check('#20 atk 固定 0 → 保留', zeroAtk.n === 1 && zeroAtk.d === 0, JSON.stringify(zeroAtk))
+  const convertKept = countOf(
+    build(
+      {
+        stat: 'anomalyMultFactor',
+        kind: 'convert',
+        value: 0,
+        convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null },
+      },
+      'zero-d',
+    ),
+  )
+  check('#20 anomalyMultFactor 转模 0 → 保留', convertKept.n === 1 && convertKept.d === 0, JSON.stringify(convertKept))
+  const stackedDefaultZero = countOf(
+    build({ stat: 'anomalyMultFactor', kind: 'stacked', valuePerStack: 10, defaultStacks: 0 }, 'zero-e'),
+  )
+  check('#20 anomalyMultFactor 叠层默认 0 层 → 保留', stackedDefaultZero.n === 1 && stackedDefaultZero.d === 0, JSON.stringify(stackedDefaultZero))
+  const onePercent = countOf(build({ stat: 'anomalyMultFactor', kind: 'fixed', value: 1 }, 'zero-f'))
+  check('#20 anomalyMultFactor 固定 1 → 归零后丢弃', onePercent.n === 0 && onePercent.d === 1, JSON.stringify(onePercent))
+}
+
+console.log('\n[11] §7.2 第 19 项：未规范化输入的允许变化与必须保留')
+{
+  const { createEmptyBuffEffect, setEffectSkillTargets } = await import('../src/utils/buffEffect.ts')
+  const card = (effects, id = 'unnorm-card') => ({ id, name: '未规范化', applySlot: 0, sourceSlot: 0, effects })
+  const stable = (value) =>
+    Array.isArray(value)
+      ? `[${value.map(stable).join(',')}]`
+      : value && typeof value === 'object'
+        ? `{${Object.keys(value)
+            .filter((key) => value[key] !== undefined)
+            .sort()
+            .map((key) => `${key}:${stable(value[key])}`)
+            .join(',')}}`
+        : JSON.stringify(value ?? null)
+
+  // 叠层：保存的冗余 value 保留，恢复后清零，其余参数与身份不变
+  {
+    const effect = createEmptyBuffEffect({
+      id: 'unnorm-e',
+      kind: 'stacked',
+      stat: 'atk',
+      value: 50,
+      valuePerStack: 10,
+      defaultStacks: 1.33,
+      maxStacks: 5,
+    })
+    const input = card([effect])
+    const saved = api.serializeExtraGains([input])
+    check('#19 保存时叠层冗余 value 仍为 50', saved[0].effects[0].value === 50, String(saved[0].effects[0].value))
+    const restored = api.normalizeExtraGains(JSON.parse(JSON.stringify(saved)))
+    check('#19 恢复后 value 归零', restored.gains[0]?.effects[0]?.value === 0, String(restored.gains[0]?.effects[0]?.value))
+    check(
+      '#19 每层值/默认层数/上限保留',
+      restored.gains[0]?.effects[0]?.valuePerStack === 10 &&
+        restored.gains[0]?.effects[0]?.defaultStacks === 1.33 &&
+        restored.gains[0]?.effects[0]?.maxStacks === 5,
+      JSON.stringify({
+        v: restored.gains[0]?.effects[0]?.valuePerStack,
+        d: restored.gains[0]?.effects[0]?.defaultStacks,
+        m: restored.gains[0]?.effects[0]?.maxStacks,
+      }),
+    )
+    check('#19 卡片与效果 id 不变', restored.gains[0]?.id === 'unnorm-card' && restored.gains[0]?.effects[0]?.id === 'unnorm-e')
+    check('#19 原输入对象不被修改（value 仍 50）', input.effects[0].value === 50)
+  }
+
+  // 转模：冗余 value 清零，convert 全参数保留
+  {
+    const effect = createEmptyBuffEffect({
+      id: 'unnorm-conv-e',
+      kind: 'convert',
+      stat: 'dmgBonus',
+      value: 50,
+      convert: { from: 'atk', panelSource: 'external', ratioPercent: 12, initialBase: 3, cap: 80, defaultBase: null },
+    })
+    const restored = api.normalizeExtraGains(JSON.parse(JSON.stringify(api.serializeExtraGains([card([effect], 'unnorm-conv')]))))
+    check('#19 转模恢复后 value 归零', restored.gains[0]?.effects[0]?.value === 0)
+    check(
+      '#19 转模参数完整保留',
+      stable(restored.gains[0]?.effects[0]?.convert) ===
+        stable({ from: 'atk', panelSource: 'external', ratioPercent: 12, initialBase: 3, cap: 80, defaultBase: null }),
+      stable(restored.gains[0]?.effects[0]?.convert),
+    )
+  }
+
+  // 异常子类：冗余 conditions 被移除，stat/值/身份保持
+  {
+    const effect = createEmptyBuffEffect({
+      id: 'unnorm-anomaly-e',
+      kind: 'fixed',
+      stat: 'anomalyDmgBonus',
+      value: 75,
+      conditions: { damageTypes: ['normal'] },
+    })
+    const restored = api.normalizeExtraGains(JSON.parse(JSON.stringify(api.serializeExtraGains([card([effect], 'unnorm-anomaly')]))))
+    const got = restored.gains[0]?.effects[0]
+    check('#19 异常子类冗余条件被移除', got?.conditions == null, JSON.stringify(got?.conditions))
+    check('#19 异常子类 stat/值/身份保持', got?.stat === 'anomalyDmgBonus' && got?.value === 75 && got?.id === 'unnorm-anomaly-e')
+  }
+
+  // 招式多选：兼容字段与 skillTargets 一并保留
+  {
+    const effect = createEmptyBuffEffect({ id: 'unnorm-skill-e', stat: 'skillDmgBonus', value: 30 })
+    setEffectSkillTargets(effect, [
+      { category: 'basic', subcategoryId: null },
+      { category: 'ultimate', subcategoryId: null },
+    ])
+    const restored = api.normalizeExtraGains(JSON.parse(JSON.stringify(api.serializeExtraGains([card([effect], 'unnorm-skill')]))))
+    const got = restored.gains[0]?.effects[0]
+    check('#19 两项招式目标保留', got?.skillTargets?.length === 2, JSON.stringify(got?.skillTargets))
+    check(
+      '#19 共享生成的兼容字段一并保留',
+      got?.skillCategory === effect.skillCategory && got?.skillSubcategoryId === effect.skillSubcategoryId,
+      JSON.stringify({ cat: got?.skillCategory, sub: got?.skillSubcategoryId }),
+    )
+  }
+
+  // 身份缺省：效果缺 id → 共享归一化生成非空 id，卡保留，下一次保存沿用
+  {
+    const raw = { id: 'unnorm-noid', name: '缺效果 id', applySlot: 0, sourceSlot: 0, effects: [{ stat: 'atk', kind: 'fixed', value: 50 }] }
+    const first = api.normalizeExtraGains([raw])
+    const generated = first.gains[0]?.effects[0]?.id
+    check('#19 缺效果 id → 生成非空 id 且保留卡片', first.gains.length === 1 && !!generated, String(generated))
+    const second = api.normalizeExtraGains(JSON.parse(JSON.stringify(api.serializeExtraGains(first.gains))))
+    check('#19 下一次保存恢复沿用生成的 id', second.gains[0]?.effects[0]?.id === generated, String(second.gains[0]?.effects[0]?.id))
+  }
+}
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)
