@@ -124,6 +124,30 @@ function onToggleType(card: ExtraBuffGain, row: EffectRow, type: BuffDamageType,
   card.effects = toggleRowDamageType(card.effects, row, type, checked)
 }
 
+/**
+ * 卡片展开 / 收起（默认展开）。
+ * 只是显示状态，不进 `ExtraBuffGain`（不改数据契约、不落草稿），换弹窗即回到默认展开。
+ */
+const collapsedIds = ref<string[]>([])
+
+function isCollapsed(cardId: string): boolean {
+  return collapsedIds.value.includes(cardId)
+}
+
+function toggleCollapsed(cardId: string) {
+  collapsedIds.value = isCollapsed(cardId)
+    ? collapsedIds.value.filter((id) => id !== cardId)
+    : [...collapsedIds.value, cardId]
+}
+
+/** 全部展开 / 全部收起：`便于控制` 的总开关 */
+const allCollapsed = computed(
+  () => local.value.length > 0 && local.value.every((card) => isCollapsed(card.id)),
+)
+
+function toggleAllCollapsed() {
+  collapsedIds.value = allCollapsed.value ? [] : local.value.map((card) => card.id)
+}
 
 const appliesToLabel = (card: ExtraBuffGain): string =>
   card.applySlot === 'team'
@@ -143,6 +167,14 @@ defineExpose({
     <div class="extra-buff-toolbar">
       <button type="button" class="add-btn" @click="addGain">＋ 添加增益</button>
       <span class="extra-buff-count">共 {{ local.length }} 条</span>
+      <button
+        v-if="local.length > 1"
+        type="button"
+        class="collapse-all-btn"
+        @click="toggleAllCollapsed"
+      >
+        {{ allCollapsed ? '全部展开' : '全部收起' }}
+      </button>
     </div>
 
     <p v-if="!local.length" class="extra-buff-empty">
@@ -150,8 +182,23 @@ defineExpose({
     </p>
 
     <ul v-else class="extra-buff-cards">
-      <li v-for="card in local" :key="card.id" class="extra-buff-card">
+      <li
+        v-for="card in local"
+        :key="card.id"
+        class="extra-buff-card"
+        :class="{ 'is-collapsed': isCollapsed(card.id) }"
+      >
         <header class="extra-buff-card-head">
+          <button
+            type="button"
+            class="extra-buff-toggle"
+            :aria-expanded="!isCollapsed(card.id)"
+            :aria-label="isCollapsed(card.id) ? '展开这张卡片' : '收起这张卡片'"
+            :title="isCollapsed(card.id) ? '展开' : '收起'"
+            @click="toggleCollapsed(card.id)"
+          >
+            <span class="extra-buff-toggle-icon">{{ isCollapsed(card.id) ? '▸' : '▾' }}</span>
+          </button>
           <input
             :ref="(el) => setInputRef(card.id, el)"
             v-model="card.name"
@@ -159,6 +206,7 @@ defineExpose({
             class="extra-buff-name"
             placeholder="自定义增益"
             :aria-label="`额外 Buff 名称 ${card.name}`"
+            @focus="collapsedIds = collapsedIds.filter((id) => id !== card.id)"
             @blur="normalizeName(card)"
           />
           <span class="extra-buff-scope" :title="appliesToLabel(card)">
@@ -167,7 +215,7 @@ defineExpose({
           <button type="button" class="extra-buff-remove" @click="removeGain(card.id)">移除</button>
         </header>
 
-        <div class="extra-buff-card-body">
+        <div v-show="!isCollapsed(card.id)" class="extra-buff-card-body">
           <AdminBuffEffectRow
             v-for="row in rowsOf(card)"
             :key="row.key"
@@ -257,9 +305,58 @@ defineExpose({
 .extra-buff-card {
   border: 1px solid var(--eb-border);
   border-radius: 12px;
-  /* 卡片要比弹窗底色略微区分：暗夜偏亮、白天偏深，两边都靠 color-mix 得到 */
-  background: color-mix(in srgb, var(--eb-surface) 86%, var(--eb-text) 5%);
+  /* 白天要接近白色、暗夜要能跟弹窗分开：只在暗夜加暗一档（浅色下 2% 已经够区分） */
+  background: color-mix(in srgb, var(--eb-surface) 97%, var(--eb-text) 2%);
   padding: 0.8rem 0.9rem 1rem;
+}
+
+[data-theme='dark'] .extra-buff-card {
+  background: color-mix(in srgb, var(--eb-surface) 84%, var(--eb-text) 10%);
+}
+
+.extra-buff-card.is-collapsed {
+  padding-bottom: 0.8rem;
+}
+
+.extra-buff-card.is-collapsed .extra-buff-card-head {
+  margin-bottom: 0;
+}
+
+.extra-buff-toggle {
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--eb-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--eb-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.extra-buff-toggle:hover {
+  color: var(--eb-text);
+  border-color: var(--eb-accent);
+}
+
+.collapse-all-btn {
+  border: 1px solid var(--eb-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--eb-muted);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+.collapse-all-btn:hover {
+  color: var(--eb-text);
+  border-color: var(--eb-accent);
 }
 
 .extra-buff-card-head {
@@ -316,6 +413,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  /* 展开内容在头部之下缩进一级，视觉上从属于这张卡 */
+  padding-left: 2.2rem;
 }
 
 /*
@@ -326,6 +425,9 @@ defineExpose({
 .extra-buff-card-body :deep(.effect-row) {
   font-size: 0.95rem;
   padding: 0.75rem 0.85rem;
+  /* 共享行自带的底色比卡片更暖（偏褐），在额外 Buff 里让它跟着卡片走 */
+  background: transparent;
+  border-color: color-mix(in srgb, var(--eb-border) 80%, transparent);
 }
 
 .extra-buff-card-body :deep(.effect-title strong) {
