@@ -27,6 +27,8 @@ import {
 } from '@/utils/buffEffectRows'
 import { findBuffStatZoneById } from '@/utils/buffStatZones'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
+import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 
 const props = defineProps<{
   teamSlots?: Array<{ agentId?: string | null }>
@@ -158,6 +160,33 @@ const appliesToLabel = (card: ExtraBuffGain): string =>
 
 const listNameOf = (card: ExtraBuffGain): string => card.name.trim() || '自定义增益'
 
+/** 左栏一行摘要：属性 + 数值（够判断是哪条，不用展开看） */
+function summaryOf(card: ExtraBuffGain): string {
+  const effect = card.effects[0]
+  if (!effect) return ''
+  const field = BUFF_STAT_FIELDS.find((item) => item.key === effect.stat)
+  const label = field ? buffStatFieldLabel(field) : effect.stat
+  const num = (value: number) => formatCalcDecimal(value)
+  if (effect.kind === 'stacked') {
+    return `${label} ${num(effect.valuePerStack ?? 0)}/层 × ${num(effect.defaultStacks ?? 0)} 层`
+  }
+  if (effect.kind === 'convert') {
+    return `${label} 转模 ${num(effect.convert?.ratioPercent ?? 0)}%`
+  }
+  return `${label} +${num(effect.value ?? 0)}`
+}
+
+/**
+ * 左侧是**下拉框**（不是会越撑越高的列表）：条目多时框内滚动，弹窗高度不变。
+ * 打开状态不持久化，点选后自动收起。
+ */
+const selectorOpen = ref(false)
+
+function chooseCard(id: string) {
+  selectedId.value = id
+  selectorOpen.value = false
+}
+
 defineExpose({
   /** 给测试/调试用：当前卡片数 */
   gainCount: computed(() => local.value.length),
@@ -178,20 +207,41 @@ defineExpose({
         还没有额外 Buff。点「添加增益」新建一条。
       </p>
 
-      <ul v-else class="extra-buff-list">
-        <li v-for="card in local" :key="card.id">
-          <button
-            type="button"
-            class="extra-buff-list-item"
-            :class="{ 'is-active': card.id === selectedId }"
-            :aria-current="card.id === selectedId ? 'true' : undefined"
-            @click="selectedId = card.id"
-          >
-            <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
-            <span class="extra-buff-list-slot">{{ appliesToLabel(card) }}</span>
-          </button>
-        </li>
-      </ul>
+      <!-- 下拉框：条目多时框内滚动，弹窗高度不跟着涨 -->
+      <div v-else class="extra-buff-selector">
+        <button
+          type="button"
+          class="extra-buff-selector-btn"
+          :aria-expanded="selectorOpen"
+          @click="selectorOpen = !selectorOpen"
+        >
+          <span class="extra-buff-selector-text">
+            <span class="extra-buff-selector-name">{{
+              selectedCard ? listNameOf(selectedCard) : '请选择增益'
+            }}</span>
+            <span v-if="selectedCard" class="extra-buff-selector-sub">
+              {{ appliesToLabel(selectedCard) }} · {{ summaryOf(selectedCard) }}
+            </span>
+          </span>
+          <span class="extra-buff-selector-caret">▾</span>
+        </button>
+
+        <ul v-if="selectorOpen" class="extra-buff-selector-menu">
+          <li v-for="card in local" :key="card.id">
+            <button
+              type="button"
+              class="extra-buff-selector-item"
+              :class="{ 'is-active': card.id === selectedId }"
+              @click="chooseCard(card.id)"
+            >
+              <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
+              <span class="extra-buff-list-slot">
+                {{ appliesToLabel(card) }} · {{ summaryOf(card) }}
+              </span>
+            </button>
+          </li>
+        </ul>
+      </div>
     </aside>
 
     <section class="extra-buff-detail">
@@ -254,7 +304,11 @@ defineExpose({
   --eb-input-bg: color-mix(in srgb, var(--color-background, #10141c) 88%, var(--color-text, #e8ecf4) 5%);
   --eb-accent: #c9a55c;
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
+  /*
+   * 左栏放下拉框 + 摘要即可，不必占一半：共享效果行在 780px 以下会开始换行、反而更难读，
+   * 所以左栏取 1/3（最小 260px），右侧拿剩余空间。要改回一半只动这一行。
+   */
+  grid-template-columns: minmax(260px, 33%) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
   font-size: 0.95rem;
@@ -299,18 +353,79 @@ defineExpose({
   color: var(--eb-muted);
 }
 
-.extra-buff-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  max-height: 60vh;
-  overflow: auto;
+/* ---------- 左侧下拉框 ---------- */
+.extra-buff-selector {
+  position: relative;
 }
 
-.extra-buff-list-item {
+.extra-buff-selector-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: var(--eb-input-bg);
+  color: var(--eb-text);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.98rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.extra-buff-selector-btn:hover {
+  border-color: var(--eb-accent);
+}
+
+.extra-buff-selector-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.extra-buff-selector-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-buff-selector-sub {
+  font-size: 0.8rem;
+  color: var(--eb-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-buff-selector-caret {
+  flex-shrink: 0;
+  color: var(--eb-muted);
+}
+
+/* 条目多时在这里滚，弹窗高度不变 */
+.extra-buff-selector-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: var(--eb-surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.extra-buff-selector-item {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -318,19 +433,19 @@ defineExpose({
   gap: 0.15rem;
   text-align: left;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 8px;
   background: transparent;
   color: var(--eb-text);
-  padding: 0.45rem 0.6rem;
+  padding: 0.45rem 0.55rem;
   font-size: 0.95rem;
   cursor: pointer;
 }
 
-.extra-buff-list-item:hover {
-  background: color-mix(in srgb, var(--eb-text) 6%, transparent);
+.extra-buff-selector-item:hover {
+  background: color-mix(in srgb, var(--eb-text) 7%, transparent);
 }
 
-.extra-buff-list-item.is-active {
+.extra-buff-selector-item.is-active {
   border-color: var(--eb-accent);
   background: color-mix(in srgb, var(--eb-accent) 14%, transparent);
 }
@@ -347,12 +462,16 @@ defineExpose({
   color: var(--eb-muted);
 }
 
-/* ---------- 右侧：选中那条的编辑区 ---------- */
+/* ---------- 右侧：选中那条的编辑区（自己滚，不跟左侧联动） ---------- */
 .extra-buff-detail {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+  /* 右侧独立滚动：长表单不会把弹窗顶高 */
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 0.2rem;
 }
 
 .extra-buff-detail-head {
@@ -462,8 +581,12 @@ defineExpose({
     padding-bottom: 0.7rem;
   }
 
-  .extra-buff-list {
-    max-height: 30vh;
+  .extra-buff-selector-menu {
+    max-height: 14rem;
+  }
+
+  .extra-buff-detail {
+    max-height: none;
   }
 
   .extra-buff-detail-head {
