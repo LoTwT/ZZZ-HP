@@ -813,5 +813,66 @@ console.log('\n[11] §7.2 第 19 项：未规范化输入的允许变化与必�
 }
 }
 
+console.log('\n[12] §7.2 第 18/21 项：只施加一次、页级与词条增益共存')
+{
+  const {
+    collectAllBuffEffects,
+    collectPanelBuffMods,
+    computeFinalPanel,
+    buildBuffCatalog,
+  } = await import('../src/utils/panelBuffCalc.ts')
+  const { makePanelCtx, makePanel, testAgent, testSlot, dummyBangboo } = await import(
+    './_effectPipelineHarness.mjs'
+  )
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const near = (a, b) => Math.abs(a - b) < 1e-6
+
+  const agents = [testAgent('a')]
+  const slots = [testSlot('a')]
+  const fixedCard = (id, effectId, value = 50) =>
+    api.createExtraBuffGain({
+      id,
+      name: id,
+      applySlot: 0,
+      effects: [createEmptyBuffEffect({ id: effectId, stat: 'atk', value })],
+    })
+  const ctxOf = (gains) =>
+    makePanelCtx({ teamSlots: slots, agents, mainSlotIndex: 0, extraGains: gains })
+  const finalAtk = (gains) =>
+    computeFinalPanel(makePanel({ atk: 1000 }), ctxOf(gains)).finalPanel.atk
+
+  const one = fixedCard('once-a', 'once-a-e')
+  check('#18 一张卡：最终攻击 1050', near(finalAtk([one]), 1050), String(finalAtk([one])))
+  const two = [one, fixedCard('once-b', 'once-b-e')]
+  check('#18 两张同配置卡：1100', near(finalAtk(two), 1100), String(finalAtk(two)))
+  check('#18 删掉一张回到 1050', near(finalAtk([two[1]]), 1050), String(finalAtk([two[1]])))
+  check(
+    '#18 收集里每条效果只出现一次',
+    collectAllBuffEffects(ctxOf(two)).filter((item) => item.sourceKey.startsWith('extra-')).length === 2,
+  )
+
+  // 第 21 项：页级增益与词条增益共存，各算一次
+  const pageCard = fixedCard('coexist-page', 'coexist-page-e', 10)
+  const affixCard = api.createExtraBuffGain({
+    id: 'affix-gain:coexist',
+    name: '词条增益',
+    applySlot: 0,
+    effects: [createEmptyBuffEffect({ id: 'affix-gain:coexist-e', stat: 'atk', value: 20 })],
+  })
+  const coexistMods = collectPanelBuffMods(ctxOf([pageCard, affixCard])).atk ?? 0
+  check('#21 页级 10 + 词条 20 各算一次 = 30', near(coexistMods, 30), String(coexistMods))
+  const coexistEntries = buildBuffCatalog({
+    teamSlots: slots,
+    agents,
+    wengines: [],
+    driveDiscs: [],
+    bangboo: dummyBangboo(),
+    bangbooRefine: 1,
+    environmentBuffs: [],
+    extraGains: [pageCard, affixCard],
+  }).entries.filter((entry) => entry.sourceKey.startsWith('extra-'))
+  check('#21 两条卡片各出一列（不合并）', coexistEntries.length === 2, String(coexistEntries.length))
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)
