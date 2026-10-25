@@ -535,6 +535,132 @@ console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻
     const anomSpecial = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'anomaly', categoryId: 'special', subcategoryId: null, coords: [{ category: 'special', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
     check('#12 特殊技坐标即使勾选仍 0', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomSpecial)).skillDmgBonus ?? 0, 0))
   }
+
+  // 17. 行级参数：行覆盖 > 卡片默认值；选择器残留不参与（§5.1 第 6 项、§7.2 第 17 项）
+  {
+    const manualCard = mk('p17a', {
+      kind: 'convert',
+      value: 0,
+      convert: { from: 'atk', panelSource: 'manual', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: 1000 },
+    })
+    check('#17 手动转模全局 100', near(atkOf(0, [manualCard]), 100), String(atkOf(0, [manualCard])))
+    check(
+      '#17 选择器残留输入 2000 不参与 → 仍 100',
+      near(
+        atkOf(0, [manualCard], {
+          buffSelection: { enabledIds: {}, stacksByEffectId: {}, convertInputs: { 'p17a-e': 2000 } },
+        }),
+        100,
+      ),
+    )
+    check(
+      '#17 A 行基数 3000 → 300',
+      near(
+        atkOf(0, [manualCard], { rowBuffOverride: { convertInputsByEffectId: { 'p17a-e': 3000 } } }),
+        300,
+      ),
+      String(atkOf(0, [manualCard], { rowBuffOverride: { convertInputsByEffectId: { 'p17a-e': 3000 } } })),
+    )
+
+    const srcCtx17 = { panelSourceValuesBySlot: new Map([[1, { external: { atk: 2000 }, final: { atk: 2000 } }]]) }
+    const externalCard = mk('p17b', {
+      kind: 'convert',
+      value: 0,
+      convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null },
+    }, { applySlot: 0, sourceSlot: 1 })
+    check('#17 外部来源 B 行（无覆盖）→ 200', near(atkOf(0, [externalCard], srcCtx17), 200))
+    check(
+      '#17 外部来源 A 行覆盖 3000 → 300（普通属性行覆盖仍生效）',
+      near(
+        atkOf(0, [externalCard], {
+          ...srcCtx17,
+          rowBuffOverride: { convertInputsByEffectId: { 'p17b-e': 3000 } },
+        }),
+        300,
+      ),
+    )
+    const emptySource17 = {
+      teamSlots: [testSlot('a'), testSlot('')],
+      agents: [jia],
+      mainSlotIndex: 0,
+      panelSourceValuesBySlot: new Map(),
+    }
+    check(
+      '#17 清空来源槽位 + A 行覆盖 → A 300',
+      near(
+        atkOf(0, [externalCard], {
+          ...emptySource17,
+          rowBuffOverride: { convertInputsByEffectId: { 'p17b-e': 3000 } },
+        }),
+        300,
+      ),
+    )
+    check('#17 清空来源槽位、无覆盖 → 0', near(atkOf(0, [externalCard], emptySource17), 0))
+
+    const skillLevels17 = {
+      a: { basic: 6, dodge: 6, assist: 6, special: 6, chainUltimate: 6 },
+      b: { basic: 12, dodge: 12, assist: 12, special: 12, chainUltimate: 12 },
+    }
+    const skillCard = mk('p17c', {
+      kind: 'convert',
+      value: 0,
+      convert: { from: 'skillLevelBasic', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null },
+    }, { applySlot: 0, sourceSlot: 1 })
+    check(
+      '#17 非手动技能等级 + 行覆盖 3000 → 仍 1.2（共享规则忽略覆盖）',
+      near(
+        atkOf(0, [skillCard], {
+          skillTalentLevelsByAgent: skillLevels17,
+          rowBuffOverride: { convertInputsByEffectId: { 'p17c-e': 3000 } },
+        }),
+        1.2,
+      ),
+      String(atkOf(0, [skillCard], { skillTalentLevelsByAgent: skillLevels17, rowBuffOverride: { convertInputsByEffectId: { 'p17c-e': 3000 } } })),
+    )
+  }
+
+  // 16. 行级写回结构：整块禁用后只恢复一条（§5.1 第 10 项、§7.2 第 16 项）
+  {
+    const { setFlowBuffEffectDisabled } = await import('../src/utils/flowBuffTable.ts')
+    const blockKey = 'extra-写回卡'
+    const makeEntry = () => ({
+      id: 'entry-a',
+      buffOverrides: {
+        disabledBlockIds: [blockKey],
+        disabledEffectIds: [],
+        stacksByEffectId: { 'wb-anomaly': 2 },
+        convertInputsByEffectId: { 'wb-turbulence': 3 },
+      },
+    })
+    const entry = makeEntry()
+    setFlowBuffEffectDisabled({
+      entry,
+      effectId: 'wb-anomaly',
+      blockKey,
+      siblingEffectIds: ['wb-anomaly', 'wb-turbulence'],
+      disabled: false,
+    })
+    const after = entry.buffOverrides
+    check('#16 恢复一条后不再有块级禁用', JSON.stringify(after.disabledBlockIds), '[]')
+    check('#16 同块其它效果保留为单条禁用', JSON.stringify(after.disabledEffectIds), '["wb-turbulence"]')
+    check('#16 层数覆盖保留', JSON.stringify(after.stacksByEffectId), '{"wb-anomaly":2}')
+    check('#16 转模覆盖保留', JSON.stringify(after.convertInputsByEffectId), '{"wb-turbulence":3}')
+
+    // 对等普通增益走同一个函数 → 结构相同（额外 Buff 没有专属恢复规则）
+    const normalEntry = { ...makeEntry(), id: 'entry-normal' }
+    setFlowBuffEffectDisabled({
+      entry: normalEntry,
+      effectId: 'wb-anomaly',
+      blockKey,
+      siblingEffectIds: ['wb-anomaly', 'wb-turbulence'],
+      disabled: false,
+    })
+    check(
+      '#16 与普通增益写回结构一致',
+      JSON.stringify(normalEntry.buffOverrides) === JSON.stringify(after),
+      JSON.stringify(normalEntry.buffOverrides),
+    )
+  }
 }
 }
 

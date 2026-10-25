@@ -381,12 +381,24 @@ export function changeRowZone(
 
   if (zone.statsByType) {
     const rows = statRowsForZone(zone, selectedTypes)
-    const next = rows.map((item, index) => {
-      const effect = cloneEffect(base)
+    /**
+     * 身份按 `stat` 保留（Spec §7.2 第 13 项）：同一行里已有该属性的效果就沿用它的 id，
+     * 只有真正新增的属性才取新 id —— 否则「删掉属性异常」会让乱流继承别人的 id。
+     */
+    const idByStat = new Map<string, string>()
+    for (const effect of row.effects) {
+      if (!idByStat.has(effect.stat)) idByStat.set(effect.stat, effect.id)
+    }
+    const next = rows.map((item) => {
+      const keptId = idByStat.get(item.stat)
+      const source = keptId
+        ? (row.effects.find((effect) => effect.id === keptId) ?? base)
+        : base
+      const effect = cloneEffect(source)
       effect.stat = item.stat
       effect.groupId = groupId
       delete effect.conditions
-      if (index > 0) effect.id = makeId()
+      effect.id = keptId ?? makeId()
       return effect
     })
     if (!next.length) return replaceRowEffects(effects, row, [base])
