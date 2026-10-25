@@ -987,8 +987,20 @@ function loadSnapshot(
   loadAffixFromCurrentSlot()
   // 恢复是**唯一的丢弃点**：一次归一化同时拿到合法卡片与丢弃数（Spec §6 第 3、6 项）
   const normalizedExtraGains = normalizeExtraGains(snapshot.extraGains)
-  extraGains.value = normalizedExtraGains.gains
-  extraGainsDiscardedCount.value = normalizedExtraGains.discardedCount
+  /**
+   * 同一份快照会被再应用一次（换人 watch 在恢复同一轮里写回面板快照）：
+   * 那次再应用拿到的是**已归一化**的数组，丢弃数必然为 0。若直接覆盖，
+   * 用户刚看到的"已跳过 N 条"会被悄悄抹掉（Spec §6 第 8 项要求不因重算消失）。
+   * 因此：结果与当前一致且没有新的丢弃时，视为幂等重放，保留现有提示状态。
+   */
+  const nextSignature = JSON.stringify(serializeExtraGains(normalizedExtraGains.gains))
+  const currentSignature = JSON.stringify(serializeExtraGains(extraGains.value))
+  const isIdempotentReplay =
+    normalizedExtraGains.discardedCount === 0 && nextSignature === currentSignature
+  if (!isIdempotentReplay) {
+    extraGains.value = normalizedExtraGains.gains
+    extraGainsDiscardedCount.value = normalizedExtraGains.discardedCount
+  }
   Object.assign(enemyInput.value, normalizeDamageEnemyInput(snapshot.enemyInput))
   if (!Number.isFinite(enemyInput.value.level) || enemyInput.value.level < 1) {
     enemyInput.value.level = 60
