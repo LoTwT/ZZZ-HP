@@ -189,42 +189,60 @@ defineExpose({
 </template>
 
 <style scoped>
+/*
+ * 主题：弹窗 Teleport 到 body，拿不到 `.calculator-page` 上的 `--calc-*`，
+ * 所以这里用全局 `--color-*`（随 `html[data-theme]` 翻转）+ `color-mix` 派生，
+ * 白天/暗夜共用一套声明，不再各写一份覆盖。
+ * 字号按"能直接读"来定：名称 1rem、正文 0.95rem，最小可点高度 2.2rem。
+ */
 .extra-buff-editor {
+  --eb-surface: var(--color-background-soft, #141922);
+  --eb-surface-2: var(--color-background-mute, #1a1f2a);
+  --eb-border: var(--color-border, #2d3646);
+  --eb-text: var(--color-text, #e8ecf4);
+  --eb-muted: color-mix(in srgb, var(--color-text, #e8ecf4) 64%, transparent);
+  --eb-input-bg: color-mix(in srgb, var(--color-background, #10141c) 88%, var(--color-text, #e8ecf4) 5%);
+  --eb-accent: #c9a55c;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.9rem;
+  font-size: 0.95rem;
+  color: var(--eb-text);
 }
 
 .extra-buff-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.8rem;
 }
 
 .add-btn {
-  border: 1px solid #4a5563;
-  border-radius: 8px;
-  background: #1a1f2a;
-  color: #dbe3ef;
-  padding: 0.35rem 0.8rem;
-  font-size: 0.84rem;
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: var(--eb-surface-2);
+  color: var(--eb-text);
+  padding: 0.5rem 1.05rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-height: 2.4rem;
   cursor: pointer;
 }
 
 .add-btn:hover {
-  border-color: #5d6b7f;
-  background: #1c2432;
+  border-color: var(--eb-accent);
+  background: color-mix(in srgb, var(--eb-accent) 12%, var(--eb-surface-2));
 }
 
 .extra-buff-count {
-  font-size: 0.8rem;
-  color: #9aa3b5;
+  font-size: 0.85rem;
+  color: var(--eb-muted);
 }
 
 .extra-buff-empty {
   margin: 0;
-  font-size: 0.8rem;
-  color: #9aa3b5;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--eb-muted);
 }
 
 .extra-buff-cards {
@@ -233,58 +251,101 @@ defineExpose({
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.9rem;
 }
 
 .extra-buff-card {
-  border: 1px solid #2d3646;
-  border-radius: 10px;
-  background: #141922;
-  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid var(--eb-border);
+  border-radius: 12px;
+  /* 卡片要比弹窗底色略微区分：暗夜偏亮、白天偏深，两边都靠 color-mix 得到 */
+  background: color-mix(in srgb, var(--eb-surface) 86%, var(--eb-text) 5%);
+  padding: 0.8rem 0.9rem 1rem;
 }
 
 .extra-buff-card-head {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.45rem;
+  gap: 0.7rem;
+  margin-bottom: 0.6rem;
 }
 
 .extra-buff-name {
   flex: 1;
   min-width: 0;
-  border: 1px solid #3a4454;
-  border-radius: 8px;
-  background: #10141c;
-  color: #edf1f7;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.86rem;
+  border: 1px solid var(--eb-border);
+  border-radius: 9px;
+  background: var(--eb-input-bg);
+  color: var(--eb-text);
+  padding: 0.45rem 0.65rem;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.extra-buff-name:focus-visible {
+  outline: 2px solid var(--eb-accent);
+  outline-offset: 1px;
 }
 
 .extra-buff-scope {
   flex-shrink: 0;
-  font-size: 0.76rem;
-  color: #9aa3b5;
-  border: 1px solid #3a4454;
+  font-size: 0.85rem;
+  color: var(--eb-muted);
+  border: 1px solid var(--eb-border);
   border-radius: 999px;
-  padding: 0.12rem 0.5rem;
+  padding: 0.25rem 0.65rem;
+  white-space: nowrap;
 }
 
 .extra-buff-remove {
   flex-shrink: 0;
-  border: 1px solid #6b4a4a;
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #d9534f 55%, var(--eb-border));
+  border-radius: 9px;
   background: transparent;
-  color: #d79a9a;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.78rem;
+  color: color-mix(in srgb, #d9534f 78%, var(--eb-text) 22%);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  min-height: 2.2rem;
   cursor: pointer;
+}
+
+.extra-buff-remove:hover {
+  background: color-mix(in srgb, #d9534f 14%, transparent);
 }
 
 .extra-buff-card-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
+}
+
+/*
+ * 共享效果行本身是管理端的紧凑排版（字号 0.8rem 左右，一屏塞很多行）。
+ * 额外 Buff 一屏只有一两张卡片，空间充足 —— 这里只在**本容器内**把它放大，
+ * 不改共享组件，也不影响增益库那侧的密度。
+ */
+.extra-buff-card-body :deep(.effect-row) {
+  font-size: 0.95rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.extra-buff-card-body :deep(.effect-title strong) {
+  font-size: 1rem;
+}
+
+.extra-buff-card-body :deep(.line-label),
+.extra-buff-card-body :deep(.inline-field > span) {
+  font-size: 0.9rem;
+}
+
+.extra-buff-card-body :deep(select),
+.extra-buff-card-body :deep(input[type='text']),
+.extra-buff-card-body :deep(.step-input) {
+  font-size: 0.95rem;
+  min-height: 2.1rem;
+}
+
+.extra-buff-card-body :deep(.summary-value) {
+  font-size: 1rem;
 }
 
 @media (max-width: 720px) {
@@ -294,6 +355,11 @@ defineExpose({
 
   .extra-buff-name {
     flex-basis: 100%;
+  }
+
+  .extra-buff-scope,
+  .extra-buff-remove {
+    font-size: 0.85rem;
   }
 }
 </style>
