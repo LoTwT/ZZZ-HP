@@ -98,8 +98,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
   --eb-text: var(--color-text, #e8ecf4);
   --eb-muted: color-mix(in srgb, var(--color-text, #e8ecf4) 64%, transparent);
   --eb-accent: #c9a55c;
-  width: min(1120px, calc(100vw - 24px));
-  max-height: min(90vh, 960px);
+  width: min(1240px, calc(100vw - 24px));
+  max-height: min(92vh, 1000px);
   display: flex;
   flex-direction: column;
   border: 1px solid var(--eb-border);

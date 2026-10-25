@@ -2,9 +2,11 @@
 /**
  * 额外 Buff 编辑器（Spec §4.1 / §4.2）。
  *
- * 一维卡片列表：一张卡片 = 一个命名增益 = 恰好一行共享效果行。
+ * 布局与增益库一致：**左侧是增益清单（每条一个名字，依次排下去），选中的那条在右侧编辑**。
+ * 不折叠、不做树、卡片内不加效果 —— 一条增益 = 一行共享效果行。
+ *
+ * 其它约束：
  * - `v-model` 的入参/出参是 `ExtraBuffGain[]`，类型定义只在 `@/types/extraBuff`。
- * - 卡片头只有「名称」和「移除」；底层效果数不暴露给用户。
  * - 任何字段改动都**重建卡片对象并广播新数组**：目录缓存键按对象身份记忆化，
  *   就地改同一个数组会让计算结果不刷新（Spec §4.2 第 6 项）。
  */
@@ -17,7 +19,12 @@ import {
   extraGainAppliesToSlot,
   serializeExtraGains,
 } from '@/utils/extraBuffCalc'
-import { buildEffectRows, changeRowZone, toggleRowDamageType, type EffectRow } from '@/utils/buffEffectRows'
+import {
+  buildEffectRows,
+  changeRowZone,
+  toggleRowDamageType,
+  type EffectRow,
+} from '@/utils/buffEffectRows'
 import { findBuffStatZoneById } from '@/utils/buffStatZones'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
 
@@ -36,6 +43,19 @@ function signatureOf(cards: readonly ExtraBuffGain[]): string {
   return JSON.stringify(serializeExtraGains([...cards]))
 }
 
+/** 右侧正在编辑的那条（只存 id；不持久化） */
+const selectedId = ref<string>(local.value[0]?.id ?? '')
+
+function ensureSelection() {
+  if (!local.value.length) {
+    selectedId.value = ''
+    return
+  }
+  if (!local.value.some((card) => card.id === selectedId.value)) {
+    selectedId.value = local.value[0]!.id
+  }
+}
+
 watch(
   () => gains.value,
   (next) => {
@@ -43,6 +63,7 @@ watch(
     if (signature === lastSignature) return
     local.value = serializeExtraGains(next ?? [])
     lastSignature = signature
+    ensureSelection()
   },
 )
 
@@ -63,11 +84,11 @@ function broadcast() {
 
 watch(local, broadcast, { deep: true })
 
-const nameInputs = ref<Record<string, HTMLInputElement | null>>({})
+const selectedCard = computed(
+  () => local.value.find((card) => card.id === selectedId.value) ?? null,
+)
 
-function setInputRef(id: string, element: unknown) {
-  nameInputs.value[id] = (element as HTMLInputElement | null) ?? null
-}
+const nameInput = ref<HTMLInputElement | null>(null)
 
 /** 槽位选项：作用对象与来源槽位共用（Spec §4.2 第 1 项） */
 const slotOptions = computed(() => {
@@ -85,15 +106,21 @@ const applySlotOptions = computed(() => slotOptions.value)
 function addGain() {
   const card = createExtraBuffGain({ applySlot: 0, sourceSlot: 0 })
   local.value = [...local.value, card]
+  selectedId.value = card.id
   void nextTick(() => {
-    const input = nameInputs.value[card.id]
-    input?.focus()
-    input?.select()
+    nameInput.value?.focus()
+    nameInput.value?.select()
   })
 }
 
 function removeGain(id: string) {
+  const index = local.value.findIndex((card) => card.id === id)
   local.value = local.value.filter((card) => card.id !== id)
+  if (selectedId.value === id) {
+    const fallback = local.value[Math.min(index, local.value.length - 1)] ?? null
+    selectedId.value = fallback?.id ?? ''
+  }
+  ensureSelection()
 }
 
 function normalizeName(card: ExtraBuffGain) {
@@ -109,7 +136,7 @@ function setSourceSlot(card: ExtraBuffGain, value: ExtraBuffSlotIndex) {
   card.sourceSlot = value
 }
 
-/** 一张卡片在共享效果行里的当前行（一卡恰好一行） */
+/** 一条增益在共享效果行里的当前行（一卡恰好一行） */
 function rowsOf(card: ExtraBuffGain): EffectRow[] {
   return buildEffectRows(card.effects)
 }
@@ -124,35 +151,12 @@ function onToggleType(card: ExtraBuffGain, row: EffectRow, type: BuffDamageType,
   card.effects = toggleRowDamageType(card.effects, row, type, checked)
 }
 
-/**
- * 卡片展开 / 收起（默认展开）。
- * 只是显示状态，不进 `ExtraBuffGain`（不改数据契约、不落草稿），换弹窗即回到默认展开。
- */
-const collapsedIds = ref<string[]>([])
-
-function isCollapsed(cardId: string): boolean {
-  return collapsedIds.value.includes(cardId)
-}
-
-function toggleCollapsed(cardId: string) {
-  collapsedIds.value = isCollapsed(cardId)
-    ? collapsedIds.value.filter((id) => id !== cardId)
-    : [...collapsedIds.value, cardId]
-}
-
-/** 全部展开 / 全部收起：`便于控制` 的总开关 */
-const allCollapsed = computed(
-  () => local.value.length > 0 && local.value.every((card) => isCollapsed(card.id)),
-)
-
-function toggleAllCollapsed() {
-  collapsedIds.value = allCollapsed.value ? [] : local.value.map((card) => card.id)
-}
-
 const appliesToLabel = (card: ExtraBuffGain): string =>
   card.applySlot === 'team'
     ? '全队'
     : (slotOptions.value.find((opt) => opt.value === card.applySlot)?.label ?? '槽位 1')
+
+const listNameOf = (card: ExtraBuffGain): string => card.name.trim() || '自定义增益'
 
 defineExpose({
   /** 给测试/调试用：当前卡片数 */
@@ -164,75 +168,74 @@ defineExpose({
 
 <template>
   <div class="extra-buff-editor">
-    <div class="extra-buff-toolbar">
-      <button type="button" class="add-btn" @click="addGain">＋ 添加增益</button>
-      <span class="extra-buff-count">共 {{ local.length }} 条</span>
-      <button
-        v-if="local.length > 1"
-        type="button"
-        class="collapse-all-btn"
-        @click="toggleAllCollapsed"
-      >
-        {{ allCollapsed ? '全部展开' : '全部收起' }}
-      </button>
-    </div>
+    <aside class="extra-buff-side">
+      <div class="extra-buff-side-head">
+        <button type="button" class="add-btn" @click="addGain">＋ 添加增益</button>
+        <span class="extra-buff-count">共 {{ local.length }} 条</span>
+      </div>
 
-    <p v-if="!local.length" class="extra-buff-empty">
-      还没有额外 Buff。点「添加增益」新建一张卡片；一张卡片只编辑一个乘区（可多选伤害类型）。
-    </p>
+      <p v-if="!local.length" class="extra-buff-empty">
+        还没有额外 Buff。点「添加增益」新建一条。
+      </p>
 
-    <ul v-else class="extra-buff-cards">
-      <li
-        v-for="card in local"
-        :key="card.id"
-        class="extra-buff-card"
-        :class="{ 'is-collapsed': isCollapsed(card.id) }"
-      >
-        <header class="extra-buff-card-head">
+      <ul v-else class="extra-buff-list">
+        <li v-for="card in local" :key="card.id">
           <button
             type="button"
-            class="extra-buff-toggle"
-            :aria-expanded="!isCollapsed(card.id)"
-            :aria-label="isCollapsed(card.id) ? '展开这张卡片' : '收起这张卡片'"
-            :title="isCollapsed(card.id) ? '展开' : '收起'"
-            @click="toggleCollapsed(card.id)"
+            class="extra-buff-list-item"
+            :class="{ 'is-active': card.id === selectedId }"
+            :aria-current="card.id === selectedId ? 'true' : undefined"
+            @click="selectedId = card.id"
           >
-            <span class="extra-buff-toggle-icon">{{ isCollapsed(card.id) ? '▸' : '▾' }}</span>
+            <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
+            <span class="extra-buff-list-slot">{{ appliesToLabel(card) }}</span>
           </button>
+        </li>
+      </ul>
+    </aside>
+
+    <section class="extra-buff-detail">
+      <template v-if="selectedCard">
+        <header class="extra-buff-detail-head">
           <input
-            :ref="(el) => setInputRef(card.id, el)"
-            v-model="card.name"
+            ref="nameInput"
+            v-model="selectedCard.name"
             type="text"
             class="extra-buff-name"
             placeholder="自定义增益"
-            :aria-label="`额外 Buff 名称 ${card.name}`"
-            @focus="collapsedIds = collapsedIds.filter((id) => id !== card.id)"
-            @blur="normalizeName(card)"
+            :aria-label="`额外 Buff 名称 ${selectedCard.name}`"
+            @blur="normalizeName(selectedCard)"
           />
-          <span class="extra-buff-scope" :title="appliesToLabel(card)">
-            {{ appliesToLabel(card) }}
+          <span class="extra-buff-scope" :title="appliesToLabel(selectedCard)">
+            {{ appliesToLabel(selectedCard) }}
           </span>
-          <button type="button" class="extra-buff-remove" @click="removeGain(card.id)">移除</button>
+          <button type="button" class="extra-buff-remove" @click="removeGain(selectedCard.id)">
+            移除
+          </button>
         </header>
 
-        <div v-show="!isCollapsed(card.id)" class="extra-buff-card-body">
+        <div class="extra-buff-card-body">
           <AdminBuffEffectRow
-            v-for="row in rowsOf(card)"
+            v-for="row in rowsOf(selectedCard)"
             :key="row.key"
             :row="row"
             :agent-id="undefined"
             context-mode="extra"
-            :apply-slot="card.applySlot"
-            :source-slot="card.sourceSlot"
+            :apply-slot="selectedCard.applySlot"
+            :source-slot="selectedCard.sourceSlot"
             :slot-options="applySlotOptions"
-            @change-zone="(zoneId, types) => onChangeZone(card, row, zoneId, types)"
-            @toggle-type="(type, checked) => onToggleType(card, row, type, checked)"
-            @update:applySlot="(value) => setApplySlot(card, value)"
-            @update:sourceSlot="(value) => setSourceSlot(card, value)"
+            @change-zone="(zoneId, types) => onChangeZone(selectedCard!, row, zoneId, types)"
+            @toggle-type="(type, checked) => onToggleType(selectedCard!, row, type, checked)"
+            @update:applySlot="(value) => setApplySlot(selectedCard!, value)"
+            @update:sourceSlot="(value) => setSourceSlot(selectedCard!, value)"
           />
         </div>
-      </li>
-    </ul>
+      </template>
+
+      <p v-else class="extra-buff-empty">
+        左侧选一条增益开始编辑，或点「＋ 添加增益」新建。
+      </p>
+    </section>
   </div>
 </template>
 
@@ -241,7 +244,6 @@ defineExpose({
  * 主题：弹窗 Teleport 到 body，拿不到 `.calculator-page` 上的 `--calc-*`，
  * 所以这里用全局 `--color-*`（随 `html[data-theme]` 翻转）+ `color-mix` 派生，
  * 白天/暗夜共用一套声明，不再各写一份覆盖。
- * 字号按"能直接读"来定：名称 1rem、正文 0.95rem，最小可点高度 2.2rem。
  */
 .extra-buff-editor {
   --eb-surface: var(--color-background-soft, #141922);
@@ -251,17 +253,28 @@ defineExpose({
   --eb-muted: color-mix(in srgb, var(--color-text, #e8ecf4) 64%, transparent);
   --eb-input-bg: color-mix(in srgb, var(--color-background, #10141c) 88%, var(--color-text, #e8ecf4) 5%);
   --eb-accent: #c9a55c;
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
   font-size: 0.95rem;
   color: var(--eb-text);
 }
 
-.extra-buff-toolbar {
+/* ---------- 左侧：增益清单 ---------- */
+.extra-buff-side {
   display: flex;
-  align-items: center;
-  gap: 0.8rem;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-right: 0.9rem;
+  border-right: 1px solid var(--eb-border);
+}
+
+.extra-buff-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .add-btn {
@@ -269,7 +282,7 @@ defineExpose({
   border-radius: 10px;
   background: var(--eb-surface-2);
   color: var(--eb-text);
-  padding: 0.5rem 1.05rem;
+  padding: 0.5rem 0.9rem;
   font-size: 0.95rem;
   font-weight: 600;
   min-height: 2.4rem;
@@ -286,84 +299,73 @@ defineExpose({
   color: var(--eb-muted);
 }
 
-.extra-buff-empty {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.7;
-  color: var(--eb-muted);
-}
-
-.extra-buff-cards {
+.extra-buff-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.3rem;
+  max-height: 60vh;
+  overflow: auto;
 }
 
-.extra-buff-card {
-  border: 1px solid var(--eb-border);
-  border-radius: 12px;
-  /* 白天要接近白色、暗夜要能跟弹窗分开：只在暗夜加暗一档（浅色下 2% 已经够区分） */
-  background: color-mix(in srgb, var(--eb-surface) 97%, var(--eb-text) 2%);
-  padding: 0.8rem 0.9rem 1rem;
-}
-
-[data-theme='dark'] .extra-buff-card {
-  background: color-mix(in srgb, var(--eb-surface) 84%, var(--eb-text) 10%);
-}
-
-.extra-buff-card.is-collapsed {
-  padding-bottom: 0.8rem;
-}
-
-.extra-buff-card.is-collapsed .extra-buff-card-head {
-  margin-bottom: 0;
-}
-
-.extra-buff-toggle {
-  flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--eb-border);
-  border-radius: 8px;
+.extra-buff-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: transparent;
-  color: var(--eb-muted);
-  font-size: 0.9rem;
-  line-height: 1;
+  color: var(--eb-text);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.95rem;
   cursor: pointer;
 }
 
-.extra-buff-toggle:hover {
-  color: var(--eb-text);
-  border-color: var(--eb-accent);
+.extra-buff-list-item:hover {
+  background: color-mix(in srgb, var(--eb-text) 6%, transparent);
 }
 
-.collapse-all-btn {
-  border: 1px solid var(--eb-border);
-  border-radius: 8px;
-  background: transparent;
+.extra-buff-list-item.is-active {
+  border-color: var(--eb-accent);
+  background: color-mix(in srgb, var(--eb-accent) 14%, transparent);
+}
+
+.extra-buff-list-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-buff-list-slot {
+  font-size: 0.78rem;
   color: var(--eb-muted);
-  padding: 0.3rem 0.7rem;
-  font-size: 0.85rem;
-  min-height: 2rem;
-  cursor: pointer;
 }
 
-.collapse-all-btn:hover {
-  color: var(--eb-text);
-  border-color: var(--eb-accent);
+/* ---------- 右侧：选中那条的编辑区 ---------- */
+.extra-buff-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
 }
 
-.extra-buff-card-head {
+.extra-buff-detail-head {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  margin-bottom: 0.6rem;
+}
+
+.extra-buff-empty {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--eb-muted);
 }
 
 .extra-buff-name {
@@ -373,8 +375,8 @@ defineExpose({
   border-radius: 9px;
   background: var(--eb-input-bg);
   color: var(--eb-text);
-  padding: 0.45rem 0.65rem;
-  font-size: 1rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 1.05rem;
   line-height: 1.4;
 }
 
@@ -413,19 +415,15 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  /* 展开内容在头部之下缩进一级，视觉上从属于这张卡 */
-  padding-left: 2.2rem;
 }
 
 /*
- * 共享效果行本身是管理端的紧凑排版（字号 0.8rem 左右，一屏塞很多行）。
- * 额外 Buff 一屏只有一两张卡片，空间充足 —— 这里只在**本容器内**把它放大，
- * 不改共享组件，也不影响增益库那侧的密度。
+ * 共享效果行本身是管理端的紧凑排版；额外 Buff 一屏只有一条，空间充足 ——
+ * 这里只在**本容器内**把它放大，不改共享组件，也不影响增益库那侧的密度。
  */
 .extra-buff-card-body :deep(.effect-row) {
   font-size: 0.95rem;
   padding: 0.75rem 0.85rem;
-  /* 共享行自带的底色比卡片更暖（偏褐），在额外 Buff 里让它跟着卡片走 */
   background: transparent;
   border-color: color-mix(in srgb, var(--eb-border) 80%, transparent);
 }
@@ -450,18 +448,30 @@ defineExpose({
   font-size: 1rem;
 }
 
-@media (max-width: 720px) {
-  .extra-buff-card-head {
+/* 窄屏：清单在上、详情在下，仍然不产生横向滚动 */
+@media (max-width: 900px) {
+  .extra-buff-editor {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.8rem;
+  }
+
+  .extra-buff-side {
+    border-right: none;
+    border-bottom: 1px solid var(--eb-border);
+    padding-right: 0;
+    padding-bottom: 0.7rem;
+  }
+
+  .extra-buff-list {
+    max-height: 30vh;
+  }
+
+  .extra-buff-detail-head {
     flex-wrap: wrap;
   }
 
   .extra-buff-name {
     flex-basis: 100%;
-  }
-
-  .extra-buff-scope,
-  .extra-buff-remove {
-    font-size: 0.85rem;
   }
 }
 </style>
