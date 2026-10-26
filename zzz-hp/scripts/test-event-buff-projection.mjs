@@ -21,6 +21,7 @@ import {
   resolveEventBuffPreviewInputs,
 } from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
+import { clearHitEvalCache } from '../src/utils/hitEvalCache.ts'
 
 let passed = 0
 let failed = 0
@@ -559,7 +560,47 @@ console.log('== K4 真实 SFC 输入模型（行级弹窗读共享参数） ==')
 }
 
 console.log('')
+console.log('== K12 预览投影缓存 128 条上限（真实组件函数） ==')
+{
+  const { bindVueFunctions } = await import('./_vueSetupHarness.mjs')
+  const vue = await import('vue')
+  const panelUrl = new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url)
+  const { fixture, hit } = k1Fixture('ordinary')
+  const cache = new Map()
+  let panel = null
+  try {
+    panel = bindVueFunctions(panelUrl, ['getEventBuffPreviewInputs'], {
+      resolveEventBuffPreviewInputs,
+      resolveSkillFlowCalculationDetail: (await import('../src/utils/skillFlowCalculation.ts')).resolveSkillFlowCalculationDetail,
+      skillFlowCalculationContext: vue.ref(fixture.context),
+      skillFlowMainExternal: vue.ref(null),
+      buildHitEvalFingerprint: (await import('../src/utils/hitEvalCache.ts')).buildHitEvalFingerprint,
+      internHitEvalContext: (await import('../src/utils/hitEvalCache.ts')).internHitEvalContext,
+      hitEvalCacheKey: (await import('../src/utils/hitEvalCache.ts')).hitEvalCacheKey,
+      hitCalcGlobalSignature: vue.ref('projection-cache-fixture'),
+      eventBuffPreviewCache: cache,
+    })
+  } catch (error) {
+    check('K12 能绑定组件预览函数', false, String(error?.message ?? error))
+  }
+  if (panel) {
+    const firstHit = { ...hit, id: 'proj-0' }
+    const first = panel.getEventBuffPreviewInputs(0, firstHit, null)
+    check('K12 首次预览进入投影缓存', cache.size === 1, String(cache.size))
+    check('K12 同输入再取 → 复用同一投影对象', panel.getEventBuffPreviewInputs(0, firstHit, null) === first)
+    for (let i = 1; i <= 140; i += 1) {
+      panel.getEventBuffPreviewInputs(0, { ...hit, id: `proj-${i}` }, null)
+    }
+    check('K12 投影缓存不超过 128 条', cache.size <= 128, String(cache.size))
+    const again = panel.getEventBuffPreviewInputs(0, firstHit, null)
+    check('K12 被淘汰的输入重新计算（不再返回旧投影对象）', again !== first)
+  }
+  clearHitEvalCache()
+}
+
+console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
