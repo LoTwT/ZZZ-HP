@@ -229,19 +229,32 @@ export function buildSharpenDmgZoneProcessItems(options: {
   ]
 }
 
+export function buildRemielSpecialLevelZoneProcessItems(level: number, zone?: number): string[] {
+  const safeLevel = Math.min(60, Math.max(1, Math.round(level)))
+  const value = zone ?? computeRemielSelfRadianceSpecialLevelZone(safeLevel)
+  return [
+    `角色等级 ${safeLevel}`,
+    `特殊等级区 = 1 + 0.025 × 等级`,
+    `1 + 0.025 × ${safeLevel} = ${fmt(value)}`,
+  ]
+}
+
 export function buildRemielSpecialLevelZoneGroups(level: number, zone?: number): StatSourceGroup[] {
   const safeLevel = Math.min(60, Math.max(1, Math.round(level)))
   const value = zone ?? computeRemielSelfRadianceSpecialLevelZone(safeLevel)
   return [
-    {
-      label: '特殊等级区（本人耀变）',
-      items: [
-        `角色等级 ${safeLevel}`,
-        `特殊等级区 = 1 + 0.025 × 等级`,
-        `1 + 0.025 × ${safeLevel} = ${fmt(value)}`,
-      ],
-    },
+    { label: '特殊等级区（本人耀变）', items: buildRemielSpecialLevelZoneProcessItems(safeLevel, value) },
     { label: '合计', items: [`特殊等级区 ${fmt(value)}`], fullWidth: true },
+  ]
+}
+
+export function buildRemielStandardLevelZoneProcessItems(level: number, zone?: number): string[] {
+  const safeLevel = Math.min(60, Math.max(1, Math.round(level)))
+  const value = zone ?? computeRemielSelfRadianceStandardLevelZone(safeLevel)
+  return [
+    `角色等级 ${safeLevel}`,
+    `等级区 = 1 + (等级 − 1) / 59`,
+    `1 + (${safeLevel} − 1) / 59 = ${fmt(value)}`,
   ]
 }
 
@@ -249,15 +262,25 @@ export function buildRemielStandardLevelZoneGroups(level: number, zone?: number)
   const safeLevel = Math.min(60, Math.max(1, Math.round(level)))
   const value = zone ?? computeRemielSelfRadianceStandardLevelZone(safeLevel)
   return [
-    {
-      label: '等级区（本人耀变）',
-      items: [
-        `角色等级 ${safeLevel}`,
-        `等级区 = 1 + (等级 − 1) / 59`,
-        `1 + (${safeLevel} − 1) / 59 = ${fmt(value)}`,
-      ],
-    },
+    { label: '等级区（本人耀变）', items: buildRemielStandardLevelZoneProcessItems(safeLevel, value) },
     { label: '合计', items: [`等级区 ${fmt(value)}`], fullWidth: true },
+  ]
+}
+
+export function buildRemielSelfAtkProcessItems(options: {
+  externalAtk: number
+  inCombatAtk: number
+  sourceItems: string[]
+}): string[] {
+  const convertTotal = Math.max(0, options.inCombatAtk - options.externalAtk)
+  return [
+    `局外攻击力 ${fmt(options.externalAtk, 2)}`,
+    ...options.sourceItems,
+    options.sourceItems.length
+      ? `${fmt(options.externalAtk, 2)} + ${fmt(convertTotal, 2)} = ${fmt(options.inCombatAtk, 2)}`
+      : `无自身攻击力转模 → ${fmt(options.inCombatAtk, 2)}`,
+    '仅：局外攻击 + 蕾米埃尔角色/影画「攻击力转模」',
+    '不含局内攻击%、队友/邦布、音擎/驱动盘其它攻击增益',
   ]
 }
 
@@ -268,16 +291,7 @@ export function buildRemielSelfAtkTipGroups(options: {
   fullPanelAtk?: number
   editorPanelAtk?: number
 }): StatSourceGroup[] {
-  const convertTotal = Math.max(0, options.inCombatAtk - options.externalAtk)
-  const process = [
-    `局外攻击力 ${fmt(options.externalAtk, 2)}`,
-    ...options.sourceItems,
-    options.sourceItems.length
-      ? `${fmt(options.externalAtk, 2)} + ${fmt(convertTotal, 2)} = ${fmt(options.inCombatAtk, 2)}`
-      : `无自身攻击力转模 → ${fmt(options.inCombatAtk, 2)}`,
-    '仅：局外攻击 + 蕾米埃尔角色/影画「攻击力转模」',
-    '不含局内攻击%、队友/邦布、音擎/驱动盘其它攻击增益',
-  ]
+  const process = buildRemielSelfAtkProcessItems(options)
   const groups: StatSourceGroup[] = [
     {
       label: '本人耀变局内攻击（特殊口径）',
@@ -308,17 +322,14 @@ export function buildRemielSelfAtkTipGroups(options: {
   return groups
 }
 
-export function buildRemielSelfMasteryTipGroups(options: {
+export function buildRemielSelfMasteryProcessItems(options: {
   externalMastery: number
   inCombatMasteryZone: number
   sourceItems: string[]
-  fullPanelMastery?: number
-  editorPanelMastery?: number
-  editorMasteryZone?: number
-}): StatSourceGroup[] {
+}): string[] {
   const inCombatMastery = options.inCombatMasteryZone * 100
   const bonus = Math.max(0, inCombatMastery - options.externalMastery)
-  const process = [
+  return [
     `局外精通 ${fmt(options.externalMastery, 2)}`,
     ...options.sourceItems,
     options.sourceItems.length
@@ -328,6 +339,17 @@ export function buildRemielSelfMasteryTipGroups(options: {
     '仅：局外精通 + 驱动盘4件套全局精通 + 音擎全局精通',
     '不含队友/邦布及其它精通增益',
   ]
+}
+
+export function buildRemielSelfMasteryTipGroups(options: {
+  externalMastery: number
+  inCombatMasteryZone: number
+  sourceItems: string[]
+  fullPanelMastery?: number
+  editorPanelMastery?: number
+  editorMasteryZone?: number
+}): StatSourceGroup[] {
+  const process = buildRemielSelfMasteryProcessItems(options)
   const groups: StatSourceGroup[] = [
     {
       label: '本人耀变局内精通（特殊口径）',

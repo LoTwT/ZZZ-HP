@@ -112,7 +112,13 @@ export function formatSkillMultZoneAsPercent(zone: number): string {
 }
 
 function pushCommon(rows: SkillCalcZoneRow[], result: DamageCalcResult) {
-  push(rows, '基础伤害', result.baseDamage, true)
+  const baseSourceLabel =
+    result.baseDamageSource === 'pierce'
+      ? '面板贯穿力'
+      : result.baseDamageSource === 'def'
+        ? '面板防御力'
+        : '面板攻击力'
+  push(rows, baseSourceLabel, result.baseDamage, true)
   push(rows, '防御区', result.defenseMultiplier)
   push(rows, '抗性区', result.resistanceMultiplier)
   push(rows, '失衡易伤区', result.staggerMultiplier)
@@ -127,7 +133,7 @@ function pushRemielSelfRadianceRows(rows: SkillCalcZoneRow[], result: DamageCalc
   push(rows, '特殊等级区', result.remielSelfSpecialLevelZone ?? 1)
   push(rows, '异化系数区', result.remielSelfMutationZone ?? result.mutationZone)
   push(rows, '等级区', result.remielSelfStandardLevelZone ?? result.levelZone)
-  push(rows, '蕾米埃尔异常基础', result.anomalyBaseExpected, true)
+  // 「蕾米埃尔异常基础」= 上面 5 项连乘，属中间结果，与「通用乘区」同口径不显示
   push(rows, '防御区', result.remielSelfDefenseMultiplier ?? result.defenseMultiplier)
   push(rows, '抗性区', result.remielSelfResistanceMultiplier ?? result.resistanceMultiplier)
   push(rows, '易伤区', result.anomalyVulnerableMultiplier)
@@ -191,6 +197,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'anomaly') {
+  push(rows, '增伤区', result.dmgMultiplier)
+
     const hasCritZone = isActiveZone(result.anomalyFullCritZone)
     push(rows, '异常增伤区', result.anomalyDmgBonusZone)
     push(rows, '异常倍率区', result.anomalyMultZone)
@@ -207,6 +215,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'disorder') {
+  push(rows, '增伤区', result.dmgMultiplier)
+
     // 紊乱**只吃自己的**暴击（紊乱暴击率/爆伤），与乱流同款判断
     const hasCritZone = isActiveZone(result.disorderFullCritZone)
     push(rows, '紊乱基础倍率', result.disorderBaseMultRatio)
@@ -230,6 +240,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'turbulence') {
+  push(rows, '增伤区', result.dmgMultiplier)
+
     // 乱流**只吃自己的**暴击（用户 2026-10-16：不再蹭异常暴击）
     const hasCritZone = isActiveZone(result.turbulenceFullCritZone)
     push(rows, '乱流基础倍率', result.turbulenceBaseMultRatio)
@@ -253,6 +265,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'anomalyRelease') {
+  push(rows, '增伤区', result.dmgMultiplier)
+
     push(rows, '异放综合增伤区', result.anomalyReleaseCombinedDmgBonusZone)
     push(rows, '异放倍率区', result.anomalyReleaseMultZone)
     // 「异常综合暴击区」已删除 → 异放用自己的暴击区（用户 2026-10-16）
@@ -270,6 +284,8 @@ export function buildSkillCalcZoneRows(
   }
 
   if (damageType === 'radiance') {
+  push(rows, '增伤区', result.dmgMultiplier)
+
     // 耀变暴击对所有触发者成立（蕾米本人链见 pushRemielSelfRadianceRows）
     const hasCritZone = isActiveZone(result.radianceFullCritZone)
     push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
@@ -287,4 +303,107 @@ export function buildSkillCalcZoneRows(
   }
 
   return rows
+}
+
+/* ===================== 格子归属与口径说明（2026-10-26） ===================== */
+
+/** 乘区归属：异常强度提供者 / 异常类触发者 / 最终伤害 */
+export type SkillCalcZoneGroup = 'producer' | 'trigger' | 'mixed' | 'result'
+
+const PRODUCER_ZONE_LABELS = new Set([
+  '局内攻击力',
+  '局内精通区',
+  '精通区',
+  '特殊等级区',
+  '异化系数区',
+  '异化系数',
+  '等级区',
+  '基础伤害',
+  '面板攻击力',
+  '面板防御力',
+  '面板贯穿力',
+  '增伤区',
+  // 紊乱 / 乱流的「倍率与持续时间」取异常强度提供者
+  // （口径见 DamageResultDetail 的 valueTips：multPanel = producer）
+  '增伤',
+  '紊乱基础倍率',
+  '异常持续时间',
+  '紊乱补偿倍率',
+  '紊乱倍率修正',
+  '紊乱倍率区',
+  '乱流基础倍率',
+  '乱流补偿倍率',
+  '乱流倍率修正',
+  '乱流倍率区',
+])
+
+const MIXED_ZONE_LABELS = new Set(['通用乘区', '防御区'])
+
+const RESULT_ZONE_LABELS = new Set(['暴击伤害', '期望伤害', '不暴击伤害'])
+
+export function skillCalcZoneGroup(label: string): SkillCalcZoneGroup {
+  if (MIXED_ZONE_LABELS.has(label)) return 'mixed'
+  if (PRODUCER_ZONE_LABELS.has(label)) return 'producer'
+  if (RESULT_ZONE_LABELS.has(label)) return 'result'
+  return 'trigger'
+}
+
+const ZONE_HINTS: Record<string, string> = {
+  局内攻击力: '本人耀变链：局外攻击 + 蕾米埃尔角色/影画「攻击力转模」；不含局内攻击%、队友/邦布、音擎/驱动盘其它攻击增益。',
+  局内精通区: '本人耀变链：局外精通 + 驱动盘4件套全局精通 + 音擎全局精通，再 ÷100 得区；不含队友/邦布及其它精通增益。',
+  精通区: '局内精通 ÷ 100（取异常强度提供者面板）。',
+  特殊等级区: '本人耀变链的特殊等级区 = 1 + 0.025 × 角色等级（等级取提供者）。',
+  异化系数区: '数值由队伍中的蕾米埃尔提供：取她的局内面板「异化系数」与修正，计算式 max(0, 1 + 异化系数%) × 修正%。提供者只是该乘区归属角色。',
+  异化系数: '数值由队伍中的蕾米埃尔提供：取她的局内面板「异化系数」与修正，计算式 max(0, 1 + 异化系数%) × 修正%。',
+  等级区: '角色等级对应的等级区。',
+  基础伤害: '面板攻击力（倍率见倍率区，不在此处重复）。',
+  面板攻击力: '基础伤害取异常强度提供者的面板攻击力（不含招式倍率，倍率见倍率区）。',
+  面板防御力: '基础伤害取异常强度提供者的面板防御力（不含招式倍率，倍率见倍率区）。',
+  面板贯穿力: '基础伤害取贯穿力（0.1×生命 + 0.3×攻击 + 贯穿加成），不含招式倍率。',
+  增伤区: '1 + 增伤加成（取异常强度提供者）。',
+  防御区: '穿透率与穿透值取异常强度提供者，减防 / 无视防御取异常类触发者；794 / (794 + 敌方防御 × 防御因子 × (1 − 穿透率))。',
+  抗性区: '1 − 敌方抗性 + 抗性穿透。',
+  易伤区: '1 + 易伤加成（取异常类触发者）。',
+  非直伤易伤区: '1 + 易伤加成（异常 / 紊乱 / 乱流 / 耀变共用，取异常类触发者）。',
+  直伤易伤区: '1 + 直伤易伤加成（取异常类触发者）。',
+  失衡易伤区: '1 + 失衡易伤（全局与本期加算，取异常类触发者）。',
+  通用乘区: '由基础伤害 × 增伤区 × 防御区 × 抗性区 × 失衡易伤区连乘；基础/增伤/失衡取异常强度提供者，防御/抗性取异常类触发者。',
+  特殊乘区: '招式与增益提供的独立乘区连乘（取异常类触发者）。',
+  增伤: '1 + 增伤加成。',
+  暴击区: '1 + 暴击率 × 暴击伤害（期望暴击）。',
+  锐爆区: '锐化路径的暴击区：1 + 锐爆率 × 锐爆伤害。',
+  贯穿增伤区: '贯穿伤害路径的独立增伤乘区。',
+  技能倍率区: '招式倍率对应的乘区。',
+  直伤倍率区: '直伤倍率对应的乘区。',
+  决算倍率区: '决算倍率（结算额外倍率）。',
+  特殊倍率乘区: '特殊倍率乘区（如耀变倍率之外的额外倍率）。',
+  异常增伤区: '1 + 异常增伤（触发者）。',
+  异常倍率区: '异常倍率区（触发者）。',
+  异常暴击区: '1 + 异常暴击率 × 异常爆伤（触发者）。',
+  耀变综合增伤区: '耀变路径的综合增伤（触发者）。',
+  耀变倍率区: '耀变倍率 × 100（百分数展示）。',
+  耀变暴击区: '1 + 耀变暴击率 × 耀变爆伤（触发者）。',
+  异放综合增伤区: '异放路径的综合增伤（触发者）。',
+  异放倍率区: '异放倍率区（触发者）。',
+  异放暴击区: '1 + 异放暴击率 × 异放爆伤（触发者）。',
+  紊乱基础倍率: '紊乱基础倍率（含异常基础伤害，取异常强度提供者）。',
+  异常持续时间: '异常效果的实际持续时间（秒，取异常强度提供者）。',
+  紊乱补偿倍率: '紊乱补偿倍率 = 1 + 补偿系数 / 100（取异常强度提供者）。',
+  紊乱倍率修正: '紊乱倍率修正（乱流 / 紊乱专用乘区，取异常强度提供者）。',
+  紊乱倍率区: '紊乱倍率区（取异常强度提供者）。',
+  紊乱增伤区: '1 + 紊乱增伤（触发者）。',
+  紊乱暴击区: '1 + 紊乱暴击率 × 紊乱爆伤（触发者）。',
+  乱流基础倍率: '乱流基础倍率（含异常基础伤害，取异常强度提供者）。',
+  乱流补偿倍率: '乱流补偿倍率 = 1 + 补偿系数 / 100（取异常强度提供者）。',
+  乱流倍率修正: '乱流倍率修正（频率 / 触发相关，取异常强度提供者）。',
+  乱流倍率区: '乱流倍率区（取异常强度提供者）。',
+  乱流综合增伤区: '乱流路径的综合增伤（触发者）。',
+  乱流暴击区: '1 + 乱流暴击率 × 乱流爆伤（触发者）。',
+  暴击伤害: '按必暴计算的单次伤害（仅对照展示）。',
+  期望伤害: '单次期望伤害（暴击按概率加权）。',
+  不暴击伤害: '按不暴击计算的单次伤害（仅对照展示）。',
+}
+
+export function skillCalcZoneHint(label: string): string {
+  return ZONE_HINTS[label] ?? '由结算链路直接给出该乘区数值。'
 }

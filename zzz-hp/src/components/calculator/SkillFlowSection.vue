@@ -5,6 +5,7 @@ import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type {
   AgentBuffDoc,
   BuffEffect,
+  BuffStatKey,
   Skill,
   SkillDamageType,
   SkillGroup,
@@ -18,7 +19,6 @@ import type {
 } from '@/types/damageCalcHistory'
 import SkillFlowCard from '@/components/calculator/SkillFlowCard.vue'
 import SkillFlowStatsPanel from '@/components/calculator/SkillFlowStatsPanel.vue'
-import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import SkillDefinitionForm from '@/components/calculator/SkillDefinitionForm.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
@@ -34,14 +34,30 @@ import {
   ensureSchemeSlots,
   getHitSkipReason,
   newLocalId,
+  resolveFlowEntryCount,
+  resolveFlowMemberCount,
   skillNeedsDualAgents,
+  summarizeFlowHit,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
 import { isLuminousAgent } from '@/utils/remielUtils'
 import {
+  buildSkillCalcZoneRows,
   formatSkillMultZoneAsPercent,
   pickSkillMultPercentRatio,
+  skillCalcZoneGroup,
+  skillCalcZoneHint,
+  type SkillCalcZoneRow,
 } from '@/utils/skillCalcZones'
+import { buildStatSourceGroups, type StatSourceGroup } from '@/utils/statSourceTips'
+import {
+  buildDefenseZoneFormulaItems,
+  buildRemielSelfAtkTipGroups,
+  buildRemielSelfMasteryTipGroups,
+  buildRemielSpecialLevelZoneProcessItems,
+  buildRemielStandardLevelZoneProcessItems,
+  buildResistanceZoneProcessItems,
+} from '@/utils/zoneSourceTips'
 import { createCustomSkillId } from '@/utils/skillLibrary'
 import {
   clearSkillNoteOverride,
@@ -716,24 +732,6 @@ const preparedSkillIds = computed(() => {
   return ids
 })
 
-const preparedGroupIds = computed(() => {
-  const ids = new Set<string>()
-  for (const item of currentSlot.value.prepared) {
-    const gid = item.skillGroupId?.trim()
-    if (gid) ids.add(gid)
-  }
-  return ids
-})
-
-const preparedSkillNames = computed(() => {
-  const names = new Set<string>()
-  for (const item of currentSlot.value.prepared) {
-    const name = preparedDisplayName(item).trim()
-    if (name && name !== '招式已删除' && name !== '技能组已删除') names.add(name)
-  }
-  return names
-})
-
 const flowPreparedIds = computed(
   () => new Set(currentSlot.value.flow.map((item) => item.preparedId)),
 )
@@ -800,26 +798,13 @@ const libraryEmptyText = computed(() => {
 
 const preparedColHint = computed(() =>
   modalTab.value === 'prep'
-    ? '每种一条；异常类详情选双代理人；改名/倍率回招式库。伤害单次、不含失衡。'
-    : '可多次加入流程；双代理人在准备详情选。伤害单次、不含失衡。',
+    ? '同一招式可多次加入准备（每条分别配异常强度提供者 / 显示名）。'
+    : '可多次加入流程；双代理人在准备详情选。',
 )
 
-function preparedBlockReason(skill: Skill): 'id' | 'name' | null {
-  if (preparedSkillIds.value.has(skill.id)) return 'id'
-  const name = skill.name.trim()
-  if (name && preparedSkillNames.value.has(name)) return 'name'
-  return null
-}
-
-function preparedGroupBlockReason(group: SkillGroup): 'id' | 'name' | null {
-  if (preparedGroupIds.value.has(group.id)) return 'id'
-  const name = group.name.trim()
-  if (name && preparedSkillNames.value.has(name)) return 'name'
-  return null
-}
-
+/** 「全部加入」只补还没加过的招式（同一招式可以多次单独加入准备，用于不同异常强度提供者） */
 const unpreparedFilteredCount = computed(
-  () => librarySkills.value.filter((skill) => !preparedBlockReason(skill)).length,
+  () => librarySkills.value.filter((skill) => !preparedSkillIds.value.has(skill.id)).length,
 )
 
 function damageTypeLabel(type: SkillDamageType) {
@@ -1465,13 +1450,485 @@ const detailAgentTriggerId = computed(() => {
   return prepared.triggerAgentId ?? ''
 })
 
-const detailCalculation = computed(() => {
+/** 计算过程格子：沿用旧版 zone-display 口径（按伤害类型列出实际参与的乘区） */
+const detailZoneRows = computed(() => {
   const kind = detail.value?.kind
-  if (kind !== 'flow' && kind !== 'flowMember') return null
+  if (kind !== 'flow' && kind !== 'flowMember') return []
+  const skill = detailSkill.value
   const key = detailCalcKey.value
-  if (!key || detailSkipReason.value) return null
+  if (!skill || !key || detailSkipReason.value) return []
+  const result = props.hitCalcResults?.[key]
+  if (!result) return []
+  // 通用乘区是其它乘区乘出来的合成项，不单独展示
+  return buildSkillCalcZoneRows(result, skill.damageType).filter(
+    (row) => row.label !== '通用乘区',
+  )
+})
+
+/** 计算过程里实际生效的异常强度提供者 / 触发者（流程行可覆盖准备条目） */
+const detailZoneProviderAgentId = computed(() => {
+  const prepared = detailPrepared.value
+  if (!prepared) return ''
+  const current = detail.value
+  const entry =
+    current && (current.kind === 'flow' || current.kind === 'flowMember') ? detailFlowEntry() : null
+  return entry?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || ''
+})
+
+const detailZoneTriggerAgentId = computed(() => {
+  const prepared = detailPrepared.value
+  if (!prepared) return ''
+  const current = detail.value
+  const entry =
+    current && (current.kind === 'flow' || current.kind === 'flowMember') ? detailFlowEntry() : null
+  return entry?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || ''
+})
+
+/** 两者不同角色时，把格子分成「提供者」「触发者」两框；相同则不拆 */
+const detailZoneSplit = computed(() => {
+  const producerId = detailZoneProviderAgentId.value
+  const triggerId = detailZoneTriggerAgentId.value
+  if (!producerId || !triggerId || producerId === triggerId) return null
+  const producerRows: SkillCalcZoneRow[] = []
+  const triggerRows: SkillCalcZoneRow[] = []
+  const mixedRows: SkillCalcZoneRow[] = []
+  const resultRows: SkillCalcZoneRow[] = []
+  for (const row of detailZoneRows.value) {
+    const group = skillCalcZoneGroup(row.label)
+    if (group === 'producer') producerRows.push(row)
+    else if (group === 'mixed') mixedRows.push(row)
+    else if (group === 'result') resultRows.push(row)
+    else triggerRows.push(row)
+  }
+  if (!producerRows.length || !triggerRows.length) return null
+  return {
+    producerRows,
+    triggerRows,
+    mixedRows,
+    resultRows,
+    producerName: agentFullName(producerId) || producerId,
+    triggerName: agentFullName(triggerId) || triggerId,
+  }
+})
+
+interface ZoneTipState {
+  label: string
+  value: string
+  groups: StatSourceGroup[]
+  x: number
+  y: number
+  transform: string
+}
+
+const zoneTip = ref<ZoneTipState | null>(null)
+let zoneTipHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearZoneTipHideTimer() {
+  if (zoneTipHideTimer == null) return
+  clearTimeout(zoneTipHideTimer)
+  zoneTipHideTimer = null
+}
+
+function zoneTipGroupLabel(label: string): string {
+  const producerId = detailZoneProviderAgentId.value
+  const triggerId = detailZoneTriggerAgentId.value
+  if (!detailZoneSplit.value) {
+    if (producerId && triggerId && producerId === triggerId) {
+      return `异常强度提供者 / 触发者 · ${agentFullName(producerId) || producerId}`
+    }
+    return '通用'
+  }
+  if (label === '异化系数' || label === '异化系数区') {
+    const raw = detailZoneEval.value?.mutationAgentLabel?.trim()
+    const name = raw ? raw.replace(/^异化系数\s*·\s*/, '') : '蕾米埃尔'
+    return `异化系数来源 · ${name}`
+  }
+  const group = skillCalcZoneGroup(label)
+  if (group === 'producer') {
+    return `异常强度提供者 · ${agentFullName(producerId) || producerId}`
+  }
+  if (group === 'trigger') {
+    return `异常类触发者 · ${agentFullName(triggerId) || triggerId}`
+  }
+  if (group === 'mixed') return '共同（提供者 + 触发者）'
+  return '最终伤害'
+}
+
+/** 乘区标签 → 局外/增益来源字段（用于弹窗里的来源明细，与事件详情同源） */
+const ZONE_SOURCE_KEYS: Record<string, BuffStatKey[]> = {
+  // 局内攻击力 / 局内精通区 只出现在蕾米本人耀变链，来源走 buildRemielSelf*TipGroups（特殊口径）
+  面板攻击力: ['atk', 'externalAtkPercent', 'inCombatAtkPercent'],
+  面板防御力: ['def', 'externalDefPercent', 'inCombatDefPercent'],
+  面板贯穿力: ['pierce'],
+  精通区: ['mastery'],
+  抗性区: ['resPen', 'radianceResPen'],
+  易伤区: ['vulnerable', 'dmgReduction'],
+  非直伤易伤区: ['vulnerable', 'anomalyVulnerable', 'dmgReduction', 'anomalyDmgReduction'],
+  直伤易伤区: ['vulnerable', 'directVulnerable', 'dmgReduction', 'directDmgReduction'],
+  失衡易伤区: ['globalStaggerVulnerable', 'staggerVulnerable', 'staggerVulnerableOnly'],
+  特殊乘区: ['special'],
+  特殊倍率乘区: ['specialMult', 'specialMultFactor'],
+  增伤: ['dmgBonus', 'skillDmgBonus'],
+  增伤区: ['dmgBonus', 'skillDmgBonus'],
+  异常增伤区: ['anomalyDmgBonus'],
+  异常倍率区: ['anomalyMult', 'anomalyMultFactor'],
+  异常暴击区: ['anomalyCritRate', 'anomalyCritDmg'],
+  紊乱增伤区: ['disorderDmgBonus'],
+  紊乱暴击区: ['disorderCritRate', 'disorderCritDmg'],
+  乱流综合增伤区: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
+  乱流暴击区: ['turbulenceCritRate', 'turbulenceCritDmg'],
+  异放综合增伤区: ['anomalyReleaseDmgBonus', 'anomalyDmgBonus'],
+  异放倍率区: ['anomalyReleaseMult', 'anomalyReleaseMultFactor'],
+  异放暴击区: ['anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
+  耀变综合增伤区: ['radianceDmgBonus', 'anomalyDmgBonus'],
+  耀变倍率区: ['radianceMult', 'radianceMultFactor'],
+  耀变暴击区: ['radianceCritRate', 'radianceCritDmg'],
+  暴击区: ['critRate', 'critDmg'],
+  锐爆区: ['critRate', 'sharpenCritDmgBonus'],
+  贯穿增伤区: ['pierceDmgBonus'],
+}
+
+const detailZoneCalc = computed(() => {
+  const key = detailCalcKey.value
+  if (!key) return null
   return props.resolveCalculationDetail?.(key) ?? null
 })
+
+/** 只解析一次详情（含来源）；evaluation 从同一份结果取，避免重复计算 */
+const detailZoneEval = computed(() => detailZoneCalc.value?.evaluation ?? null)
+
+/** 多次结算：在计算过程末尾列出「期望 × 次数 = 合计」。
+ *  只读已结算的 hit 结果（与结算同一口径），缺结果时不显示，避免为合计触发完整来源解析 */
+const detailDamageSummary = computed(() => {
+  const current = detail.value
+  if (!current || (current.kind !== 'flow' && current.kind !== 'flowMember')) return null
+  const key = detailCalcKey.value
+  const skill = detailSkill.value
+  const entry = detailFlowEntry()
+  if (!key || !skill || !entry) return null
+  const result = props.hitCalcResults?.[key]
+  if (!result) return null
+  let count = 0
+  if (current.kind === 'flow') {
+    count = resolveFlowEntryCount(entry)
+  } else {
+    const member = detailMemberForAgents.value
+    if (!member) return null
+    count = resolveFlowMemberCount(entry, member, memberOverrideFor(entry, member))
+  }
+  return summarizeFlowHit(result, skill, count)
+})
+
+function formatDamageNumber(value: number) {
+  return Math.round(value).toLocaleString('en-US')
+}
+
+/** 乘区计算式（与事件详情弹窗的口径一致，用当前实际数值拼出） */
+function zoneTipFormula(label: string): string[] {
+  const ev = detailZoneEval.value
+  if (!ev) return []
+  const p = ev.result
+  const role = detailZoneSplit.value ? skillCalcZoneGroup(label) : 'single'
+  const panel =
+    role === 'producer' ? (ev.producerFinalPanel ?? ev.finalPanel) : (ev.bonusFinalPanel ?? ev.finalPanel)
+  const bonus = ev.bonusFinalPanel ?? ev.finalPanel
+  const mult = ev.producerFinalPanel ?? ev.finalPanel
+  const num = (value: number, digits = 4) => formatCalcDecimal(value, digits)
+  const enemy = detailZoneCalc.value?.enemyInput
+  const percent = (value: number, digits = 2) => `${num(value, digits)}%`
+
+  switch (label) {
+    case '面板攻击力':
+      return [`面板攻击力 ${num(panel.atk, 2)}（不含招式倍率，倍率见倍率区）`]
+    case '面板防御力':
+      return [`面板防御力 ${num(panel.def, 2)}（不含招式倍率，倍率见倍率区）`]
+    case '面板贯穿力':
+      return [
+        `贯穿力 ${num(ev.piercePower, 2)}（0.1×生命 + 0.3×攻击 + 贯穿加成；不含招式倍率）`,
+      ]
+    case '基础伤害':
+      if (p.baseDamageSource === 'pierce') {
+        return [`贯穿力 ${num(ev.piercePower, 2)}（0.1×生命 + 0.3×攻击 + 贯穿加成）`]
+      }
+      if (p.baseDamageSource === 'def') return [`面板防御力 ${num(panel.def, 2)}`]
+      return [`面板攻击力 ${num(panel.atk, 2)}`]
+    case '增伤区':
+      return [`1 + 增伤 ${percent(panel.dmgBonus)}（含招式增伤）`]
+    case '防御区': {
+      const penPanel = ev.producerFinalPanel ?? ev.finalPanel
+      const penExternal = ev.producerExternalPanel ?? ev.external
+      const defPanel = ev.defenseTriggerFinalPanel ?? ev.bonusFinalPanel ?? ev.finalPanel
+      return buildDefenseZoneFormulaItems({
+        enemyDefense: enemy?.defense ?? 0,
+        ignoreDefense: defPanel.ignoreDefense,
+        reduceDefense: defPanel.reduceDefense,
+        penRate: penPanel.penRate,
+        pen: penExternal.pen,
+        isMb: detailZoneCalc.value?.isMb,
+        penRateRole: detailZoneSplit.value ? '强度提供者' : undefined,
+        defCutRole: detailZoneSplit.value ? '触发者' : undefined,
+      })
+    }
+    case '抗性区':
+      return buildResistanceZoneProcessItems({
+        enemyResistance: p.enemyResistance,
+        resPen: panel.resPen,
+        zone: p.resistanceMultiplier,
+      })
+    case '失衡易伤区':
+      return [`1 + 失衡易伤（全局与本期加算）`]
+    case '易伤区':
+    case '非直伤易伤区':
+    case '直伤易伤区':
+      return [`1 + 易伤加成（本区已含减伤扣减）`]
+    case '特殊乘区':
+      return [`特殊乘区 = ${num(p.specialMultiplier)}（特殊乘区基础 × 特殊加成）`]
+    case '特殊倍率乘区':
+      return [
+        `max(0, 特殊倍率 ${percent(bonus.specialMult ?? 100)}) × 修正 ${percent(bonus.specialMultFactor ?? 100)}`,
+      ]
+    case '精通区':
+      return [`精通 ${num(panel.mastery, 2)} ÷ 100`]
+    case '特殊等级区':
+      // 与事件详情弹窗同源：本人耀变的双等级区各有一套计算式
+      return buildRemielSpecialLevelZoneProcessItems(
+        p.levelZoneAgentLevel,
+        p.remielSelfSpecialLevelZone,
+      )
+    case '等级区': {
+      const level = Math.max(1, Math.round(p.levelZoneAgentLevel))
+      if (p.remielSelfRadianceActive) {
+        return buildRemielStandardLevelZoneProcessItems(level, p.remielSelfStandardLevelZone)
+      }
+      return buildRemielStandardLevelZoneProcessItems(level, p.levelZone)
+    }
+    case '异化系数':
+    case '异化系数区': {
+      const mutationPanel = ev.mutationFinalPanel ?? ev.producerFinalPanel ?? ev.finalPanel
+      const coeff = Number(mutationPanel.mutationCoeff) || 0
+      const factor = Number(mutationPanel.mutationCoeffFactor) || 100
+      return [
+        `数值由蕾米埃尔的局内面板提供（不是异常强度提供者本人）`,
+        `异化系数 = max(0, 1 + ${num(coeff, 2)}%) × 修正 ${num(factor, 2)}% = ${num(p.mutationZone)}`,
+      ]
+    }
+    case '异常增伤区':
+      return [`1 + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`]
+    case '异常倍率区':
+      return [
+        `max(0, ${percent(bonus.anomalyMult)}) × 修正 ${percent(bonus.anomalyMultFactor ?? 100)}`,
+      ]
+    case '异常暴击区':
+      return [
+        `1 + 异常暴击率 ${percent(bonus.anomalyCritRate)} × 异常爆伤 ${percent(bonus.anomalyCritDmg)}`,
+      ]
+    case '紊乱基础倍率':
+      return [`面板紊乱基础倍率 ${percent(mult.disorderBaseMult)}`]
+    case '异常持续时间':
+      return [`面板 ${num(mult.anomalyDuration, 2)}s → 有效 ${num(p.effectiveAnomalyDuration, 2)}s`]
+    case '紊乱补偿倍率':
+      return [`紊乱补偿倍率 ${percent(mult.disorderCompMult)}`]
+    case '紊乱倍率修正':
+      return [`倍率修正 ×${num(p.disorderMultFactor)}`]
+    case '紊乱倍率区':
+      return [
+        `(基础 ${num(p.disorderBaseMultRatio)} + 有效时间 ${num(p.effectiveAnomalyDuration, 2)} × 补偿 ${num(p.disorderCompMultRatio)}) × 修正 ${num(p.disorderMultFactor)}`,
+      ]
+    case '紊乱增伤区':
+      return [`1 + 紊乱增伤 ${percent(bonus.disorderDmgBonus)}`]
+    case '紊乱暴击区':
+      return [
+        `1 + 紊乱暴击率 ${percent(bonus.disorderCritRate)} × 紊乱爆伤 ${percent(bonus.disorderCritDmg)}`,
+      ]
+    case '乱流基础倍率':
+      return [`面板乱流基础倍率 ${percent(mult.turbulenceBaseMult)}`]
+    case '乱流补偿倍率':
+      return [`乱流补偿倍率 ${percent(mult.turbulenceCompMult)}`]
+    case '乱流倍率修正':
+      return [`倍率修正 ×${num(p.turbulenceMultFactor)}`]
+    case '乱流倍率区':
+      return [
+        `(基础 ${num(p.turbulenceBaseMultRatio)} + 有效时间 ${num(p.effectiveAnomalyDuration, 2)} × 补偿 ${num(p.turbulenceCompMultRatio)}) × 修正 ${num(p.turbulenceMultFactor)}`,
+      ]
+    case '乱流综合增伤区':
+      return [
+        `1 + 乱流增伤 ${percent(bonus.turbulenceDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
+      ]
+    case '乱流暴击区':
+      return [
+        `1 + 乱流暴击率 ${percent(bonus.turbulenceCritRate)} × 乱流爆伤 ${percent(bonus.turbulenceCritDmg)}`,
+      ]
+    case '异放综合增伤区':
+      return [
+        `1 + 异放增伤 ${percent(bonus.anomalyReleaseDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
+      ]
+    case '异放倍率区':
+      return [
+        `max(0, ${percent(bonus.anomalyReleaseMult)}) × 修正 ${percent(bonus.anomalyReleaseMultFactor ?? 100)}`,
+      ]
+    case '异放暴击区':
+      return [
+        `1 + 异放暴击率 ${percent(bonus.anomalyReleaseCritRate)} × 异放爆伤 ${percent(bonus.anomalyReleaseCritDmg)}`,
+      ]
+    case '耀变综合增伤区':
+      return [
+        `1 + 耀变增伤 ${percent(bonus.radianceDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
+      ]
+    case '耀变倍率区':
+      return [`max(0, ${percent(bonus.radianceMult)}) × 修正 ${percent(bonus.radianceMultFactor ?? 100)}（此处按百分比展示）`]
+    case '耀变暴击区':
+      return [
+        `1 + 耀变暴击率 ${percent(bonus.radianceCritRate)} × 耀变爆伤 ${percent(bonus.radianceCritDmg)}`,
+      ]
+    case '暴击区':
+      return [`1 + 暴击率 ${percent(panel.critRate)} × 暴击伤害 ${percent(panel.critDmg)}`]
+    case '锐爆区':
+      return [
+        `1 + 暴击率 ${percent(panel.critRate)} × 锐爆伤害 ${percent(panel.sharpenCritDmgBonus)}`,
+      ]
+    case '贯穿增伤区':
+      return [`贯穿增伤区 = ${num(p.pierceDmgMultiplier)}（贯穿增伤作为独立乘区）`]
+    case '增伤':
+      return [`1 + 增伤 ${percent(panel.dmgBonus)}`]
+    case '暴击伤害':
+    case '期望伤害':
+    case '不暴击伤害':
+      return [`单次伤害（暴击伤害 / 期望 / 不暴击 三种口径对照）`]
+    default:
+      return []
+  }
+}
+
+/** 按乘区归属挑对应的面板与来源（与 DamageResultDetail 的 panel / bonusPanel 同口径） */
+function zoneTipPanels(label: string) {
+  const ev = detailZoneEval.value
+  if (!ev) return null
+  const role = detailZoneSplit.value ? skillCalcZoneGroup(label) : 'single'
+  let external = ev.external
+  let sources = ev.breakdown?.sources ?? []
+  if (role === 'producer' && ev.producerExternalPanel) {
+    external = ev.producerExternalPanel
+    sources = ev.producerBreakdown?.sources ?? sources
+  } else if (role === 'trigger') {
+    if (
+      (label === '防御区' || label === '抗性区') &&
+      ev.defenseTriggerExternalPanel
+    ) {
+      external = ev.defenseTriggerExternalPanel
+      sources = ev.defenseTriggerBreakdown?.sources ?? sources
+    } else if (ev.bonusExternalPanel) {
+      external = ev.bonusExternalPanel
+      sources = ev.bonusBreakdown?.sources ?? sources
+    }
+  }
+  return { external, sources }
+}
+
+let zoneTipGroupsCache = new Map<string, StatSourceGroup[]>()
+
+watch(detailCalcKey, () => {
+  zoneTipGroupsCache = new Map()
+})
+
+// 结算结果换了（改加成 / 切面板）时来源也会变，缓存必须跟着失效
+watch(
+  () => props.hitCalcResults,
+  () => {
+    zoneTipGroupsCache = new Map()
+  },
+)
+
+function zoneTipGroups(row: SkillCalcZoneRow): StatSourceGroup[] {
+  const role = detailZoneSplit.value ? skillCalcZoneGroup(row.label) : 'single'
+  const cacheKey = `${role}|${row.label}|${row.value}`
+  const cached = zoneTipGroupsCache.get(cacheKey)
+  if (cached) return cached
+  const groups: StatSourceGroup[] = [
+    { label: zoneTipGroupLabel(row.label), items: [skillCalcZoneHint(row.label)] },
+  ]
+  const formula = zoneTipFormula(row.label)
+  if (formula.length) groups.push({ label: '计算式', items: formula, fullWidth: true })
+  groups.push({ label: '当前值', items: [`${row.label} ${row.value}`] })
+  const ev = detailZoneEval.value
+  if ((row.label === '异化系数' || row.label === '异化系数区') && ev?.mutationExternalPanel) {
+    const mutationGroups = buildStatSourceGroups({
+      keys: ['mutationCoeff', 'mutationCoeffFactor'],
+      externalPanel: ev.mutationExternalPanel,
+      sources: ev.mutationSources ?? [],
+      showAdditiveProcess: false,
+    })
+    if (mutationGroups.length) groups.push(...mutationGroups)
+  }
+  // 本人耀变的局内攻/精是特殊口径（局外 + 自身转模 / 全局精通），来源必须与事件详情同源
+  const remielSelfPanelZone =
+    row.label === '局内攻击力' || row.label === '局内精通区'
+  if (remielSelfPanelZone) {
+    if (ev?.remielSelfFinalPanel) {
+      const remielExt = ev.remielSelfExternalPanel ?? ev.producerExternalPanel ?? ev.external
+      const remielFinal = ev.remielSelfFinalPanel ?? ev.producerFinalPanel ?? ev.finalPanel
+      const remielGroups =
+        row.label === '局内攻击力'
+          ? buildRemielSelfAtkTipGroups({
+              externalAtk: remielExt.atk,
+              inCombatAtk: remielFinal.atk,
+              sourceItems: ev.remielSelfAtkSourceItems ?? [],
+              fullPanelAtk: remielFinal.atk,
+            })
+          : buildRemielSelfMasteryTipGroups({
+              externalMastery: remielExt.mastery,
+              inCombatMasteryZone: ev.result.remielSelfInCombatMasteryZone ?? 0,
+              sourceItems: ev.remielSelfMasterySourceItems ?? [],
+              fullPanelMastery: remielFinal.mastery,
+            })
+      if (remielGroups.length) groups.push(...remielGroups)
+    }
+  } else {
+    const keys = ZONE_SOURCE_KEYS[row.label]
+    const panels = zoneTipPanels(row.label)
+    if (keys?.length && panels) {
+      const sourceGroups = buildStatSourceGroups({
+        keys,
+        externalPanel: panels.external,
+        sources: panels.sources,
+        showAdditiveProcess: false,
+      })
+      if (sourceGroups.length) groups.push(...sourceGroups)
+    }
+  }
+  zoneTipGroupsCache.set(cacheKey, groups)
+  return groups
+}
+
+/** 悬停即显示；定位贴着对应格子，并按上下空间自动翻转 */
+function showZoneTip(row: SkillCalcZoneRow, event: Event) {
+  clearZoneTipHideTimer()
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const width = 400
+  const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8)
+  const below = rect.top < 260
+  zoneTip.value = {
+    label: row.label,
+    value: row.value,
+    groups: zoneTipGroups(row),
+    x: left,
+    y: below ? rect.bottom + 8 : rect.top - 8,
+    transform: below ? 'none' : 'translateY(-100%)',
+  }
+}
+
+function scheduleZoneTipHide() {
+  clearZoneTipHideTimer()
+  zoneTipHideTimer = setTimeout(() => {
+    zoneTip.value = null
+    zoneTipHideTimer = null
+  }, 120)
+}
+
+function cancelZoneTipHide() {
+  clearZoneTipHideTimer()
+}
 
 /** 详情「倍率%」：最终倍率区换算为百分点；触发者不合规则不展示倍率。
  *  未结算时回落「按当前槽位技能等级的有效基础倍率」（nanoka/耀变随等级），并标注等级来源 */
@@ -1782,6 +2239,17 @@ function detailMemberAgents(member: import('@/types/calculator').SkillGroupMembe
   }
 }
 
+/** 技能组内某成员在当前详情上下文里为什么算不进伤害（成员列表的红字原因） */
+function detailMemberSkipReason(
+  member: import('@/types/calculator').SkillGroupMember,
+): string | null {
+  if (!detailPrepared.value) return null
+  const skill = buffStore.findSkill(member.skillId)
+  if (!skill) return null
+  const agents = detailMemberAgents(member)
+  return dualAgentHintForAgents(skill, agents.anomalyPowerAgentId, agents.triggerAgentId)
+}
+
 /** 组行警告（按**本流程行生效值**判：成员行级覆盖优先） */
 function groupDualAgentHintForEntry(entry: FlowEntry, prepared: PreparedSkill): string | null {
   const group = preparedGroup(prepared)
@@ -1826,6 +2294,8 @@ function preparedGroup(prepared: PreparedSkill): SkillGroup | null {
 }
 
 function preparedDisplayName(prepared: PreparedSkill): string {
+  const alias = prepared.alias?.trim()
+  if (alias) return alias
   const group = preparedGroup(prepared)
   if (group) return group.name
   if (prepared.skillGroupId) return '技能组已删除'
@@ -1846,8 +2316,6 @@ function slotLabel(slot: TeamSlot, index: number) {
 function addPrepared(skill: Skill) {
   const ownerId = currentAgentId.value
   if (!ownerId) return
-  if (preparedBlockReason(skill)) return
-
   const slotIndex = activeSlotIndex.value
   const agents = defaultAnomalyAgents(skill.damageType, ownerId)
   const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
@@ -1868,7 +2336,6 @@ function addPrepared(skill: Skill) {
 function addPreparedGroup(group: SkillGroup) {
   const ownerId = currentAgentId.value
   if (!ownerId) return
-  if (preparedGroupBlockReason(group)) return
   const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
   const slot = next[activeSlotIndex.value]
   if (!slot) return
@@ -1891,15 +2358,12 @@ function addFilteredToPrepared() {
   const existingIds = new Set(
     currentSlot.value.prepared.map((item) => item.skillId).filter(Boolean) as string[],
   )
-  const existingNames = new Set(preparedSkillNames.value)
   const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
   const slot = next[activeSlotIndex.value]
   if (!slot) return
   for (const skill of librarySkills.value) {
-    const name = skill.name.trim()
-    if (existingIds.has(skill.id) || (name && existingNames.has(name))) continue
+    if (existingIds.has(skill.id)) continue
     existingIds.add(skill.id)
-    if (name) existingNames.add(name)
     const agents = defaultAnomalyAgents(skill.damageType, ownerId)
     slot.prepared.push({
       id: newLocalId('prep'),
@@ -1931,6 +2395,7 @@ function updatePrepared(preparedId: string, patch: Partial<PreparedSkill>) {
   slots.value = next
 }
 
+/** 本方案内的显示名称覆盖：留空恢复原名；允许同名招式并存 */
 function getActiveSlot(): SchemeSlot | undefined {
   return slots.value[activeSlotIndex.value]
 }
@@ -2154,11 +2619,17 @@ const detailDraft = reactive({
   baseMult: 0,
   settlementMult: 0,
   note: '',
+  /** 本方案显示名（仅准备/流程条目） */
+  alias: '',
 })
 const detailSaveHint = ref('')
 
 watch(
-  () => (detailSkill.value ? `${detail.value?.kind}:${detailSkill.value.id}` : ''),
+  () => {
+    if (!detailSkill.value) return ''
+    const preparedId = detailPrepared.value?.id ?? ''
+    return `${detail.value?.kind}:${detailSkill.value.id}:${preparedId}`
+  },
   () => {
     const skill = detailSkill.value
     detailSaveHint.value = ''
@@ -2170,6 +2641,7 @@ watch(
     detailDraft.baseMult = skill.baseMult
     detailDraft.settlementMult = skill.settlementMult ?? 0
     detailDraft.note = resolveSkillNote(skill.id, skill.note)
+    detailDraft.alias = detailPrepared.value?.alias ?? ''
   },
 )
 
@@ -2292,6 +2764,17 @@ function saveDetailNote() {
   detailSaveHint.value = '备注已保存到本机'
 }
 
+/** 保存本页可编辑内容：本方案显示名 + 备注（招式定义仍只读） */
+function saveDetailPage() {
+  const prepared = detailPrepared.value
+  const alias = detailDraft.alias.trim()
+  if (prepared && (prepared.alias ?? '') !== (alias || null)) {
+    updatePrepared(prepared.id, { alias: alias || null })
+  }
+  saveDetailNote()
+  detailSaveHint.value = '已保存本页内容'
+}
+
 function resetDetailNote() {
   const skill = detailSkill.value
   if (!skill) return
@@ -2306,14 +2789,6 @@ function saveDetailSkill() {
   const name = detailDraft.name.trim()
   if (!name) {
     detailSaveHint.value = '请填写名称'
-    return
-  }
-  const nameTaken = currentSlot.value.prepared.some((item) => {
-    if (item.skillId === skill.id) return false
-    return preparedSkill(item)?.name.trim() === name
-  })
-  if (nameTaken) {
-    detailSaveHint.value = '准备阶段已有同名招式'
     return
   }
   const anomaly = skillNeedsDualAgents(detailDraft.damageType)
@@ -2387,10 +2862,7 @@ function flowGroup(entry: FlowEntry): SkillGroup | null {
 function flowSkillName(entry: FlowEntry): string {
   const prepared = flowPrepared(entry)
   if (!prepared) return '未知招式'
-  if (isPreparedGroup(prepared)) {
-    return preparedGroup(prepared)?.name ?? '技能组已删除'
-  }
-  return flowSkill(entry)?.name ?? '招式已删除'
+  return preparedDisplayName(prepared)
 }
 
 function flowIsGroup(entry: FlowEntry): boolean {
@@ -2582,72 +3054,16 @@ watch(expanded, (open) => {
   }
 })
 
-function compactPreparedDuplicates() {
-  const next = ensureSchemeSlots(slots.value, Math.max(3, props.teamSlots.length))
-  let changed = false
-  for (const slot of next) {
-    const keepBySkill = new Map<string, string>()
-    const keepByGroup = new Map<string, string>()
-    const remap = new Map<string, string>()
-    const kept: PreparedSkill[] = []
-    for (const item of slot.prepared) {
-      const groupId = item.skillGroupId?.trim()
-      if (groupId) {
-        const keepId = keepByGroup.get(groupId)
-        if (keepId) {
-          remap.set(item.id, keepId)
-          changed = true
-          continue
-        }
-        keepByGroup.set(groupId, item.id)
-        kept.push(item)
-        continue
-      }
-      const skillId = item.skillId?.trim()
-      if (!skillId) {
-        kept.push(item)
-        continue
-      }
-      const keepId = keepBySkill.get(skillId)
-      if (keepId) {
-        remap.set(item.id, keepId)
-        changed = true
-        continue
-      }
-      keepBySkill.set(skillId, item.id)
-      kept.push(item)
-    }
-    if (kept.length === slot.prepared.length) continue
-    slot.prepared = kept
-    slot.flow = slot.flow.map((entry) => {
-      const mapped = remap.get(entry.preparedId)
-      return mapped ? { ...entry, preparedId: mapped } : entry
-    })
-  }
-  if (changed) {
-    slots.value = next
-    if (detail.value?.kind === 'prepared' && remapMissingPrepared(detail.value.preparedId, next)) {
-      detail.value = null
-    }
-  }
-}
-
-function remapMissingPrepared(preparedId: string, nextSlots: SchemeSlot[]) {
-  return nextSlots.every((slot) => !slot.prepared.some((item) => item.id === preparedId))
-}
-
-watch(
-  () => slots.value.map((slot) => slot.prepared.map((item) => item.skillId).join(',')).join('|'),
-  compactPreparedDuplicates,
-  { immediate: true },
-)
-
 function expand() {
   expanded.value = true
 }
 
 function onModalKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
+  if (zoneTip.value) {
+    zoneTip.value = null
+    return
+  }
   if (showCustomForm.value) {
     closeCustomForm()
     return
@@ -3028,16 +3444,9 @@ const showcaseTitle = computed(() => {
                     <button
                       type="button"
                       class="mini-btn add-prepared-btn"
-                      :disabled="Boolean(preparedGroupBlockReason(group))"
                       @click.stop="addPreparedGroup(group)"
                     >
-                      {{
-                        preparedGroupBlockReason(group) === 'name'
-                          ? '已有同名'
-                          : preparedGroupBlockReason(group)
-                            ? '已加'
-                            : '加入'
-                      }}
+                      加入
                     </button>
                     <button
                       v-if="isCustomSkillGroup(group)"
@@ -3086,16 +3495,9 @@ const showcaseTitle = computed(() => {
                     <button
                       type="button"
                       class="mini-btn add-prepared-btn"
-                      :disabled="Boolean(preparedBlockReason(skill))"
                       @click.stop="addPrepared(skill)"
                     >
-                      {{
-                        preparedBlockReason(skill) === 'name'
-                          ? '已有同名'
-                          : preparedBlockReason(skill)
-                            ? '已加'
-                            : '加入'
-                      }}
+                      加入
                     </button>
                     <button
                       v-if="skill.source === 'custom'"
@@ -3169,6 +3571,7 @@ const showcaseTitle = computed(() => {
                     dtype="技能组"
                     dtype-kind="direct"
                     :skip="Boolean(groupDualAgentHint(prepared))"
+                    :skip-reason="groupDualAgentHint(prepared)"
                     :row-draggable="modalTab === 'prep' && prepDragEnabled"
                     :dragging="prepDraggingId === prepared.id"
                     @dragstart="onPrepDragStart(prepared.id, $event)"
@@ -3204,7 +3607,7 @@ const showcaseTitle = computed(() => {
                   </SkillFlowCard>
                   <SkillFlowCard
                     v-else-if="preparedSkill(prepared)"
-                    :name="preparedSkill(prepared)!.name"
+                    :name="preparedDisplayName(prepared)"
                     :note="displaySkillNote(preparedSkill(prepared)!)"
                     :pop-mult="
                       dualAgentHint(prepared, preparedSkill(prepared)!)
@@ -3218,6 +3621,7 @@ const showcaseTitle = computed(() => {
                     :agent-pair="agentPairText(prepared, preparedSkill(prepared)!)"
                     :agent-title="agentPairTitle(prepared, preparedSkill(prepared)!)"
                     :skip="Boolean(dualAgentHint(prepared, preparedSkill(prepared)!))"
+                    :skip-reason="dualAgentHint(prepared, preparedSkill(prepared)!)"
                     :damage="
                       dualAgentHint(prepared, preparedSkill(prepared)!)
                         ? ''
@@ -3391,6 +3795,7 @@ const showcaseTitle = computed(() => {
                     :dragging="flowDraggingId === entry.id"
                     :damage="damageForFlow(entry.id)"
                     :skip="Boolean(flowSkipReason(entry))"
+                    :skip-reason="flowSkipReason(entry)"
                     @update:count="updateFlow(entry.id, { count: $event })"
                     @update:stagger="
                       updateFlow(entry.id, { staggerPhase: $event ? 'stagger' : 'normal' })
@@ -3871,17 +4276,8 @@ const showcaseTitle = computed(() => {
                         )
                       : ''
                   "
-                  :skip="
-                    Boolean(
-                      detailPrepared &&
-                        buffStore.findSkill(member.skillId) &&
-                        dualAgentHintForAgents(
-                          buffStore.findSkill(member.skillId)!,
-                          detailMemberAgents(member).anomalyPowerAgentId,
-                          detailMemberAgents(member).triggerAgentId,
-                        ),
-                    )
-                  "
+                  :skip="Boolean(detailMemberSkipReason(member))"
+                  :skip-reason="detailMemberSkipReason(member)"
                 >
                   <template #actions>
                     <button
@@ -3973,13 +4369,23 @@ const showcaseTitle = computed(() => {
               >
                 {{
                   skillNeedsDualAgents(detailSkill.damageType)
-                    ? '名称、倍率、类型请到招式库里改。这里可改双代理人与本机备注。'
-                    : '名称、倍率、类型请到招式库里改。备注可在此本机修改。'
+                    ? '招式定义（倍率/类型）请到招式库里改；显示名称可在上方单独设置（仅本方案）。这里还可改双代理人与本机备注。'
+                    : '招式定义请到招式库里改；显示名称可在上方单独设置（仅本方案）。备注可在此本机修改。'
                 }}
               </p>
               <p v-else-if="detail.kind === 'flow'" class="empty-hint">
                 次数和失衡在流程行改。招式定义请回招式库。备注可在此本机修改。
               </p>
+
+              <label v-if="detailPrepared" class="detail-alias">
+                <span>显示名称（仅本方案）</span>
+                <input
+                  v-model="detailDraft.alias"
+                  type="text"
+                  maxlength="40"
+                  placeholder="留空则用招式 / 技能组原名"
+                />
+              </label>
 
               <p class="detail-section-title">招式设置</p>
               <p v-if="detailSkill.source === 'preset'" class="empty-hint">
@@ -3998,14 +4404,162 @@ const showcaseTitle = computed(() => {
               />
 
               <p class="detail-section-title">计算过程</p>
-              <FlowCalculationDetail v-if="detailCalculation" :calculation="detailCalculation" />
+              <template v-if="detailZoneSplit">
+                <div class="zone-split">
+                  <section class="zone-box zone-box--producer">
+                    <header class="zone-box-head">
+                      <span>异常强度提供者</span>
+                      <strong class="zone-box-name">{{ detailZoneSplit.producerName }}</strong>
+                    </header>
+                    <div class="zone-display-grid">
+                      <div
+                        v-for="row in detailZoneSplit.producerRows"
+                        :key="`producer-${row.label}`"
+                        class="zone-display-item zone-display-item--clickable"
+                        role="button"
+                        tabindex="0"
+                        @pointerenter="showZoneTip(row, $event)"
+                        @pointerleave="scheduleZoneTipHide"
+                        @focus="showZoneTip(row, $event)"
+                        @blur="scheduleZoneTipHide"
+                      >
+                        <span class="zone-display-label">{{ row.label }}</span>
+                        <span class="zone-display-val">{{ row.value }}</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="zone-box zone-box--trigger">
+                    <header class="zone-box-head">
+                      <span>异常类触发者</span>
+                      <strong class="zone-box-name">{{ detailZoneSplit.triggerName }}</strong>
+                    </header>
+                    <div class="zone-display-grid">
+                      <div
+                        v-for="row in detailZoneSplit.triggerRows"
+                        :key="`trigger-${row.label}`"
+                        class="zone-display-item zone-display-item--clickable"
+                        role="button"
+                        tabindex="0"
+                        @pointerenter="showZoneTip(row, $event)"
+                        @pointerleave="scheduleZoneTipHide"
+                        @focus="showZoneTip(row, $event)"
+                        @blur="scheduleZoneTipHide"
+                      >
+                        <span class="zone-display-label">{{ row.label }}</span>
+                        <span class="zone-display-val">{{ row.value }}</span>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <section v-if="detailZoneSplit.mixedRows.length" class="zone-box zone-box--mixed">
+                  <header class="zone-box-head">
+                    <span>共同（提供者 + 触发者）</span>
+                  </header>
+                  <div class="zone-display-grid">
+                    <div
+                      v-for="row in detailZoneSplit.mixedRows"
+                      :key="`mixed-${row.label}`"
+                      class="zone-display-item zone-display-item--clickable"
+                      role="button"
+                      tabindex="0"
+                      @pointerenter="showZoneTip(row, $event)"
+                      @pointerleave="scheduleZoneTipHide"
+                      @focus="showZoneTip(row, $event)"
+                      @blur="scheduleZoneTipHide"
+                    >
+                      <span class="zone-display-label">{{ row.label }}</span>
+                      <span class="zone-display-val">{{ row.value }}</span>
+                    </div>
+                  </div>
+                </section>
+
+                <div v-if="detailZoneSplit.resultRows.length" class="zone-display-grid zone-result-grid">
+                  <div
+                    v-for="row in detailZoneSplit.resultRows"
+                    :key="`result-${row.label}`"
+                    class="zone-display-item zone-display-item--clickable zone-display-item--result"
+                    role="button"
+                    tabindex="0"
+                    @pointerenter="showZoneTip(row, $event)"
+                    @pointerleave="scheduleZoneTipHide"
+                    @focus="showZoneTip(row, $event)"
+                    @blur="scheduleZoneTipHide"
+                  >
+                    <span class="zone-display-label">{{ row.label }}</span>
+                    <span class="zone-display-val">{{ row.value }}</span>
+                  </div>
+                </div>
+              </template>
+              <div v-else-if="detailZoneRows.length" class="zone-display-grid">
+                <div
+                  v-for="row in detailZoneRows"
+                  :key="row.label"
+                  class="zone-display-item zone-display-item--clickable"
+                  role="button"
+                  tabindex="0"
+                  @pointerenter="showZoneTip(row, $event)"
+                  @pointerleave="scheduleZoneTipHide"
+                  @focus="showZoneTip(row, $event)"
+                  @blur="scheduleZoneTipHide"
+                >
+                  <span class="zone-display-label">{{ row.label }}</span>
+                  <span class="zone-display-val">{{ row.value }}</span>
+                </div>
+              </div>
               <p v-else class="empty-hint">
                 {{
                   detail.kind === 'flow' || detail.kind === 'flowMember'
-                    ? (detailSkipReason ?? '本条暂未计入伤害。请检查参与角色的面板是否已导入，以及当前面板来源是否可用。')
+                    ? '还没有这段的结算结果。确认已加入流程并完成计算。'
                     : '还没有结算结果。直伤预览在准备行；异常类要先加入准备并选双代理人。计算过程在流程详情里看。'
                 }}
               </p>
+
+              <div v-if="detailDamageSummary" class="zone-summary">
+                <span class="zone-summary-label">计算合计</span>
+                <span class="zone-summary-formula">
+                  期望 {{ formatDamageNumber(detailDamageSummary.perHit) }}
+                  <template v-if="detailDamageSummary.count > 1">
+                    × {{ detailDamageSummary.count }} 次 = 合计
+                    <strong>{{ formatDamageNumber(detailDamageSummary.total) }}</strong>
+                  </template>
+                  <template v-else>
+                    = 合计 <strong>{{ formatDamageNumber(detailDamageSummary.total) }}</strong>
+                  </template>
+                </span>
+              </div>
+
+              <Teleport to="body">
+                <div
+                  v-if="zoneTip"
+                  class="zone-tip stat-value-tip"
+                  :style="{
+                    left: `${zoneTip.x}px`,
+                    top: `${zoneTip.y}px`,
+                    transform: zoneTip.transform,
+                  }"
+                  @pointerenter="cancelZoneTipHide"
+                  @pointerleave="scheduleZoneTipHide"
+                >
+                  <p class="tip-title">{{ zoneTip.label }}</p>
+                  <div class="tip-groups">
+                    <div
+                      v-for="(group, groupIndex) in zoneTip.groups"
+                      :key="groupIndex"
+                      class="tip-group"
+                      :class="{ 'tip-group--full': group.fullWidth }"
+                    >
+                      <p class="tip-label">{{ group.label }}</p>
+                      <ul class="tip-items">
+                        <li v-for="(item, itemIndex) in group.items" :key="itemIndex">
+                          {{ item }}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </Teleport>
             </div>
             <div v-if="detailSkill && detailCanEditDefinition" class="skill-detail-foot">
               <button type="button" class="primary-btn save-action" @click="saveDetailSkill">
@@ -4022,8 +4576,8 @@ const showcaseTitle = computed(() => {
               <p v-if="detailSaveHint" class="empty-hint foot-hint">{{ detailSaveHint }}</p>
             </div>
             <div v-else-if="detailSkill" class="skill-detail-foot">
-              <button type="button" class="primary-btn save-action" @click="saveDetailNote">
-                保存备注
+              <button type="button" class="primary-btn save-action" @click="saveDetailPage">
+                保存本页内容
               </button>
               <button
                 v-if="hasSkillNoteOverride(detailSkill.id)"
@@ -4921,6 +5475,30 @@ const showcaseTitle = computed(() => {
   border: 1px solid #2f5c52;
   color: #8fd4c4;
 }
+.detail-alias {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--color-text, #d5dae3);
+}
+
+.detail-alias input {
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #2a3038;
+  background: #12161d;
+  color: #e8edf5;
+  font-size: 0.85rem;
+}
+
+:global([data-theme='light']) .detail-alias input {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #1c212a;
+}
+
 .detail-mult,
 .detail-section-title {
   margin: 0;
@@ -4953,6 +5531,113 @@ const showcaseTitle = computed(() => {
   font-weight: 700;
   color: #e8edf5;
   font-variant-numeric: tabular-nums;
+}
+
+/* 提供者 / 触发者两框（两者不同角色时） */
+.zone-split {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.zone-box {
+  padding: 0.5rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 10px;
+}
+
+.zone-box--producer {
+  border-color: color-mix(in srgb, #6f9fd0 60%, var(--color-border));
+  background: color-mix(in srgb, #6f9fd0 6%, transparent);
+}
+
+.zone-box--trigger {
+  border-color: color-mix(in srgb, #c9a55c 55%, var(--color-border));
+  background: color-mix(in srgb, #c9a55c 6%, transparent);
+}
+
+/* 通用乘区：同时含提供者与触发者数据，单独一条，不塞进任一框 */
+.zone-box--mixed {
+  margin-top: 0.55rem;
+  background: transparent;
+}
+
+.zone-box-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.zone-box-name {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.zone-result-grid {
+  margin-top: 0.5rem;
+}
+
+.zone-display-item--clickable {
+  cursor: pointer;
+}
+
+.zone-display-item--clickable:hover {
+  border-color: color-mix(in srgb, #c9a55c 65%, var(--color-border));
+}
+
+.zone-display-item--result .zone-display-val {
+  color: #8fc9ee;
+}
+
+:global([data-theme='light']) .zone-display-item--result .zone-display-val {
+  color: #1f6a99;
+}
+
+/* 乘区详解弹层：外观复用事件详情用的 .stat-value-tip，这里只补定位 */
+.zone-tip {
+  position: fixed;
+  z-index: 1301;
+  width: 400px;
+  max-width: calc(100vw - 16px);
+}
+
+.zone-tip::after,
+.zone-tip::before {
+  display: none;
+}
+
+/* 多次结算合计：期望 × 次数 = 合计 */
+.zone-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 60%, transparent);
+  font-size: 0.8rem;
+  color: var(--color-heading);
+}
+
+.zone-summary-label {
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.zone-summary-formula strong {
+  font-size: 0.95rem;
+  color: #8fc9ee;
+  font-variant-numeric: tabular-nums;
+}
+
+:global([data-theme='light']) .zone-summary-formula strong {
+  color: #1f6a99;
 }
 
 .list-section-label {

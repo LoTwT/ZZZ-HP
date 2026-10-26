@@ -6,6 +6,7 @@ import type {
   Skill,
   SkillCalcContext,
   SkillGroup,
+  SkillGroupMember,
   SkillMatchCoord,
   SkillSubcategory,
   StaggerPhase,
@@ -304,6 +305,40 @@ function resolveOne(
   }
 }
 
+/** 流程整行次数（普通行 / 技能组行共用） */
+export function resolveFlowEntryCount(entry: FlowEntry): number {
+  return Math.max(0, Number(entry.count) || 0)
+}
+
+/** 技能组内某段的次数 = (成员覆盖 > 成员定义) × 整行次数（与 resolveFlow 完全同口径） */
+export function resolveFlowMemberCount(
+  entry: FlowEntry,
+  member: SkillGroupMember,
+  override?: { count?: number | null } | null,
+): number {
+  return Math.max(0, Number(override?.count ?? member.count) || 0) * resolveFlowEntryCount(entry)
+}
+
+/**
+ * 流程命中的「单次 × 次数 = 合计」。
+ *
+ * 与 evaluateOptimalEventDetail 的 perHit / total 完全同口径（同一 pickEventDamage + 同一暴击口径），
+ * 供详情合计走「只读已结算结果」的轻量路径，避免为了一行合计再解析整套来源。
+ * 数据不全（无结果 / 次数为 0 / 单次伤害非法）时返回 null，宁可不显示也不显示错数。
+ */
+export function summarizeFlowHit(
+  result: DamageCalcResult | null | undefined,
+  skill: Skill | null | undefined,
+  count: number,
+): { count: number; perHit: number; total: number } | null {
+  if (!result || !skill) return null
+  const safeCount = Math.max(0, Number(count) || 0)
+  if (safeCount <= 0) return null
+  const perHit = pickEventDamage(result, skill.damageType, resolveFlowHitCritMode())
+  if (!Number.isFinite(perHit) || perHit < 0) return null
+  return { count: safeCount, perHit, total: perHit * safeCount }
+}
+
 /**
  * 展开方案的三条流程为一份扁平结算列表。
  *
@@ -331,7 +366,6 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           continue
         }
         const members = sortSkillGroupMembers(group.members)
-        const groupMult = Math.max(0, Number(entry.count) || 0)
         members.forEach((member, memberIndex) => {
           const skill = options.findSkill(member.skillId)
           if (!skill) {
@@ -340,7 +374,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
           }
           const ov = findMemberOverride(entry.memberOverrides, member)
           const ma = findMemberAgents(prepared.memberAgents, member)
-          const segmentCount = Math.max(0, Number(ov?.count ?? member.count) || 0) * groupMult
+          const segmentCount = resolveFlowMemberCount(entry, member, ov)
           // 组内异常段：本行成员覆盖 > 准备条目成员配置 > 整行/当前角色默认
           const power =
             ov?.anomalyPowerAgentId?.trim() ||

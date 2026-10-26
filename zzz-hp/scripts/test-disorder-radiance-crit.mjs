@@ -15,6 +15,12 @@ import { computeDamageResult } from '../src/utils/damageCalc.ts'
 import { pickEventDamage, resolveFlowHitCritMode } from '../src/utils/damageEvent.ts'
 import { buildSkillCalcZoneRows } from '../src/utils/skillCalcZones.ts'
 import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDisplay.ts'
+import { buildStatSourceGroups } from '../src/utils/statSourceTips.ts'
+import {
+  buildRemielSelfAtkProcessItems,
+  buildRemielSelfAtkTipGroups,
+  buildRemielSelfMasteryProcessItems,
+} from '../src/utils/zoneSourceTips.ts'
 
 let passed = 0
 let failed = 0
@@ -330,15 +336,36 @@ console.log('\n[8] 招式详情「计算过程」出现暴击区行，且带三�
   check('普通耀变链出「耀变暴击区」行', Boolean(radianceRow), radianceRow?.value ?? '缺失')
   check('耀变暴击区取值 1.5', radianceRow?.value === '1.5', radianceRow?.value)
 
-  const remielRows = buildSkillCalcZoneRows(
-    run({ radianceCritRate: 100, radianceCritDmg: 50 }, 'radiance', {
-      remielSelfRadianceCalc: remielSelf,
-    }),
-    'radiance',
-  )
+  const remielResult = run({ radianceCritRate: 100, radianceCritDmg: 50 }, 'radiance', {
+    remielSelfRadianceCalc: remielSelf,
+  })
+  const remielRows = buildSkillCalcZoneRows(remielResult, 'radiance')
   const remielRow = remielRows.find((row) => row.label === '耀变暴击区')
   check('蕾米本人耀变链也出「耀变暴击区」行', Boolean(remielRow), remielRow?.value ?? '缺失')
   check('本人链耀变暴击区取值 1.5', remielRow?.value === '1.5', remielRow?.value)
+  check(
+    '本人链不再显示合成项「蕾米埃尔异常基础」',
+    !remielRows.some((row) => row.label === '蕾米埃尔异常基础'),
+    remielRows.map((row) => row.label).join(' / '),
+  )
+  check(
+    '本人链保留 5 个基础乘区（局内攻击力/局内精通区/特殊等级区/异化系数区/等级区）',
+    ['局内攻击力', '局内精通区', '特殊等级区', '异化系数区', '等级区'].every((label) =>
+      remielRows.some((row) => row.label === label),
+    ),
+    remielRows.map((row) => row.label).join(' / '),
+  )
+  const baseProduct =
+    (remielResult.remielSelfInCombatAtk ?? 0) *
+    (remielResult.remielSelfInCombatMasteryZone ?? 0) *
+    (remielResult.remielSelfSpecialLevelZone ?? 1) *
+    (remielResult.remielSelfMutationZone ?? 1) *
+    (remielResult.remielSelfStandardLevelZone ?? 1)
+  check(
+    '5 个基础乘区连乘 = 结算用的异常基础（去掉合成项不丢因子）',
+    near(baseProduct, remielResult.anomalyBaseExpected, remielResult.anomalyBaseExpected * 1e-3),
+    `${baseProduct} vs ${remielResult.anomalyBaseExpected}`,
+  )
 }
 
 console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击区」一项，结果只显示当前口径一档')
@@ -394,6 +421,90 @@ console.log('\n[9] 底部伤害详情公式表：紊乱 / 耀变各多「暴击�
       `${group.result} vs ${pickEventDamage(radiance, 'radiance', 'expected')}`,
     )
   }
+}
+
+console.log('\n[10] 本人耀变局内攻/精与特殊倍率乘区：弹窗计算过程与来源')
+{
+  const atkProcess = buildRemielSelfAtkProcessItems({
+    externalAtk: 2000,
+    inCombatAtk: 2500,
+    sourceItems: ['影画2 攻击力转模 +500'],
+  })
+  check(
+    '局内攻击计算过程给出 局外 + 转模 = 局内',
+    atkProcess.includes('2,000 + 500 = 2,500'),
+    atkProcess.join(' | '),
+  )
+  check(
+    '局内攻击计算过程标注特殊口径（不含局内攻击%）',
+    atkProcess.some((item) => item.startsWith('仅：局外攻击')),
+    atkProcess.join(' | '),
+  )
+
+  const masteryProcess = buildRemielSelfMasteryProcessItems({
+    externalMastery: 200,
+    inCombatMasteryZone: 3,
+    sourceItems: ['4件套 +100'],
+  })
+  check(
+    '局内精通计算过程给出 ÷100 得区',
+    masteryProcess.includes('局内精通区 ÷100 → 3'),
+    masteryProcess.join(' | '),
+  )
+
+  const atkGroups = buildRemielSelfAtkTipGroups({
+    externalAtk: 2000,
+    inCombatAtk: 2500,
+    sourceItems: ['影画2 攻击力转模 +500'],
+    fullPanelAtk: 3000,
+  })
+  check(
+    '局内攻击弹窗含 来源 / 对照 / 加减过程',
+    ['来源', '对照（本人耀变不用）', '加减过程'].every((label) =>
+      atkGroups.some((group) => group.label === label),
+    ),
+    atkGroups.map((group) => group.label).join(' / '),
+  )
+
+  const specialSourceGroups = buildStatSourceGroups({
+    keys: ['specialMult', 'specialMultFactor'],
+    externalPanel: makePanel({ specialMult: 120, specialMultFactor: 110 }),
+    sources: [
+      { id: 'special-buff', label: '测试特殊倍率', mods: { specialMult: 20, specialMultFactor: 10 } },
+    ],
+    showAdditiveProcess: false,
+  })
+  check(
+    '特殊倍率来源能列出局外面板与增益条目',
+    specialSourceGroups.some((group) =>
+      group.items.some((item) => item.includes('特殊倍率%')),
+    ) && specialSourceGroups.some((group) => group.label === '测试特殊倍率'),
+    specialSourceGroups.map((group) => `${group.label}：${group.items.join('，')}`).join(' / '),
+  )
+
+  const specialPanel = makePanel({ specialMult: 120, specialMultFactor: 110 })
+  const specialResult = computeDamageResult({
+    finalPanel: specialPanel,
+    piercePower: 0,
+    baseDamageSource: 'atk',
+    isMbMainAgent: false,
+    enemyInput: enemy,
+    combatVulnerable: 0,
+    combatStaggerVulnerable: 0,
+    combatSpecial: 0,
+    staggerPhase: 'normal',
+    ownerAgentLevel: 60,
+    triggerFinalPanel: specialPanel,
+    triggerAgentLevel: 60,
+    anomalyTriggerPanel: specialPanel,
+    anomalySubKind: 'radiance',
+    remielSelfRadianceCalc: remielSelf,
+  })
+  check(
+    '特殊倍率乘区 = max(0, 120%) × 修正 110% = 1.32',
+    Math.abs(specialResult.specialMultZone - 1.32) < 1e-6,
+    `${specialResult.specialMultZone}`,
+  )
 }
 
 console.log(`\n${failed ? `❌ ${failed} failed, ${passed} passed` : `✅ all passed（${passed}）`}`)
