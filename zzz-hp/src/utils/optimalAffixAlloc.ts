@@ -1747,18 +1747,23 @@ function resolveEventLine(
   return line
 }
 
+/**
+ * 事件汇总（计算链路收敛 Spec §2.7 第 1 项 / C8）。
+ *
+ * 这里**只**产出「逐事件行 + 合计」；`globalSummary` 是顺带拿到的**全局面板摘要**
+ * （主槽面板，与具体是哪个事件无关），两者语义不同、不能互相替代：
+ * 把 `globalSummary` 直接当第一条事件的结果会改变分析侧展示含义。
+ */
 function computeEventDamageLines(
   ctx: OptimalEvalContext,
   external: PanelStats,
 ): {
-  grandTotal: number
-  eventLines: OptimalEventDamageLine[]
-  firstResult: DamageCalcResult | null
-  firstBreakdown: OptimalPanelBreakdown | null
+  eventSummary: { grandTotal: number; eventLines: OptimalEventDamageLine[] }
+  globalSummary: { result: DamageCalcResult; breakdown: OptimalPanelBreakdown } | null
 } {
   const hits = ctx.hits ?? []
   if (!hits.length) {
-    return { grandTotal: 0, eventLines: [], firstResult: null, firstBreakdown: null }
+    return { eventSummary: { grandTotal: 0, eventLines: [] }, globalSummary: null }
   }
 
   let grandTotal = 0
@@ -1812,7 +1817,10 @@ function computeEventDamageLines(
     }
   }
 
-  return { grandTotal, eventLines, firstResult, firstBreakdown }
+  return {
+    eventSummary: { grandTotal, eventLines },
+    globalSummary: firstResult && firstBreakdown ? { result: firstResult, breakdown: firstBreakdown } : null,
+  }
 }
 
 function computeEventDamageLinesForSweep(
@@ -2348,12 +2356,11 @@ function evaluateAffixCountsUncached(
   const evalCtx = withAffixLibraryExtraGains(ctx, extraGains)
 
   if (ctx.hits?.length) {
-    const { grandTotal, eventLines, firstResult, firstBreakdown } = computeEventDamageLines(
-      evalCtx,
-      external,
-    )
+    // 事件汇总与全局面板摘要分开取：前者逐事件，后者是主槽面板（Spec §2.7 第 1 项）
+    const { eventSummary, globalSummary } = computeEventDamageLines(evalCtx, external)
+    const { grandTotal, eventLines } = eventSummary
     const breakdown =
-      firstBreakdown ??
+      globalSummary?.breakdown ??
       computeFinalPanel(external, {
         ...buildPanelContextForSlot(evalCtx, evalCtx.panelContext.mainSlotIndex, external, external),
         skillContext: evalCtx.panelContext.skillContext ?? undefined,
@@ -2364,7 +2371,7 @@ function evaluateAffixCountsUncached(
       breakdown.totalMods.pierce,
     )
     const result =
-      firstResult ??
+      globalSummary?.result ??
       computeDamageResult({
         finalPanel: breakdown.finalPanel,
         piercePower,
