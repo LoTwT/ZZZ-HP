@@ -15,6 +15,7 @@ import type {
 import type { CharacterAttrKey } from '@/types/calculator'
 import type { DamageEnemyInput, EnemyResistanceType } from '@/utils/enemyResistance'
 import type { MultiSlotBuffSelection } from '@/utils/panelBuffCalc'
+import type { AgentElement } from '@/utils/calculatorUi'
 
 /** 兼容旧存档的敌方环境快照 */
 export type DamageCalcEnemyInputSnapshot = DamageEnemyInput & {
@@ -175,6 +176,7 @@ export interface FlowBuffOverride {
  * 流程组行上的成员覆盖（仅该方案实例；缺省 = 继承整组 FlowEntry + 组定义）。
  */
 export interface FlowGroupMemberOverride {
+  elementOverride?: AgentElement | null
   /** 稳定键：`${order}:${skillId}` */
   memberKey: string
   skillId: string
@@ -191,6 +193,7 @@ export interface FlowGroupMemberOverride {
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
 export interface FlowEntry {
+  elementOverride?: AgentElement | null
   id: string
   /** 该流程所属角色；为将来三条流程合并显示预留 */
   ownerAgentId: string

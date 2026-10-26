@@ -30,6 +30,8 @@ import {
 } from '@/utils/damageEvent'
 import {
   buildDefaultMemberAgents,
+  normalizeEventElement,
+  resolveEventElement,
   defaultAnomalyAgents,
   ensureSchemeSlots,
   getHitSkipReason,
@@ -37,6 +39,7 @@ import {
   skillNeedsDualAgents,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
+import { AGENT_ELEMENTS } from '@/utils/calculatorUi'
 import { isLuminousAgent } from '@/utils/remielUtils'
 import {
   formatSkillMultZoneAsPercent,
@@ -992,7 +995,7 @@ function skillMultText(skill: Skill, calcKey?: string | null) {
     buffAnchorId: anchorId,
     subcategory: sub,
     agent,
-    element: skill.element || agent?.element,
+    element: calcKey ? resolveEventElement(props.hits?.find(hit => hit.id === calcKey) ?? { skill, ownerAgentId: currentAgentId.value, anomalyPowerAgentId: null, elementOverride: null }, props.agents) : skill.element || agent?.element,
   })
   if (fromInherent != null) return String(fromInherent)
   if (skillMultNeedsAnomalyPowerProvider(skill.damageType)) return '待选择'
@@ -1987,6 +1990,30 @@ function updateFlow(entryId: string, patch: Partial<FlowEntry>) {
   Object.assign(entry, patch)
 }
 
+
+function setFlowElement(entryId: string, value: unknown) {
+  const entry = getActiveSlot()?.flow.find(item => item.id === entryId)
+  if (!entry) return
+  const element = normalizeEventElement(value)
+  if (element) entry.elementOverride = element
+  else delete entry.elementOverride
+}
+
+function setMemberElement(entryId: string, member: { order: number; skillId: string; count: number }, value: unknown) {
+  setMemberOverride(entryId, member, { elementOverride: normalizeEventElement(value) ?? null })
+}
+
+function eventElementLabel(entry: FlowEntry, member?: { order: number; skillId: string }) {
+  if (!member && flowIsGroup(entry)) return entry.elementOverride ? `整组：${entry.elementOverride}` : '整组：自动'
+  const memberIndex = member ? sortSkillGroupMembers(flowGroup(entry)?.members ?? []).findIndex(item => skillGroupMemberKey(item) === skillGroupMemberKey(member)) : -1
+  const key = member ? `${entry.id}#${memberIndex}:${member.skillId}` : entry.id
+  const hit = props.hits?.find(item => item.id === key)
+  const element = hit ? resolveEventElement(hit, props.agents) : undefined
+  const own = member ? memberOverrideFor(entry, member)?.elementOverride : entry.elementOverride
+  const origin = own ? '手动' : member && entry.elementOverride ? '继承整组' : '自动'
+  return `${element ?? '待选择'}（${origin}）`
+}
+
 function removeFlow(entryId: string) {
   const slot = getActiveSlot()
   if (!slot) return
@@ -2567,6 +2594,7 @@ function setMemberOverride(
   const base: FlowGroupMemberOverride = {
     memberKey: key,
     skillId: member.skillId,
+    ...prev,
     count: prev?.count ?? null,
     staggerPhase: prev?.staggerPhase ?? null,
     // 技能组详情（流程行）不再提供暴击覆盖
@@ -2575,12 +2603,14 @@ function setMemberOverride(
     triggerAgentId: prev?.triggerAgentId ?? null,
     ...patch,
   }
+  if (!normalizeEventElement(base.elementOverride)) delete base.elementOverride
   if (patch.count === null) base.count = null
   if (patch.staggerPhase === null) base.staggerPhase = null
   if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
   if (patch.triggerAgentId === null) base.triggerAgentId = null
   // 成员例外的空条目判据：次数 / 失衡 / 两个代理人 + 例外本身是否为空（同一份判据）
   const empty =
+    !base.elementOverride &&
     base.count == null &&
     base.staggerPhase == null &&
     !base.anomalyPowerAgentId &&
@@ -3343,7 +3373,7 @@ const showcaseTitle = computed(() => {
                   {{
                     flowDragEnabled
                       ? '打开拖动后，按住招式行可改顺序。详情、次数和失衡仍是点击。'
-                      : '只改次数和是否失衡。需要换顺序时打开「拖动排序」。'
+                      : '可改次数、是否失衡和事件元素。需要换顺序时打开「拖动排序」。'
                   }}
                 </p>
               </div>
@@ -3429,6 +3459,15 @@ const showcaseTitle = computed(() => {
                     @dragstart="onFlowDragStart(entry.id, $event)"
                     @dragend="onFlowDragEnd"
                   >
+                    <template #parameters>
+                      <label class="sf-event-element">事件元素
+                        <select :value="entry.elementOverride ?? ''" @change="setFlowElement(entry.id, ($event.target as HTMLSelectElement).value)">
+                          <option value="">自动</option>
+                          <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">{{ element }}</option>
+                        </select>
+                        <span>{{ eventElementLabel(entry) }}</span>
+                      </label>
+                    </template>
                     <template #actions>
                       <!-- 顺序统一（用户 2026-10-22）：详情一律最左，其次增益，危险操作最右 -->
                       <button
@@ -3551,7 +3590,7 @@ const showcaseTitle = computed(() => {
               <span class="muted">（各段倍率×次数之和）</span>
             </p>
             <p class="col-desc">
-              与流程里普通招式相同：可改本段次数与失衡。留空/重置则继承组定义次数与整组失衡。
+              与流程里普通招式相同：可改本段次数、失衡与事件元素。留空/重置则继承组定义次数、整组失衡与整组元素。
             </p>
             <ul class="sf-list group-tune-list">
               <SkillFlowCard
@@ -3640,6 +3679,15 @@ const showcaseTitle = computed(() => {
                   })
                 "
               >
+                <template #parameters>
+                  <label class="sf-event-element">事件元素
+                    <select :value="memberOverrideFor(tuningFlowEntry!, member)?.elementOverride ?? ''" @change="setMemberElement(tuningFlowEntry!.id, member, ($event.target as HTMLSelectElement).value)">
+                      <option value="">继承整组</option>
+                      <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">{{ element }}</option>
+                    </select>
+                    <span>{{ eventElementLabel(tuningFlowEntry!, member) }}</span>
+                  </label>
+                </template>
                 <template #actions>
                   <button
                     type="button"
@@ -5446,4 +5494,10 @@ const showcaseTitle = computed(() => {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+</style>
+
+<style scoped>
+.sf-event-element { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; font-size: 0.78rem; }
+.sf-event-element select { color: inherit; background: var(--calc-input-bg, transparent); border: 1px solid currentColor; border-radius: 5px; padding: 0.15rem 0.3rem; }
+.sf-event-element span { opacity: 0.75; }
 </style>

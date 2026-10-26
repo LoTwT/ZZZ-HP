@@ -206,4 +206,17 @@ check('底部对比区按需解析选中事件，且同名组成员能回指正�
     scope.stop()
   }
 })
+for (const mode of ['ordinary', 'extra-slot', 'extra-team']) {
+  const { r3Fixture, r5Fixture } = await import('./_eventElementHarness.mjs')
+  const f = r3Fixture(mode)
+  check(`R3 ${mode} real flow detail cross-element`, () => {
+    const result = resolveSkillFlowCalculationDetail(f.context, null, f.hits[0]).evaluation
+    assert.equal(result.defenseTriggerFinalPanel.anomalyReleaseMult, 51.2)
+    assert.equal(result.eventElement, '电')
+    assert.deepEqual(result.result, evaluateSkillFlowHit(f.context, null, f.hits[0]).result)
+  })
+  const r5 = r5Fixture(mode)
+  check(`R5 ${mode} real release detail`, () => assert.equal(resolveSkillFlowCalculationDetail(r5.context, null, r5.hits[0]).evaluation.defenseTriggerFinalPanel.anomalyReleaseMult, 150))
+}
+
 console.log(`\n${passed} passed, 0 failed`)

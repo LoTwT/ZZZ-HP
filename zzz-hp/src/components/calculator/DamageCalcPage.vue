@@ -147,8 +147,6 @@ import {
   resolveFlow,
   resolveSkillPreviews,
   buildGenericPanelSkillContext,
-  buildSkillContextFromHit,
-  skillNeedsDualAgents,
   schemeSlotsHaveContent,
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
@@ -1123,9 +1121,7 @@ function flowBuffEffectTextFor(
 ): string | null {
   const item = collectedEffectsForFlowTable.value.find((entry) => entry.effect.id === effectId)
   if (!item) return null
-  const options = item.effect.kind === 'convert'
-    ? { ...flowBuffTextOptions.value, ...buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey) }
-    : flowBuffTextOptions.value
+  const options = { ...flowBuffTextOptions.value, ...buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey) }
   return buildFlowBuffEffectText(item, options, rowOverride)
 }
 
@@ -1140,14 +1136,12 @@ function buffConvertResolveInputsForSlot(
   rowKey?: string | null,
 ): ConvertResolveInputs {
   const hit = rowKey ? hits.value.find((item) => item.id === rowKey) : undefined
-  const sourceAgentId = hit
-    ? (skillNeedsDualAgents(hit.skill.damageType) ? hit.anomalyPowerAgentId : hit.ownerAgentId)
-    : undefined
-  const element = agents.value.find((agent) => agent.id === sourceAgentId)?.element
+  if (rowKey && !hit) return { attrDefaults: {}, configurationOnly: true }
+  if (hit) return panelCalcSectionRef.value?.getEventBuffPreviewInputs?.(slotIndex, hit, rowOverride)
+    ?? { attrDefaults: {}, effectAmounts: {} }
   const eventSources = panelCalcSectionRef.value?.getPanelSourceValuesBySlot?.(
     slotIndex,
     rowOverride,
-    hit ? buildSkillContextFromHit(hit, element) : undefined,
   )
   return {
     attrDefaults:

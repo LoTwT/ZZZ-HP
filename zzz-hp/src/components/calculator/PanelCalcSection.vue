@@ -81,6 +81,7 @@ import {
   writeHitEvalCache,
   type HitEvalCacheEntry,
 } from '@/utils/hitEvalCache'
+import { resolveEventBuffPreviewInputs } from '@/utils/optimalAffixAlloc'
 import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import {
   normalizeExtraGains,
@@ -427,12 +428,34 @@ function getPanelSourceValuesBySlot(
   slotIndex: number,
   rowOverride?: FlowBuffOverride | null,
   skillContext?: SkillCalcContext,
+  hit?: ResolvedHit,
 ) {
+  if (hit) return getEventBuffPreviewInputs(slotIndex, hit, rowOverride).panelSourceValuesBySlot ?? {}
   const context = buildPanelCalcContextForSlot(slotIndex)
   return buildPanelSourceValuesBySlotRecord(
     { ...context, rowBuffOverride: rowOverride, skillContext: skillContext ?? context.skillContext },
     resolveExternalPanelForSlotIndex(slotIndex),
   )
+}
+
+
+const eventBuffPreviewCache = new Map<string, ReturnType<typeof resolveEventBuffPreviewInputs>>()
+
+function getEventBuffPreviewInputs(slotIndex: number, hit: ResolvedHit, rowOverride?: FlowBuffOverride | null) {
+  const effectiveHit = { ...hit, buffOverride: rowOverride === undefined ? hit.buffOverride : rowOverride }
+  const key = `${slotIndex}|${hitEvalCacheKey(
+    buildHitEvalFingerprint(effectiveHit), internHitEvalContext(hitCalcGlobalSignature.value),
+    skillFlowMainExternal.value, true,
+  )}`
+  const cached = eventBuffPreviewCache.get(key)
+  if (cached) return cached
+  const inputs = resolveEventBuffPreviewInputs(
+    skillFlowCalculationContext.value, skillFlowMainExternal.value,
+    effectiveHit, slotIndex,
+  )
+  if (eventBuffPreviewCache.size >= 128) eventBuffPreviewCache.delete(eventBuffPreviewCache.keys().next().value!)
+  eventBuffPreviewCache.set(key, inputs)
+  return inputs
 }
 
 /**
@@ -719,6 +742,7 @@ const skillFlowCalculationContext = computed(() =>
 const hitCalcGlobalSignature = computed(() =>
   JSON.stringify({
     src: baseDamageSource.value,
+    elements: props.agents.map(agent => [agent.id, agent.element]),
     slots: props.teamSlots.map((slot, index) => [
       slot.agentId,
       slot.rank,
@@ -1042,6 +1066,7 @@ defineExpose({
   getAttrDefaultsForSlot,
   getPanelSourceValuesForSlot,
   getPanelSourceValuesBySlot,
+  getEventBuffPreviewInputs,
   panelBreakdown,
   enemyInput,
   slotPanelPreviews: computed(() => {

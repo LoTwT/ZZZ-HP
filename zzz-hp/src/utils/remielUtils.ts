@@ -78,10 +78,19 @@ export function resolveDamageCalcResistanceElements(
   agents: Array<{ id: string; element: string }>,
   mainSlotIndex: number,
   triggerAgentId?: string | null,
+  eventElement?: string,
 ): {
   mainAgentResistanceElement: string | null
   triggerAgentResistanceElement?: string | null
 } {
+  if (eventElement) {
+    const eventSlotIndex = triggerAgentId
+      ? teamSlots.findIndex(slot => slot.agentId === triggerAgentId) : mainSlotIndex
+    const resistanceElement = isLuminousElement(eventElement)
+      ? resolveLuminousEquivalentElement(teamSlots, agents, eventSlotIndex) ?? null
+      : eventElement
+    return { mainAgentResistanceElement: resistanceElement, triggerAgentResistanceElement: resistanceElement }
+  }
   return {
     mainAgentResistanceElement: resolveAgentResistanceElement(teamSlots, agents, mainSlotIndex),
     triggerAgentResistanceElement: triggerAgentId

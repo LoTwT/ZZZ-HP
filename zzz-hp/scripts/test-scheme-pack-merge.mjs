@@ -395,6 +395,23 @@ check('本机原招式仍在', loadCustomSkills().some((item) => item.id === 'sk
   check('导出结构与导入前一致', stable(exportedCards), stable(expected))
 }
 
+{
+  reset()
+  const { saveDamageCalcHistory } = await import('../src/utils/damageCalcHistory.ts')
+  const { rewriteScheme } = await import('../src/utils/schemePack.ts')
+  const source = scheme('元素往返', { slots: [{ prepared: [], flow: [{ id: 'A', elementOverride: '火', memberOverrides: [{ memberKey: '0:old', skillId: 'old', elementOverride: '冰' }] }, { id: 'auto', elementOverride: 'bad' }] }] })
+  saveDamageCalcHistory(source)
+  const exported = exportDamageCalcHistory([])
+  reset()
+  importDamageCalcHistory(exported, 'replace')
+  const restored = listAllDamageCalcHistory().find(item => item.name === '元素往返')
+  check('E7 real export/import keeps group/manual', restored?.slots?.[0]?.flow?.[0]?.elementOverride, '火')
+  check('E7 real export/import keeps member/manual', restored?.slots?.[0]?.flow?.[0]?.memberOverrides?.[0]?.elementOverride, '冰')
+  check('E7 imported invalid field absent', Object.hasOwn(restored.slots[0].flow[1], 'elementOverride'), false)
+  const rewritten = rewriteScheme(restored, { old: 'new' }, {})
+  check('E7 rewrite keeps element and remaps member', [rewritten.slots[0].flow[0].memberOverrides[0].skillId, rewritten.slots[0].flow[0].memberOverrides[0].elementOverride], ['new', '冰'])
+}
+
 reset()
 if (failed) {
   console.error(`\n${failed} failed`)

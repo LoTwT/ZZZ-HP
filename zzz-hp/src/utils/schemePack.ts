@@ -1,3 +1,4 @@
+import { normalizeFlowEventElements } from '@/utils/resolvedHit'
 /**
  * 方案包：收集引用、招式/组指纹、合并改写。
  * 不读写 localStorage；IO 在 damageCalcHistory.ts。
@@ -357,6 +358,7 @@ function rewriteOverride(
 }
 
 function rewriteFlow(flow: FlowEntry, skillIdMap: Record<string, string>): FlowEntry {
+  flow = normalizeFlowEventElements(flow)
   return {
     ...flow,
     memberOverrides: flow.memberOverrides

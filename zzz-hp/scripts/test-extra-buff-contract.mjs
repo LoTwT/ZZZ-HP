@@ -501,7 +501,9 @@ console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻
   {
     const fire = mk('p10', { elementFilter: ['火'] }, { applySlot: 'team' })
     check('#10 火限定：0/50/0',
-      near(atkOf(0, [fire]), 0) && near(atkOf(1, [fire]), 50) && near(atkOf(2, [fire]), 0))
+      near(atkOf(0, [fire], { skillContext: { generic: true, coords: [], element: '电' } }), 0) &&
+      near(atkOf(1, [fire], { skillContext: { generic: true, coords: [], element: '火' } }), 50) &&
+      near(atkOf(2, [fire], { skillContext: { generic: true, coords: [], element: '冰' } }), 0))
   }
 
   // 11. 伤害类型

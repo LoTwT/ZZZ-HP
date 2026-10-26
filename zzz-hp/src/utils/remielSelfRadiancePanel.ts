@@ -4,6 +4,7 @@ import type { PanelStats } from '@/types/calculatorPanel'
 import {
   isEffectEnabled,
   effectMatchesContext,
+  effectMatchesElement,
   resolveConvertValue,
   resolveEffectBaseValue,
 } from '@/utils/buffEffect'
@@ -14,6 +15,7 @@ import {
   collectPanelBuffModSources,
   computeFinalPanel,
   panelToConvertAttrValues,
+  rowBuffSelectionOverlay,
   type PanelBuffBreakdown,
   type PanelCalcContext,
 } from '@/utils/panelBuffCalc'
@@ -130,6 +132,7 @@ export function collectRemielSelfRestrictedContributionsFromSources(
   })
 
   const skillCtx = ctx.skillContext
+  const rowValues = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   // 等级转模来源：效果所属角色 = 蕾米自己（本函数只收集本槽贡献）
   const selfAgentId = ctx.teamSlots[remielSlotIndex]?.agentId
   const selfTalentLevels = selfAgentId
@@ -145,10 +148,11 @@ export function collectRemielSelfRestrictedContributionsFromSources(
     for (const effect of source.effects ?? []) {
       if (!isEffectEnabled(effect, ctx.buffSelection)) continue
       if (!effectMatchesContext(effect, skillCtx)) continue
+      if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
 
       const stacks =
-        ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
-      const convertOverride = ctx.buffSelection?.convertInputs?.[effect.id]
+        rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
+      const convertOverride = rowValues?.convertInputs?.[effect.id] ?? ctx.buffSelection?.convertInputs?.[effect.id]
 
       if (
         source.key.startsWith(remielAgentPrefix(remielSlotIndex)) &&
@@ -205,6 +209,7 @@ export function collectRemielSelfRestrictedContributions(
   }
   const plan = compileCollectedBuffs(collectAllBuffEffects(restrictedCtx))
   const skillCtx = ctx.skillContext
+  const rowValues = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   // 等级转模来源：效果所属角色 = 蕾米自己（与上游那条路径同口径；2026-09-17 合并时发现本路径漏传）
   const selfAgentId = ctx.teamSlots[remielSlotIndex]?.agentId
   const selfTalentLevels = selfAgentId
@@ -220,10 +225,11 @@ export function collectRemielSelfRestrictedContributions(
     const effect = effectInstanceToBuffEffect(instance)
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
     if (!effectMatchesContext(effect, skillCtx)) continue
+    if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
 
     const stacks =
-      ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
-    const convertOverride = ctx.buffSelection?.convertInputs?.[effect.id]
+      rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
+    const convertOverride = rowValues?.convertInputs?.[effect.id] ?? ctx.buffSelection?.convertInputs?.[effect.id]
     const label = instance.displayName ?? instance.sourceKey
 
     if (isRemielSelfAtkConvert(instance, remielSlotIndex)) {

@@ -93,6 +93,7 @@ function emitCount(event: Event) {
       'sf-card--draggable': rowDraggable,
       'sf-card--dragging': dragging,
       'sf-card--compact': compact,
+      'sf-card--parameters': Boolean($slots.parameters),
     }"
     :draggable="rowDraggable"
     @mouseenter="showNamePop"
@@ -178,6 +179,9 @@ function emitCount(event: Event) {
     <div class="sf-card-actions">
       <slot name="actions" />
     </div>
+    <div v-if="$slots.parameters" class="sf-card-parameters">
+      <slot name="parameters" />
+    </div>
   </li>
 </template>
 
@@ -200,6 +204,18 @@ function emitCount(event: Event) {
 }
 .sf-card--draggable {
   cursor: grab;
+}
+.sf-card--parameters {
+  height: auto;
+  min-height: 2.15rem;
+  flex-wrap: wrap;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+.sf-card-parameters {
+  flex: 0 0 100%;
+  min-width: 0;
+  order: 1;
 }
 .sf-card--dragging {
   opacity: 0.35;

@@ -1650,6 +1650,7 @@ let pendingSkillFlowEmit = false
  */
 const skillFlowContextFingerprint = computed(() =>
   buildSkillFlowHitContextSignature({
+    agentElements: props.agents.map(agent => [agent.id, agent.element]),
     enemy: enemyInput.value,
     extraGains: extraGains.value,
     sourceExtraGains: props.skillFlowSourceExtraGains,

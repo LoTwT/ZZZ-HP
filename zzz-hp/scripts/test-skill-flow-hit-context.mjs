@@ -201,6 +201,12 @@ console.log('== 单点字段表：组件必须调用它，不许再内联 ==')
   check('组件不再内联 JSON.stringify 字段表', !inlined)
 }
 
+{
+  const ice = buildSkillFlowHitContextSignature({ ...baseInput(), agentElements: [['a', '冰']] })
+  const fire = buildSkillFlowHitContextSignature({ ...baseInput(), agentElements: [['a', '火']] })
+  check('E8 source role element invalidates shared context', ice !== fire)
+}
+
 console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exitCode = 1

@@ -802,8 +802,9 @@ export function resolveEffectsToMods(
     }
     if (!isEffectEnabled(effect, options.selection)) continue
     if (!effectMatchesContext(effect, options.ctx)) continue
-    const matchElement =
-      effect.applyTarget === 'team'
+    const matchElement = options.ctx && !options.ctx.generic
+      ? options.ctx.element
+      : effect.applyTarget === 'team'
         ? (options.beneficiaryElement ?? options.element ?? options.ctx?.element)
         : (options.element ?? options.ctx?.element)
     if (!effectMatchesElement(effect, matchElement)) continue

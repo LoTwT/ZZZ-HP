@@ -1,3 +1,4 @@
+import { normalizeFlowEventElements } from '@/utils/resolvedHit'
 import { loadCustomSkills, parseCustomSkillList, replaceCustomSkills } from '@/utils/skillLibrary'
 import {
   loadCustomSkillGroups,
@@ -408,6 +409,7 @@ function migrateEntryToDualPanel(entry: DamageCalcHistoryEntry): void {
 function sanitizeSchemeEntry(entry: DamageCalcHistoryEntry): DamageCalcHistoryEntry {
   const next: DamageCalcHistoryEntry = {
     ...entry,
+    slots: entry.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })),
     panelState: sanitizeSchemePanelState(entry.panelState) ?? entry.panelState,
   }
   // 老结构的归位与清洗都在这里做：方案库读盘、导出包导入都经过本函数
@@ -986,7 +988,7 @@ function readStoredDraft(): DamageCalcWorkingDraft | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as DamageCalcWorkingDraft
     if (!parsed || !Array.isArray(parsed.teamSlots)) return null
-    return parsed
+    return { ...parsed, slots: parsed.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })) }
   } catch {
     return null
   }
@@ -1012,7 +1014,8 @@ export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraf
     const stored = readStoredDraft()
     const otherTabWroteNewer = !!stored && stored.savedAt > lastSeenDraftSavedAt
     const payload = draft.panelState ? draft : { ...draft, panelState: stored?.panelState ?? null }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+    const normalizedPayload = { ...payload, slots: payload.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })) }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(normalizedPayload))
     // 关键：无论是否 stale 都要把「已见时间戳」推进，否则下一次还会判 stale → 永久阻断
     lastSeenDraftSavedAt = Math.max(lastSeenDraftSavedAt, payload.savedAt || 0)
     return otherTabWroteNewer ? 'stale' : 'ok'

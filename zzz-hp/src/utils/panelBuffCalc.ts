@@ -123,6 +123,8 @@ export function availableBuffGroupTabs(
  * 局内增益选择器与本行增益例外弹窗共用这一份形状（页面按槽位现给，见 `SkillBuffOverrideModal`）。
  */
 export interface ConvertResolveInputs {
+  effectAmounts?: Record<string, number>
+  configurationOnly?: boolean
   attrDefaults: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
   panelSourceValuesBySlot?: Record<number, PanelSourceValues>
@@ -1290,6 +1292,17 @@ function resolvePackMods(
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
   })
+}
+
+/** 单条贡献仍经过正式的共享匹配、行级过滤和来源解析，供事件展示复用。 */
+export function resolveCollectedEffectAmount(item: CollectedEffect, ctx: PanelCalcContext): number {
+  if (!collectAllBuffEffects(ctx).some(entry => entry.effect.id === item.effect.id)) return 0
+  const providerSlot = item.providerSlot
+  const mods = resolvePackMods(
+    [item.effect], providerSlot == null || providerSlot === ctx.mainSlotIndex,
+    ctx, providerSlot ?? undefined, sourceOptionsForCollectedEffect(item, ctx, [item.effect]),
+  )
+  return mods[item.effect.stat] ?? 0
 }
 
 /** 旧路径：直接 resolveEffectsToMods。阶段 6 双跑对照用。 */
@@ -2681,7 +2694,7 @@ function effectMatchesReleaseMultElement(effect: BuffEffect, triggerElement?: st
   return filter.includes(triggerElement)
 }
 
-/** 异放结算用技能上下文：子类固定异放，元素取触发者 */
+/** 异放结算上下文：子类固定异放，元素参数由事件的共享解析入口提供。 */
 function buildReleaseMultSkillContext(
   ctx: PanelCalcContext,
   triggerElement?: string,

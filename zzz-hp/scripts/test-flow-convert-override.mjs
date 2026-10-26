@@ -367,9 +367,7 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
   const { ref, nextTick } = await import('vue')
   const core = await import('../src/utils/panelBuffCalc.ts')
   const buff = await import('../src/utils/buffEffect.ts')
-  const { createExtraBuffGain } = await import('../src/utils/extraBuffCalc.ts')
-  const { makePanel, mindscapeWithEffects } = await import('./_effectPipelineHarness.mjs')
-  const { buildSkillContextFromHit, skillNeedsDualAgents } = await import('../src/utils/resolvedHit.ts')
+  const { buildSkillContextFromHit, resolveEventElement } = await import('../src/utils/resolvedHit.ts')
   const pageUrl = new URL('../src/components/calculator/DamageCalcPage.vue', import.meta.url)
   const blankSelection = () => ({ enabledIds: {}, stacksByEffectId: {}, convertInputs: {}, manualTouchedIds: {} })
   const state = { team: blankSelection(), bySlot: [blankSelection()] }
@@ -385,35 +383,33 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
   check('R2 真实默认同步保留普通默认值', state.bySlot[0].convertInputs[normal.id] === 1000)
   check('R2 真实默认同步不写额外 Buff，改默认后也不写', !Object.hasOwn(state.bySlot[0].convertInputs, extra.id))
 
-  for (const extraGain of [false, true]) {
-    const fixed = buff.createEmptyBuffEffect({ id: 'event-fixed', stat: 'atk', value: 500, enabledDefault: true, elementFilter: ['电'], skillTargets: [{ category: 'basic', subcategoryId: null }] })
-    const convert = convertEffect('event-final', 'dmgBonus', { from: 'atk', panelSource: 'final', ratioPercent: 10, initialBase: 0, cap: null })
-    const agent = testAgent('a', { mindscapeBuffs: extraGain ? undefined : mindscapeWithEffects([fixed, convert]) })
-    if (extraGain) agent.mindscapeBuffs = testAgent('a').mindscapeBuffs
-    const external = makePanel({ atk: 1000 })
-    const ctx = makePanelCtx({ agents: [agent], mainExternalPanel: external, slotExternalPanels: new Map([[0, external]]),
-      extraGains: extraGain ? [fixed, convert].map((effect) => createExtraBuffGain({ id: `event-card-${effect.id}`, name: '事件来源', sourceSlot: 0, applySlot: 0, effects: [effect] })) : [] })
-    const items = collectAllBuffEffects(ctx)
-    const fixedItem = items.find((it) => it.effect.id.endsWith(fixed.id))
-    const convertItem = items.find((it) => it.effect.id.endsWith(convert.id))
-    const override = { disabledEffectIds: [fixedItem.effect.id] }
-    const panel = bindVueFunctions(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), ['getPanelSourceValuesBySlot'], {
-      buildPanelCalcContextForSlot: () => ctx,
-      buildPanelSourceValuesBySlotRecord: core.buildPanelSourceValuesBySlotRecord,
-      resolveExternalPanelForSlotIndex: () => external,
+  const { r5Fixture } = await import('./_eventElementHarness.mjs')
+  const { resolveEventBuffPreviewInputs } = await import('../src/utils/optimalAffixAlloc.ts')
+  const { buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey } = await import('../src/utils/hitEvalCache.ts')
+  const { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = await import('../src/utils/skillFlowCalculation.ts')
+  for (const mode of ['ordinary', 'extra-slot']) for (const damageType of ['direct', 'anomalyRelease']) {
+    const fixture = r5Fixture(mode, damageType)
+    const { context, hits, items, agents } = fixture
+    const hit = hits[0], convertItem = items.find(item => item.effect.id.endsWith('convert'))
+    const override = hit.buffOverride
+    const panel = bindVueFunctions(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), ['getEventBuffPreviewInputs'], {
+      resolveEventBuffPreviewInputs, skillFlowCalculationContext: ref(context), skillFlowMainExternal: ref(fixture.panels.owner),
+      buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey, hitCalcGlobalSignature: ref('preview-fixture'), eventBuffPreviewCache: new Map(),
     })
-    const hit = { id: 'event-a', ownerAgentId: 'a', anomalyPowerAgentId: 'b', skill: { damageType: 'direct' }, damageKind: 'direct', coords: [{ category: 'basic', subcategoryId: null }], staggerPhase: 'stagger', isFollowUp: false }
-    const globalSources = panel.getPanelSourceValuesBySlot(0)
-    const opts = { selection: null, slotIndex: 0, panelSourceValuesBySlot: globalSources, panelSourceValues: globalSources[0] }
     const page = bindVueFunctions(pageUrl, ['buffConvertResolveInputsForSlot', 'flowBuffEffectTextFor'], {
-      hits: ref([hit]), agents: ref([agent, testAgent('b', { element: '冰' })]), buildSkillContextFromHit, skillNeedsDualAgents,
-      activeSlot: ref(0), collectedEffectsForFlowTable: ref(items), flowBuffTextOptions: ref(opts), buildFlowBuffEffectText,
-      panelCalcSectionRef: ref({ ...panel, getAttrDefaultsForSlot: () => ({ atk: 1000 }), panelSourceValuesBySlot: globalSources }),
+      hits: ref(hits), agents: ref(agents), buildSkillContextFromHit, resolveEventElement,
+      activeSlot: ref(0), collectedEffectsForFlowTable: ref(items), flowBuffTextOptions: ref({ selection: null, slotIndex: 0 }), buildFlowBuffEffectText,
+      panelCalcSectionRef: ref(panel),
     })
-    const rowInputs = page.buffConvertResolveInputsForSlot(0, override, hit.id)
-    const rowMods = collectPanelBuffMods({ ...ctx, rowBuffOverride: override, panelSourceValues: rowInputs.panelSourceValues, panelSourceValuesBySlot: new Map(Object.entries(rowInputs.panelSourceValuesBySlot).map(([key, value]) => [Number(key), value])) })
-    check(`R5 ${extraGain ? '额外' : '普通'} A 行结算与真实页面文本均为 100`, rowMods.dmgBonus === 100 && page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).endsWith('+100'))
-    check(`R5 ${extraGain ? '额外' : '普通'} B 行与全局仍为 150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hit.id).endsWith('+150') && buildFlowBuffEffectText(convertItem, opts).endsWith('+150'))
+    check(`R5 ${mode} ${damageType} 同一有效事件复用预览结果`, panel.getEventBuffPreviewInputs(0, hit, override) === panel.getEventBuffPreviewInputs(0, hit, override))
+    const actual = evaluateSkillFlowHit(context, null, hit, true)
+    const detailed = resolveSkillFlowCalculationDetail(context, null, hit).evaluation
+    const total = damageType === 'direct' ? actual.finalPanel.dmgBonus : actual.defenseTriggerFinalPanel.anomalyReleaseMult
+    check(`R5 ${mode} ${damageType} 独立实际计算 A 正确`, total === (damageType === 'direct' ? 100 : 150))
+    check(`R5 ${mode} ${damageType} 详情与计算同源`, JSON.stringify(actual.result) === JSON.stringify(detailed.result))
+    check(`R5 ${mode} ${damageType} 真实页面 A 文本为100`, page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).endsWith('+100'))
+    check(`R5 ${mode} ${damageType} 真实页面 B 文本为150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hits[1].id).endsWith('+150'))
+    check(`R5 ${mode} ${damageType} 组头无伪造数值`, page.flowBuffEffectTextFor(convertItem.effect.id, null, 'group-no-hit').includes('数值见成员'))
     const imports = {
       '@/utils/panelBuffCalc': core, '@/utils/buffEffect': buff,
       '@/utils/flowBuffTable': await import('../src/utils/flowBuffTable.ts'),
@@ -423,16 +419,42 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
       '@/composables/useMaskClose': await import('../src/composables/useMaskClose.ts'),
     }
     const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
-      imports, expose: ['convertResult'], props: { effects: items, open: true, override: null, rowKey: hit.id, convertResolveInputs: page.buffConvertResolveInputsForSlot },
+      imports, expose: ['convertResult', 'effectResultText'], props: { effects: items, open: true, override: null, rowKey: hit.id, convertResolveInputs: page.buffConvertResolveInputsForSlot },
     })
     try {
-      check(`R5 ${extraGain ? '额外' : '普通'} 打开弹窗初值 150`, mounted.vm.convertResult(convertItem) === 150)
+      check(`R5 ${mode} ${damageType} 弹窗初值150`, mounted.vm.convertResult(convertItem) === 150)
       mounted.props.override = override
       await nextTick()
-      check(`R5 ${extraGain ? '额外' : '普通'} 弹窗内修改后来源实时变为 100`, mounted.vm.convertResult(convertItem) === 100)
+      check(`R5 ${mode} ${damageType} 弹窗实时改来源100`, mounted.vm.convertResult(convertItem) === 100)
+      check(`R5 ${mode} ${damageType} 弹窗贡献与独立详情对应`, mounted.vm.effectResultText(convertItem).replace(/\s/g, '').includes('+100'), mounted.vm.effectResultText(convertItem))
+      const eid = convertItem.effect.id
+      mounted.props.override = { ...override, convertInputsByEffectId: { [eid]: 0 } }
+      await nextTick()
+      check(`R5 ${mode} ${damageType} 显式零值`, mounted.vm.convertResult(convertItem) === 0 && evaluateSkillFlowHit(context, null, { ...hit, buffOverride: mounted.props.override }, true).breakdown.totalMods[convertItem.effect.stat] === 0)
     } finally { mounted.unmount() }
-    hit.coords = [{ category: 'special', subcategoryId: null }]
-    check(`R5 ${extraGain ? '额外' : '普通'} 来源面板按真实事件招式条件匹配`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hit.id).endsWith('+100'))
+  }
+
+  const { r3Fixture } = await import('./_eventElementHarness.mjs')
+  for (const mode of ['ordinary', 'extra-slot', 'extra-team']) {
+    const f = r3Fixture(mode)
+    const hit = f.hits[0], item = f.items.find(candidate => candidate.effect.id.endsWith('release'))
+    const inputs = (_slot, rowOverride) => resolveEventBuffPreviewInputs(f.context, null, { ...hit, buffOverride: rowOverride }, 0)
+    const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
+      imports: {
+        '@/utils/panelBuffCalc': core, '@/utils/buffEffect': buff,
+        '@/utils/flowBuffTable': await import('../src/utils/flowBuffTable.ts'),
+        '@/utils/calculatorUi': await import('../src/utils/calculatorUi.ts'),
+        '@/utils/calcNumberFormat': await import('../src/utils/calcNumberFormat.ts'),
+        '@/utils/skillTalentLevels': await import('../src/utils/skillTalentLevels.ts'),
+        '@/composables/useMaskClose': await import('../src/composables/useMaskClose.ts'),
+      }, expose: ['convertResult'], props: { effects: f.items, open: true, override: null, convertResolveInputs: inputs },
+    })
+    try {
+      check(`R3 ${mode} 跨元素真实弹窗贡献1.2`, mounted.vm.convertResult(item) === 1.2)
+      mounted.props.override = { disabledEffectIds: [item.effect.id] }
+      await nextTick()
+      check(`R3 ${mode} 关闭后弹窗/实际贡献同时归零`, mounted.vm.convertResult(item) === 0 && evaluateSkillFlowHit(f.context, null, { ...hit, buffOverride: mounted.props.override }).defenseTriggerFinalPanel.anomalyReleaseMult === 50)
+    } finally { mounted.unmount() }
   }
 }
 

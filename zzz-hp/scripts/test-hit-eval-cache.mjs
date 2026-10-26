@@ -154,6 +154,14 @@ console.log('== 令牌表：同内容必须得到同令牌 ==')
   check('不同签名 → 不同令牌', a !== c)
 }
 
+{
+  const auto = buildHitEvalFingerprint({ ...baseHit, elementOverride: null })
+  const fire = buildHitEvalFingerprint({ ...baseHit, elementOverride: '火' })
+  const ice = buildHitEvalFingerprint({ ...baseHit, elementOverride: '冰' })
+  check('E8 event override changes fingerprint', auto !== fire && fire !== ice)
+  check('E8 clearing override restores automatic fingerprint', auto === buildHitEvalFingerprint({ ...baseHit }))
+}
+
 console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exitCode = 1

@@ -473,5 +473,18 @@ console.log('\n[七类修复 R7] 真实 loadSnapshot 的加载/重放/关闭生�
   check('R7 再次明确加载相同无效源重新提示', state.extraGainsDiscardedCount.value === 1)
 }
 
+{
+  clearWorkingDraft()
+  const flow = [{ id: 'A', elementOverride: '火', memberOverrides: [{ skillId: 's', memberKey: '0:s', elementOverride: '冰' }] }, { id: 'auto', elementOverride: null }, { id: 'bad', elementOverride: 'invalid' }]
+  check('E7 event element draft save', saveWorkingDraft(draftBase({ savedAt: Date.now(), slots: [{ prepared: [], flow }], panelState: snapshot([], {}) })) === 'ok')
+  const restored = loadWorkingDraft().slots[0].flow
+  check('E7 draft preserves own group/member element', restored[0].elementOverride === '火' && restored[0].memberOverrides[0].elementOverride === '冰')
+  check('E7 draft removes auto/invalid field without dropping events', restored.length === 3 && !Object.hasOwn(restored[1], 'elementOverride') && !Object.hasOwn(restored[2], 'elementOverride'))
+  const saved = saveDamageCalcHistory({ name: '事件元素', teamSlots: [], slots: [{ prepared: [], flow }], panelState: snapshot([], {}) })
+  const scheme = listAllDamageCalcHistory().find(item => item.name === '事件元素')
+  check('E7 actual scheme save/read preserves own fields', !!saved && scheme.slots[0].flow[0].memberOverrides[0].elementOverride === '冰')
+  check('E7 scheme invalid event remains automatic', scheme.slots[0].flow.length === 3 && !Object.hasOwn(scheme.slots[0].flow[2], 'elementOverride'))
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

@@ -1,6 +1,6 @@
 import type { AnomalyDamageSubKind, BaseDamageSource, SkillSubcategory } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
-import { effectiveAnomalyDuration } from '@/utils/calculatorUi'
+import { effectiveAnomalyDuration, type AgentElement } from '@/utils/calculatorUi'
 import {
   normalizeDamageEnemyInput,
   resolveEnemyResistanceForElement,
@@ -28,6 +28,7 @@ export type { DamageEnemyInput, EnemyResistanceType }
 export type { BaseDamageSource }
 
 export interface DamageCalcInput {
+  eventElement?: AgentElement
   finalPanel: PanelStats
   piercePower: number
   baseDamageSource: BaseDamageSource
@@ -598,13 +599,14 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     anomalyTrigger: triggerAgentPanel,
   }
   const routingKind = useTriggerBase ? subKind : 'direct'
-  const ownerElement = input.ownerAgentElement ?? input.mainAgentElement
+  const ownerElement = input.eventElement ?? input.ownerAgentElement ?? input.mainAgentElement
   const ownerResistanceElement =
+    (input.eventElement && input.eventElement !== '流明' ? input.eventElement : undefined) ??
     input.ownerAgentResistanceElement ?? input.mainAgentResistanceElement ?? ownerElement
   // 火/以太有效时间按「异常属性」倍算：与持续时间面板同源，取异常强度提供者属性
   // （乱流触发者固定为风，若误用触发者属性会导致火/以太补偿永远不 ×2）
   const durationElement =
-    input.triggerAgentElement ?? input.anomalyTriggerElement ?? ownerElement ?? ''
+    input.eventElement ?? input.triggerAgentElement ?? input.anomalyTriggerElement ?? ownerElement ?? ''
   /**
    * 异常类（属性异常/异放/耀变/紊乱/乱流）：类型增伤、倍率与异常暴击均取异常类触发者。
    * 紊乱/乱流的类型增伤与异常暴击此前取招式持有者，与规则不符，已改为异常类触发者。
@@ -649,7 +651,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   // 异常基础一律攻击力：面板取强度提供者（无则招式持有者）；不跟命破/锋御直伤规则
   const anomalyBasePanel = pickZonePanel(zonePanels, 'baseAtk', routingKind)
   const anomalyBaseLevel = useTriggerBase ? triggerAgentLevel : ownerAgentLevel
-  const anomalyBaseResistanceElement = useTriggerBase
+  const anomalyBaseResistanceElement = input.eventElement && input.eventElement !== '流明'
+    ? input.eventElement : useTriggerBase
     ? (input.triggerAgentResistanceElement ??
       input.triggerAgentElement ??
       ownerResistanceElement)
@@ -791,6 +794,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   let remielSelfMutationZone: number | undefined
 
   let anomalyBaseExpected = triggerParts.anomalyBaseExpected
+  const remielSelfResistanceElement = input.eventElement
+    ? anomalyBaseResistanceElement : remielSelf?.resistanceElement
   if (remielSelf) {
     remielSelfAnomalyBase = computeRemielSelfAnomalyBase(remielSelf)
     anomalyBaseExpected = remielSelfAnomalyBase
@@ -812,10 +817,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     })
     remielSelfDefenseMultiplier = defenseParts.defenseMultiplier
 
-    const enemyRes = remielSelf.resistanceElement
+    const enemyRes = remielSelfResistanceElement
       ? resolveEnemyResistanceForElement(
           normalizeDamageEnemyInput(input.enemyInput),
-          remielSelf.resistanceElement,
+          remielSelfResistanceElement,
         )
       : 0
     remielSelfResistanceMultiplier =
@@ -1023,7 +1028,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfMutationZone: remielSelfMutationZone
       ? round(remielSelfMutationZone, 4)
       : undefined,
-    remielSelfResistanceElement: remielSelf?.resistanceElement ?? undefined,
+    remielSelfResistanceElement: remielSelfResistanceElement ?? undefined,
     remielSelfDefenseMultiplier: remielSelfRadianceActive
       ? round(remielSelfDefenseMultiplier, 4)
       : undefined,

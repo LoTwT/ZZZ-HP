@@ -296,6 +296,7 @@ function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLev
  * 与结算同一套取值顺序与同一个 `resolveConvertValue`，保证"这一行显示 = 这一行实际"。
  */
 function convertResult(item: CollectedEffect): number {
+  if (resolveInputs.value?.effectAmounts) return resolveInputs.value.effectAmounts[item.effect.id] ?? 0
   const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
   const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
   const overrideBase = overridden ?? inherited ?? null
@@ -312,7 +313,10 @@ function convertResult(item: CollectedEffect): number {
 function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
   let amountText: string
-  if (isStackable(effect)) {
+  if (resolveInputs.value?.configurationOnly) return `${statLabel(effect.stat)}（整组配置；数值见成员）`
+  if (resolveInputs.value?.effectAmounts) {
+    amountText = formatCalcSigned(resolveInputs.value.effectAmounts[effect.id] ?? 0)
+  } else if (isStackable(effect)) {
     amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
   } else if (effect.kind === 'convert') {
     amountText = formatCalcSigned(convertResult(item))
