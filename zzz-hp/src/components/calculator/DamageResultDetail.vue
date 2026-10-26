@@ -432,13 +432,21 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const defTrigLabel = usesBonusAsDefTrig
     ? (props.bonusAgentLabel ?? '异常类触发者')
     : (props.defenseTriggerAgentLabel ?? (props.bonusAgentLabel ?? '招式持有者'))
-  const remielExt = props.remielSelfExternalPanel ?? (p.remielSelfRadianceActive ? props.producerExternalPanel ?? external : external)
-  const remielPanelForSelf = props.remielSelfFinalPanel ?? (p.remielSelfRadianceActive ? props.producerFinalPanel ?? panel : panel)
+  /**
+   * 本人耀变受限视图是否真的被本事件采用（Spec §2.5 第 5 项 / K6）：
+   * 有采用记录就只看记录，没有记录才回落 `calcParts` 的标记 —— 不再由这里猜。
+   */
+  const usedViews = new Set((props.damageInputUsages ?? []).map((usage) => usage.usedView))
+  const remielSelfActive = props.damageInputUsages?.length
+    ? usedViews.has('radianceSelfPanel')
+    : p.remielSelfRadianceActive
+  const remielExt = props.remielSelfExternalPanel ?? (remielSelfActive ? props.producerExternalPanel ?? external : external)
+  const remielPanelForSelf = props.remielSelfFinalPanel ?? (remielSelfActive ? props.producerFinalPanel ?? panel : panel)
   const remielSourcesForSelf = props.remielSelfSources ?? []
   const remielResPenTotal =
     (remielPanelForSelf.resPen ?? 0) + (remielPanelForSelf.radianceResPen ?? 0)
   const remielEnemyRes =
-    p.remielSelfRadianceActive && p.remielSelfResistanceElement
+    remielSelfActive && p.remielSelfResistanceElement
       ? resolveEnemyResistanceForElement(
           normalizeDamageEnemyInput(props.enemyInput),
           p.remielSelfResistanceElement,
