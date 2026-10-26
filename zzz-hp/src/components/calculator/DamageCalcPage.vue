@@ -91,6 +91,7 @@ import {
 } from '@/utils/damageCalcHistory'
 import {
   buildFlowBuffEffectText,
+  effectRecipientNote,
   buildFlowBuffEffectTexts,
   type FlowBuffEffectTextOptions,
 } from '@/utils/flowBuffTable'
@@ -111,6 +112,7 @@ import {
   type MultiSlotBuffSelection,
   type ConvertSlotPanels,
   type ConvertResolveInputs,
+  type ResolvedEffectParameters,
   type BuffSelectionState,
 } from '@/utils/panelBuffCalc'
 import { computeExternalPanelFromTeamSlot } from '@/utils/affixPanelCalc'
@@ -1082,6 +1084,28 @@ function flowBuffEffectTextFor(
   if (!item) return null
   const options = { ...flowBuffTextOptions.value, ...buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey) }
   return buildFlowBuffEffectText(item, options, rowOverride)
+}
+
+/**
+ * 单元格的来源/受益说明（Spec §2.3 第 4 项）：与数值同参数、同身份，
+ * 显式用这次预览的查看槽位生成，不从事件持有者或页面活动态猜。
+ */
+/** 全局选择器的待选配置参数（共享参数解析，按显式查看槽位） */
+const buffPickerConfigurationParameters = computed<Record<string, ResolvedEffectParameters>>(() =>
+  panelCalcSectionRef.value?.getConfigurationParametersForSlot?.(buffPickerViewSlotIndex.value) ?? {},
+)
+
+function flowBuffRecipientNoteFor(
+  effectId: string,
+  rowOverride: FlowBuffOverride | null,
+  rowKey?: string | null,
+): string | null {
+  const item = collectedEffectsForFlowTable.value.find((entry) => entry.effect.id === effectId)
+  if (!item) return null
+  const inputs = buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey)
+  const summary = inputs.effectSummaries?.[effectId]
+  if (!summary) return null
+  return effectRecipientNote(summary, activeSlot.value)
 }
 
 /**
@@ -2407,6 +2431,7 @@ defineExpose({ scrollToSection })
       v-model:multi-selection="multiSlotBuffSelection"
       v-model:view-slot-index="buffPickerViewSlotIndex"
       :effects="collectedEffectsForPicker"
+      :configuration-parameters="buffPickerConfigurationParameters"
       :force-groups="envBuffForceGroups"
       :slot-options="buffPickerSlotOptions"
       :team-slots="teamSlots"
@@ -2545,6 +2570,7 @@ defineExpose({ scrollToSection })
         :buff-effects="collectedEffectsForFlowTable"
         :buff-effect-texts="flowBuffEffectTexts"
         :buff-effect-text-for="flowBuffEffectTextFor"
+        :buff-effect-note-for="flowBuffRecipientNoteFor"
         :convert-resolve-inputs="buffConvertResolveInputsForSlot"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"

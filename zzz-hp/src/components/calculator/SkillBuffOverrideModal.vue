@@ -32,7 +32,12 @@ import {
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
-import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty, mergeFlowBuffOverride } from '@/utils/flowBuffTable'
+import {
+  effectRecipientNote as buildEffectRecipientNote,
+  flowBuffOverrideExceptionCount,
+  isFlowBuffOverrideEmpty,
+  mergeFlowBuffOverride,
+} from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 import { isSkillConvertFromKey, type SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -205,6 +210,9 @@ function convertBaseModel(item: CollectedEffect): number {
   if (overridden != null) return overridden
   const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
   if (inherited != null) return inherited
+  // 共享参数解析给出的「真用的基数」优先（Spec §5.1 第 5 项）：输入框读基数，结果文本读折算值
+  const shared = resolveInputs.value?.configurationParameters?.[item.effect.id]
+  if (shared?.convertBase) return shared.convertBase.value
   return convertLiveBase(item)
 }
 
@@ -311,11 +319,21 @@ function convertResult(item: CollectedEffect): number {
 }
 
 /** 效果行文案：与局内增益选择器同一个格式化函数 —— 叠层出总值、转模出解析值、非全局标作用情况 */
+function effectRecipientNote(item: CollectedEffect): string {
+  const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
+  return buildEffectRecipientNote(summary, props.slotIndex ?? 0)
+}
+
 function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
   let amountText: string
   if (resolveInputs.value?.configurationOnly) return `${statLabel(effect.stat)}（整组配置；数值见成员）`
-  if (resolveInputs.value?.effectAmounts) {
+  const summary = resolveInputs.value?.effectSummaries?.[effect.id]
+  if (summary) {
+    // 实际贡献只读投影：multiple 不显示伪造单值（Spec §5.2 第 1 项）
+    if (summary.state === 'multiple') return `${statLabel(effect.stat)}（多受益角色，见来源）`
+    amountText = formatCalcSigned(summary.amount ?? 0)
+  } else if (resolveInputs.value?.effectAmounts) {
     amountText = formatCalcSigned(resolveInputs.value.effectAmounts[effect.id] ?? 0)
   } else if (isStackable(effect)) {
     amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
@@ -424,6 +442,9 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                     />
                     <span class="bo-effect-text">
                       <BuffRichText :text="effectResultText(item)" />
+                      <small v-if="effectRecipientNote(item)" class="bo-effect-note">
+                        {{ effectRecipientNote(item) }}
+                      </small>
                     </span>
                   </label>
                   <span v-if="isEffectOffByParent(item.effect.id)" class="bo-tag bo-tag-parent">
@@ -723,12 +744,21 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
   accent-color: #2f7df6;
 }
 .bo-effect-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   min-width: 0;
   font-size: 0.9rem;
   font-weight: 700;
   color: #f2f5fb;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.bo-effect-note {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #9fb0c8;
 }
 .bo-empty {
   margin: 0.6rem 0;

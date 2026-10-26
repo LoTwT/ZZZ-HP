@@ -9,6 +9,7 @@ import type {
   CollectedEffect,
   MultiSlotBuffSelection,
   PanelSourceValues,
+  ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
 import {
   availableBuffGroupTabs,
@@ -51,6 +52,11 @@ const props = defineProps<{
   agents?: Array<{ id: string; profession?: string | null }>
   /** 技能等级转模来源：按角色 id 的五大类技能等级 */
   skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
+  /**
+   * 共享效果参数解析结果（Spec §2.3 第 6 项 / §5.1）：按显式查看槽位的全局上下文解析。
+   * 提供时基数与折算值都读它 —— 未启用的效果同样能显示待选参数，且与结算同一套算法。
+   */
+  configurationParameters?: Record<string, ResolvedEffectParameters>
 }>()
 
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
@@ -162,6 +168,8 @@ function setStacks(item: CollectedEffect, value: number) {
 function convertLiveBase(item: CollectedEffect) {
   const convert = item.effect.convert
   if (!convert) return 0
+  const shared = props.configurationParameters?.[item.effect.id]
+  if (shared?.convertBase) return shared.convertBase.value
   if (convert.panelSource === 'manual') {
     return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
       ? convert.defaultBase
@@ -250,6 +258,8 @@ function clearConvertOverride(item: CollectedEffect) {
 function convertResult(item: CollectedEffect) {
   const convert = item.effect.convert
   const id = item.effect.id
+  const shared = props.configurationParameters?.[id]
+  if (shared) return shared.amount
   const source = convert?.panelSource ?? 'external'
   const saved = getBuffEffectConvertInput(
     multiSelection.value,

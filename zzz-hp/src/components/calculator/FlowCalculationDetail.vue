@@ -33,6 +33,7 @@ function formatDamage(value: number) {
     <p class="calculation-hint">悬停、聚焦或轻触公式中的数值，可查看计算组成与增益来源。</p>
     <DamageResultDetail
       :calc-parts="detail.result"
+      :damage-input-usages="detail.damageInputUsages"
       :final-panel="detail.finalPanel"
       :external-panel="detail.external"
       :sources="detail.breakdown.sources"

@@ -4,6 +4,7 @@ import StatValueWithSources from '@/components/calculator/StatValueWithSources.v
 import DirectDamageFormulaAligned from '@/components/calculator/DirectDamageFormulaAligned.vue'
 import type { PanelStats } from '@/types/calculatorPanel'
 import type { DamageCalcResult } from '@/utils/damageCalc'
+import type { EventDamageInputUsage } from '@/utils/panelBuffCalc'
 import type { BuffModSource } from '@/utils/panelBuffCalc'
 import {
   buildAtkPanelProcessItems,
@@ -43,6 +44,11 @@ import { DAMAGE_EVENT_CRIT_MODE_OPTIONS } from '@/utils/damageEvent'
 
 const props = defineProps<{
   calcParts: DamageCalcResult
+  /**
+   * 本事件实际采用了哪些面板字段（计算链路收敛 Spec §2.5 第 5 项）。
+   * 提供时不再由本组件按伤害子类推断「该解释哪位角色」；缺省时退回旧推断（兼容未迁移的调用点）。
+   */
+  damageInputUsages?: EventDamageInputUsage[]
   finalPanel: PanelStats
   externalPanel: PanelStats
   sources: BuffModSource[]
@@ -346,10 +352,22 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       sub === 'anomalyRelease' ||
       sub === 'radiance') &&
     Boolean(props.producerFinalPanel && props.producerExternalPanel && props.producerSources)
+  /**
+   * 有实际采用记录时以记录为准：本事件确实从强度提供者面板取了通用增伤/基础/精通，
+   * 才把解释切到它。没有记录（未迁移调用点）时保留上面的既有推断。
+   */
+  const producerUsedFields = (props.damageInputUsages ?? [])
+    .filter((usage) => usage.usedView === 'powerProviderPanel')
+    .map((usage) => String(usage.field))
+  const usageHasProducerBase = producerUsedFields.some(
+    (field) => field === 'atk' || field === 'dmgBonus' || field === 'mastery',
+  )
   // 通用乘区（含增伤区）在异常基础链上取异常强度提供者
-  const panel = usesProducerBase ? props.producerFinalPanel! : ownerPanel
-  const external = usesProducerBase ? props.producerExternalPanel! : ownerExternal
-  const sources = usesProducerBase ? props.producerSources! : ownerSources
+  const useProducerPanel =
+    (props.damageInputUsages?.length ? usageHasProducerBase : usesProducerBase) && usesProducerBase
+  const panel = useProducerPanel ? props.producerFinalPanel! : ownerPanel
+  const external = useProducerPanel ? props.producerExternalPanel! : ownerExternal
+  const sources = useProducerPanel ? props.producerSources! : ownerSources
 
   const usesProducerMult =
     (sub === 'turbulence' || sub === 'disorder') &&

@@ -35,6 +35,11 @@ const props = defineProps<{
    * 缺省/返回 null 时退回列级说明（等同旧行为）。
    */
   cellText?: (rowKey: string, effectId: string) => string | null
+  /**
+   * 单元格的来源/受益说明（计算链路收敛 Spec §2.3 第 2 项）：与数值分开渲染，
+   * 沿用既有说明区（tooltip），不加新的管理层级。
+   */
+  cellNote?: (rowKey: string, effectId: string) => string | null
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -168,7 +173,8 @@ function showTitleTip(event: MouseEvent, row: FlowBuffTableRow) {
 function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffTableColumn) {
   // 数值行按**这一行**的有效值取（行级/组级覆盖）；列级说明只作为列头那份“全局口径”保留
   const rowLine = props.cellText?.(row.key, column.key) ?? column.details?.[0]
-  const details = [...(rowLine ? [rowLine] : []), ...(column.details ?? []).slice(1)]
+  const note = props.cellNote?.(row.key, column.key) ?? null
+  const details = [...(rowLine ? [rowLine] : []), ...(note ? [note] : []), ...(column.details ?? []).slice(1)]
   showTipParts(
     event,
     [

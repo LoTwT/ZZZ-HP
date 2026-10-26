@@ -43,12 +43,15 @@ import {
   buildPanelSourceValuesBySlotRecord,
   computeFinalPanel,
 
+  collectAllBuffEffects,
   panelToConvertAttrValues,
   resolveBuffSelectionForSlot,
   resolveAnomalyReleaseMultFields,
+  resolveCollectedEffectParameters,
 
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
+  type ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
 import { resolveSlotAttrValues, resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
 import {
@@ -405,6 +408,19 @@ function buildPanelCalcContextForSlot(slotIndex: number) {
     environmentBuffs: props.environmentBuffs,
     skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
   }
+}
+
+/**
+ * 全局选择器要的待选配置参数（Spec §2.3 第 6 项 / §5.1 第 1 项）：
+ * 用全局 PanelCalcContext（行级例外恒为 null）解析，不产出任何实际贡献。
+ */
+function getConfigurationParametersForSlot(slotIndex: number): Record<string, ResolvedEffectParameters> {
+  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: null }
+  const parameters: Record<string, ResolvedEffectParameters> = {}
+  for (const item of collectAllBuffEffects(context)) {
+    parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
+  }
+  return parameters
 }
 
 function getAttrDefaultsForSlot(slotIndex: number) {
@@ -1083,6 +1099,7 @@ defineExpose({
   convertPanelSourceValues,
   panelSourceValuesBySlot,
   getAttrDefaultsForSlot,
+  getConfigurationParametersForSlot,
   getPanelSourceValuesForSlot,
   getPanelSourceValuesBySlot,
   getEventBuffPreviewInputs,

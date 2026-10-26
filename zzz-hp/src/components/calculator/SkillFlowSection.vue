@@ -154,6 +154,8 @@ const props = defineProps<{
    * 与 `buffEffectTexts`（列级说明）分开：单元格显示"这一行吃多少"，列头说明保留全局口径。
    */
   buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
+  /** 单元格的来源/受益说明（与数值分开渲染；同参数、同身份） */
+  buffEffectNoteFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
   /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
@@ -397,6 +399,15 @@ function flowBuffCellText(rowKey: string, effectId: string): string | null {
     : null
   const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
   return props.buffEffectTextFor?.(effectId, rowOverride, rowKey) ?? null
+}
+
+/** 单元格说明：显式传查看槽位（就是这次预览的 slotIndex），不从页面活动态猜 */
+function flowBuffCellNote(rowKey: string, effectId: string): string | null {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  if (!row) return null
+  const entry = currentSlot.value?.flow.find((item) => item.id === row.entryId)
+  const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
+  return props.buffEffectNoteFor?.(effectId, rowOverride, rowKey) ?? null
 }
 
 const flowBuffTableSubtitle = computed(() => {  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
@@ -3954,6 +3965,7 @@ const showcaseTitle = computed(() => {
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
               :cell-text="flowBuffCellText"
+              :cell-note="flowBuffCellNote"
               @toggle="toggleFlowBuffCell"
               @set-column="setFlowBuffColumn"
             />
