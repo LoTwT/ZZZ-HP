@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref } from 'vue'
 import { affixTargetPickerSummary } from '@/utils/affixTargetBranches'
 import { affixPerRollUnit, type AffixLibraryEntry, type AffixLibraryGroup } from '@/utils/affixLibrary'
@@ -119,15 +120,16 @@ function onSubstatEntryCap(event: Event) {
               @change="onSubstatEntryCap"
             />
           </label>
-          <p class="toolbar-note">
-            与常规方案库无关。方案写死，不能加词条或改组。
-            <strong>所有副词条条目上限</strong>默认 30，填 <strong>0 = 无上限</strong>；
-            它<b>对副词条组内每个条目分别生效</b>（不是整组共享）。
-            4 号位主属性全部按付费处理；5 / 6 号位选到攻击、生命、防御时按付费处理。
-            付费 = 总分配多扣 x 档，并把副词条里对应条目的上限扣 5。
-            <br />
-            <b>除副词条组外，其余组（2 件套 / 4 / 5 / 6 号位）都不占用总词条数</b>；与副词条冲突的那条仍按上面「付费」额外扣 x 档。
-          </p>
+          <InfoTip
+            label="游戏专用规则说明"
+            title="游戏专用规则"
+            :items="[
+              '与常规方案库无关。方案写死，不能加词条或改组。',
+              '所有副词条条目上限默认 30，填 0 = 无上限；它对副词条组内每个条目分别生效（不是整组共享）。',
+              '4 号位主属性全部按付费处理；5 / 6 号位选到攻击、生命、防御时按付费处理。付费 = 总分配多扣 x 档，并把副词条里对应条目的上限扣 5。',
+              '除副词条组外，其余组（2 件套 / 4 / 5 / 6 号位）都不占用总词条数；与副词条冲突的那条仍按上面「付费」额外扣 x 档。',
+            ]"
+          />
         </div>
 
         <div class="tab-strip" role="tablist">
@@ -262,14 +264,6 @@ function onSubstatEntryCap(event: Event) {
   font: inherit;
 }
 
-.toolbar-note {
-  margin: 0;
-  /* 说明整行独占：两个输入格并排后，挤在右边会变成窄条 */
-  flex: 1 1 100%;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: #9aa3b0;
-}
 
 .tab-strip {
   display: flex;
