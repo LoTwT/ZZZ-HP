@@ -452,6 +452,114 @@ console.log('== K11 三来源（config / allocation / sweep）进入同一事件
 }
 
 console.log('')
+console.log('== K4 真实 SFC 输入模型（行级弹窗读共享参数） ==')
+{
+  const { bindVueFunctions } = await import('./_vueSetupHarness.mjs')
+  const vue = await import('vue')
+  const buff = await import('../src/utils/buffEffect.ts')
+  const { formatCalcSigned } = await import('../src/utils/calcNumberFormat.ts')
+  const { formatBuffEffectResultText } = buff
+  const modalUrl = new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url)
+
+  const convert = createEmptyBuffEffect({
+    id: 'sfc-convert',
+    kind: 'convert',
+    stat: 'dmgBonus',
+    enabledDefault: true,
+    applyTarget: 'self',
+    convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null },
+  })
+  const item = { effect: convert, sourceKey: 'agent-0-0', blockId: 'blk', providerSlot: 0 }
+
+  const sharedBase = {
+    amount: 250,
+    stacks: 1,
+    convertBase: { from: 'atk', value: 2500, source: 'external', stage: 'external' },
+  }
+  const props = { slotIndex: 0, skillSubcategories: [], globalConvertInput: () => undefined }
+  const bindings = {
+    props,
+    effectiveOverride: vue.ref(null),
+    resolveInputs: vue.ref({
+      attrDefaults: {},
+      configurationParameters: { 'sfc-convert': sharedBase },
+      effectSummaries: {
+        'sfc-convert': {
+          effectId: 'sfc-convert',
+          stat: 'dmgBonus',
+          sourceKey: 'agent-0-0',
+          blockId: 'blk',
+          providerName: 'owner',
+          candidates: [],
+          recipients: [
+            { viewKey: 'v', slotIndex: 0, agentId: 'owner', label: '强攻·owner', policy: 'default', stage: 'convert', amount: 250, status: 'applied', usedViews: ['ownerPanel'], usedZones: [] },
+          ],
+          state: 'single',
+          amount: 250,
+        },
+      },
+    }),
+    statLabel: (stat) => String(stat),
+    formatBuffEffectResultText,
+    formatCalcSigned,
+    buildEffectRecipientNote: effectRecipientNote,
+    isStackable: (effect) => effect.kind === 'stacked' || Boolean(effect.stackable),
+    stacksModel: (effect) => effect.defaultStacks ?? 1,
+    convertResult: () => 0,
+  }
+  let model = null
+  try {
+    model = bindVueFunctions(modalUrl, ['convertBaseModel', 'effectResultText', 'effectRecipientNote'], bindings)
+  } catch (error) {
+    check('K4 能绑定弹窗真实函数', false, String(error?.message ?? error))
+  }
+  if (model) {
+    check('K4 弹窗输入框基数读共享 convertBase（2500，不是 UI 自算）', model.convertBaseModel(item) === 2500,
+      String(model.convertBaseModel(item)))
+    check('K4 弹窗结果文本读 summary.amount（250）',
+      model.effectResultText(item).includes('250'), model.effectResultText(item))
+    check('K4 弹窗来源说明走共享函数（槽 0 自己是受益者 → 空串 / 或多受益）',
+      typeof model.effectRecipientNote(item) === 'string', model.effectRecipientNote(item))
+  }
+
+  // 禁用行：配置参数仍可解析（行级禁用不得把配置参数一起过滤掉）
+  const disabledFixture = eventFixture({
+    damageType: 'direct',
+    effects: [
+      createEmptyBuffEffect({
+        id: 'row-disabled',
+        kind: 'convert',
+        stat: 'dmgBonus',
+        enabledDefault: true,
+        applyTarget: 'self',
+        convert: { from: 'atk', panelSource: 'manual', defaultBase: 800, ratioPercent: 10, initialBase: 0, cap: null },
+      }),
+    ],
+    agents: [testAgent('owner', { profession: '强攻' })],
+  })
+  const dh = disabledFixture.hits[0]
+  const did = disabledFixture.items[0].effect.id
+  const preview = resolveEventBuffPreviewInputs(disabledFixture.context, null, {
+    ...dh,
+    buffOverride: { disabledEffectIds: [did] },
+  }, 0)
+  check('K4 行级禁用后配置参数仍在（基数 800）',
+    near(preview.configurationParameters?.[did]?.convertBase?.value ?? -1, 800),
+    JSON.stringify(preview.configurationParameters?.[did]))
+  // 不可结算：异常事件的触发者在队伍里不存在 → 正式求值返回 null，只给配置参数
+  const { fixture: anomalyFixture, hit: anomalyHit } = k1Fixture('ordinary')
+  const blocked = resolveEventBuffPreviewInputs(anomalyFixture.context, null, { ...anomalyHit, triggerAgentId: 'nobody' }, 0)
+  check('K4 不可结算事件只给配置参数、不伪造金额',
+    blocked.configurationOnly === true && blocked.effectSummaries == null && Object.keys(blocked.configurationParameters ?? {}).length > 0,
+    JSON.stringify({ configurationOnly: blocked.configurationOnly, summaries: blocked.effectSummaries != null, params: Object.keys(blocked.configurationParameters ?? {}).length }))
+  const explicitNull = resolveEventBuffPreviewInputs(anomalyFixture.context, null, anomalyHit, 0, null)
+  check('K4 显式传 null 快照：不重试、不补造结果',
+    explicitNull.configurationOnly === true && explicitNull.effectSummaries == null,
+    JSON.stringify({ configurationOnly: explicitNull.configurationOnly }))
+}
+
+console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
