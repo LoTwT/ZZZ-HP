@@ -96,6 +96,7 @@ import {
   computeFinalPanel,
   type ConvertSlotPanels,
 } from '@/utils/panelBuffCalc'
+import { resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
 
 import {
   DAMAGE_EVENT_CRIT_MODE_OPTIONS,
@@ -513,6 +514,21 @@ const effectiveAnomalySlotPanels = computed(() => {
     merged[agentId] = fillPanelStatsDefaults({ ...panel })
   }
   return merged
+})
+
+/** 每人一份局外（该角色激活那份 / 转模部分面板兜底），供全队转模按来源槽位取值 */
+const slotExternalPanelsMap = computed<Record<number, PanelStats>>(() => {
+  const map: Record<number, PanelStats> = {}
+  props.teamSlots.forEach((slot, index) => {
+    if (!slot.agentId) return
+    map[index] = resolveSlotExternalPanel({
+      slotIndex: index,
+      teamSlots: props.teamSlots,
+      activeSlotPanels: effectiveAnomalySlotPanels.value,
+      convertSlotPanels: props.convertSlotPanels,
+    })
+  })
+  return map
 })
 
 const isMb = computed(() => mainAgent.value?.profession === MB_PROFESSION)
@@ -3480,7 +3496,11 @@ function buildPreviewPanelContext(slotIndex: number) {
     buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
     activeSlotPanels: effectiveAnomalySlotPanels.value,
     convertSlotPanels: props.convertSlotPanels,
+    // 全队转模按来源槽位取局外时要能按槽位找到人；与面板页同一份解析（Spec §2.1）
+    slotExternalPanels: slotExternalPanelsMap.value,
     environmentBuffs: props.environmentBuffs,
+    // 技能等级转模来源：与其它入口同一响应式来源（C1 之前这里缺这一项）
+    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
   }
 }
 

@@ -13,6 +13,7 @@
 import { eventFixture } from './_eventElementHarness.mjs'
 import { testAgent } from './_effectPipelineHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
+import { computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
 import { resolveEventBuffPreviewInputs } from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
 
@@ -91,6 +92,45 @@ for (const mode of ['ordinary', 'extra-team']) {
     near(previewAmount, numeric.producerFinalPanel.dmgBonus),
     `preview=${previewAmount} power=${numeric.producerFinalPanel.dmgBonus}`,
   )
+}
+
+console.log('')
+console.log('== K3 全局与行级隔离（普通 / 额外各一次） ==')
+for (const mode of ['ordinary', 'extra-team']) {
+  const effect = createEmptyBuffEffect({
+    id: 'global-atk',
+    stat: 'atk',
+    value: 50,
+    kind: 'fixed',
+    enabledDefault: true,
+    applyTarget: 'team',
+  })
+  const fixture = eventFixture({
+    mode,
+    damageType: 'anomaly',
+    effects: [effect],
+    agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
+  })
+  const hit = fixture.hits[0]
+  const effectId = fixture.items.find((item) => item.effect.id.endsWith('global-atk')).effect.id
+  const external = fixture.panels.owner
+
+  // 全局面板：行级例外恒为 null（Spec §2.1 第 5 项）
+  const globalCtx = { ...fixture.panelContext, rowBuffOverride: null }
+  const globalPanel = computeFinalPanel(external, globalCtx, { includeDetails: false }).finalPanel
+
+  const eventA = evaluateSkillFlowHit(fixture.context, null, hit)
+  const eventADisabled = evaluateSkillFlowHit(fixture.context, null, {
+    ...hit,
+    buffOverride: { disabledEffectIds: [effectId] },
+  })
+  // 行级禁用不反写全局：再算一次全局面板必须还是 1050
+  const globalAfter = computeFinalPanel(external, globalCtx, { includeDetails: false }).finalPanel
+
+  check(`${mode}｜局外 1000 + 全局攻击 50 → 全局 1050`, near(globalPanel.atk, 1050), String(globalPanel.atk))
+  check(`${mode}｜事件 A 未禁用 → 1050`, near(eventA.finalPanel.atk, 1050), String(eventA.finalPanel.atk))
+  check(`${mode}｜事件 A 禁用该效果 → 1000`, near(eventADisabled.finalPanel.atk, 1000), String(eventADisabled.finalPanel.atk))
+  check(`${mode}｜行级禁用不反写全局 → 仍 1050`, near(globalAfter.atk, 1050), String(globalAfter.atk))
 }
 
 console.log('')

@@ -90,6 +90,7 @@ import {
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotMap,
 } from '@/utils/panelBuffCalc'
+import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
 import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
 import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
 
@@ -628,10 +629,6 @@ function buildPanelContextForSlot(
   mainExternalPanel: PanelStats,
   event?: { skillContext: SkillCalcContext; rowBuffOverride: ResolvedHit['buffOverride'] },
 ): PanelCalcContext {
-  const level =
-    slotIndex === ctx.panelContext.mainSlotIndex
-      ? ctx.enemyInput.level
-      : resolveProducerAgentLevel(ctx, ctx.panelContext.teamSlots[slotIndex]?.agentId)
   const base: PanelCalcContext = {
     ...ctx.panelContext,
     mainSlotIndex: slotIndex,
@@ -640,7 +637,19 @@ function buildPanelContextForSlot(
     buffSelection: ctx.slotBuffSelections
       ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex)
       : ctx.panelContext.buffSelection,
-    attrValues: panelToConvertAttrValues(externalForSlot, { level, pierceMod: 0 }),
+    // 转模基数与面板页同一份解析（Spec §2.1）：主槽用敌方等级、其余用角色等级，
+    // 转模部分面板自带的 level 优先。
+    attrValues: resolveSlotAttrValues({
+      slotIndex,
+      mainSlotIndex: ctx.panelContext.mainSlotIndex,
+      teamSlots: ctx.panelContext.teamSlots,
+      external: externalForSlot,
+      convertSlotPanels: ctx.panelContext.convertSlotPanels,
+      agentLevelBySlot: (index) =>
+        index === ctx.panelContext.mainSlotIndex
+          ? ctx.enemyInput.level
+          : resolveProducerAgentLevel(ctx, ctx.panelContext.teamSlots[index]?.agentId),
+    }),
     ...event,
   }
   const panelSourceValuesBySlot = buildPanelSourceValuesBySlotMap(base, externalForSlot)

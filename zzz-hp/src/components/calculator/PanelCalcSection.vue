@@ -43,7 +43,6 @@ import {
   buildPanelSourceValuesBySlotRecord,
   computeFinalPanel,
 
-  convertSlotPartialToExternalPanel,
   panelToConvertAttrValues,
   resolveBuffSelectionForSlot,
   resolveAnomalyReleaseMultFields,
@@ -51,6 +50,7 @@ import {
   type ConvertSlotPanels,
   type MultiSlotBuffSelection,
 } from '@/utils/panelBuffCalc'
+import { resolveSlotAttrValues, resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
 import {
 
 
@@ -344,18 +344,18 @@ const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(
  * 没有面板记录时给**空面板**（全 0），不给占位毕业面板、也不拿 live 编辑器顶替：
  * 没有面板就不该算出伤害（所有者口径 2026-09-12）。
  * 转模角色走 `convertSlotPanels`（转模面板维持现状，不属于「面板导入」那条线）。
+ *
+ * 解析顺序已收敛到 `utils/panelSourceResolution.ts`（计算链路收敛 Spec §2.1），
+ * 这里只负责从响应式来源取值，不再维护第二份分支。
  */
 function resolveExternalPanelForSlotIndex(slotIndex: number): PanelStats {
-  const agentId =
-    slotIndex >= 0 && slotIndex < props.teamSlots.length
-      ? props.teamSlots[slotIndex]?.agentId
-      : undefined
-  if (!agentId) return createEmptyExternalPanel()
-  const active = resolveActivePanel(props.slotPanels?.[agentId])
-  if (active) return active
-  const partial = props.convertSlotPanels?.[agentId]
-  if (partial) return convertSlotPartialToExternalPanel(partial)
-  return createEmptyExternalPanel()
+  return resolveSlotExternalPanel({
+    slotIndex,
+    teamSlots: props.teamSlots,
+    // 来源已由 `resolvedActiveSlotPanels` 解完：这里只按「激活 → 转模部分 → 空」取
+    activeSlotPanels: resolvedActiveSlotPanels.value,
+    convertSlotPanels: props.convertSlotPanels,
+  })
 }
 
 /** 每人一份局外，供全队转模按来源槽位取值（不要拿编辑中角色的面板去套队友） */
@@ -408,17 +408,19 @@ function buildPanelCalcContextForSlot(slotIndex: number) {
 }
 
 function getAttrDefaultsForSlot(slotIndex: number) {
-  const external = resolveExternalPanelForSlotIndex(slotIndex)
-  const agentId = props.teamSlots[slotIndex]?.agentId
-  const partial = agentId ? props.convertSlotPanels?.[agentId] : undefined
-  const level =
-    partial?.level ??
-    (slotIndex === mainSlotIndex.value
-      ? enemyInput.value.level
-      : agentId
-        ? resolveAgentLevel(agentId)
-        : 60)
-  return panelToConvertAttrValues(external, { level, pierceMod: 0 })
+  return resolveSlotAttrValues({
+    slotIndex,
+    mainSlotIndex: mainSlotIndex.value,
+    teamSlots: props.teamSlots,
+    external: resolveExternalPanelForSlotIndex(slotIndex),
+    convertSlotPanels: props.convertSlotPanels,
+    // 主槽按敌方等级取基数，其余按角色等级；没有角色时 60（既有回落，保持不动）
+    agentLevelBySlot: (index) => {
+      const agentId = props.teamSlots[index]?.agentId
+      if (index === mainSlotIndex.value) return enemyInput.value.level
+      return agentId ? resolveAgentLevel(agentId) : 60
+    },
+  })
 }
 
 function getPanelSourceValuesForSlot(slotIndex: number) {
@@ -779,6 +781,9 @@ const hitCalcGlobalSignature = computed(() =>
     ext: externalPanel,
     affix: affixCounts,
     mains: affixDriveDiscMainStats,
+    // 五大类技能等级：技能等级转模 / 招式倍率的来源（C7）。漏掉的症状是改来源角色等级后
+    // 面板与伤害不重算、命中旧缓存（K17）。
+    levels: props.skillTalentLevelsByAgent,
   }),
 )
 
