@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
@@ -2878,10 +2879,13 @@ const showcaseTitle = computed(() => {
 <template>
   <section id="skill-flow" class="calc-mode-section damage-anchor">
     <header class="calc-mode-header">
-      <h2>招式流程</h2>
-      <p class="calc-mode-desc">
-        从招式库加入当前角色的准备招式，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。
-      </p>
+      <h2>
+        招式流程
+        <InfoTip
+          label="招式流程说明"
+          text="从招式库加入当前角色的准备招式，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。"
+        />
+      </h2>
     </header>
 
     <div class="sf-agent-tabs" role="tablist" aria-label="角色流程">
@@ -3592,9 +3596,11 @@ const showcaseTitle = computed(() => {
               }}</strong>
               <span class="muted">（各段倍率×次数之和）</span>
             </p>
-            <p class="col-desc">
-              与流程里普通招式相同：可改本段次数、失衡与事件元素。留空/重置则继承组定义次数、整组失衡与整组元素。
-            </p>
+
+            <InfoTip
+              label="组调整说明"
+              text="与流程里普通招式相同：可改本段次数、失衡与事件元素。留空/重置则继承组定义次数、整组失衡与整组元素。"
+            />
             <ul class="sf-list group-tune-list">
               <SkillFlowCard
                 v-for="(member, memberIndex) in sortSkillGroupMembers(tuningGroup.members)"

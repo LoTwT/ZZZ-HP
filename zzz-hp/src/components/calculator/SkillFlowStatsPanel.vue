@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
 import SkillFlowDamageCrossAnalysis from '@/components/calculator/SkillFlowDamageCrossAnalysis.vue'
@@ -392,8 +393,14 @@ function clearRecords() {
     <section class="sf-analysis-comparison" aria-label="全队角色伤害构成">
       <div class="sf-analysis-section-head">
         <div>
-          <h4>全队角色构成</h4>
-          <p class="sf-stats-hint">每条按伤害类型分段，颜色与下方构成分析一致。</p>
+          <h4>
+            全队角色构成
+            <InfoTip
+              label="全队角色构成说明"
+              text="每条按伤害类型分段，颜色与下方构成分析一致。"
+            />
+          </h4>
+
         </div>
         <div class="sf-analysis-switch" role="group" aria-label="角色构成显示方式">
           <button
@@ -449,8 +456,14 @@ function clearRecords() {
 
     <div class="sf-analysis-section-head sf-analysis-scope-head">
       <div>
-        <h4>伤害构成分析</h4>
-        <p class="sf-stats-hint">查看范围独立于编辑角色；下方图表与招式排行同步切换。</p>
+        <h4>
+          伤害构成分析
+          <InfoTip
+            label="伤害构成分析说明"
+            text="查看范围独立于编辑角色；下方图表与招式排行同步切换。"
+          />
+        </h4>
+
       </div>
       <div class="sf-analysis-switch sf-analysis-scope" role="group" aria-label="伤害分析范围">
         <button

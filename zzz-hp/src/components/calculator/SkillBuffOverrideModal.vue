@@ -12,6 +12,7 @@
  * - 只影响本行结算：不改面板、不动层数累计、不影响其它行
  * - 白天主题覆盖在 `assets/calculatorLight.css`（与局内增益同一处，惯例一致）
  */
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
@@ -354,11 +355,11 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
             </h3>
             <button type="button" class="bo-close" aria-label="关闭" @click="open = false">×</button>
           </div>
-          <p class="bo-hint">
-            这里是<b>比全局更高一级</b>的行级调整：勾掉 = <b>这一行不吃</b>该增益；
-            「层数 / 基数」按行改，<b>覆盖全局</b>，没改的项继承全局。
-            只影响这一行的结算与显示：面板仍按全局值（带招式条件的增益本来就不进面板），不影响其它行。
-          </p>
+
+          <InfoTip
+            label="行级增益例外说明"
+            text="这里是比全局更高一级的行级调整：勾掉 = 这一行不吃该增益；「层数 / 基数」按行改，覆盖全局，没改的项继承全局。只影响这一行的结算与显示：面板仍按全局值（带招式条件的增益本来就不进面板），不影响其它行。"
+          />
           <p v-if="inheritedDisabledCount" class="bo-hint bo-hint-inherit">
             整组还关着 <b>{{ inheritedDisabledCount }}</b> 条 —— 这一段<b>同样不吃</b>，
             在组内开不回来（要放开请到整组的「增益」里改）。
