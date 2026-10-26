@@ -394,8 +394,8 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
     const hit = hits[0], convertItem = items.find(item => item.effect.id.endsWith('convert'))
     const override = hit.buffOverride
     const panel = bindVueFunctions(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), ['getEventBuffPreviewInputs'], {
-      resolveEventBuffPreviewInputs, skillFlowCalculationContext: ref(context), skillFlowMainExternal: ref(fixture.panels.owner),
-      buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey, hitCalcGlobalSignature: ref('preview-fixture'), eventBuffPreviewCache: new Map(),
+      resolveEventBuffPreviewInputs, resolveSkillFlowCalculationDetail, skillFlowCalculationContext: ref(context), skillFlowMainExternal: ref(fixture.panels.owner),
+      buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey, hitCalcGlobalSignature: ref('preview-fixture|' + mode + '|' + damageType), eventBuffPreviewCache: new Map(),
     })
     const page = bindVueFunctions(pageUrl, ['buffConvertResolveInputsForSlot', 'flowBuffEffectTextFor'], {
       hits: ref(hits), agents: ref(agents), buildSkillContextFromHit, resolveEventElement,

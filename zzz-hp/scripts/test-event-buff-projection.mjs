@@ -13,8 +13,9 @@
 import { eventFixture } from './_eventElementHarness.mjs'
 import { testAgent } from './_effectPipelineHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
-import { computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
-import { resolveEventBuffPreviewInputs } from '../src/utils/optimalAffixAlloc.ts'
+import { effectRecipientNote } from '../src/utils/flowBuffTable.ts'
+import { collectAllBuffEffects, computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
+import { projectEventEffectRecords, resolveEventBuffPreviewInputs } from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
 
 let passed = 0
@@ -131,6 +132,215 @@ for (const mode of ['ordinary', 'extra-team']) {
   check(`${mode}｜事件 A 未禁用 → 1050`, near(eventA.finalPanel.atk, 1050), String(eventA.finalPanel.atk))
   check(`${mode}｜事件 A 禁用该效果 → 1000`, near(eventADisabled.finalPanel.atk, 1000), String(eventADisabled.finalPanel.atk))
   check(`${mode}｜行级禁用不反写全局 → 仍 1050`, near(globalAfter.atk, 1050), String(globalAfter.atk))
+}
+
+console.log('')
+console.log('== K1 记录级断言（逐受益者、状态、来源说明） ==')
+for (const mode of ['ordinary', 'extra-team']) {
+  const { fixture, hit, effectId } = k1Fixture(mode)
+  const detail = evaluateSkillFlowHit(fixture.context, null, hit, true)
+  const disabledDetail = evaluateSkillFlowHit(fixture.context, null, {
+    ...hit,
+    buffOverride: { disabledEffectIds: [effectId] },
+  }, true)
+  const summaries = projectEventEffectRecords(detail.effectRecords ?? [])
+  const summary = summaries[effectId]
+  const disabledSummary = projectEventEffectRecords(disabledDetail.effectRecords ?? [])[effectId]
+  const ownerRecord = detail.effectRecords?.find(
+    (record) => record.beneficiarySlot === 0 && record.effectId === effectId,
+  )
+  const powerRecord = detail.effectRecords?.find(
+    (record) => record.beneficiarySlot === 1 && record.effectId === effectId,
+  )
+
+  check(`${mode}｜持有者记录为 profession-mismatch / 0 / 无采用项`,
+    ownerRecord?.status === 'profession-mismatch' && ownerRecord.amount === 0 && ownerRecord.usedInputs.length === 0,
+    JSON.stringify(ownerRecord && { status: ownerRecord.status, amount: ownerRecord.amount, used: ownerRecord.usedInputs.length }))
+  check(`${mode}｜强度提供者记录 applied / 25 / 采用 powerProviderPanel+dmgBonus`,
+    powerRecord?.status === 'applied' && near(powerRecord.amount, 25) &&
+      powerRecord.usedInputs.some((usage) => usage.usedView === 'powerProviderPanel' && usage.field === 'dmgBonus'),
+    JSON.stringify(powerRecord && { status: powerRecord.status, amount: powerRecord.amount, views: powerRecord.usedViews }))
+  check(`${mode}｜summary 只有 power 一个实际受益者、状态 single、金额 25`,
+    summary?.state === 'single' && summary.recipients.length === 1 &&
+      summary.recipients[0].slotIndex === 1 && near(summary.amount, 25),
+    JSON.stringify(summary && { state: summary.state, amount: summary.amount, recipients: summary.recipients.length }))
+  check(`${mode}｜查看槽 0 说明「来源：支援·power」，槽 1 无多余说明`,
+    effectRecipientNote(summary, 0) === '来源：支援·power' && effectRecipientNote(summary, 1) === '',
+    `${effectRecipientNote(summary, 0)} / ${effectRecipientNote(summary, 1)}`)
+  check(`${mode}｜禁用后两候选均 disabled、recipients 空、状态 inactive、金额 0、说明「已禁用」`,
+    disabledSummary?.state === 'inactive' &&
+      disabledSummary.recipients.length === 0 &&
+      (disabledSummary.candidates ?? []).every((candidate) => candidate.status === 'disabled') &&
+      disabledSummary.amount == null &&
+      effectRecipientNote(disabledSummary, 0) === '已禁用',
+    JSON.stringify(disabledSummary && { state: disabledSummary.state, note: effectRecipientNote(disabledSummary, 0) }))
+}
+
+console.log('')
+console.log('== K2a 采用筛选（两个面板都 applied，只有一边被事件采用） ==')
+{
+  // 已启用的无主环境团队转模：atk 局外 1% → dmgBonus。owner 1000 / power 2000 两块面板
+  // 会分别得到 10 / 20，但异常事件的通用增伤只取强度提供者 → 正确预览是 20 且不是 multiple。
+  const convert = createEmptyBuffEffect({
+    id: 'env-convert',
+    kind: 'convert',
+    stat: 'dmgBonus',
+    enabledDefault: true,
+    applyTarget: 'team',
+    convert: { from: 'atk', panelSource: 'external', ratioPercent: 1, initialBase: 0, cap: null },
+  })
+  const fixture = eventFixture({
+    damageType: 'anomaly',
+    effects: [],
+    agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '强攻' })],
+  })
+  fixture.context.panelContext.environmentBuffs = [
+    {
+      kind: 'crisis',
+      id: 'recipient',
+      sourceKey: 'crisis-buff-recipient',
+      name: 'fixture',
+      effectBlocks: [{ id: 'block', name: 'fixture', effects: [convert] }],
+    },
+  ]
+  const hit = fixture.hits[0]
+  hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
+  const effectId = collectAllBuffEffects(fixture.context.panelContext)[0].effect.id
+  fixture.context.panelContext.buffSelection = {
+    enabledIds: { [effectId]: true },
+    stacksByEffectId: {},
+    convertInputs: {},
+  }
+  const numeric = evaluateSkillFlowHit(fixture.context, null, hit)
+  const detail = evaluateSkillFlowHit(fixture.context, null, hit, true)
+  const summary = projectEventEffectRecords(detail.effectRecords ?? [])[effectId]
+  const records = (detail.effectRecords ?? []).filter((record) => record.effectId === effectId)
+  const ownerRecord = records.find((record) => record.beneficiarySlot === 0)
+  const powerRecord = records.find((record) => record.beneficiarySlot === 1)
+
+  check('两边面板分别得到 10 / 20',
+    near(ownerRecord?.amount ?? -1, 10) && near(powerRecord?.amount ?? -1, 20),
+    `${ownerRecord?.amount} / ${powerRecord?.amount}`)
+  check('两条 applied 记录都保留（候选不丢）',
+    records.filter((record) => record.status === 'applied').length === 2,
+    String(records.length))
+  check('实际受益者只有 power（owner 的 usedInputs 为空）',
+    ownerRecord?.usedInputs.length === 0 && (powerRecord?.usedInputs.length ?? 0) > 0,
+    `${ownerRecord?.usedInputs.length} / ${powerRecord?.usedInputs.length}`)
+  check('summary 不是 multiple，金额取被采用的那 20',
+    summary?.state === 'single' && near(summary.amount, 20),
+    JSON.stringify(summary && { state: summary.state, amount: summary.amount }))
+  check('事件总伤 4363（两面板都生效，仅 power 被采用）', near(numeric.total, 4363), String(numeric.total))
+}
+
+console.log('')
+console.log('== K2b 投影边界（纯函数，两条合法记录） ==')
+{
+  const base = {
+    eventId: 'evt', effectId: 'eff-1', stat: 'dmgBonus', sourceKey: 'agent-0-0', blockId: 'block',
+    providerName: 'owner', providerSlot: 0, sourceSlot: 0, beneficiarySlot: 0,
+    beneficiaryAgentId: 'owner', beneficiaryName: 'owner', beneficiaryLabel: '强攻·owner',
+    policy: 'default', stage: 'preConvert', usedViews: ['ownerPanel'], usedZones: [],
+    status: 'applied', stacks: 1, matchElement: null,
+    usedInputs: [{ inputKey: 'finalPanel', field: 'dmgBonus', resultKey: 'dmgMultiplier', usedZones: [], viewKey: 'v', slotIndex: 0, policy: 'default', usedView: 'ownerPanel' }],
+  }
+  const makeRecord = (viewKey, slotIndex, label, amount) => ({
+    ...base, viewKey, amount, beneficiarySlot: slotIndex, beneficiaryLabel: label,
+  })
+  const multiple = projectEventEffectRecords([
+    makeRecord('v1', 0, '强攻·owner', 10),
+    makeRecord('v2', 1, '支援·power', 20),
+  ])['eff-1']
+  check('两条不同金额的实际使用项 → multiple，金额缺省',
+    multiple?.state === 'multiple' && multiple.amount == null,
+    JSON.stringify({ state: multiple?.state, amount: multiple?.amount }))
+  check('multiple 的完整说明逐个列出，不求和',
+    effectRecipientNote(multiple, 0) === '多受益：强攻·owner + 10、支援·power + 20',
+    effectRecipientNote(multiple, 0))
+  const same = projectEventEffectRecords([
+    makeRecord('v1', 0, '强攻·owner', 20),
+    makeRecord('v2', 1, '支援·power', 20),
+  ])['eff-1']
+  check('两条相同金额 → same，金额 20（不是 40）',
+    same?.state === 'same' && near(same.amount, 20),
+    JSON.stringify({ state: same?.state, amount: same?.amount }))
+  const sameSlot = projectEventEffectRecords([
+    { ...makeRecord('v1', 0, '强攻·owner', 20), policy: 'default' },
+    { ...makeRecord('v2', 0, '强攻·owner', 20), policy: 'remiel-self-radiance', usedViews: ['radianceSelfPanel'] },
+  ])['eff-1']
+  check('同槽位不同政策并存（两条都保留，说明带视图区分）',
+    sameSlot?.recipients.length === 2 && effectRecipientNote(sameSlot, 0).includes('本人耀变受限面板'),
+    effectRecipientNote(sameSlot, 0))
+}
+
+console.log('')
+console.log('== K8 数字模式与追踪模式同源 ==')
+for (const mode of ['ordinary', 'extra-team']) {
+  const { fixture, hit } = k1Fixture(mode)
+  const numeric = evaluateSkillFlowHit(fixture.context, null, hit, false)
+  const detailed = evaluateSkillFlowHit(fixture.context, null, hit, true)
+  check(`${mode}｜totalMods 逐属性相等`,
+    Object.keys(numeric.breakdown.totalMods).every((key) =>
+      near(numeric.breakdown.totalMods[key] ?? 0, detailed.breakdown.totalMods[key] ?? 0)),
+    JSON.stringify({ numeric: numeric.breakdown.totalMods, detailed: detailed.breakdown.totalMods }))
+  check(`${mode}｜finalPanel 逐属性相等`,
+    Object.keys(numeric.finalPanel).every((key) =>
+      typeof numeric.finalPanel[key] !== 'number' || near(numeric.finalPanel[key], detailed.finalPanel[key])),
+    '')
+  check(`${mode}｜perHit / total 相等`,
+    near(numeric.perHit, detailed.perHit) && near(numeric.total, detailed.total),
+    `${numeric.perHit}/${detailed.perHit}`)
+  check(`${mode}｜数字模式不生成记录`, !('effectRecords' in numeric) || numeric.effectRecords == null,
+    JSON.stringify(Object.keys(numeric)))
+  check(`${mode}｜追踪模式三个记录数组齐全`,
+    Array.isArray(detailed.effectRecords) && Array.isArray(detailed.panelStageTraces) && Array.isArray(detailed.damageInputUsages),
+    '')
+}
+
+console.log('')
+console.log('== K9 身份与恰好一次（固定攻击 +50，全局 1000 → 1050） ==')
+{
+  const effect = createEmptyBuffEffect({
+    id: 'exactly-once', stat: 'atk', value: 50, kind: 'fixed', enabledDefault: true, applyTarget: 'self',
+  })
+  const fixture = eventFixture({
+    mode: 'ordinary', damageType: 'direct', effects: [effect],
+    agents: [testAgent('owner', { profession: '强攻' })],
+  })
+  const hit = fixture.hits[0]
+  const detail = evaluateSkillFlowHit(fixture.context, null, hit, true)
+  check('最终面板攻击 1050（不是 1100）', near(detail.finalPanel.atk, 1050), String(detail.finalPanel.atk))
+  const atkRecords = (detail.effectRecords ?? []).filter((record) => record.stat === 'atk' && record.status === 'applied')
+  const identities = new Set(atkRecords.map((record) => [record.viewKey, record.stage, record.sourceKey, record.blockId, record.effectId].join('|')))
+  check('每条效果每个视图只有一条最终贡献（身份唯一）', identities.size === atkRecords.length,
+    `${identities.size} / ${atkRecords.length}`)
+}
+
+console.log('')
+console.log('== K10 普通与额外对等（数值/状态/实际采用） ==')
+{
+  const build = (mode) => {
+    const { fixture, hit, effectId } = k1Fixture(mode)
+    const detail = evaluateSkillFlowHit(fixture.context, null, hit, true)
+    const summary = projectEventEffectRecords(detail.effectRecords ?? [])[effectId]
+    return { detail, summary }
+  }
+  const ordinary = build('ordinary')
+  const extra = build('extra-team')
+  check('同一受益事件两条链总伤相同', near(ordinary.detail.total, extra.detail.total),
+    `${ordinary.detail.total} / ${extra.detail.total}`)
+  check('受益者、金额、状态、采用视图一致',
+    ordinary.summary?.state === extra.summary?.state &&
+      near(ordinary.summary?.amount ?? -1, extra.summary?.amount ?? -2) &&
+      ordinary.summary?.recipients[0]?.slotIndex === extra.summary?.recipients[0]?.slotIndex &&
+      JSON.stringify(ordinary.summary?.recipients[0]?.usedViews) === JSON.stringify(extra.summary?.recipients[0]?.usedViews),
+    JSON.stringify({ ordinary: ordinary.summary?.recipients, extra: extra.summary?.recipients }))
+  check('同一查看槽位的来源说明一致',
+    effectRecipientNote(ordinary.summary, 0) === effectRecipientNote(extra.summary, 0),
+    `${effectRecipientNote(ordinary.summary, 0)} / ${effectRecipientNote(extra.summary, 0)}`)
+  check('入口身份差异按对应关系比较（effectId 允许不同，不伪造相同）',
+    ordinary.summary?.effectId !== extra.summary?.effectId,
+    `${ordinary.summary?.effectId} / ${extra.summary?.effectId}`)
 }
 
 console.log('')

@@ -17,6 +17,11 @@ import type {
   WengineBuffDoc,
 } from '@/types/calculator'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
+// 只作类型导入：记录里的「实际采用」要按真实字段/结果键描述（Spec §3.3）
+import type { DamageCalcInput, DamageCalcResult } from '@/utils/damageCalc'
+import type { DamageZoneId } from '@/utils/damageZoneSourcePolicy'
+import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
+import type { RemielSelfRadianceCalcInput } from '@/utils/remielUtils'
 import { damageTypesOf } from '@/utils/buffDamageTypes'
 import {
   createEmptyExternalPanel,
@@ -38,6 +43,7 @@ import {
   flatModsToEffects,
   getEffectSkillTargets,
   isEffectEnabled,
+  resolveBuffEffectParameters,
   resolveEffectsToMods,
 } from '@/utils/buffEffect'
 import {
@@ -123,6 +129,16 @@ export function availableBuffGroupTabs(
  */
 export interface ConvertResolveInputs {
   effectAmounts?: Record<string, number>
+  /**
+   * 逐效果投影（计算链路收敛 Spec §2.2 第 2 项 / §3.5）：按 effect id 给出
+   * 实际采用状态与受益者。`effectAmounts` 只是它的兼容投影，不能再被当成唯一事实。
+   */
+  effectSummaries?: Record<string, EventEffectSummary>
+  /**
+   * 配置参数（Spec §5.1）：全局选择器 / 组配置 / 不可结算事件的**待选配置**，
+   * 与实际贡献分离，不进入 `effectAmounts`，不参与结算。
+   */
+  configurationParameters?: Record<string, ResolvedEffectParameters>
   configurationOnly?: boolean
   attrDefaults: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
@@ -619,6 +635,15 @@ export interface PanelCalcContext {
   environmentBuffs?: EnvironmentBuffEntry[]
   /** 跳过邦布 Buff（默认随 restrictToSlotIndex 启用） */
   excludeBangboo?: boolean
+  /**
+   * 按需追踪（Spec §2.2 第 2 项）：设置后 `computePanelStages` 把同一份 trace 透传给
+   * 正式包解析，逐效果回调贡献；不设置时不生成任何记录。
+   */
+  trace?: ComputeFinalPanelOptions['trace']
+  /** 追踪时的阶段标签（特殊视图用；缺省按 skipConvert 推断） */
+  traceStage?: BuffEffectContribution['stage']
+  /** 追踪时的前置排除映射（行级禁用 / 来源政策排除），由候选判定方给出 */
+  traceExcluded?: Readonly<Record<string, 'disabled' | 'source-excluded'>>
 }
 
 /** 从增益 sourceKey 解析队伍槽位索引（agent / 音擎 / 驱动盘） */
@@ -772,6 +797,10 @@ function buildPanelSourceValuesForSlot(
      * （那些路径的 skipConvert 为 false，源值照旧从地图取）。
      */
     panelSourceValuesBySlot: undefined,
+    // 源值探针不是「某个视图的正式求值」：切断追踪，避免同一候选在探针里被记录第二遍
+    trace: undefined,
+    traceExcluded: undefined,
+    traceStage: undefined,
   }
   const baseAnomalyControl = resolveBaseAnomalyControl(slotCtx)
   const baseEnergyRegen = resolveBaseEnergyRegen(slotCtx)
@@ -1106,8 +1135,143 @@ export interface PanelBuffBreakdown {
   sources: BuffModSource[]
 }
 
+/** 一条效果在本次判定里的终态（计算链路收敛 Spec §3.1）。 */
+export type BuffEffectApplyStatus =
+  | 'applied'
+  | 'zero'
+  | 'disabled'
+  | 'source-excluded'
+  | 'not-enabled'
+  | 'target-mismatch'
+  | 'context-mismatch'
+  | 'element-mismatch'
+  | 'profession-mismatch'
+  | 'team-count-mismatch'
+  | 'convert-skipped'
+
+/** 共享参数解析的输入（正式求值与配置预览共用，Spec §3.2）。 */
+export interface EffectParameterInputs {
+  stacks?: number
+  overrideBase?: number | null
+  attrValues?: Partial<Record<CharacterAttrKey, number>>
+  panelSourceValues?: PanelSourceValues
+  skillTalentLevels?: Partial<SkillTalentLevels> | null
+}
+
+/** 共享参数解析的结果：有效层数、实际采用的基数及其来历、配置折算值。 */
+export interface ResolvedEffectParameters {
+  amount: number
+  stacks?: number
+  convertBase?: {
+    from: CharacterAttrKey | string
+    value: number
+    source: 'manual' | 'external' | 'final' | 'skillLevel' | 'default'
+    stage: 'manual' | 'external' | 'preConvert' | 'skillLevel'
+  }
+}
+
+/** 判定循环产出的原始记录（不含来源元数据；`buffEffect.ts` 回调给的就是它）。 */
+export interface ResolvedEffectRecord extends ResolvedEffectParameters {
+  effectId: string
+  stat: BuffStatKey
+  status: BuffEffectApplyStatus
+  matchElement?: string | null
+}
+
+/** 一条效果在某个面板视图里的贡献（补齐来源与阶段）。 */
+export interface BuffEffectContribution extends ResolvedEffectRecord {
+  viewKey: string
+  sourceKey: string
+  blockId: string
+  providerSlot: number | null
+  sourceSlot: number | null
+  beneficiarySlot: number
+  policy: PanelViewPolicyId
+  stage: 'preConvert' | 'convert' | 'releaseMult' | 'radianceSelf'
+}
+
+/** 一个面板视图（同一份有效输入 + 同一政策）的全部贡献。 */
+export interface PanelStageTrace {
+  viewKey: string
+  slotIndex: number
+  policy: PanelViewPolicyId
+  contributions: BuffEffectContribution[]
+}
+
+/** 事件实际用到的那张面板（Spec §3.3）。 */
+export type EventEffectUseView =
+  | 'ownerPanel'
+  | 'powerProviderPanel'
+  | 'anomalyTriggerPanel'
+  | 'radianceSelfPanel'
+  | 'mutationPanel'
+  | 'releaseMult'
+  | 'convertSourcePanel'
+
+export interface DamageInputUsage {
+  inputKey: Exclude<keyof DamageCalcInput, 'onInputUsed' | 'eventDamageType' | 'eventCritMode'>
+  field: keyof PanelStats | keyof CombatBuffMods | keyof RemielSelfRadianceCalcInput
+  resultKey: keyof DamageCalcResult
+  usedZones: DamageZoneId[]
+}
+
+export interface EventDamageInputUsage extends DamageInputUsage {
+  viewKey: string
+  slotIndex: number
+  policy: PanelViewPolicyId
+  usedView: EventEffectUseView
+}
+
+/** 事件级的最终贡献记录：每条候选在最终面板视图里的实际结果。 */
+export interface EventEffectRecord extends BuffEffectContribution {
+  eventId: string
+  providerName: string
+  beneficiaryAgentId: string
+  beneficiaryName: string
+  beneficiaryLabel: string
+  usedInputs: EventDamageInputUsage[]
+  usedViews: EventEffectUseView[]
+  usedZones: DamageZoneId[]
+}
+
+/** 一个事件**实际采用**的受益项（按视图）。 */
+export interface EventEffectRecipient {
+  viewKey: string
+  slotIndex: number
+  agentId: string
+  label: string
+  policy: PanelViewPolicyId
+  stage: BuffEffectContribution['stage']
+  amount: number
+  status: 'applied' | 'zero'
+  usedViews: EventEffectUseView[]
+  usedZones: DamageZoneId[]
+}
+
+/** 同一 effect id 的投影（Spec §3.3 / §3.5）。 */
+export interface EventEffectSummary {
+  effectId: string
+  stat: BuffStatKey
+  sourceKey: string
+  blockId: string
+  providerName: string
+  candidates: EventEffectRecord[]
+  recipients: EventEffectRecipient[]
+  state: 'single' | 'same' | 'multiple' | 'inactive'
+  amount?: number
+}
+
 export interface ComputeFinalPanelOptions {
   includeDetails?: boolean
+  /**
+   * 按需追踪（Spec §2.2 第 2 项）。设置后本次求值会在正式运算处回调逐效果贡献；
+   * 不设置时不分配任何记录（数值快路径零开销）。
+   */
+  trace?: {
+    viewKey: string
+    policy: PanelViewPolicyId
+    onContribution: (item: BuffEffectContribution) => void
+  }
 }
 
 /** 唯一编排：局外 → 转模前 → 最终。`computeFinalPanel` / `runPanelPipeline` 都走这里。 */
@@ -1194,6 +1358,13 @@ interface PackSourceOptions {
   panelSourceValuesOverride?: PanelSourceValues
   /** 额外 Buff 运算包：不读选择器里的层数/转模输入 */
   extraGainPack?: boolean
+  /**
+   * 追踪用的来源身份（内部）：只在 `ctx.trace` 存在时被读取。
+   * 由收集器按 `CollectedEffect` 填，其它排序/求值语义不受影响。
+   */
+  traceSource?: { sourceKey: string; blockId: string; providerSlot: number | null }
+  /** 追踪：被前置排除、但仍需由判定循环报告状态的候选 */
+  traceExcludedEffects?: BuffEffect[]
 }
 
 /** 来源不可用时的零值：只覆盖这些效果真正会读的 `from` 键，避免回落受益槽位的面板 */
@@ -1213,14 +1384,73 @@ function sourceOptionsForCollectedEffect(
   ctx: PanelCalcContext,
   effects: readonly BuffEffect[],
 ): PackSourceOptions | undefined {
-  if (!item.effect.extraGain) return undefined
+  // 追踪身份：只在带 trace 时填，数值路径多一点字段也没有行为影响
+  const traceSource = ctx.trace
+    ? {
+        sourceKey: item.sourceKey,
+        blockId: item.blockId,
+        providerSlot: item.providerSlot ?? null,
+      }
+    : undefined
+  if (!item.effect.extraGain) return traceSource ? { traceSource } : undefined
   const sourceSlotIndex = resolveCollectedEffectSourceSlot(item)
   const available = sourceSlotIndex != null && Boolean(ctx.teamSlots[sourceSlotIndex]?.agentId)
   return {
     sourceSlotIndex,
     panelSourceValuesOverride: available ? undefined : zeroSourceValuesFor(effects),
     extraGainPack: true,
+    traceSource,
   }
+}
+
+/**
+ * 本事件的候选集合（Spec §2.2 第 2 项）：目标槽位适用的条目，以及**被前置排除**的候选
+ * （行级禁用 / 来源政策排除）。两者不重叠，顺序即目录顺序。
+ *
+ * 被排除者不参加运算，但必须能被统一判定循环报告成 `disabled` / `source-excluded`——
+ * 否则预览与详情里「禁用后应有状态」的一侧会凭空消失（Review R6）。
+ */
+export function collectEventCandidateEffects(ctx: PanelCalcContext): {
+  items: CollectedEffect[]
+  excluded: Array<{ item: CollectedEffect; reason: 'disabled' | 'source-excluded' }>
+} {
+  const build = buildBuffCatalog({
+    teamSlots: ctx.teamSlots,
+    agents: ctx.agents,
+    wengines: ctx.wengines,
+    driveDiscs: ctx.driveDiscs,
+    bangboo: ctx.bangboo ?? null,
+    bangbooRefine: ctx.bangbooRefine,
+    environmentBuffs: ctx.environmentBuffs ?? [],
+    extraGains: ctx.extraGains ?? [],
+  })
+  const restrict = ctx.restrictToSlotIndex ?? null
+  const items: CollectedEffect[] = []
+  const excluded: Array<{ item: CollectedEffect; reason: 'disabled' | 'source-excluded' }> = []
+  for (const entry of build.entries) {
+    if (!entry.applicableSlots.includes(ctx.mainSlotIndex)) continue
+    const sameSlotView = entry.providerSlot === ctx.mainSlotIndex ? entry : applyTeammateView(entry)
+    if (restrict != null) {
+      if (entry.providerSlot != null && entry.providerSlot !== restrict) {
+        excluded.push({ item: sameSlotView, reason: 'source-excluded' })
+        continue
+      }
+      if (entry.sourceKey.startsWith('bangboo')) {
+        excluded.push({ item: sameSlotView, reason: 'source-excluded' })
+        continue
+      }
+    }
+    if (ctx.excludeBangboo && entry.sourceKey.startsWith('bangboo')) {
+      excluded.push({ item: sameSlotView, reason: 'source-excluded' })
+      continue
+    }
+    if (isEntryDisabledByRowOverride(entry, ctx.rowBuffOverride ?? null)) {
+      excluded.push({ item: sameSlotView, reason: 'disabled' })
+      continue
+    }
+    items.push(sameSlotView)
+  }
+  return { items, excluded }
 }
 
 /** 展示与结算共用来源缺失规则，不能把有主的空来源替换为受益者面板。 */
@@ -1270,7 +1500,15 @@ function resolvePackMods(
   const isExtraPack = sourceOptions?.extraGainPack === true
   const selection = isExtraPack ? null : ctx.buffSelection
   const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
-  return resolveEffectsToMods(effects, {
+  const trace = ctx.trace
+  const stage: BuffEffectContribution['stage'] =
+    ctx.traceStage ?? (ctx.skipConvert ? 'preConvert' : 'convert')
+  const traceSource = sourceOptions?.traceSource
+  // 前置排除的候选要由**同一判定循环**报告状态（Spec §4 第 2 项）：把它们一并送进循环，
+  // 由 excludedByEffectId 短路，不匹配、不解析参数、不运算。
+  const excludedEffects = trace ? (sourceOptions?.traceExcludedEffects ?? []) : []
+  const loopEffects = excludedEffects.length ? [...effects, ...excludedEffects] : effects
+  return resolveEffectsToMods(loopEffects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
     element: isMain ? skillCtx.element : slotElement,
@@ -1289,18 +1527,60 @@ function resolvePackMods(
     skipConvert: ctx.skipConvert,
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
+    excludedByEffectId: excludedEffects.length ? ctx.traceExcluded : undefined,
+    // 只有带追踪时才分配记录对象；数值路径完全不受影响
+    onEffectResolved: trace
+      ? (record) => {
+          trace.onContribution({
+            ...record,
+            viewKey: trace.viewKey,
+            policy: trace.policy,
+            sourceKey: traceSource?.sourceKey ?? '',
+            blockId: traceSource?.blockId ?? '',
+            providerSlot: traceSource?.providerSlot ?? null,
+            sourceSlot: sourceSlotIndex ?? null,
+            beneficiarySlot: ctx.mainSlotIndex,
+            stage,
+          })
+        }
+      : undefined,
   })
 }
 
-/** 单条贡献仍经过正式的共享匹配、行级过滤和来源解析，供事件展示复用。 */
-export function resolveCollectedEffectAmount(item: CollectedEffect, ctx: PanelCalcContext): number {
-  if (!collectAllBuffEffects(ctx).some(entry => entry.effect.id === item.effect.id)) return 0
-  const providerSlot = item.providerSlot
-  const mods = resolvePackMods(
-    [item.effect], providerSlot == null || providerSlot === ctx.mainSlotIndex,
-    ctx, providerSlot ?? undefined, sourceOptionsForCollectedEffect(item, ctx, [item.effect]),
-  )
-  return mods[item.effect.stat] ?? 0
+/**
+ * 配置参数解析（Spec §2.2 第 4 项 / §5.1）：复用正式求值那套参数组装
+ * （行级覆盖、来源槽位、技能等级），只解析「有效层数 / 有效基数 / 配置折算值」。
+ *
+ * 它**跳过启用、匹配与数值施加**：不产出实际贡献，也不能当贡献用。
+ */
+export function resolveCollectedEffectParameters(
+  item: CollectedEffect,
+  ctx: PanelCalcContext,
+): ResolvedEffectParameters {
+  const providerSlot = item.providerSlot ?? null
+  const sourceSlotIndex = resolveCollectedEffectSourceSlot(item) ?? providerSlot
+  const isExtraPack = item.effect.extraGain === true
+  const selection = isExtraPack ? null : ctx.buffSelection
+  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
+  let panelSourceValues = ctx.panelSourceValues
+  if (sourceSlotIndex != null && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
+    panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
+  }
+  const slotAgentId = sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
+  return resolveBuffEffectParameters(item.effect, {
+    stacks: isExtraPack
+      ? rowOverlay?.stacksByEffectId?.[item.effect.id]
+      : (rowOverlay?.stacksByEffectId?.[item.effect.id] ??
+        ctx.buffSelection?.stacksByEffectId?.[item.effect.id]),
+    overrideBase: isExtraPack
+      ? (rowOverlay?.convertInputs?.[item.effect.id] ?? null)
+      : (rowOverlay?.convertInputs?.[item.effect.id] ??
+        ctx.buffSelection?.convertInputs?.[item.effect.id] ??
+        null),
+    attrValues: ctx.attrValues,
+    panelSourceValues,
+    skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
+  })
 }
 
 /** 旧路径：直接 resolveEffectsToMods。阶段 6 双跑对照用。 */
@@ -2392,7 +2672,15 @@ export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource
   return sources
 }
 
-function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSource[] {
+function collectPanelBuffModSourcesUncached(
+  ctx: PanelCalcContext,
+  traceOptions?: {
+    /** 追踪：不因「本包没有非零 mods」丢掉包（否则未命中/零值候选就没有状态记录） */
+    keepEmpty?: boolean
+    /** 追踪：按包键归并被前置排除的候选，交给同一判定循环报告状态 */
+    excludedByGroupKey?: Map<string, { effects: BuffEffect[]; slotIndex: number | null }>
+  },
+): BuffModSource[] {
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
   const ctxForResolve: PanelCalcContext = { ...ctx, skillContext: skillCtx }
   const sources: BuffModSource[] = []
@@ -2417,7 +2705,12 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
      * 额外 Buff：受益槽位由 `applicableSlots` 决定，**来源槽位**由卡片单独给（Spec §5.1 第 4 项）。
      * 来源不可用时按显式零值算，不回退到受益槽位的面板（§5.2 第 6 项）。
      */
-    const sourceOptions = sourceOptionsForCollectedEffect(first, ctx, effects)
+    const baseOptions = sourceOptionsForCollectedEffect(first, ctx, effects)
+    const excludedEffects = traceOptions?.excludedByGroupKey?.get(key)?.effects
+    const sourceOptions =
+      excludedEffects?.length
+        ? { ...(baseOptions ?? {}), traceExcludedEffects: excludedEffects }
+        : baseOptions
     const mods = resolvePackModsViaEffectSpec(
       effects,
       isMain,
@@ -2425,7 +2718,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       slotIndex ?? undefined,
       sourceOptions,
     )
-    if (!hasNonZeroBuffMods(mods) && !effects.length && !first.blockNote) continue
+    if (!traceOptions?.keepEmpty && !hasNonZeroBuffMods(mods) && !effects.length && !first.blockNote) continue
     sources.push({
       key,
       label: first.sourceLabel,
@@ -2434,6 +2727,29 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       blockName: first.blockName,
       note: first.blockNote || undefined,
       sourceOptions,
+    })
+  }
+
+  // 追踪：只被排除、没有有效候选的包也要留下（否则禁用块的状态记录会消失）
+  for (const [key, excluded] of traceOptions?.excludedByGroupKey ?? []) {
+    if (grouped.has(key)) continue
+    if (!excluded.effects.length) continue
+    const slotIndex = key === 'bangboo' ? ctx.mainSlotIndex : excluded.slotIndex
+    // 直接走判定循环（`resolvePackModsViaEffectSpec` 对空 effects 会提前返回，
+    // 那样排除项就永远拿不到状态记录）
+    const mods = resolvePackMods(
+      [],
+      slotIndex == null || slotIndex === ctx.mainSlotIndex,
+      ctxForResolve,
+      slotIndex ?? undefined,
+      { traceExcludedEffects: excluded.effects },
+    )
+    sources.push({
+      key,
+      label: '',
+      mods,
+      effects: [],
+      sourceOptions: { traceExcludedEffects: excluded.effects },
     })
   }
 
@@ -2464,6 +2780,9 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
 }
 
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
+  // 带追踪时不走跨轮缓存：记录必须来自本次正式运算（缓存的 mods 里没有逐效果身份）。
+  // 两边的数值由同一批函数产出，K8 逐属性比对保证相等。
+  if (ctx.trace) return collectPanelBuffModsTraced(ctx)
   // 行级例外已并入缓存键（`rowBuffOverrideKey`），与 collectPanelBuffModSources 统一走缓存：
   // 同一例外命中缓存、不同例外各自成键。此前"带例外绕开缓存"的写法已删（每次求值重建整份清单，
   // 2026-09-22 实测：42 行全带例外时单次评估 3.76 → 24.42 ms）。
@@ -2486,6 +2805,36 @@ export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
     entry.nonConvertMods ?? createEmptyBuffStatModifiers(),
     collectConvertOnlyMods(entry.packs, ctx),
   )
+}
+
+/**
+ * 带追踪的 mods 求值：与缓存路径用**同一批**包解析函数（`resolvePackModsViaEffectSpec` →
+ * `resolvePackMods` → `resolveEffectsToMods`），只是不读跨轮缓存、并保留未命中包。
+ *
+ * 前置排除的候选按包键并入同一判定循环，由 `excludedByEffectId` 短路报告状态。
+ */
+function collectPanelBuffModsTraced(ctx: PanelCalcContext): BuffStatModifiers {
+  const excludedByGroupKey = new Map<string, { effects: BuffEffect[]; slotIndex: number | null }>()
+  const excludedMap: Record<string, 'disabled' | 'source-excluded'> = {}
+  for (const entry of collectEventCandidateEffects(ctx).excluded) {
+    const groupKey = entry.item.sourceKey.startsWith('bangboo')
+      ? 'bangboo'
+      : `${entry.item.sourceKey}-${entry.item.blockId}`
+    const bucket = excludedByGroupKey.get(groupKey)
+    if (bucket) bucket.effects.push(entry.item.effect)
+    else
+      excludedByGroupKey.set(groupKey, {
+        effects: [entry.item.effect],
+        slotIndex: resolveCollectedEffectSourceSlot(entry.item),
+      })
+    excludedMap[entry.item.effect.id] = entry.reason
+  }
+  const ctxForResolve: PanelCalcContext = { ...ctx, traceExcluded: excludedMap }
+  const sources = collectPanelBuffModSourcesUncached(ctxForResolve, {
+    keepEmpty: true,
+    excludedByGroupKey,
+  })
+  return mergeModsFromSources(sources)
 }
 
 export function applyBuffModsToPanel(
@@ -2788,6 +3137,8 @@ export function computePanelStages(
     mainExternalPanel:
       ctx.mainExternalPanel ??
       (ctx.mainSlotIndex === liveIndex ? externalPanel : undefined),
+    // 追踪只在带记录的一侧生效：数值模式（includeDetails=false）由调用方不传 trace 保证零分配
+    trace: options?.trace ?? ctx.trace,
   }
   const panelSourceValuesBySlot = buildAllPanelSourceValuesBySlot(ctxForSources, externalPanel)
   const mainPanelSources = panelSourceValuesBySlot.get(ctx.mainSlotIndex)

@@ -85,11 +85,23 @@ import {
   type MultiSlotBuffSelection,
   type PanelCalcContext,
   type ConvertResolveInputs,
-  resolveCollectedEffectAmount,
   resolveBuffSelectionForSlot,
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotMap,
+  collectEventCandidateEffects,
+  resolveCollectedEffectParameters,
+  type BuffEffectContribution,
+  type ComputeFinalPanelOptions,
+  type DamageInputUsage,
+  type EventDamageInputUsage,
+  type EventEffectRecord,
+  type EventEffectRecipient,
+  type EventEffectSummary,
+  type EventEffectUseView,
+  type PanelStageTrace,
+  type ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
+import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
 import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
 import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
 import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
@@ -152,6 +164,13 @@ export interface OptimalEventEvalDetail {
   eventElement: AgentElement | undefined
   hit: ResolvedHit
   eventId: string
+  /**
+   * 逐效果记录与实际采用（计算链路收敛 Spec §2.2 第 3 项）：只在带记录求值
+   * （includeDetails 为 true）时填充，无效果时为空数组；数值模式不生成。
+   */
+  effectRecords?: EventEffectRecord[]
+  panelStageTraces?: PanelStageTrace[]
+  damageInputUsages?: EventDamageInputUsage[]
   displayName: string
   kind: DamageEventKind
   perHit: number
@@ -677,35 +696,344 @@ export function buildEventPanelContext(
   })
 }
 
+/**
+ * 事件视图与逐效果记录（计算链路收敛 Spec §3.3）。
+ *
+ * 一次事件求值会算若干张面板：持有者、异常强度提供者、异常类触发者、（S3 起的）本人耀变等。
+ * 每张面板 = 一个 viewKey；同一 viewKey 的贡献由正式求值回调产出，这里只做归并、排序与
+ * 实际采用标注，**不重新匹配或折算**。
+ */
+interface EventTraceView {
+  useView: EventEffectUseView
+  viewKey: string
+  slotIndex: number
+  agentId: string
+  policy: PanelViewPolicyId
+  contributions: BuffEffectContribution[]
+}
+
+function hashPanelForView(panel: PanelStats | null | undefined): string {
+  if (!panel) return 'null'
+  return JSON.stringify(panel)
+}
+
+/** viewKey 由完整有效输入与政策派生（不是槽位号/政策名的别名，Spec §3.2 第 4 项）。 */
+function buildEventViewKey(parts: {
+  policy: PanelViewPolicyId
+  useView: EventEffectUseView
+  slotIndex: number
+  agentId: string
+  element?: string | null
+  external: PanelStats | null | undefined
+}): string {
+  return [
+    parts.policy,
+    parts.useView,
+    `slot:${parts.slotIndex}`,
+    `agent:${parts.agentId || ''}`,
+    `elem:${parts.element ?? ''}`,
+    `panel:${hashPanelForView(parts.external)}`,
+  ].join('|')
+}
+
+function createEventTraceCollector() {
+  const views: EventTraceView[] = []
+  const usages: EventDamageInputUsage[] = []
+  return {
+    views,
+    usages,
+    view(parts: {
+      useView: EventEffectUseView
+      slotIndex: number
+      agentId: string
+      policy: PanelViewPolicyId
+      element?: string | null
+      external: PanelStats | null | undefined
+    }) {
+      const viewKey = buildEventViewKey(parts)
+      const existing = views.find((item) => item.viewKey === viewKey)
+      const view: EventTraceView = existing ?? {
+        useView: parts.useView,
+        viewKey,
+        slotIndex: parts.slotIndex,
+        agentId: parts.agentId,
+        policy: parts.policy,
+        contributions: [],
+      }
+      if (!existing) views.push(view)
+      const options: ComputeFinalPanelOptions = {
+        includeDetails: true,
+        trace: {
+          viewKey,
+          policy: parts.policy,
+          onContribution: (item: BuffEffectContribution) => view.contributions.push(item),
+        },
+      }
+      return {
+        viewKey,
+        options,
+        usage: (usage: DamageInputUsage) => {
+          usages.push({
+            ...usage,
+            viewKey,
+            slotIndex: parts.slotIndex,
+            policy: parts.policy,
+            usedView: parts.useView,
+          })
+        },
+      }
+    },
+  }
+}
+
+/** 同一身份只保留最终阶段那一条：转模取 convert，固定值取 preConvert，跳过态让位。 */
+function pickFinalContributions(contributions: BuffEffectContribution[]): BuffEffectContribution[] {
+  const byIdentity = new Map<string, BuffEffectContribution>()
+  const rank = (entry: BuffEffectContribution) =>
+    entry.status === 'convert-skipped' ? -1 : entry.stage === 'convert' ? 2 : 1
+  for (const item of contributions) {
+    const identity = [item.viewKey, item.sourceKey, item.blockId, item.effectId].join('|')
+    const current = byIdentity.get(identity)
+    if (!current || rank(item) > rank(current)) byIdentity.set(identity, item)
+  }
+  return [...byIdentity.values()]
+}
+
+function formatSlotLabel(
+  ctx: OptimalEvalContext,
+  slotIndex: number,
+): { label: string; agentId: string; name: string } {
+  const agentId = ctx.panelContext.teamSlots[slotIndex]?.agentId ?? ''
+  const agent = agentId ? ctx.panelContext.agents.find((item) => item.id === agentId) : undefined
+  const name = agent?.name ?? ''
+  const profession = agent?.profession ?? ''
+  const label = name ? (profession ? `${profession}·${name}` : name) : `槽位${slotIndex + 1}`
+  return { label, agentId, name }
+}
+
+/** 效果属性 → 它真正会改到的面板字段（只用于判断「这条贡献是否被本事件采用」，不改数值） */
+const STAT_TO_PANEL_FIELDS: Record<string, string[]> = {
+  atk: ['atk'],
+  atkPercent: ['atk'],
+  inCombatAtkPercent: ['atk'],
+  hp: ['hp'],
+  hpPercent: ['hp'],
+  inCombatHpPercent: ['hp'],
+  def: ['def'],
+  defPercent: ['def'],
+  inCombatDefPercent: ['def'],
+  dmgBonus: ['dmgBonus'],
+  skillDmgBonus: ['dmgBonus'],
+  pierceDmgBonus: ['dmgBonus'],
+}
+
+/**
+ * 这条贡献的属性是否可能进入该字段。
+ * 其它键与面板字段同名（critRate/critDmg/mastery/penRate/pen/resPen/reduceDefense/
+ * anomalyDmgBonus/anomalyMult/anomalyCrit*…）；对不上时保守保留这条真实读值，
+ * 不凭空切断依赖（详情宁可多给一条，也不漏掉实际用到的项）。
+ */
+function recordUsesField(stat: string, field: string): boolean {
+  const mapped = STAT_TO_PANEL_FIELDS[stat]
+  if (mapped) return mapped.includes(field)
+  return true
+}
+function buildEventEffectRecords(
+  ctx: OptimalEvalContext,
+  hit: ResolvedHit,
+  trace: ReturnType<typeof createEventTraceCollector>,
+): {
+  effectRecords: EventEffectRecord[]
+  panelStageTraces: PanelStageTrace[]
+  damageInputUsages: EventDamageInputUsage[]
+} {
+  const effectRecords: EventEffectRecord[] = []
+  const panelStageTraces: PanelStageTrace[] = []
+  for (const view of trace.views) {
+    const finalContributions = pickFinalContributions(view.contributions)
+    panelStageTraces.push({
+      viewKey: view.viewKey,
+      slotIndex: view.slotIndex,
+      policy: view.policy,
+      contributions: finalContributions,
+    })
+    const viewUsages = trace.usages.filter((usage) => usage.viewKey === view.viewKey)
+    const beneficiary = formatSlotLabel(ctx, view.slotIndex)
+    const appliedStatus = (contribution: BuffEffectContribution) =>
+      contribution.status === 'applied' || contribution.status === 'zero'
+    for (const contribution of finalContributions) {
+      // 未生效/被排除的候选不登记采用（否则详情会把非生效项当贡献解释）
+      const contributionRecords = appliedStatus(contribution)
+        ? viewUsages.filter((usage) => recordUsesField(contribution.stat, String(usage.field)))
+        : []
+      const providerSlot = contribution.providerSlot ?? contribution.sourceSlot
+      const provider =
+        providerSlot != null && providerSlot >= 0
+          ? formatSlotLabel(ctx, providerSlot)
+          : { label: '', agentId: '', name: '' }
+      effectRecords.push({
+        ...contribution,
+        eventId: hit.id,
+        providerName: provider.name,
+        beneficiaryAgentId: beneficiary.agentId,
+        beneficiaryName: beneficiary.name,
+        beneficiaryLabel: beneficiary.label,
+        // 采用关系按视图绑定：这张面板的字段没被本事件采用，就没有使用项；
+        // 未生效/被排除的候选也不登记采用（否则详情会把非生效项当贡献解释）
+        usedInputs: contributionRecords,
+        usedViews: [...new Set(contributionRecords.map((usage) => usage.usedView))],
+        usedZones: [...new Set(contributionRecords.flatMap((usage) => usage.usedZones))],
+      })
+    }
+  }
+  const sortKey = (record: EventEffectRecord) =>
+    [record.eventId, record.beneficiarySlot, record.policy, record.viewKey, record.stage, record.sourceKey, record.blockId, record.effectId].join('|')
+  effectRecords.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+  return { effectRecords, panelStageTraces, damageInputUsages: trace.usages }
+}
+
+/**
+ * 事件投影（Spec §2.3 第 1 项 / §3.5）：按 effect id 归并。
+ * `recipients` 只留**被本事件实际采用**的项（`usedInputs` 非空）；`candidates` 保留全部已求值视图。
+ */
+export function projectEventEffectRecords(
+  records: EventEffectRecord[],
+): Record<string, EventEffectSummary> {
+  const byEffect = new Map<string, EventEffectRecord[]>()
+  for (const record of records) {
+    const list = byEffect.get(record.effectId)
+    if (list) list.push(record)
+    else byEffect.set(record.effectId, [record])
+  }
+  const out: Record<string, EventEffectSummary> = {}
+  for (const [effectId, candidates] of byEffect) {
+    const recipients: EventEffectRecipient[] = candidates
+      .filter(
+        (record) =>
+          (record.status === 'applied' || record.status === 'zero') && record.usedInputs.length > 0,
+      )
+      .map((record) => ({
+        viewKey: record.viewKey,
+        slotIndex: record.beneficiarySlot,
+        agentId: record.beneficiaryAgentId,
+        label: record.beneficiaryLabel,
+        policy: record.policy,
+        stage: record.stage,
+        amount: record.amount,
+        status: record.status === 'zero' ? 'zero' : 'applied',
+        usedViews: record.usedViews,
+        usedZones: record.usedZones,
+      }))
+    recipients.sort((a, b) =>
+      [a.slotIndex, a.policy, a.viewKey, a.stage].join('|').localeCompare(
+        [b.slotIndex, b.policy, b.viewKey, b.stage].join('|'),
+      ),
+    )
+    const first = candidates[0]
+    if (!first) continue
+    const firstRecipient = recipients[0]
+    let state: EventEffectSummary['state'] = 'inactive'
+    let amount: number | undefined
+    if (recipients.length === 1 && firstRecipient) {
+      state = 'single'
+      amount = firstRecipient.amount
+    } else if (recipients.length > 1 && firstRecipient) {
+      const sameAmount = recipients.every(
+        (item) => Math.abs(item.amount - firstRecipient.amount) <= 1e-6,
+      )
+      if (sameAmount) {
+        state = 'same'
+        amount = firstRecipient.amount
+      } else {
+        state = 'multiple'
+      }
+    }
+    out[effectId] = {
+      effectId,
+      stat: first.stat,
+      sourceKey: first.sourceKey,
+      blockId: first.blockId,
+      providerName: first.providerName,
+      candidates,
+      recipients,
+      state,
+      amount,
+    }
+  }
+  return out
+}
+
+/**
+ * 事件增益预览（Spec §2.2 第 4 项 / §2.3）。
+ *
+ * 改造要点：**不再**为每个参与者重新求值、更不再「按 effect id 先到先得」把多受益角色压成
+ * 一个数（C2 缺陷的产生机制）。现在只读正式事件求值的逐效果记录：
+ * - `evaluation` 有值 → 只投影该快照；
+ * - 省略 → 通过正式事件入口取一份带记录的结果（冷态允许一次正式重放，由调用方缓存）；
+ * - 显式 `null` → 该事件不可结算，只给配置参数，不伪造实际金额。
+ */
 export function resolveEventBuffPreviewInputs(
   ctx: OptimalEvalContext,
   mainExternal: PanelStats | null,
   hit: ResolvedHit,
   slotIndex: number,
+  evaluation?: OptimalEventEvalDetail | null,
 ): ConvertResolveInputs {
   const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
-  const effectAmounts: Record<string, number> = {}
-  const participantIds = skillNeedsDualAgents(hit.skill.damageType)
-    ? [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId] : [hit.ownerAgentId]
-  for (const agentId of new Set(participantIds)) {
-    const beneficiarySlot = ctx.panelContext.teamSlots.findIndex(slot => slot.agentId === agentId)
-    if (beneficiarySlot < 0) continue
-    const beneficiaryContext = beneficiarySlot === slotIndex ? context
-      : buildEventPanelContext(ctx, mainExternal, hit, beneficiarySlot)
-    for (const item of collectAllBuffEffects(beneficiaryContext)) {
-      if (!(item.effect.id in effectAmounts)) effectAmounts[item.effect.id] = resolveCollectedEffectAmount(item, beneficiaryContext)
+  const base = {
+    attrDefaults: context.attrValues ?? {},
+    panelSourceValues: context.panelSourceValues,
+    panelSourceValuesBySlot: Object.fromEntries(context.panelSourceValuesBySlot ?? []),
+  }
+  const snapshot =
+    evaluation === undefined
+      ? evaluateOptimalEventDetail(ctx, mainExternal, hit, { includeDetails: true, requirePanel: true })
+      : evaluation
+
+  if (!snapshot) {
+    // 不可结算：只给共享参数解析出的配置参数（不构造 summary、不冒充 inactive）
+    return {
+      ...base,
+      configurationOnly: true,
+      configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex),
     }
   }
-  // Include disabled/nonmatching candidates explicitly as zero, rather than falling back to config values.
+
+  const effectSummaries = projectEventEffectRecords(snapshot.effectRecords ?? [])
+  // 兼容投影：保留旧字段，但只从 recipients 的真值推出（Spec §3.5）
+  const effectAmounts: Record<string, number> = {}
+  for (const [effectId, summary] of Object.entries(effectSummaries)) {
+    if (summary.amount != null) effectAmounts[effectId] = summary.amount
+    else if (summary.state === 'inactive') effectAmounts[effectId] = 0
+  }
+  // 未进入本次求值视图的候选（未启用/未匹配且没有记录）沿用既有「非生效显示位」= 0
   for (const item of collectAllBuffEffects({ ...context, rowBuffOverride: null })) {
     effectAmounts[item.effect.id] ??= 0
   }
   return {
-    attrDefaults: context.attrValues ?? {},
-    panelSourceValues: context.panelSourceValues,
-    panelSourceValuesBySlot: Object.fromEntries(context.panelSourceValuesBySlot ?? []),
+    ...base,
     effectAmounts,
+    effectSummaries,
+    configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex),
   }
+}
+
+/**
+ * 配置参数（Spec §5.1）：按显式查看槽位的上下文解析待选层数/基数/折算值。
+ * 与实际贡献分开：不进 `effectAmounts`，也不参与结算。
+ */
+export function resolveConfigurationParameters(
+  ctx: OptimalEvalContext,
+  hit: ResolvedHit,
+  slotIndex: number,
+  mainExternal: PanelStats | null = null,
+): Record<string, ResolvedEffectParameters> {
+  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
+  const parameters: Record<string, ResolvedEffectParameters> = {}
+  for (const item of collectAllBuffEffects(context)) {
+    parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
+  }
+  return parameters
 }
 
 
@@ -928,8 +1256,18 @@ export function evaluateOptimalEventDetail(
     ownerSlotIndex,
     mainPanel,
   )
+  // 带记录的一侧才建追踪；数值侧（includeDetails=false）不分配任何记录（Spec §3.4 第 1 项）
+  const trace = includeDetails ? createEventTraceCollector() : null
+  const ownerView = trace?.view({
+    useView: 'ownerPanel',
+    slotIndex: ownerSlotIndex,
+    agentId: ownerAgentId,
+    policy: 'default',
+    element: evtPowerElement,
+    external: ownerExternal,
+  })
   const evtPanelCtx = buildEventPanelContext(ctx, mainPanel, hit, ownerSlotIndex)
-  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, panelOpts)
+  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, ownerView?.options ?? panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
   const panelOverrides = zoneMultResolved.panelOverrides
   const evtFinalPanel = applyHitPanelMods(
@@ -947,6 +1285,7 @@ export function evaluateOptimalEventDetail(
   let evtTriggerPierce: number | undefined
   let producerBreakdown: OptimalPanelBreakdown | undefined
   let producerExternalPanel: PanelStats | undefined
+  let producerView: ReturnType<NonNullable<typeof trace>['view']> | undefined
 
   /** 异常强度提供者是否不是主 C（扫掠敏感度等元数据用） */
   const usesNonMainProducer = Boolean(
@@ -968,13 +1307,22 @@ export function evaluateOptimalEventDetail(
       evtTriggerPierce = evtPierce
       producerExternalPanel = ownerExternal
       producerBreakdown = evtBreakdown
+      producerView = ownerView
     } else {
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainPanel)
       producerExternalPanel = tExternal
+      producerView = trace?.view({
+        useView: 'powerProviderPanel',
+        slotIndex: tSlotIndex,
+        agentId: evtPowerAgentId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: tExternal,
+      })
       producerBreakdown = computeFinalPanel(
         tExternal,
         buildEventPanelContext(ctx, mainPanel, hit, tSlotIndex),
-        panelOpts,
+        producerView?.options ?? panelOpts,
       )
       // 招式倍率覆写：紊乱/乱流落到强度提供者面板（最终倍率区填写不进面板基础字段）
       evtTriggerFinalPanel = applyEventMultOverrides(producerBreakdown.finalPanel, {
@@ -1029,6 +1377,7 @@ export function evaluateOptimalEventDetail(
   let anomalyTriggerPanel = evtFinalPanel
   let bonusExternalPanel = ownerExternal
   let bonusBreakdown: OptimalPanelBreakdown = evtBreakdown
+  let triggerView: ReturnType<NonNullable<typeof trace>['view']> | undefined = ownerView
   if (eventNeedsTrigger) {
     if (!hit.triggerAgentId) return null
     if (hit.triggerAgentId !== ownerAgentId) {
@@ -1042,10 +1391,18 @@ export function evaluateOptimalEventDetail(
         trigSlotIndex,
         mainPanel,
       )
+      triggerView = trace?.view({
+        useView: 'anomalyTriggerPanel',
+        slotIndex: trigSlotIndex,
+        agentId: hit.triggerAgentId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: trigExternal,
+      })
       bonusBreakdown = computeFinalPanel(
         trigExternal,
         buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex),
-        panelOpts,
+        triggerView?.options ?? panelOpts,
       )
       anomalyTriggerPanel = bonusBreakdown.finalPanel
       bonusExternalPanel = trigExternal
@@ -1131,8 +1488,18 @@ export function evaluateOptimalEventDetail(
   const triggerAgentDoc = hit.triggerAgentId
     ? ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)
     : undefined
+  /** 伤害计算报告上来的「实际采用了哪张面板的哪个字段」，按角色落到对应视图 */
+  const rawUsages: DamageInputUsage[] = []
+  const viewOfInputKey = (inputKey: DamageInputUsage['inputKey']) => {
+    if (inputKey === 'triggerFinalPanel') return producerView ?? ownerView
+    if (inputKey === 'anomalyTriggerPanel') return triggerView ?? ownerView
+    return ownerView
+  }
 
   const result = computeDamageResult({
+    eventDamageType: damageType,
+    eventCritMode: hit.critMode,
+    onInputUsed: trace ? (usage) => rawUsages.push(usage) : undefined,
     eventElement: evtPowerElement,
     finalPanel: evtFinalPanel,
     anomalyTriggerPanel,
@@ -1236,6 +1603,11 @@ export function evaluateOptimalEventDetail(
     remielSelfFinalPanel = selfBreakdown.finalPanel
   }
 
+  if (trace) {
+    for (const usage of rawUsages) viewOfInputKey(usage.inputKey)?.usage(usage)
+  }
+  const eventRecords = trace ? buildEventEffectRecords(ctx, hit, trace) : null
+
   return {
     eventElement: evtPowerElement,
     hit,
@@ -1247,6 +1619,13 @@ export function evaluateOptimalEventDetail(
     usesNonMainProducer,
     mainlyProducerDriven,
     result,
+    ...(eventRecords
+      ? {
+          effectRecords: eventRecords.effectRecords,
+          panelStageTraces: eventRecords.panelStageTraces,
+          damageInputUsages: eventRecords.damageInputUsages,
+        }
+      : {}),
     finalPanel: evtFinalPanel,
     // 过程明细的「局外面板」必须是招式持有者，不能误用主 C（最优词条）面板
     external: ownerExternal,

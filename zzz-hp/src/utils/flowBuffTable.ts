@@ -27,6 +27,7 @@ import {
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import type { EventEffectSummary } from '@/utils/panelBuffCalc'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 
 export interface FlowBuffTableRow {
@@ -137,6 +138,11 @@ function effectSummary(item: CollectedEffect): string {
  */
 export interface FlowBuffEffectTextOptions {
   effectAmounts?: Record<string, number>
+  /**
+   * 逐效果投影（与 `ConvertResolveInputs.effectSummaries` 同名同义，Spec §2.3 第 2 项）。
+   * 提供时**数值只从 summary 取**，不再回退到 UI 侧的层数/基数推导。
+   */
+  effectSummaries?: Record<string, EventEffectSummary>
   configurationOnly?: boolean
   /** **全队勾选对象**（不是单槽位解析结果）—— 与局内 Buff 勾选器传的是同一个东西 */
   selection: Parameters<typeof getBuffEffectStacks>[0] | null | undefined
@@ -158,6 +164,71 @@ export interface FlowBuffEffectTextOptions {
   >['skillSubcategories']
 }
 
+/** 属性名（与单元格其它位置同一套标签，避免两处叫法不同） */
+function summaryStatLabelFn(stat: Parameters<typeof buffStatFieldLabel>[0]['key'] | string): string {
+  const field = BUFF_STAT_FIELDS.find((entry) => entry.key === stat)
+  return field ? buffStatFieldLabel(field) : String(stat)
+}
+
+function summaryStatLabel(summary: EventEffectSummary): string {
+  return summaryStatLabelFn(summary.stat)
+}
+
+/** 使用视图 → 展示名（Spec §5.2 第 2 项；不暴露内部键） */
+const USE_VIEW_LABELS: Record<string, string> = {
+  ownerPanel: '持有者面板',
+  powerProviderPanel: '异常强度面板',
+  anomalyTriggerPanel: '触发者面板',
+  radianceSelfPanel: '本人耀变受限面板',
+  mutationPanel: '异化面板',
+  releaseMult: '异放倍率',
+  convertSourcePanel: '转模来源面板',
+}
+
+function recipientLabel(summary: EventEffectSummary, recipient: EventEffectSummary['recipients'][number], sameSlotMultipleViews: boolean): string {
+  if (!sameSlotMultipleViews) return recipient.label
+  const views = recipient.usedViews.map((view) => USE_VIEW_LABELS[view] ?? String(view)).join('、')
+  return views ? `${recipient.label}【${views}】` : recipient.label
+}
+
+/**
+ * 来源/受益说明（Spec §2.3 第 2 项 / §5.2 第 2–3 项）。
+ *
+ * `displaySlotIndex` 是**本次预览调用显式传入的查看槽位**，不是事件持有者、也不是页面活动槽位；
+ * 同一份 summary 在不同视角下文案不同，所以必须由调用方显式给。
+ */
+export function effectRecipientNote(
+  summary: EventEffectSummary | undefined,
+  displaySlotIndex: number,
+): string {
+  if (!summary) return ''
+  const recipients = summary.recipients
+  if (summary.state === 'inactive' || !recipients.length) {
+    const candidates = summary.candidates
+    if (candidates.length && candidates.every((item) => item.status === 'disabled')) return '已禁用'
+    if (candidates.length && candidates.every((item) => item.status === 'not-enabled')) return '未启用'
+    if (candidates.some((item) => item.status === 'applied' || item.status === 'zero')) {
+      return '未被本事件采用'
+    }
+    return '未命中生效条件'
+  }
+  const sameSlotMultipleViews =
+    new Set(recipients.map((item) => item.slotIndex)).size < recipients.length
+  if (summary.state === 'single') {
+    const only = recipients[0]
+    if (!only) return ''
+    if (only.slotIndex === displaySlotIndex) return ''
+    return `来源：${recipientLabel(summary, only, sameSlotMultipleViews)}`
+  }
+  if (summary.state === 'same') {
+    return `受益：${recipients.map((item) => recipientLabel(summary, item, sameSlotMultipleViews)).join('、')}`
+  }
+  // multiple：多受益，金额各自不同 —— 逐个列出，不取最大值/首项，也不求和
+  return `多受益：${recipients
+    .map((item) => `${recipientLabel(summary, item, sameSlotMultipleViews)} ${formatCalcSigned(item.amount)}`)
+    .join('、')}`
+}
+
 /**
  * 单条效果的显示文本。
  *
@@ -172,6 +243,17 @@ export function buildFlowBuffEffectText(
   const effect = item.effect
   const sourceSlot = resolveCollectedEffectSourceSlot(item)
   if (options.configurationOnly) return `${effectSummary({ ...item, effect: { ...effect, value: 0 } })}（整组配置；数值见成员）`
+  // 有逐效果投影时以它为准（Spec §2.3/§5.2）：multiple 不显示伪造单值
+  const summary = options.effectSummaries?.[effect.id]
+  if (summary) {
+    if (summary.state === 'multiple') return `${summaryStatLabel(summary)}（多受益角色，见来源）`
+    const summaryAmount = summary.amount ?? 0
+    return formatBuffEffectResultText(effect, formatCalcSigned(summaryAmount), {
+      statLabelFn: summaryStatLabelFn,
+      skillSubcategories: options.skillSubcategories,
+      applySituation: true,
+    })
+  }
   let amount = 0
   if (options.effectAmounts) {
     amount = options.effectAmounts[effect.id] ?? 0

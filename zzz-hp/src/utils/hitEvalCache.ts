@@ -1,4 +1,5 @@
 import type { DamageCalcResult } from '@/utils/damageCalc'
+import type { OptimalEventEvalDetail } from '@/utils/optimalAffixAlloc'
 import type { ResolvedHit } from '@/utils/resolvedHit'
 import type { PanelStats } from '@/types/calculatorPanel'
 
@@ -25,6 +26,11 @@ export interface HitEvalCacheEntry {
   perHit: number
   total: number
   result: DamageCalcResult
+  /**
+   * 完整带记录结果（计算链路收敛 Spec §3.4 第 2 项）：只在 detail 轴保存。
+   * 数字条目不带它；只有 summary/投影而没有面板、来源与路由的半成品也不许写在这里。
+   */
+  evaluation?: OptimalEventEvalDetail
 }
 
 const HIT_EVAL_CACHE_LIMIT = 500

@@ -452,9 +452,22 @@ function getEventBuffPreviewInputs(slotIndex: number, hit: ResolvedHit, rowOverr
   )}`
   const cached = eventBuffPreviewCache.get(key)
   if (cached) return cached
+  // 共享带记录结果：预览与详情共用同一份 detail 条目（Spec §2.3 第 3 项 / §3.4 第 3 项）。
+  // 冷态允许一次正式重放并写回；热态命中，不再按效果逐条重算。
+  const detail = resolveSkillFlowCalculationDetail(
+    skillFlowCalculationContext.value,
+    skillFlowMainExternal.value,
+    effectiveHit,
+    hitEvalCacheKey(
+      buildHitEvalFingerprint(effectiveHit),
+      internHitEvalContext(hitCalcGlobalSignature.value),
+      skillFlowMainExternal.value,
+      true,
+    ),
+  )
   const inputs = resolveEventBuffPreviewInputs(
     skillFlowCalculationContext.value, skillFlowMainExternal.value,
-    effectiveHit, slotIndex,
+    effectiveHit, slotIndex, detail?.evaluation ?? null,
   )
   if (eventBuffPreviewCache.size >= 128) eventBuffPreviewCache.delete(eventBuffPreviewCache.keys().next().value!)
   eventBuffPreviewCache.set(key, inputs)

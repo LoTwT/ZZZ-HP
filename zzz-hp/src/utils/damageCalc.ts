@@ -1,4 +1,10 @@
-import type { AnomalyDamageSubKind, BaseDamageSource, SkillSubcategory } from '@/types/calculator'
+import type {
+  AnomalyDamageSubKind,
+  BaseDamageSource,
+  DamageEventCritMode,
+  SkillDamageType,
+  SkillSubcategory,
+} from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import { effectiveAnomalyDuration, type AgentElement } from '@/utils/calculatorUi'
 import {
@@ -21,7 +27,10 @@ import {
   pickResPenPanel,
   pickZonePanel,
   type DamageZonePanels,
+  type DamageZoneId,
 } from '@/utils/damageZoneSourcePolicy'
+// 只作类型导入：记录类型定义在 panelBuffCalc.ts，运行时不反向依赖（Spec §2.5 第 2 项）
+import type { DamageInputUsage } from '@/utils/panelBuffCalc'
 
 export type { DamageEnemyInput, EnemyResistanceType }
 
@@ -133,6 +142,17 @@ export interface DamageCalcInput {
   /** 招式填写乱流最终倍率区%（有则直接作为倍率区，不再叠持续时间×补偿） */
   turbulenceZoneMultOverride?: number | null
   turbulenceZoneMultFactorOverride?: number | null
+  /**
+   * 本事件的伤害类型与暴击模式（计算链路收敛 Spec §2.5 第 2 项）。
+   * 只用于给「实际采用了哪些字段」的观察记录标注口径，不改变任何计算分支。
+   */
+  eventDamageType?: SkillDamageType
+  eventCritMode?: DamageEventCritMode
+  /**
+   * 实际采用观察器：与正式计算选择面板/字段的分支**同处**，只报告本事件最终用到的依赖。
+   * 不传时零开销，行为完全不变。
+   */
+  onInputUsed?: (usage: DamageInputUsage) => void
 }
 
 export interface DamageCalcResult {
@@ -599,6 +619,31 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     anomalyTrigger: triggerAgentPanel,
   }
   const routingKind = useTriggerBase ? subKind : 'direct'
+  /**
+   * 实际采用观察器（计算链路收敛 Spec §2.5 第 2 项）：只在**这里**（正式选面板/取字段的地方）
+   * 报告，不重算公式。角色由面板对象identity判定，角色归属仍完全由既有政策决定。
+   */
+  const reportUse = input.onInputUsed
+  const roleInputKey = {
+    owner: 'finalPanel',
+    powerProvider: 'triggerFinalPanel',
+    anomalyTrigger: 'anomalyTriggerPanel',
+  } as const
+  // 同一份面板可能同时充当三个角色（单角色事件）；此时按 owner 记，不伪造第二份归属
+  const roleOfPanel = (target: PanelStats): keyof typeof roleInputKey => {
+    if (target === panel) return 'owner'
+    if (target === triggerPanel) return 'powerProvider'
+    return 'anomalyTrigger'
+  }
+  const markUse = (
+    target: PanelStats,
+    field: keyof PanelStats,
+    resultKey: keyof DamageCalcResult,
+    usedZones: DamageZoneId[] = [],
+  ) => {
+    if (!reportUse) return
+    reportUse({ inputKey: roleInputKey[roleOfPanel(target)], field, resultKey, usedZones })
+  }
   const ownerElement = input.eventElement ?? input.ownerAgentElement ?? input.mainAgentElement
   const ownerResistanceElement =
     (input.eventElement && input.eventElement !== '流明' ? input.eventElement : undefined) ??
@@ -657,8 +702,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       input.triggerAgentElement ??
       ownerResistanceElement)
     : ownerResistanceElement
-  const triggerParts = computeGeneralAndAnomalyBase({
-    panel: anomalyBasePanel,
+  const triggerParts = computeGeneralAndAnomalyBase({    panel: anomalyBasePanel,
     piercePower: useTriggerBase
       ? (input.triggerPiercePower ?? input.piercePower)
       : input.piercePower,
@@ -688,6 +732,37 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     ),
     extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
   })
+  // 防御区是混拼：穿透取一个角色、减防/无视取另一个角色（表外规则，只能在这里如实报告）
+  markUse(pickZonePanel(zonePanels, 'penRate', routingKind), 'penRate', 'defenseFactor', ['penRate'])
+  markUse(zonePanels.anomalyTrigger, 'ignoreDefense', 'defenseFactor', ['reduceDefense'])
+  // 抗穿回退也发生在这里（异常类且触发者缺省时回落到强度提供者）
+  markUse(
+    pickResPenPanel(zonePanels, routingKind, input.anomalyTriggerPanel != null),
+    'resPen',
+    'resistanceMultiplier',
+    ['resPen'],
+  )
+  /**
+   * 通用增伤/暴击/精通/基础取哪张面板：直伤取持有者，异常类取强度提供者
+   * （`anomalyBasePanel` = `pickZonePanel('baseAtk')`，policy 里 anomaly 对应 powerProvider）。
+   */
+  const generalPanel = useTriggerBase ? anomalyBasePanel : panel
+  markUse(
+    generalPanel,
+    useTriggerBase ? 'atk' : input.baseDamageSource === 'pierce' ? 'atk' : input.baseDamageSource,
+    useTriggerBase ? 'anomalyBaseExpected' : 'baseDamage',
+    ['baseAtk'],
+  )
+  markUse(generalPanel, 'dmgBonus', 'dmgMultiplier', ['dmgBonus'])
+  markUse(generalPanel, 'mastery', 'masteryZone', ['mastery'])
+  markUse(bonusPanel, 'anomalyMult', 'anomalyMultZone', ['anomalyTypeBonus'])
+  markUse(bonusPanel, 'anomalyDmgBonus', 'anomalyDmgBonusZone', ['anomalyTypeBonus'])
+  markUse(bonusPanel, 'anomalyCritRate', 'anomalyCritRateRatio', ['anomalyCrit'])
+  markUse(bonusPanel, 'anomalyCritDmg', 'anomalyCritDmgRatio', ['anomalyCrit'])
+  if (!useTriggerBase) {
+    markUse(panel, 'critRate', 'critMultiplier', ['dmgBonus'])
+    markUse(panel, 'critDmg', 'critMultiplier', ['dmgBonus'])
+  }
 
   // 有强度提供者时，展示用基础伤害/通用乘区跟异常基础；直伤仍用 mainParts
   const baseParts = useTriggerBase ? triggerParts : mainParts
