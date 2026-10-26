@@ -831,11 +831,11 @@ defineExpose({
     >
       <header class="history-header">
         <div>
-          <h2>方案库</h2>
-          <p class="history-desc">
+          <h2>
+            方案库
             <InfoTip label="方案库说明" text="保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage。" />
-            <span>已用 {{ storageUsage.text }}</span>
-          </p>
+          </h2>
+          <p class="history-desc">已用 {{ storageUsage.text }}</p>
         </div>
         <span class="history-open-hint" aria-hidden="true">›</span>
       </header>
@@ -878,17 +878,17 @@ defineExpose({
       >
         <header class="history-modal-header">
           <div class="history-title-area">
-            <h2>方案库</h2>
+            <h2>
+              方案库
+              <InfoTip label="方案库说明" text="保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage。" />
+            </h2>
             <p v-show="storageWarn" class="history-warn">浏览器 localStorage 接近 5MB 上限，建议清理无用方案或「导出全部」备份于本地</p>
           </div>
           <button type="button" class="history-modal-close" aria-label="关闭" @click="closeModal">
             ×
           </button>
         </header>
-        <p class="history-modal-desc">
-          <InfoTip label="方案库说明" text="保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage。" />
-          <span>已用 {{ storageUsage.text }}</span>
-        </p>
+        <p class="history-modal-desc">已用 {{ storageUsage.text }}</p>
 
         <!-- 顶部提示条：固定占位，消息出现/消失不抖动，始终可见 -->
         <div class="history-message-slot">

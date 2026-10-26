@@ -102,7 +102,7 @@ const isClient = typeof window !== 'undefined'
 
 .info-tip .tip-title {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 14px;
   color: #e8d4a8;
   font-weight: 600;
 }
@@ -131,7 +131,7 @@ const isClient = typeof window !== 'undefined'
 
 .info-tip .tip-label {
   margin: 0 0 0.3rem;
-  font-size: 0.76rem;
+  font-size: 13px;
   color: #d4b06a;
 }
 

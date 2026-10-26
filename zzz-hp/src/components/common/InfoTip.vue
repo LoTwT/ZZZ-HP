@@ -92,8 +92,8 @@ const isClient = typeof window !== 'undefined'
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 15px;
-  height: 15px;
+  width: 17px;
+  height: 17px;
   margin: 0 0 0 0.28em;
   padding: 0;
   border: 1px solid currentColor;
@@ -102,7 +102,7 @@ const isClient = typeof window !== 'undefined'
   color: inherit;
   opacity: 0.55;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   cursor: help;
@@ -113,7 +113,7 @@ const isClient = typeof window !== 'undefined'
     opacity 0.15s;
 }
 
-/* 视觉 15px，可点范围外扩到 25px，手机更好点中 */
+/* 视觉 17px，可点范围外扩到 27px，手机更好点中 */
 .info-tip-dot::before {
   content: '';
   position: absolute;
