@@ -171,6 +171,28 @@ check(
   true,
 )
 
+// ---------- 导出：所选方案 ----------
+reset()
+importDamageCalcHistory(
+  pack({
+    dirs: {
+      '/甲': { createdAt: 1, order: 1 },
+      '/乙': { createdAt: 2, order: 2 },
+    },
+    schemes: {
+      's:/甲/选中': scheme('选中', { folder: '/甲' }),
+      's:/乙/未选': scheme('未选', { folder: '/乙' }),
+    },
+    currentId: 's:/乙/未选',
+  }),
+)
+const subset = JSON.parse(
+  exportDamageCalcHistory([], { schemeIds: ['s:/甲/选中'] }),
+)
+check('只导出所选方案', Object.keys(subset.schemes), ['s:/甲/选中'])
+check('目录按所选方案裁剪', Object.keys(subset.dirs), ['/甲'])
+check('未选中的当前方案不写入 currentId', subset.currentId, null)
+
 // ---------- 覆盖 ----------
 reset()
 localStorage.setItem(
