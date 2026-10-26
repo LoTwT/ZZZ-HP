@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminConfirmDialog from '@/components/admin/AdminConfirmDialog.vue'
 import {
@@ -32,6 +32,74 @@ function handleAuthError(err: unknown): boolean {
   authDialogVisible.value = true
   return true
 }
+
+/** 目录路径统一成 `/A/B`；根目录为空串 */
+function normFolderPath(path: string | null | undefined): string {
+  const text = String(path ?? '').trim().replace(/\\/g, '/')
+  if (!text) return ''
+  const withSlash = text.startsWith('/') ? text : `/${text}`
+  return withSlash.replace(/\/+$/, '') || ''
+}
+
+function baseNameOf(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? path
+}
+
+const currentFolder = ref('')
+
+/** 所有出现过（含上级）的目录 */
+const allFolders = computed(() => {
+  const set = new Set<string>()
+  for (const item of schemes.value) {
+    let folder = normFolderPath(item.folder)
+    while (folder) {
+      set.add(folder)
+      const index = folder.lastIndexOf('/')
+      folder = index > 0 ? folder.slice(0, index) : ''
+    }
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
+
+const subFolders = computed(() => {
+  const prefix = currentFolder.value ? `${currentFolder.value}/` : '/'
+  return allFolders.value.filter((path) => {
+    if (!path.startsWith(prefix)) return false
+    return !path.slice(prefix.length).includes('/')
+  })
+})
+
+const entriesInFolder = computed(() =>
+  schemes.value
+    .filter((item) => normFolderPath(item.folder) === currentFolder.value)
+    .sort(
+      (a, b) =>
+        Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) ||
+        a.name.localeCompare(b.name, 'zh-CN'),
+    ),
+)
+
+const breadcrumbSegments = computed(() => {
+  if (!currentFolder.value) return []
+  const parts = currentFolder.value.split('/').filter(Boolean)
+  return parts.map((name, index) => ({
+    path: `/${parts.slice(0, index + 1).join('/')}`,
+    name,
+  }))
+})
+
+function folderSchemeCount(path: string): number {
+  return schemes.value.filter((item) => {
+    const folder = normFolderPath(item.folder)
+    return folder === path || folder.startsWith(`${path}/`)
+  }).length
+}
+
+/** 目录被删空 / 重新导入后，避免停留在不存在的目录 */
+watch(allFolders, (folders) => {
+  if (currentFolder.value && !folders.includes(currentFolder.value)) currentFolder.value = ''
+})
 
 function goRelogin() {
   clearAdminAuthenticated()
@@ -171,24 +239,54 @@ onMounted(() => {
       </span>
     </div>
 
-    <div class="scheme-table" role="table" aria-label="共用方案列表">
-      <div class="scheme-row scheme-head" role="row">
-        <span>方案</span>
-        <span>目录</span>
-        <span>更新时间</span>
-        <span>状态</span>
-        <span>操作</span>
-      </div>
-      <div v-if="!schemes.length && !loading" class="scheme-empty">
-        还没有共用方案。导入一个 `zzz-hp-schemes` JSON 后，用户端「方案库 → 预设方案」就能看到。
-      </div>
-      <div v-for="item in schemes" :key="item.id" class="scheme-row" role="row">
-        <span class="scheme-name" :title="item.id">{{ item.name }}</span>
-        <span class="scheme-folder">{{ item.folder || '根目录' }}</span>
-        <span class="scheme-time">{{
-          item.updatedAt ? String(item.updatedAt).replace('T', ' ').slice(0, 19) : '—'
-        }}</span>
-        <span>
+    <nav class="shared-breadcrumb" aria-label="共用方案目录路径">
+      <button
+        type="button"
+        class="bc-seg"
+        :class="{ current: currentFolder === '' }"
+        @click="currentFolder = ''"
+      >
+        全部预设
+      </button>
+      <template v-for="seg in breadcrumbSegments" :key="seg.path">
+        <span class="bc-sep">/</span>
+        <button
+          type="button"
+          class="bc-seg"
+          :class="{ current: currentFolder === seg.path }"
+          @click="currentFolder = seg.path"
+        >
+          {{ seg.name }}
+        </button>
+      </template>
+      <span class="bc-count">{{ subFolders.length + entriesInFolder.length }} 项</span>
+    </nav>
+
+    <p v-if="!schemes.length && !loading" class="scheme-empty">
+      还没有共用方案。导入一个 `zzz-hp-schemes` JSON 后，用户端「方案库 → 预设方案」就能看到。
+    </p>
+    <p v-else-if="!subFolders.length && !entriesInFolder.length" class="scheme-empty">
+      此目录暂无共用方案。
+    </p>
+    <ul v-else class="shared-list" role="list">
+      <li v-for="dir in subFolders" :key="dir" class="shared-card shared-dir">
+        <button type="button" class="shared-dir-main" @click="currentFolder = dir">
+          <span class="shared-dir-icon">📁</span>
+          <span class="shared-main">
+            <strong>{{ baseNameOf(dir) }}</strong>
+            <span class="shared-sub">{{ folderSchemeCount(dir) }} 个方案</span>
+          </span>
+        </button>
+      </li>
+      <li v-for="item in entriesInFolder" :key="item.id" class="shared-card">
+        <div class="shared-main">
+          <strong class="shared-name" :title="item.id">{{ item.name }}</strong>
+          <span class="shared-sub">
+            {{ item.description || '—' }} · 更新
+            {{ item.updatedAt ? String(item.updatedAt).replace('T', ' ').slice(0, 19) : '—' }}
+          </span>
+        </div>
+        <div class="shared-actions">
           <button
             type="button"
             class="chip"
@@ -198,14 +296,12 @@ onMounted(() => {
           >
             {{ item.enabled ? '已启用' : '已停用' }}
           </button>
-        </span>
-        <span>
           <button type="button" class="danger-btn" :disabled="busy" @click="pendingDelete = item">
             删除
           </button>
-        </span>
-      </div>
-    </div>
+        </div>
+      </li>
+    </ul>
 
     <AdminConfirmDialog
       :visible="Boolean(pendingDelete)"
@@ -256,45 +352,117 @@ onMounted(() => {
   display: none;
 }
 
-.scheme-table {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.scheme-row {
-  display: grid;
-  grid-template-columns: minmax(160px, 1.4fr) minmax(120px, 1fr) 170px 96px 72px;
-  gap: 0.75rem;
+.shared-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0.55rem 0.8rem;
-  border-top: 1px solid var(--color-border);
+  gap: 0.35rem;
+  margin: 0.75rem 0 0.5rem;
   font-size: 0.82rem;
 }
 
-.scheme-row:first-child {
-  border-top: none;
-}
-
-.scheme-head {
-  background: var(--color-background-soft);
-  font-weight: 700;
-  font-size: 0.78rem;
-}
-
-.scheme-name {
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.scheme-folder,
-.scheme-time {
+.bc-seg {
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
   opacity: 0.75;
+}
+
+.bc-seg:hover {
+  background: var(--color-background-soft);
+  opacity: 1;
+}
+
+.bc-seg.current {
+  color: var(--color-heading);
+  font-weight: 700;
+  opacity: 1;
+  cursor: default;
+}
+
+.bc-sep {
+  opacity: 0.5;
+}
+
+.bc-count {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.shared-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.6rem;
+}
+
+.shared-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background-soft);
+  min-width: 0;
+}
+
+.shared-dir {
+  padding: 0;
+}
+
+.shared-dir-main {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shared-dir-main:hover {
+  background: color-mix(in srgb, var(--color-border) 25%, transparent);
+}
+
+.shared-dir-icon {
+  font-size: 1.1rem;
+}
+
+.shared-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.shared-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shared-sub {
+  font-size: 0.74rem;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 .scheme-empty {
