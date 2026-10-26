@@ -15,7 +15,11 @@ import { testAgent } from './_effectPipelineHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
 import { effectRecipientNote } from '../src/utils/flowBuffTable.ts'
 import { collectAllBuffEffects, computeFinalPanel } from '../src/utils/panelBuffCalc.ts'
-import { projectEventEffectRecords, resolveEventBuffPreviewInputs } from '../src/utils/optimalAffixAlloc.ts'
+import {
+  projectEventEffectRecords,
+  resolveConfigurationParameters,
+  resolveEventBuffPreviewInputs,
+} from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
 
 let passed = 0
@@ -344,5 +348,110 @@ console.log('== K10 普通与额外对等（数值/状态/实际采用） ==')
 }
 
 console.log('')
+console.log('== K4 配置参数路径（未启用也能解析；基数与折算量分开） ==')
+{
+  const manual = createEmptyBuffEffect({
+    id: 'manual-convert',
+    kind: 'convert',
+    stat: 'dmgBonus',
+    enabledDefault: true,
+    applyTarget: 'team',
+    convert: { from: 'atk', panelSource: 'manual', defaultBase: 1000, ratioPercent: 10, initialBase: 0, cap: null },
+  })
+  const fixture = eventFixture({
+    damageType: 'direct',
+    effects: [manual],
+    agents: [testAgent('owner', { profession: '强攻' })],
+  })
+  const hit = fixture.hits[0]
+  const effectId = fixture.items.find((item) => item.effect.id.endsWith('manual-convert')).effect.id
+  const params = resolveConfigurationParameters(fixture.context, hit, 0)
+  const shared = params[effectId]
+  check('K4 手动转模：配置基数 = defaultBase 1000', near(shared?.convertBase?.value ?? -1, 1000),
+    JSON.stringify(shared))
+  check('K4 手动转模：配置折算值 = 100（不是基数）', near(shared?.amount ?? -1, 100), String(shared?.amount))
+
+  // 未启用：事件侧不产生贡献，但配置参数照样可解析
+  const disabled = evaluateSkillFlowHit(fixture.context, null, {
+    ...hit,
+    buffOverride: { disabledEffectIds: [effectId] },
+  }, true)
+  const disabledSummary = projectEventEffectRecords(disabled.effectRecords ?? [])[effectId]
+  check('K4 未启用/被禁用：实际状态不是 applied', disabledSummary?.state === 'inactive',
+    JSON.stringify({ state: disabledSummary?.state }))
+  const disabledPreview = resolveEventBuffPreviewInputs(fixture.context, null, {
+    ...hit,
+    buffOverride: { disabledEffectIds: [effectId] },
+  }, 0)
+  check('K4 未启用/被禁用：配置参数仍然给出（输入框不会变空）',
+    near(disabledPreview.configurationParameters?.[effectId]?.convertBase?.value ?? -1, 1000),
+    JSON.stringify(disabledPreview.configurationParameters?.[effectId]))
+  check('K4 配置折算值不进 effectAmounts 的实际贡献位',
+    (disabledPreview.effectAmounts?.[effectId] ?? 0) === 0, String(disabledPreview.effectAmounts?.[effectId]))
+
+  // 技能等级非 manual：以体系等级为基数，忽略手填
+  const levelConvert = createEmptyBuffEffect({
+    id: 'level-convert',
+    kind: 'convert',
+    stat: 'dmgBonus',
+    enabledDefault: true,
+    applyTarget: 'self',
+    convert: { from: 'skillLevelBasic', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null },
+  })
+  const levelFixture = eventFixture({
+    damageType: 'direct',
+    effects: [levelConvert],
+    agents: [testAgent('owner', { profession: '强攻' })],
+  })
+  const levelHit = levelFixture.hits[0]
+  const levelId = levelFixture.items.find((item) => item.effect.id.endsWith('level-convert')).effect.id
+  levelFixture.context.panelContext.skillTalentLevelsByAgent = { owner: { basic: 12 } }
+  levelFixture.context.panelContext.rowBuffOverride = {
+    convertInputsByEffectId: { [levelId]: 3000 },
+  }
+  const levelParams = resolveConfigurationParameters(levelFixture.context, levelHit, 0)
+  check('K4 技能等级非 manual：基数取体系等级 12、忽略手填 3000',
+    near(levelParams[levelId]?.convertBase?.value ?? -1, 12), JSON.stringify(levelParams[levelId]))
+  check('K4 技能等级非 manual：折算值 1.2', near(levelParams[levelId]?.amount ?? -1, 1.2),
+    String(levelParams[levelId]?.amount))
+}
+
+console.log('')
+console.log('== K11 三来源（config / allocation / sweep）进入同一事件求值 ==')
+{
+  for (const mode of ['config', 'allocation', 'sweep']) {
+    const effect = createEmptyBuffEffect({
+      id: 'src-fixed',
+      stat: 'dmgBonus',
+      value: 25,
+      kind: 'fixed',
+      enabledDefault: true,
+      applyTarget: 'team',
+      applyProfession: '支援',
+    })
+    const fixture = eventFixture({
+      mode: 'extra-team',
+      damageType: 'anomaly',
+      effects: [effect],
+      agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
+    })
+    const hit = fixture.hits[0]
+    hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
+    const effectId = fixture.items.find((item) => item.effect.id.endsWith('src-fixed')).effect.id
+    const numeric = evaluateSkillFlowHit(fixture.context, null, hit)
+    const detailed = evaluateSkillFlowHit(fixture.context, null, hit, true)
+    const summary = projectEventEffectRecords(detailed.effectRecords ?? [])[effectId]
+    check(`K11 ${mode}｜事件求值与详情同源（总伤 4545）`,
+      near(numeric.total, 4545) && near(detailed.total, 4545), `${numeric.total}/${detailed.total}`)
+    check(`K11 ${mode}｜实际受益者仍是 strength 提供者、金额 25`,
+      summary?.state === 'single' && near(summary.amount, 25) && summary.recipients[0]?.slotIndex === 1,
+      JSON.stringify(summary && { state: summary.state, amount: summary.amount }))
+    check(`K11 ${mode}｜记录身份含该模式的视图键`,
+      (detailed.effectRecords ?? []).every((record) => record.viewKey.includes('powerProviderPanel') || record.viewKey.includes('ownerPanel')))
+  }
+}
+
+console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1

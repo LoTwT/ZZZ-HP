@@ -1028,7 +1028,19 @@ export function resolveConfigurationParameters(
   slotIndex: number,
   mainExternal: PanelStats | null = null,
 ): Record<string, ResolvedEffectParameters> {
-  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
+  /**
+   * 配置预览要的是「这条效果被配置成什么」，所以**不能**因为本行禁用就没有参数：
+   * 去掉禁用集合、保留行级的层数/基数覆盖（Spec §5.1 第 1–2 项）。
+   */
+  const configOverlay = hit.buffOverride
+    ? { ...hit.buffOverride, disabledEffectIds: [], disabledBlockIds: [] }
+    : null
+  const context = buildEventPanelContext(
+    ctx,
+    mainExternal,
+    { ...hit, buffOverride: configOverlay },
+    slotIndex,
+  )
   const parameters: Record<string, ResolvedEffectParameters> = {}
   for (const item of collectAllBuffEffects(context)) {
     parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
