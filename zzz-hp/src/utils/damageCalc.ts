@@ -851,6 +851,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const radianceFullCritZone = 1 + radianceCritDmgRatio
 
   const remielSelf = subKind === 'radiance' ? (input.remielSelfRadianceCalc ?? null) : null
+  if (reportUse && !remielSelf && (input.mutationZone ?? 1) !== 1) {
+    // 团队异化：面板里预计算的异化系数被本事件采用
+    reportUse({ inputKey: 'mutationZone', field: 'mutationCoeff', resultKey: 'mutationZone', usedZones: [] })
+  }
   const remielSelfRadianceActive = Boolean(remielSelf)
   /** 展示用：异常路径（含耀变本人）用非直伤易伤区，否则用直伤易伤区 */
   const pathVulnerableMultiplier = remielSelfRadianceActive
@@ -879,6 +883,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfInCombatAtk = remielSelf.inCombatAtk
     remielSelfInCombatMasteryZone = remielSelf.inCombatMastery / 100
     remielSelfMutationZone = remielSelf.mutationZone
+    // 本人耀变的三处替换：基础 / 防御 / 抗性（Spec §2.5 第 4 项）——在这里如实报告，不重算公式
+    if (reportUse) {
+      reportUse({ inputKey: 'remielSelfRadianceCalc', field: 'inCombatAtk', resultKey: 'anomalyBaseExpected', usedZones: ['baseAtk'] })
+      reportUse({ inputKey: 'remielSelfRadianceCalc', field: 'penRate', resultKey: 'defenseFactor', usedZones: ['penRate', 'reduceDefense'] })
+      reportUse({ inputKey: 'remielSelfRadianceCalc', field: 'resPen', resultKey: 'resistanceMultiplier', usedZones: ['resPen'] })
+    }
 
     const defenseParts = computeDefenseZone({
       defensePanel: {

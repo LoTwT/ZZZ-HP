@@ -1379,6 +1379,13 @@ function zeroSourceValuesFor(effects: readonly BuffEffect[]): PanelSourceValues 
   return { external: { ...zero }, final: { ...zero } }
 }
 
+/** 从收集期效果 id 的 `来源::块::效果` 结构解析来源身份（额外 Buff 无此前缀） */
+function parseEffectIdentity(effectId: string): { sourceKey: string; blockId: string } {
+  const parts = effectId.split('::')
+  if (parts.length < 3) return { sourceKey: '', blockId: '' }
+  return { sourceKey: parts[0] ?? '', blockId: parts[1] ?? '' }
+}
+
 function sourceOptionsForCollectedEffect(
   item: CollectedEffect,
   ctx: PanelCalcContext,
@@ -1531,12 +1538,15 @@ function resolvePackMods(
     // 只有带追踪时才分配记录对象；数值路径完全不受影响
     onEffectResolved: trace
       ? (record) => {
+          // 来源身份优先用收集器给的；缺失时回落到效果 id 自带的 `来源::块::效果` 结构，
+          // 不能留空 —— sourceKey+blockId 是记录身份的一部分（Spec §3.2 第 3 项）
+          const identity = parseEffectIdentity(record.effectId)
           trace.onContribution({
             ...record,
             viewKey: trace.viewKey,
             policy: trace.policy,
-            sourceKey: traceSource?.sourceKey ?? '',
-            blockId: traceSource?.blockId ?? '',
+            sourceKey: traceSource?.sourceKey ?? identity.sourceKey,
+            blockId: traceSource?.blockId ?? identity.blockId,
             providerSlot: traceSource?.providerSlot ?? null,
             sourceSlot: sourceSlotIndex ?? null,
             beneficiarySlot: ctx.mainSlotIndex,

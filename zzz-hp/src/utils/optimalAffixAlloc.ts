@@ -1137,6 +1137,8 @@ function resolveLuminousTeamModifiersForOptimal(
   mainExternal: PanelStats,
   includeDetails = true,
   hit?: ResolvedHit,
+  /** 追踪工厂（团队异化视图，Spec §2.4 第 1 项）：拿到真实来源面板后再建视图身份 */
+  traceFor?: (external: PanelStats) => ComputeFinalPanelOptions,
 ): {
   mutationZone: number
   radianceResPen: number
@@ -1162,7 +1164,7 @@ function resolveLuminousTeamModifiersForOptimal(
   const breakdown = computeFinalPanel(
     producerExternal,
     luminousContext,
-    includeDetails ? undefined : PANEL_NUMBERS_ONLY,
+    traceFor ? traceFor(producerExternal) : includeDetails ? undefined : PANEL_NUMBERS_ONLY,
   )
   const panel = breakdown.finalPanel
   const agent = ctx.panelContext.agents.find((item) => item.id === found.id)
@@ -1286,6 +1288,8 @@ export function evaluateOptimalEventDetail(
   let producerBreakdown: OptimalPanelBreakdown | undefined
   let producerExternalPanel: PanelStats | undefined
   let producerView: ReturnType<NonNullable<typeof trace>['view']> | undefined
+  let mutationPanelView: ReturnType<NonNullable<typeof trace>['view']> | undefined
+  let radianceSelfView: ReturnType<NonNullable<typeof trace>['view']> | undefined
 
   /** 异常强度提供者是否不是主 C（扫掠敏感度等元数据用） */
   const usesNonMainProducer = Boolean(
@@ -1371,7 +1375,25 @@ export function evaluateOptimalEventDetail(
   let effectiveSub =
     sub && panelOverrides ? mergeSkillSubcategoryMultOverrides(sub, panelOverrides) : sub
 
-  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainPanel, includeDetails, hit)
+  const luminousMods = resolveLuminousTeamModifiersForOptimal(
+    ctx,
+    mainPanel,
+    includeDetails,
+    hit,
+    trace
+      ? (external) =>
+          (mutationPanelView = trace.view({
+            useView: 'mutationPanel',
+            slotIndex:
+              findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)?.slotIndex ??
+              mainSlotIndex,
+            agentId: findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)?.id ?? '',
+            policy: 'default',
+            element: evtPowerElement,
+            external,
+          })).options
+      : undefined,
+  )
 
   // 属性异常/异放/耀变类型增伤取触发者；紊乱/乱流取持有者；直伤回落 owner
   let anomalyTriggerPanel = evtFinalPanel
@@ -1432,9 +1454,18 @@ export function evaluateOptimalEventDetail(
           : resolveExternalForAgent(ctx, triggerId, trigSlotIndex, mainPanel)
       const trigPanelCtx = triggerId === ownerAgentId
         ? evtPanelCtx : buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex)
+      // 异放倍率视图：走同一套倍率合并规则，只是带上追踪（Spec §2.4 第 3 项）
+      const releaseView = trace?.view({
+        useView: 'releaseMult',
+        slotIndex: trigSlotIndex,
+        agentId: triggerId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: trigExternal,
+      })
       const releaseFields = resolveAnomalyReleaseMultFields(
         trigExternal,
-        trigPanelCtx,
+        { ...trigPanelCtx, trace: releaseView?.options.trace, traceStage: 'releaseMult' },
         evtPowerElement,
       )
       // 行级覆盖来自招式基础倍率：固定值与基础倍率重复，只把「技能等级转模」增量补上去。
@@ -1493,6 +1524,8 @@ export function evaluateOptimalEventDetail(
   const viewOfInputKey = (inputKey: DamageInputUsage['inputKey']) => {
     if (inputKey === 'triggerFinalPanel') return producerView ?? ownerView
     if (inputKey === 'anomalyTriggerPanel') return triggerView ?? ownerView
+    if (inputKey === 'remielSelfRadianceCalc') return radianceSelfView ?? ownerView
+    if (inputKey === 'mutationZone') return mutationPanelView ?? ownerView
     return ownerView
   }
 
@@ -1591,10 +1624,20 @@ export function evaluateOptimalEventDetail(
       { ...remielCtx, skillContext: skillCtx },
       remiel.slotIndex,
     )
+    // 本人耀变受限视图：政策不变，只把追踪透传（Spec §2.4 第 1 项）
+    radianceSelfView = trace?.view({
+      useView: 'radianceSelfPanel',
+      slotIndex: remiel.slotIndex,
+      agentId: remiel.id,
+      policy: 'remiel-self-radiance',
+      element: evtPowerElement,
+      external: remielExternal,
+    })
     const selfBreakdown = REMIEL_SELF_RADIANCE_VIEW_POLICY.computeInCombatPanel(
       remielExternal,
       remielCtx,
       remiel.slotIndex,
+      radianceSelfView?.options,
     )
     remielSelfAtkSourceItems = restricted.atkItems
     remielSelfMasterySourceItems = restricted.masteryItems

@@ -16,6 +16,7 @@ import {
   computeFinalPanel,
   panelToConvertAttrValues,
   rowBuffSelectionOverlay,
+  type ComputeFinalPanelOptions,
   type PanelBuffBreakdown,
   type PanelCalcContext,
 } from '@/utils/panelBuffCalc'
@@ -37,13 +38,18 @@ export function computeRemielSelfInCombatPanel(
   externalPanel: PanelStats,
   ctx: PanelCalcContext,
   remielSlotIndex: number,
+  options?: ComputeFinalPanelOptions,
 ): PanelBuffBreakdown {
-  return computeFinalPanel(externalPanel, {
-    ...ctx,
-    mainSlotIndex: remielSlotIndex,
-    restrictToSlotIndex: remielSlotIndex,
-    excludeBangboo: true,
-  })
+  return computeFinalPanel(
+    externalPanel,
+    {
+      ...ctx,
+      mainSlotIndex: remielSlotIndex,
+      restrictToSlotIndex: remielSlotIndex,
+      excludeBangboo: true,
+    },
+    options,
+  )
 }
 
 function formatSignedContribution(value: number) {
