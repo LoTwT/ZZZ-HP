@@ -220,6 +220,15 @@ export function buildSkillFlowHitContextSignature(input: SkillFlowHitContextInpu
     main: input.mainSlotIndex,
     levels: input.skillTalentLevelsByAgent ?? null,
     elements: input.agentElements ?? null,
+    // 面板页额外轴（Spec §2.6 第 1 项）：漏一项就是「配置变了仍命中旧值」
+    mode: input.calcMode ?? null,
+    trig: input.triggerAnomalyAgentId ?? null,
+    sub: input.anomalySubKind ?? null,
+    cat: [input.skillCategoryId ?? null, input.skillSubcategoryId ?? null],
+    mainExt: input.mainExternalPanel ?? null,
+    slotExt: input.slotExternalPanels ?? null,
+    affix: input.affixCounts ?? null,
+    row: input.rowBuffOverride ?? null,
   })
 }
 

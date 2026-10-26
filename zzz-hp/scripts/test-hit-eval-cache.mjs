@@ -310,6 +310,128 @@ console.log('== K17：来源角色技能等级 → 上下文身份（真实 Pane
   clearHitEvalCache()
 }
 
+console.log('== K12：逐轴失效（真实 Panel 签名 + 生产键） ==')
+{
+  let runSignature = null
+  try {
+    runSignature = buildPanelSignatureRunner()
+  } catch (error) {
+    check('K12 能抽取 Panel 签名表达式', false, String(error?.message ?? error))
+  }
+  if (runSignature) {
+    const effect = createEmptyBuffEffect({
+      id: 'axis-convert',
+      kind: 'convert',
+      stat: 'dmgBonus',
+      enabledDefault: true,
+      applyTarget: 'team',
+      convert: { from: 'skillLevelBasic', panelSource: 'external', ratioPercent: 100, initialBase: 0, cap: null },
+    })
+    const fixture = eventFixture({ mode: 'ordinary', damageType: 'direct', sourceSlot: 1, effects: [effect] })
+    const hit = fixture.hits[0]
+    hit.multOverrides = { ...hit.multOverrides, directDmgMult: 100 }
+    const levels = reactive({ power: { basic: 8 } })
+    fixture.context.panelContext.skillTalentLevelsByAgent = levels
+    const props = reactive({
+      agents: fixture.agents,
+      teamSlots: structuredClone(fixture.teamSlots),
+      editedSlotIndex: 0,
+      selectedBangbooId: 'none',
+      bangbooRefine: 1,
+      calcMode: 'panel',
+      staggerPhase: 'stagger',
+      damageKind: 'direct',
+      skillTalentLevelsByAgent: levels,
+    })
+    const envBuffs = reactive([])
+    const extraGains = ref(fixture.extraGains)
+    const externalPanel = reactive({ ...fixture.panels.owner })
+    const bindings = {
+      computed,
+      props,
+      resolveActivePanel: () => null,
+      baseDamageSource: ref('atk'),
+      slotBuffSelectionsSignature: ref('{}'),
+      convertSlotPanelsSignature: ref('{}'),
+      resolvedActiveSlotPanels: ref(fixture.panels),
+      extraGains,
+      enemyInput: ref(fixture.context.enemyInput),
+      externalPanel,
+      affixCounts: {},
+      affixDriveDiscMainStats: {},
+      buildSkillFlowHitContextSignature,
+      skillTalentLevelsByAgent: levels,
+    }
+    props.environmentBuffs = envBuffs
+    const signature = runSignature(bindings)
+    const baselineSignature = signature.value
+    const baselineKey = hitEvalCacheKey(
+      buildHitEvalFingerprint(hit),
+      internHitEvalContext(baselineSignature),
+      externalPanel,
+      false,
+    )
+
+    // 1) 角色属性轴（元素）
+    props.agents[0].element = '冰'
+    check('K12 改元素 → 签名变化', signature.value !== baselineSignature)
+    props.agents[0].element = '电'
+
+    // 2) 精炼 / 音擎（只在 teamSlots 里体现）
+    props.teamSlots[1].wengineRefine = 3
+    check('K12 改精炼 → 签名变化', signature.value !== baselineSignature)
+    props.teamSlots[1].wengineRefine = 1
+
+    // 3) 来源面板（主槽 external 进键，也进签名）
+    externalPanel.atk = externalPanel.atk + 10
+    const panelKey = hitEvalCacheKey(
+      buildHitEvalFingerprint(hit),
+      internHitEvalContext(signature.value),
+      externalPanel,
+      false,
+    )
+    check('K12 改主槽面板 → 键变化', panelKey !== baselineKey)
+    externalPanel.atk = externalPanel.atk - 10
+
+    // 4) 环境 Buff
+    envBuffs.push({ id: 'env-x' })
+    check('K12 改环境 → 签名变化', signature.value !== baselineSignature)
+    envBuffs.pop()
+
+    // 5) 额外/候选增益
+    extraGains.value = [{ ...fixture.extraGains[0], id: 'extra-changed' }]
+    check('K12 改额外增益 → 签名变化', signature.value !== baselineSignature)
+    extraGains.value = fixture.extraGains
+
+    // 6) 行级例外（hit 指纹轴）
+    const rowHit = { ...hit, buffOverride: { disabledEffectIds: ['x'] } }
+    check(
+      'K12 改行级例外 → hit 指纹变化',
+      buildHitEvalFingerprint(rowHit) !== buildHitEvalFingerprint(hit),
+    )
+
+    // 7) 计算方式 / 招式类别
+    props.calcMode = 'mb'
+    check('K12 改计算方式 → 签名变化', signature.value !== baselineSignature)
+    props.calcMode = 'panel'
+
+    check('K12 全部复原后签名回到基线', signature.value === baselineSignature)
+  }
+  clearHitEvalCache()
+}
+
+console.log('== K12：上下文令牌表 50 条容量 ==')
+{
+  const first = internHitEvalContext('ctx-evict-A')
+  check('K12 未溢出时同签名 → 同令牌', internHitEvalContext('ctx-evict-A') === first)
+  for (let i = 0; i < 55; i += 1) internHitEvalContext(`ctx-evict-filler-${i}`)
+  const again = internHitEvalContext('ctx-evict-A')
+  check('K12 令牌表溢出后旧令牌被淘汰（不再可寻址）', again !== first, `${first} → ${again}`)
+  const newest = internHitEvalContext('ctx-evict-filler-54')
+  check('K12 最新令牌仍在', typeof newest === 'string' && newest.startsWith('ctx-'))
+}
+
 console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
