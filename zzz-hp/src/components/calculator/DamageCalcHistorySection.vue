@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AgentBuffDoc } from '@/types/calculator'
 import type { DamageCalcHistoryEntry, DamageCalcHistoryImportResult } from '@/types/damageCalcHistory'
@@ -831,7 +832,10 @@ defineExpose({
       <header class="history-header">
         <div>
           <h2>方案库</h2>
-          <p class="history-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
+          <p class="history-desc">
+            <InfoTip label="方案库说明" text="保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage。" />
+            <span>已用 {{ storageUsage.text }}</span>
+          </p>
         </div>
         <span class="history-open-hint" aria-hidden="true">›</span>
       </header>
@@ -881,7 +885,10 @@ defineExpose({
             ×
           </button>
         </header>
-        <p class="history-modal-desc">保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage，已用 {{ storageUsage.text }}</p>
+        <p class="history-modal-desc">
+          <InfoTip label="方案库说明" text="保存当前队伍与面板配置为方案，支持目录分组、搜索、整理、导出 / 导入全部。导入会清空本机方案和自建招式。存储依赖浏览器 localStorage。" />
+          <span>已用 {{ storageUsage.text }}</span>
+        </p>
 
         <!-- 顶部提示条：固定占位，消息出现/消失不抖动，始终可见 -->
         <div class="history-message-slot">
