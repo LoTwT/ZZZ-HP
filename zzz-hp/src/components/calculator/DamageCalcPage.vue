@@ -1119,7 +1119,13 @@ function buffConvertResolveInputsForSlot(
   rowKey?: string | null,
 ): ConvertResolveInputs {
   const hit = rowKey ? hits.value.find((item) => item.id === rowKey) : undefined
-  if (rowKey && !hit) return { attrDefaults: {}, configurationOnly: true }
+  if (rowKey && !hit) {
+    return {
+      attrDefaults: {},
+      configurationOnly: true,
+      configurationParameters: panelCalcSectionRef.value?.getConfigurationParametersForSlot?.(slotIndex) ?? {},
+    }
+  }
   if (hit) return panelCalcSectionRef.value?.getEventBuffPreviewInputs?.(slotIndex, hit, rowOverride)
     ?? { attrDefaults: {}, effectAmounts: {} }
   const eventSources = panelCalcSectionRef.value?.getPanelSourceValuesBySlot?.(
@@ -1127,6 +1133,8 @@ function buffConvertResolveInputsForSlot(
     rowOverride,
   )
   return {
+    // 没有具体事件（列级/组级说明）时也要给共享配置参数：弹窗与表格的基数/折算值只认它
+    configurationParameters: panelCalcSectionRef.value?.getConfigurationParametersForSlot?.(slotIndex) ?? {},
     attrDefaults:
       panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(slotIndex) ??
       panelCalcSectionRef.value?.convertAttrDefaults ??

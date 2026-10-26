@@ -18,20 +18,16 @@ import {
   getBuffEffectStacks,
   isEnvironmentBuffGroup,
   isEnvironmentBuffSourceKey,
-  resolveCollectedEffectSourceSlot,
   resolveEnvironmentBlockItemEnabled,
   setBuffEffectConvertInput,
   setBuffEffectEnabled,
   setBuffEffectStacks,
   isTeamBuffApplyTarget,
 } from '@/utils/panelBuffCalc'
-import { formatBuffEffectResultText, formatApplySituationLabel, resolveConvertValue } from '@/utils/buffEffect'
-import {
-  isSkillConvertFromKey,
-  SKILL_CONVERT_FROM_TO_TALENT_KEY,
-  type SkillTalentLevels,
-} from '@/utils/skillTalentLevels'
+import { formatBuffEffectResultText, formatApplySituationLabel } from '@/utils/buffEffect'
+
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
+import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import { buffStatFieldLabel, BUFF_STAT_FIELDS } from '@/utils/calculatorUi'
 import { CONVERT_FROM_OPTIONS } from '@/types/calculator'
 
@@ -58,14 +54,6 @@ const props = defineProps<{
    */
   configurationParameters?: Record<string, ResolvedEffectParameters>
 }>()
-
-function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  if (slotIndex != null && props.panelSourceValuesBySlot?.[slotIndex]) {
-    return props.panelSourceValuesBySlot[slotIndex]
-  }
-  return props.panelSourceValues
-}
 
 const open = defineModel<boolean>('open', { default: false })
 const multiSelection = defineModel<MultiSlotBuffSelection>('multiSelection', { required: true })
@@ -165,46 +153,20 @@ function setStacks(item: CollectedEffect, value: number) {
   )
 }
 
-function convertLiveBase(item: CollectedEffect) {
-  const convert = item.effect.convert
-  if (!convert) return 0
+/**
+ * 转模基数（Spec §5.1 第 5–6 项 / §2.3 第 6 项）：**只读共享参数解析的 `convertBase`**。
+ *
+ * 改造前这里自己按 `panelSource` 选面板、按技能等级查表、按 `defaultBase` 回落 —— 同一件事在
+ * 选择器、行级弹窗、结算三处各写一遍。面板/等级/默认值的解析已收进
+ * `resolveCollectedEffectParameters`，这里只剩「取哪个数」。调用方没给参数时退回配置里
+ * 写死的 `defaultBase`（**不读面板、不查等级表**）。
+ */
+function convertBase(item: CollectedEffect): number {
+  if (!item.effect.convert) return 0
   const shared = props.configurationParameters?.[item.effect.id]
   if (shared?.convertBase) return shared.convertBase.value
-  if (convert.panelSource === 'manual') {
-    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
-      ? convert.defaultBase
-      : 0
-  }
-  if (convert.defaultBase != null && Number.isFinite(convert.defaultBase)) {
-    return convert.defaultBase
-  }
-  // 技能等级转模：取来源角色的对应大类技能等级
-  if (isSkillConvertFromKey(convert.from)) {
-    const levels = skillTalentLevelsForItem(item)
-    return levels?.[SKILL_CONVERT_FROM_TO_TALENT_KEY[convert.from]] ?? 0
-  }
-  const source = convert.panelSource ?? 'external'
-  const panelSources = panelSourceValuesForEffect(item)
-  const map =
-    (source === 'final' || source === 'external'
-      ? panelSources?.[source]
-      : undefined) ??
-    props.attrDefaults ??
-    {}
-  return map[convert.from] ?? props.attrDefaults?.[convert.from] ?? 0
+  return item.effect.convert.defaultBase ?? 0
 }
-
-/** 技能等级转模的来源角色等级表：按效果来源槽位取对应角色的五大类等级 */
-function skillTalentLevelsForItem(
-  item: CollectedEffect,
-): Partial<SkillTalentLevels> | null {
-  const convert = item.effect.convert
-  if (!convert || !isSkillConvertFromKey(convert.from)) return null
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
-  return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
-}
-
 function hasConvertOverride(item: CollectedEffect) {
   return (
     getBuffEffectConvertInput(
@@ -224,7 +186,7 @@ function convertOverrideModel(item: CollectedEffect) {
     item.effect.applyTarget,
   )
   if (saved != null) return saved
-  return convertLiveBase(item)
+  return convertBase(item)
 }
 
 function setConvert(item: CollectedEffect, value: number) {
@@ -245,7 +207,7 @@ function clearConvertOverride(item: CollectedEffect) {
       viewSlotIndex.value,
       id,
       item.effect.applyTarget,
-      convertLiveBase(item),
+      convertBase(item),
     )
     return
   }
@@ -255,35 +217,15 @@ function clearConvertOverride(item: CollectedEffect) {
   if (store) delete store.convertInputs[id]
 }
 
-function convertResult(item: CollectedEffect) {
-  const convert = item.effect.convert
-  const id = item.effect.id
-  const shared = props.configurationParameters?.[id]
-  if (shared) return shared.amount
-  const source = convert?.panelSource ?? 'external'
-  const saved = getBuffEffectConvertInput(
-    multiSelection.value,
-    viewSlotIndex.value,
-    id,
-    item.effect.applyTarget,
-  )
-  let override: number | null | undefined
-  if (source === 'manual') {
-    override = saved ?? convert?.defaultBase ?? 0
-  } else {
-    // 非自行设置：有手填基数就按它算（与结算同一份数据），没有就按面板/默认
-    override = saved ?? null
-  }
-  return resolveConvertValue(
-    item.effect,
-    props.attrDefaults ?? {},
-    override,
-    panelSourceValuesForEffect(item),
-    // 技能等级转模来源等级表（此前缺失导致等级转模显示 0）
-    skillTalentLevelsForItem(item),
-  )
+/**
+ * 转模折算值（Spec §5.1 第 5–6 项）：**只读共享参数解析的 `amount`**。
+ *
+ * 改造前这里自己读面板/等级表再算一遍 —— 那正是「界面算 150、结算按 100」这类分叉的来源。
+ * 没有共享参数时返回 0（显示为未解析），不再自行推导。
+ */
+function convertResult(item: CollectedEffect): number {
+  return props.configurationParameters?.[item.effect.id]?.amount ?? 0
 }
-
 function blockNameText(item: CollectedEffect) {
   return item.blockName?.trim() || '增益'
 }
@@ -657,7 +599,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     type="button"
                     class="convert-clear"
                     :disabled="!isEnabled(item)"
-                    @click="setConvert(item, convertLiveBase(item))"
+                    @click="setConvert(item, convertBase(item))"
                   >
                     覆盖
                   </button>

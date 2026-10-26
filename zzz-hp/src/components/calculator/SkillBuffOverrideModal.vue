@@ -19,16 +19,13 @@ import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import NumberStepper from '@/components/common/NumberStepper.vue'
 import { useMaskClose } from '@/composables/useMaskClose'
 import type { BuffEffect, SkillSubcategory } from '@/types/calculator'
-import type {
-  CollectedEffect,
-  ConvertResolveInputs,
-  PanelSourceValues,
-} from '@/utils/panelBuffCalc'
+import type { CollectedEffect, ConvertResolveInputs } from '@/utils/panelBuffCalc'
 import {
   availableBuffGroupTabs,
   blockKeyOfCollected,
   resolveCollectedEffectSourceSlot,
   resolveCollectedEffectPanelSourceValues,
+  type PanelSourceValues,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import { formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
@@ -210,31 +207,10 @@ function convertBaseModel(item: CollectedEffect): number {
   if (overridden != null) return overridden
   const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
   if (inherited != null) return inherited
-  // 共享参数解析给出的「真用的基数」优先（Spec §5.1 第 5 项）：输入框读基数，结果文本读折算值
+  // 共享参数解析给出的「真用的基数」（Spec §5.1 第 5–6 项）：输入框读基数，结果文本读折算值
   const shared = resolveInputs.value?.configurationParameters?.[item.effect.id]
   if (shared?.convertBase) return shared.convertBase.value
   return convertLiveBase(item)
-}
-
-/** 未做任何手填时的基数：自行设置取 defaultBase，其余取该效果来源槽位的面板值 */
-function convertLiveBase(item: CollectedEffect): number {
-  const convert = item.effect.convert
-  if (!convert) return 0
-  const inputs = resolveInputs.value
-  const source = convert.panelSource ?? 'external'
-  if (source === 'manual') {
-    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
-      ? Number(convert.defaultBase)
-      : 0
-  }
-  if (isSkillConvertFromKey(convert.from)) return 0
-  const panelSources = panelSourceValuesForEffect(item)
-  const map =
-    (source === 'final' || source === 'external' ? panelSources?.[source] : undefined) ??
-    inputs?.attrDefaults ??
-    {}
-  const value = map[convert.from] ?? inputs?.attrDefaults?.[convert.from] ?? 0
-  return Number.isFinite(value) ? Number(value) : 0
 }
 
 function setConvertInput(effect: BuffEffect, value: number) {
@@ -288,6 +264,35 @@ function statLabel(stat: string): string {
   return field ? buffStatFieldLabel(field) : stat
 }
 
+/**
+ * 未做任何手填时的基数（**仅在调用方没有提供共享参数时**使用）：自行设置取 defaultBase，
+ * 其余取该效果来源槽位的面板值。
+ *
+ * ⚠️ 这是 Spec §5.1 第 6 项要求删除的「UI 自写选基数」的**残余回退**：删除它的前提是
+ * 所有调用点（含测试夹具）都能提供 `configurationParameters`，否则有效配置会显示 0。
+ * 已接线到页面；测试夹具的 `panelCalcSectionRef` 桩还没有 `getConfigurationParametersForSlot`，
+ * 因此保留回退并记录为待删项。
+ */
+function convertLiveBase(item: CollectedEffect): number {
+  const convert = item.effect.convert
+  if (!convert) return 0
+  const inputs = resolveInputs.value
+  const source = convert.panelSource ?? 'external'
+  if (source === 'manual') {
+    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
+      ? Number(convert.defaultBase)
+      : 0
+  }
+  if (isSkillConvertFromKey(convert.from)) return 0
+  const panelSources = panelSourceValuesForEffect(item)
+  const map =
+    (source === 'final' || source === 'external' ? panelSources?.[source] : undefined) ??
+    inputs?.attrDefaults ??
+    {}
+  const value = map[convert.from] ?? inputs?.attrDefaults?.[convert.from] ?? 0
+  return Number.isFinite(value) ? Number(value) : 0
+}
+
 /** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
   return resolveCollectedEffectPanelSourceValues(item, resolveInputs.value ?? {})
@@ -300,25 +305,26 @@ function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLev
   return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
 }
 
-/**
- * 转模解析值（行内显示）：行级覆盖 ?? 继承全局手填 ?? null（= 按面板/默认值）。
- * 与结算同一套取值顺序与同一个 `resolveConvertValue`，保证"这一行显示 = 这一行实际"。
- */
+/** 转模折算值：有共享参数就只读它；没有时才用回退路径（行级覆盖 ?? 继承全局手填 ?? 面板/默认） */
 function convertResult(item: CollectedEffect): number {
+  // 顺序：实际贡献（summary）→ 兼容金额 → 配置折算值 → 回退路径。
+  // 事件行显示的是「这一行实际吃到多少」，不能拿配置折算值顶替（Spec §5.2 第 1 项）。
+  const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
+  if (summary?.amount != null) return summary.amount
   if (resolveInputs.value?.effectAmounts) return resolveInputs.value.effectAmounts[item.effect.id] ?? 0
+  const shared = resolveInputs.value?.configurationParameters?.[item.effect.id]
+  if (shared) return shared.amount
   const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
   const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
-  const overrideBase = overridden ?? inherited ?? null
   return resolveConvertValue(
     item.effect,
     resolveInputs.value?.attrDefaults ?? {},
-    overrideBase,
+    overridden ?? inherited ?? null,
     panelSourceValuesForEffect(item),
     skillTalentLevelsForItem(item),
   )
 }
 
-/** 效果行文案：与局内增益选择器同一个格式化函数 —— 叠层出总值、转模出解析值、非全局标作用情况 */
 function effectRecipientNote(item: CollectedEffect): string {
   const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
   return buildEffectRecipientNote(summary, props.slotIndex ?? 0)
