@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { BangbooBuffDoc } from '@/types/calculator'
 
 const props = defineProps<{
@@ -27,8 +28,10 @@ const selectedBangboo = computed(() =>
   <section id="damage-bangboo" class="section-card damage-anchor">
     <header class="section-header">
       <div>
-        <h2>邦布</h2>
-        <p class="section-desc">选择本次出分使用的邦布与精炼等级；可不佩戴</p>
+        <h2>
+          邦布
+          <InfoTip label="邦布说明" text="选择本次出分使用的邦布与精炼等级；可不佩戴。" />
+        </h2>
       </div>
     </header>
 
@@ -84,11 +87,6 @@ const selectedBangboo = computed(() =>
   color: #f0f2f6;
 }
 
-.section-desc {
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
-  color: #9aa3b0;
-}
 
 .refine-row {
   display: flex;
@@ -122,9 +120,5 @@ const selectedBangboo = computed(() =>
     font-size: 0.98rem;
   }
 
-  .section-desc {
-    font-size: 0.72rem;
-    line-height: 1.4;
-  }
 }
 </style>

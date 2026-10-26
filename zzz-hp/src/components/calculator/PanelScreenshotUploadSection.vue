@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
 import type { PanelScreenshotRecognition } from '@/types/panelScreenshot'
 import { fetchPanelOcrStatus, recognizePanelViaTencentOcr, type OcrQuotaInfo } from '@/api/panelOcr'
@@ -247,13 +248,16 @@ async function onUploadTencentOcrJson(event: Event) {
             （请使用米游社面板分享时导出的图片）
           </span>
         </h2>
-        <p class="section-desc">
-          {{
-            embedded
-              ? '识别结果先写入导入预览；点「确定导入」后才落到当前这份面板。'
-              : '识别角色面板并填入导入预览；词条数不再由面板反推，请到「词条导入」页自行录入。也可手动上传 OCR JSON/文本对照。'
-          }}
-        </p>
+        <InfoTip
+          v-if="embedded"
+          label="截图识别说明"
+          text="识别结果先写入导入预览；点「确定导入」后才落到当前这份面板。"
+        />
+        <InfoTip
+          v-else
+          label="图片录入说明"
+          text="识别角色面板并填入导入预览；词条数不再由面板反推，请到「词条导入」页自行录入。也可手动上传 OCR JSON/文本对照。"
+        />
       </div>
       <label class="preview-toggle">
         <input v-model="showImagePreview" type="checkbox" />

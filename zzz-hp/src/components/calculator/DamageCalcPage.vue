@@ -12,6 +12,7 @@ import {
   watch,
 } from 'vue'
 import { storeToRefs } from 'pinia'
+import InfoTip from '@/components/common/InfoTip.vue'
 import BangbooPickerSection from '@/components/calculator/BangbooPickerSection.vue'
 import BuffEffectPickerModal from '@/components/calculator/BuffEffectPickerModal.vue'
 import EnvironmentBuffFilterBar from '@/components/calculator/EnvironmentBuffFilterBar.vue'
@@ -2402,10 +2403,13 @@ defineExpose({ scrollToSection })
       class="calc-mode-section combat-buff-section damage-anchor"
     >
       <header class="calc-mode-header">
-        <h2>局内 Buff 增益</h2>
-        <p class="calc-mode-desc">
-          勾选局内 Buff、补充额外增益，并查看当前局内增益汇总。失衡判定跟招式流程条目走。
-        </p>
+        <h2>
+          局内 Buff 增益
+          <InfoTip
+            label="局内 Buff 说明"
+            text="勾选局内 Buff、补充额外增益，并查看当前局内增益汇总。失衡判定跟招式流程条目走。"
+          />
+        </h2>
       </header>
       <div class="skill-context-row">
         <button type="button" class="buff-open-btn" @click="buffPickerOpen = true">
@@ -2795,11 +2799,6 @@ defineExpose({ scrollToSection })
   color: #f0f2f6;
 }
 
-.calc-mode-desc {
-  margin: 0.25rem 0 0.75rem;
-  font-size: 0.8rem;
-  color: #9aa3b0;
-}
 
 .calc-mode-tabs {
   display: flex;
@@ -2933,10 +2932,6 @@ defineExpose({ scrollToSection })
     font-size: 0.98rem;
   }
 
-  .calc-mode-desc {
-    font-size: 0.72rem;
-    line-height: 1.4;
-  }
 
   .calc-mode-tabs {
     display: grid;

@@ -2,6 +2,7 @@
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { type ExtraBuffGain } from '@/types/extraBuff'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type {
@@ -1102,11 +1103,13 @@ defineExpose({
   <section :id="sectionId" class="section-card panel-section damage-anchor">
     <header class="section-header">
       <div>
-        <h2>伤害计算</h2>
-        <p class="section-desc">
-          全队局外 / 词条 / 局内面板请在「导入」中录入与查看；悬停顶部槽位可预览局外与局内（随 Buff
-          增益实时更新）。此处仅结算伤害结果。
-        </p>
+        <h2>
+          伤害计算
+          <InfoTip
+            label="伤害计算说明"
+            text="全队局外 / 词条 / 局内面板请在「导入」中录入与查看；悬停顶部槽位可预览局外与局内（随 Buff 增益实时更新）。此处仅结算伤害结果。"
+          />
+        </h2>
         <!-- 没面板就不出伤害（所有者口径 2026-09-12）：给一句提示，别让人对着 0 猜 -->
         <p v-if="mainPanelMissing" class="section-desc panel-missing-hint" role="status">
           当前角色还没有面板（局外面板为 0，伤害不计算）——请点顶部「导入」录入或截图识别后「确定导入」。
