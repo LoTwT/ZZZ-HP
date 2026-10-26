@@ -266,11 +266,35 @@ const skillTargetsOf = computed(() => getEffectSkillTargets(first.value))
 function skillTargetLabel(target: BuffSkillTarget) {
   return formatSkillTargetBracket(target, skillSubcategories.value)
 }
+
+/**
+ * 招式 chip 文案：额外 Buff 会同时列出三名队员的小类，同名时补上所属角色名；
+ * 管理端传了 `agentId`（只列本角色），保持原来的纯名字。
+ */
+function skillTargetName(target: BuffSkillTarget) {
+  const base = skillTargetLabel(target).replace(/^\[|\]$/g, '')
+  if (props.agentId || !target.subcategoryId) return base
+  const sub = skillSubcategories.value.find((item) => item.id === target.subcategoryId)
+  if (!sub?.agentId) return base
+  const agent = agents.value.find((item) => item.id === sub.agentId)
+  return agent ? `${base}（${agent.name}）` : base
+}
 function onDraftCategoryChange(category: BuffSkillTargetId) {
   const draft = ensureDraftSkill(first.value)
   draft.category = category
   draft.subcategoryId = null
 }
+/**
+ * 招式小类选项文案：**额外 Buff 不按编辑角色过滤**，所以会同时列出三名队员的小类，
+ * 同名（如「特殊技」）必须带上所属角色名才能区分（Spec §4.2 第 4 项）。
+ * 管理端传了 `agentId`，只列本角色的，保持原来的纯名字。
+ */
+function subcategoryLabel(sub: SkillSubcategory): string {
+  if (props.agentId || !sub.agentId) return sub.name
+  const agent = agents.value.find((item) => item.id === sub.agentId)
+  return agent ? `${sub.name}（${agent.name}）` : sub.name
+}
+
 function subcategoriesForCategory(category: BuffSkillTargetId): SkillSubcategory[] {
   const agentFilter = props.agentId
   return skillSubcategories.value.filter((item) => {
@@ -627,9 +651,7 @@ function resetCondition(key: RevealKey) {
 }
 
 /** 招式 chip 文字：去掉 [ ] 便于压一行 */
-function skillTargetName(target: BuffSkillTarget) {
-  return skillTargetLabel(target).replace(/^\[|\]$/g, '')
-}
+
 
 function onCreateSubcatFromMenu() {
   skillMenuOpen.value = false
@@ -895,7 +917,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                       :key="sub.id"
                       :value="sub.id"
                     >
-                      {{ sub.name }}
+                      {{ subcategoryLabel(sub) }}
                     </option>
                   </select>
                 </label>
