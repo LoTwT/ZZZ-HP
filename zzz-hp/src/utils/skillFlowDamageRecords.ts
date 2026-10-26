@@ -14,10 +14,28 @@ export interface SkillFlowDamageRecord {
   team: number
   agentName: string
   schemeName: string
+  /** 用户自定义名称（可留空；留空时列表回落到方案名） */
+  name?: string
   /** 记录当时三人全名，按下标对齐编队 */
   agentNames: string[]
   /** 新版记录的完整全队快照；旧记录保留总伤，不补造结构。 */
   snapshot?: SkillFlowDamageSnapshot
+}
+
+export const SKILL_FLOW_DAMAGE_RECORD_NAME_MAX = 40
+
+/** 记录名称：只保留单行文本，空白即视为未命名 */
+export function normalizeSkillFlowDamageRecordName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.replace(/\s+/g, ' ').trim().slice(0, SKILL_FLOW_DAMAGE_RECORD_NAME_MAX)
+  return text || undefined
+}
+
+/** 列表展示名：自定义名称优先，未命名时回落到方案名 */
+export function skillFlowDamageRecordLabel(
+  record: Pick<SkillFlowDamageRecord, 'name' | 'schemeName'>,
+): string {
+  return record.name || record.schemeName
 }
 
 function isRecord(value: unknown): value is SkillFlowDamageRecord {
@@ -51,6 +69,7 @@ function normalizeRecord(value: unknown): SkillFlowDamageRecord | null {
       : []
   return {
     ...value,
+    name: normalizeSkillFlowDamageRecordName(value.name),
     agentNames,
     snapshot: normalizeSkillFlowDamageSnapshot(value.snapshot, value.team),
   }

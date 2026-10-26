@@ -14,7 +14,9 @@ import {
 import { skillFlowDamageSegmentHasChanges } from '../src/utils/skillFlowDamageRecordSegments.ts'
 import {
   loadSkillFlowDamageRecords,
+  normalizeSkillFlowDamageRecordName,
   saveSkillFlowDamageRecords,
+  skillFlowDamageRecordLabel,
   SKILL_FLOW_DAMAGE_RECORD_KEY,
 } from '../src/utils/skillFlowDamageRecords.ts'
 
@@ -480,6 +482,25 @@ try {
     storage.setItem(SKILL_FLOW_DAMAGE_RECORD_KEY, 'bad json')
     assert.deepEqual(loadSkillFlowDamageRecords(), [])
   })
+  check('记录名称：压缩空白、空名视为未命名、最长 40 字，展示名优先自定义名称', () => {
+    assert.equal(normalizeSkillFlowDamageRecordName('  爆发前  '), '爆发前')
+    assert.equal(normalizeSkillFlowDamageRecordName('第一行\n第二行'), '第一行 第二行')
+    assert.equal(normalizeSkillFlowDamageRecordName('   '), undefined)
+    assert.equal(normalizeSkillFlowDamageRecordName(123), undefined)
+    assert.equal(normalizeSkillFlowDamageRecordName('.'.repeat(60)).length, 40)
+    assert.equal(skillFlowDamageRecordLabel({ name: '爆发前', schemeName: '方案A' }), '爆发前')
+    assert.equal(skillFlowDamageRecordLabel({ name: '', schemeName: '方案A' }), '方案A')
+    assert.equal(skillFlowDamageRecordLabel({ schemeName: '方案A' }), '方案A')
+  })
+  check('载入时规范化脏名称，不会把空白名带进列表', () => {
+    saveSkillFlowDamageRecords([
+      { ...before, id: 'named', name: '  爆发前  ' },
+      { ...before, id: 'blank', name: '   ' },
+    ])
+    const loaded = loadSkillFlowDamageRecords()
+    assert.equal(loaded[0].name, '爆发前')
+    assert.equal(loaded[1].name, undefined)
+  })
 
   saveSkillFlowDamageRecords([legacy, before, after])
   const mounted = await mountStatsPanel(fixture)
@@ -564,7 +585,7 @@ try {
       assert.equal(mounted.one('[aria-label="对照伤害记录"]').value, saved.id)
     })
     const lastRow = mounted.all('.sf-rec-table tbody tr').at(-1)
-    lastRow.querySelector('button').click()
+    lastRow.querySelector('[aria-label^="删除第"]').click()
     await mounted.settle()
     check('删除选中的记录后自动修正对比选择，旧记录仍保留', () => {
       assert.equal(mounted.one('[aria-label="对照伤害记录"]').value, 'after')
@@ -799,6 +820,73 @@ try {
     })
   } finally {
     addition.unmount()
+  }
+
+  saveSkillFlowDamageRecords([before, after])
+  const renaming = await mountStatsPanel(fixture)
+  try {
+    check('未命名时列表用方案名，每条都有改名入口', () => {
+      assert.equal(renaming.all('.sf-rec-table tbody tr').length, 2)
+      assert.equal(renaming.all('.sf-rec-table tbody .sf-rec-clip')[0].textContent, 'before')
+      assert.equal(renaming.all('[aria-label^="重命名第"]').length, 2)
+    })
+    await renaming.clickLabel('重命名第1条伤害记录')
+    const renameInput = renaming.one('.sf-rec-rename-input')
+    check('点击改名进入编辑，输入框预填当前名称', () => {
+      assert.ok(renameInput, '编辑框未出现')
+      assert.equal(renameInput.value, 'before')
+    })
+    renameInput.value = '  爆发前  '
+    renameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    renameInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await renaming.settle()
+    check('回车提交后列表显示新名称，并写回浏览器存储', () => {
+      assert.equal(renaming.all('.sf-rec-table tbody .sf-rec-clip')[0].textContent, '爆发前')
+      assert.equal(renaming.one('.sf-rec-rename-input'), null)
+      assert.equal(loadSkillFlowDamageRecords()[0].name, '爆发前')
+    })
+    await renaming.clickLabel('重命名第2条伤害记录')
+    const cancelInput = renaming.one('.sf-rec-rename-input')
+    cancelInput.value = '临时名字'
+    cancelInput.dispatchEvent(new Event('input', { bubbles: true }))
+    cancelInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await renaming.settle()
+    check('Esc 取消改名，名称与存储都不变', () => {
+      assert.equal(renaming.all('.sf-rec-table tbody .sf-rec-clip')[1].textContent, 'after')
+      assert.equal(loadSkillFlowDamageRecords()[1].name, undefined)
+    })
+    await renaming.clickLabel('重命名第1条伤害记录')
+    const clearInput = renaming.one('.sf-rec-rename-input')
+    clearInput.value = '   '
+    clearInput.dispatchEvent(new Event('input', { bubbles: true }))
+    clearInput.dispatchEvent(new Event('blur'))
+    await renaming.settle()
+    check('清空名称并失焦后回落到方案名', () => {
+      assert.equal(renaming.all('.sf-rec-table tbody .sf-rec-clip')[0].textContent, 'before')
+      assert.equal(loadSkillFlowDamageRecords()[0].name, undefined)
+    })
+    await renaming.clickLabel('重命名第1条伤害记录')
+    const syncInput = renaming.one('.sf-rec-rename-input')
+    syncInput.value = '爆发前'
+    syncInput.dispatchEvent(new Event('input', { bubbles: true }))
+    syncInput.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await renaming.settle()
+    check('自定义名称同步到对比下拉，并保留方案名以便溯源', () => {
+      const options = renaming.all('[aria-label="基准伤害记录"] option')
+      assert.ok(options[0].textContent.includes('爆发前'), options[0].textContent)
+      assert.ok(options[0].textContent.includes('（before）'), options[0].textContent)
+    })
+    await renaming.clickLabel('重命名第2条伤害记录')
+    const pendingInput = renaming.one('.sf-rec-rename-input')
+    pendingInput.value = '第二行草稿'
+    pendingInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await renaming.clickLabel('重命名第1条伤害记录')
+    check('切换改名行时先落库上一行输入，不静默丢失', () => {
+      assert.equal(loadSkillFlowDamageRecords()[1].name, '第二行草稿')
+      assert.equal(renaming.one('.sf-rec-rename-input').value, '爆发前')
+    })
+  } finally {
+    renaming.unmount()
   }
 
   storage.clear()

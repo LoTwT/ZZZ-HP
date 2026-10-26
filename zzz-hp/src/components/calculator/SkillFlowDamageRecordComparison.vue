@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { SkillFlowDamageRecord } from '@/utils/skillFlowDamageRecords'
+import { skillFlowDamageRecordLabel } from '@/utils/skillFlowDamageRecords'
 import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
 import {
   compareSkillFlowDamageRecords,
@@ -143,7 +144,8 @@ function segmentConditions(
   return labels.join(' · ')
 }
 function optionLabel(record: SkillFlowDamageRecord, index: number) {
-  return `#${index + 1} ${record.schemeName} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
+  const scheme = record.name ? `（${record.schemeName}）` : ''
+  return `#${index + 1} ${skillFlowDamageRecordLabel(record)}${scheme} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
 }
 </script>
 
