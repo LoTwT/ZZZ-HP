@@ -415,8 +415,12 @@ function buildPanelCalcContextForSlot(slotIndex: number) {
  * 全局选择器要的待选配置参数（Spec §2.3 第 6 项 / §5.1 第 1 项）：
  * 用全局 PanelCalcContext（行级例外恒为 null）解析，不产出任何实际贡献。
  */
-function getConfigurationParametersForSlot(slotIndex: number): Record<string, ResolvedEffectParameters> {
-  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: null }
+function getConfigurationParametersForSlot(
+  slotIndex: number,
+  /** 行级例外（组 + 成员合并后的那一行）；缺省 = 全局口径（行级例外恒为 null） */
+  rowOverride?: FlowBuffOverride | null,
+): Record<string, ResolvedEffectParameters> {
+  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: rowOverride ?? null }
   const parameters: Record<string, ResolvedEffectParameters> = {}
   for (const item of collectAllBuffEffects(context)) {
     parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)

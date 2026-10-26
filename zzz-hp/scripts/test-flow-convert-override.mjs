@@ -385,7 +385,7 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
   check('R2 真实默认同步不写额外 Buff，改默认后也不写', !Object.hasOwn(state.bySlot[0].convertInputs, extra.id))
 
   const { r5Fixture } = await import('./_eventElementHarness.mjs')
-  const { resolveEventBuffPreviewInputs } = await import('../src/utils/optimalAffixAlloc.ts')
+  const { resolveEventBuffPreviewInputs, resolveConfigurationParameters } = await import('../src/utils/optimalAffixAlloc.ts')
   const { buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey } = await import('../src/utils/hitEvalCache.ts')
   const { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = await import('../src/utils/skillFlowCalculation.ts')
   for (const mode of ['ordinary', 'extra-slot']) for (const damageType of ['direct', 'anomalyRelease']) {
@@ -397,6 +397,12 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
       resolveEventBuffPreviewInputs, resolveSkillFlowCalculationDetail, skillFlowCalculationContext: ref(context), skillFlowMainExternal: ref(fixture.panels.owner),
       buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey, hitCalcGlobalSignature: ref('preview-fixture|' + mode + '|' + damageType), eventBuffPreviewCache: new Map(),
     })
+    // 组件对页面暴露的「待选配置参数」入口：本文用**真实的共享解析**按同一份上下文算，
+    // 与 PanelCalcSection.getConfigurationParametersForSlot 同语义（它不是被测对象，是输入供给）
+    panel.getConfigurationParametersForSlot = (slotIndex) => {
+      const shared = resolveConfigurationParameters(context, hit, slotIndex)
+      return shared
+    }
     const page = bindVueFunctions(pageUrl, ['buffConvertResolveInputsForSlot', 'flowBuffEffectTextFor'], {
       hits: ref(hits), agents: ref(agents), buildSkillContextFromHit, resolveEventElement,
       activeSlot: ref(0), collectedEffectsForFlowTable: ref(items), flowBuffTextOptions: ref({ selection: null, slotIndex: 0 }), buildFlowBuffEffectText,
