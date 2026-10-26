@@ -450,39 +450,56 @@ const skillMenuOpen = ref(false)
  */
 const condMenuUp = ref(false)
 
-function scrollContainerOf(element: HTMLElement | null): HTMLElement | null {
-  let node = element?.parentElement ?? null
-  while (node) {
-    const overflowY = getComputedStyle(node).overflowY
-    if (overflowY === 'auto' || overflowY === 'scroll') return node
-    node = node.parentElement
-  }
-  return null
-}
-
+/**
+ * 「＋ 条件」菜单定位：**固定定位 + 视口夹紧**。
+ *
+ * 之前用「相对按钮的绝对定位 + 找滚动容器算空间」有两个坑（用户 2026-10-26 反馈"方向有时是反的"）：
+ * ① 容器是卡片里的可滚区域，量出来的"上方空间"和用户看到的并不一致；
+ * ② 曾经给过 140px 最小高度，上方只剩几十像素时会顶出容器、首行被裁。
+ * 现在统一按**视口**算：放得下就朝下，装不下且上方更宽就朝上，再把 left/top 夹进视口。
+ */
 async function toggleCondMenu() {
   condMenuOpen.value = !condMenuOpen.value
-  if (!condMenuOpen.value) return
-  condMenuUp.value = false
+  if (!condMenuOpen.value) {
+    detachCondMenuListeners()
+    return
+  }
   await nextTick()
+  positionCondMenu()
+  window.addEventListener('scroll', positionCondMenu, true)
+  window.addEventListener('resize', positionCondMenu)
+}
+
+function detachCondMenuListeners() {
+  window.removeEventListener('scroll', positionCondMenu, true)
+  window.removeEventListener('resize', positionCondMenu)
+}
+
+function positionCondMenu() {
   const menu = document.querySelector('.cond-menu') as HTMLElement | null
   const anchor = menu?.parentElement ?? null
-  const container = scrollContainerOf(menu)
-  if (!menu || !anchor || !container) return
-  // 先按默认「向下」量一次，再按上/下哪边空间更够决定方向，并把高度夹到可用空间内
+  if (!menu || !anchor) return
+  const margin = 8
   menu.style.maxHeight = ''
+  menu.style.top = '0px'
+  menu.style.left = '0px'
   const wanted = menu.getBoundingClientRect().height
-  const anchorRect = anchor.getBoundingClientRect()
-  const containerRect = container.getBoundingClientRect()
-  const spaceBelow = containerRect.bottom - anchorRect.bottom - 8
-  const spaceAbove = anchorRect.top - containerRect.top - 8
-  if (wanted > spaceBelow && spaceAbove > spaceBelow) {
-    condMenuUp.value = true
-    menu.style.maxHeight = `${Math.max(140, spaceAbove)}px`
-  } else {
-    condMenuUp.value = false
-    menu.style.maxHeight = `${Math.max(140, spaceBelow)}px`
-  }
+  const rect = anchor.getBoundingClientRect()
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - margin)
+  const spaceAbove = Math.max(0, rect.top - margin)
+  const openUp = wanted > spaceBelow && spaceAbove > spaceBelow
+  const available = openUp ? spaceAbove : spaceBelow
+  const maxHeight = Math.max(28, Math.min(wanted, available))
+  const height = Math.min(wanted, maxHeight)
+  const top = openUp ? rect.top - 4 - height : rect.bottom + 4
+  const left = rect.left
+  menu.style.maxHeight = `${maxHeight}px`
+  menu.style.top = `${Math.max(margin, Math.min(top, window.innerHeight - margin - height))}px`
+  menu.style.left = `${Math.max(
+    margin,
+    Math.min(left, window.innerWidth - margin - menu.offsetWidth),
+  )}px`
+  condMenuUp.value = openUp
 }
 
 interface RevealState {
@@ -667,9 +684,13 @@ function onAddSkillTarget() {
 function onDocumentClick() {
   condMenuOpen.value = false
   skillMenuOpen.value = false
+  detachCondMenuListeners()
 }
 onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  detachCondMenuListeners()
+})
 </script>
 
 <template>
@@ -1476,12 +1497,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .cond-menu {
-  position: absolute;
-  /* 按钮固定在条件行最左，菜单向左对齐，避免贴右边界时溢出容器 */
-  left: 0;
-  right: auto;
-  top: calc(100% + 4px);
-  z-index: 30;
+  /* 位置由 positionCondMenu() 按视口算好写进 inline style（fixed 可逃出滚动容器裁剪） */
+  position: fixed;
+  z-index: 2000;
   min-width: 11.5rem;
   max-height: min(60vh, 22rem);
   overflow: auto;
@@ -1495,11 +1513,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
 }
 
-/* 贴着滚动容器底边时向上弹（位置由 toggleCondMenu 实测决定） */
-.cond-menu.is-up {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
+
 
 .cond-item {
   display: flex;

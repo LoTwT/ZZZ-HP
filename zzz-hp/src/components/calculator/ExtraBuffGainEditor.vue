@@ -10,7 +10,7 @@
  * - 任何字段改动都**重建卡片对象并广播新数组**：目录缓存键按对象身份记忆化，
  *   就地改同一个数组会让计算结果不刷新（Spec §4.2 第 6 项）。
  */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AdminBuffEffectRow from '@/components/admin/calculator/AdminBuffEffectRow.vue'
 import type { AgentBuffDoc, BuffDamageType, BuffEffect } from '@/types/calculator'
 import type { ExtraBuffApplySlot, ExtraBuffGain, ExtraBuffSlotIndex } from '@/types/extraBuff'
@@ -176,48 +176,6 @@ function summaryOf(card: ExtraBuffGain): string {
   return `${label} +${num(effect.value ?? 0)}`
 }
 
-/**
- * 左侧是**下拉框**（不是会越撑越高的列表）：条目多时框内滚动，弹窗高度不变。
- * 打开状态不持久化；关闭规则与全站下拉一致（`BuffOverviewPanel` / `AdminBuffEffectRow` 同款）：
- * 点选后关、**点空白处关、按 Esc 关**，监听只在展开期间挂载。
- */
-const selectorOpen = ref(false)
-
-function closeSelector() {
-  selectorOpen.value = false
-}
-
-function onDocumentClick() {
-  closeSelector()
-}
-
-function onDocumentKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeSelector()
-}
-
-watch(selectorOpen, (open) => {
-  if (open) {
-    // 下一帧再挂，避免触发本次点击立刻被判定为"点到外面"
-    void nextTick(() => {
-      document.addEventListener('click', onDocumentClick)
-      document.addEventListener('keydown', onDocumentKeydown)
-    })
-    return
-  }
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onDocumentKeydown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onDocumentKeydown)
-})
-
-function chooseCard(id: string) {
-  selectedId.value = id
-  closeSelector()
-}
-
 defineExpose({
   /** 给测试/调试用：当前卡片数 */
   gainCount: computed(() => local.value.length),
@@ -238,41 +196,26 @@ defineExpose({
         还没有额外 Buff。点「添加增益」新建一条。
       </p>
 
-      <!-- 下拉框：条目多时框内滚动，弹窗高度不跟着涨 -->
-      <div v-else class="extra-buff-selector">
-        <button
-          type="button"
-          class="extra-buff-selector-btn"
-          :aria-expanded="selectorOpen"
-          @click="selectorOpen = !selectorOpen"
-        >
-          <span class="extra-buff-selector-text">
-            <span class="extra-buff-selector-name">{{
-              selectedCard ? listNameOf(selectedCard) : '请选择增益'
-            }}</span>
-            <span v-if="selectedCard" class="extra-buff-selector-sub">
-              {{ appliesToLabel(selectedCard) }} · {{ summaryOf(selectedCard) }}
+      <!--
+        左侧是**清单**：一条一行依次排下去（用户 2026-10-26：下拉框里只看得到一条、点不到其它）。
+        条目多时在框内滚动（`max-height` + `overflow`），弹窗高度不跟着涨。
+      -->
+      <ul v-else class="extra-buff-list">
+        <li v-for="card in local" :key="card.id">
+          <button
+            type="button"
+            class="extra-buff-list-item"
+            :class="{ 'is-active': card.id === selectedId }"
+            :aria-current="card.id === selectedId ? 'true' : undefined"
+            @click="selectedId = card.id"
+          >
+            <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
+            <span class="extra-buff-list-slot">
+              {{ appliesToLabel(card) }} · {{ summaryOf(card) }}
             </span>
-          </span>
-          <span class="extra-buff-selector-caret">▾</span>
-        </button>
-
-        <ul v-if="selectorOpen" class="extra-buff-selector-menu" @click.stop>
-          <li v-for="card in local" :key="card.id">
-            <button
-              type="button"
-              class="extra-buff-selector-item"
-              :class="{ 'is-active': card.id === selectedId }"
-              @click="chooseCard(card.id)"
-            >
-              <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
-              <span class="extra-buff-list-slot">
-                {{ appliesToLabel(card) }} · {{ summaryOf(card) }}
-              </span>
-            </button>
-          </li>
-        </ul>
-      </div>
+          </button>
+        </li>
+      </ul>
     </aside>
 
     <section class="extra-buff-detail">
@@ -384,79 +327,20 @@ defineExpose({
   color: var(--eb-muted);
 }
 
-/* ---------- 左侧下拉框 ---------- */
-.extra-buff-selector {
-  position: relative;
-}
-
-.extra-buff-selector-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  border: 1px solid var(--eb-border);
-  border-radius: 10px;
-  background: var(--eb-input-bg);
-  color: var(--eb-text);
-  padding: 0.55rem 0.7rem;
-  font-size: 0.98rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.extra-buff-selector-btn:hover {
-  border-color: var(--eb-accent);
-}
-
-.extra-buff-selector-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.extra-buff-selector-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.extra-buff-selector-sub {
-  font-size: 0.8rem;
-  color: var(--eb-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.extra-buff-selector-caret {
-  flex-shrink: 0;
-  color: var(--eb-muted);
-}
-
-/* 条目多时在这里滚，弹窗高度不变 */
-.extra-buff-selector-menu {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 40;
-  margin: 0;
-  padding: 0.25rem;
+/* ---------- 左侧清单（条目多时框内滚动，不撑高弹窗） ---------- */
+.extra-buff-list {
   list-style: none;
+  margin: 0;
+  padding: 0.15rem;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  max-height: 18rem;
+  gap: 0.25rem;
+  max-height: 52vh;
   overflow: auto;
-  border: 1px solid var(--eb-border);
-  border-radius: 10px;
-  background: var(--eb-surface);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  overscroll-behavior: contain;
 }
 
-.extra-buff-selector-item {
+.extra-buff-list-item {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -464,7 +348,7 @@ defineExpose({
   gap: 0.15rem;
   text-align: left;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--eb-text);
   padding: 0.45rem 0.55rem;
@@ -472,11 +356,11 @@ defineExpose({
   cursor: pointer;
 }
 
-.extra-buff-selector-item:hover {
+.extra-buff-list-item:hover {
   background: color-mix(in srgb, var(--eb-text) 7%, transparent);
 }
 
-.extra-buff-selector-item.is-active {
+.extra-buff-list-item.is-active {
   border-color: var(--eb-accent);
   background: color-mix(in srgb, var(--eb-accent) 14%, transparent);
 }
@@ -612,8 +496,8 @@ defineExpose({
     padding-bottom: 0.7rem;
   }
 
-  .extra-buff-selector-menu {
-    max-height: 14rem;
+  .extra-buff-list {
+    max-height: 28vh;
   }
 
   .extra-buff-detail {
