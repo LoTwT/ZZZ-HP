@@ -78,6 +78,7 @@ import {
   computeFinalPanel,
   hasExternalPanelForSlot,
   parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
   resolveAnomalyReleaseMultFields,
   resolveAnomalyReleaseSkillConvertMods,
   type BuffSelectionState,
@@ -748,7 +749,8 @@ function mainAgentTeamConvertReadsPanel(ctx: OptimalEvalContext): boolean {
     ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, mainIndex)
     : ctx.panelContext.buffSelection
   for (const item of collectAllBuffEffects(ctx.panelContext)) {
-    if (parseSourceKeySlotIndex(item.sourceKey) !== mainIndex) continue
+    // 额外 Buff 的来源槽位在 extraGainSourceSlot 上（providerSlot 恒 null），与其它转模判定统一解析
+    if (resolveCollectedEffectSourceSlot(item) !== mainIndex) continue
     if (item.effect.applyTarget !== 'team') continue
     if (item.effect.kind !== 'convert' || !item.effect.convert) continue
     if ((item.effect.convert.panelSource ?? 'external') === 'manual') continue

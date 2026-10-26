@@ -938,5 +938,56 @@ console.log('\n[七类修复 R1–R3] 真实缓存、状态隔离与异放来源
   check('R3 异放空来源同样为零', resolveAnomalyReleaseSkillConvertMods(emptyRelease, '电').anomalyReleaseMult === 0)
 }
 
+console.log('\n[复核 2026-10-26] 来源明细不重复、转模标记认额外 Buff 的来源槽位')
+{
+  const { collectPanelBuffModSources, slotHasPanelConvertEffect, invalidateBuffCatalogCache } =
+    await import('../src/utils/panelBuffCalc.ts')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const { makePanelCtx, testAgent, testSlot } = await import('./_effectPipelineHarness.mjs')
+  const convertEffect = {
+    from: 'atk',
+    panelSource: 'external',
+    ratioPercent: 10,
+    initialBase: 0,
+    cap: null,
+    defaultBase: 1000,
+  }
+  const cardOf = (id, kind, extraEffect = {}) =>
+    api.createExtraBuffGain({
+      id,
+      applySlot: 0,
+      sourceSlot: 1,
+      effects: [
+        createEmptyBuffEffect({ id: `${id}-e`, stat: 'atk', kind, enabledDefault: true, ...extraEffect }),
+      ],
+    })
+  invalidateBuffCatalogCache()
+  const ctx = makePanelCtx({
+    teamSlots: [testSlot('a'), testSlot('b')],
+    agents: [testAgent('a'), testAgent('b')],
+    extraGains: [
+      cardOf('show-plain', 'fixed', { value: 10 }),
+      cardOf('show-conv', 'convert', { convert: convertEffect }),
+    ],
+    panelSourceValues: { external: { atk: 1000 }, final: { atk: 1000 } },
+    panelSourceValuesBySlot: new Map([
+      [0, { external: { atk: 1000 }, final: { atk: 1000 } }],
+      [1, { external: { atk: 2000 }, final: { atk: 2000 } }],
+    ]),
+    skillTalentLevelsByAgent: { a: { basic: 6 }, b: { basic: 12 } },
+  })
+  const sources = collectPanelBuffModSources(ctx)
+  const extraSourceKeys = sources.filter((source) => source.key.startsWith('extra-')).map((s) => s.key)
+  check(
+    '展示1 来源明细不含额外 Buff 聚合行（否则与每卡行重复、命中缓存后又消失）',
+    !sources.some((source) => source.key === 'extra'),
+    JSON.stringify(sources.map((source) => source.key)),
+  )
+  check('展示2 额外 Buff 以每卡来源出现', extraSourceKeys.length === 2, JSON.stringify(extraSourceKeys))
+  check('展示3 转模标记按来源槽位认出额外 Buff（槽位 1）', slotHasPanelConvertEffect(ctx, 1) === true)
+  check('展示4 未涉及的槽位不误标（槽位 0）', slotHasPanelConvertEffect(ctx, 0) === false)
+  invalidateBuffCatalogCache()
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

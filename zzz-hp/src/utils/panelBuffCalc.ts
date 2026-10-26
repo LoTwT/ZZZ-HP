@@ -51,7 +51,6 @@ import {
 import type { EnvironmentBuffEntry } from '@/utils/environmentBuffCalc'
 import { resolveAssetUrl } from '@/utils/gameData'
 import {
-  extraGainAppliesToSlot,
   extraGainToEffects,
   resolveExtraGainApplySlot,
 } from '@/utils/extraBuffCalc'
@@ -915,8 +914,8 @@ export function slotHasPanelConvertEffect(
     const effect = item.effect
     if (effect.kind !== 'convert' || !effect.convert) continue
     if ((effect.convert.panelSource ?? 'external') === 'manual') continue
-    const idx = parseSourceKeySlotIndex(item.sourceKey)
-    if (idx === slotIndex) return true
+    // 额外 Buff 的来源槽位在 `extraGainSourceSlot` 上（providerSlot 恒 null），统一走这个解析
+    if (resolveCollectedEffectSourceSlot(item) === slotIndex) return true
   }
   return false
 }
@@ -931,8 +930,7 @@ export function slotParticipatesInConvertBuff(
     if (effect.kind !== 'convert' || !effect.convert) continue
     if ((effect.convert.panelSource ?? 'external') === 'manual') continue
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
-    const idx = parseSourceKeySlotIndex(item.sourceKey)
-    if (idx === slotIndex) return true
+    if (resolveCollectedEffectSourceSlot(item) === slotIndex) return true
   }
   return false
 }
@@ -961,7 +959,7 @@ export function collectConvertSourceMarksForSlot(
     // 技能等级转模没有面板属性值，不参与「转模来源面板属性」收集
     if (isSkillConvertFromKey(effect.convert.from)) continue
     if (requireEnabled && !isEffectEnabled(effect, ctx.buffSelection)) continue
-    if (parseSourceKeySlotIndex(item.sourceKey) !== slotIndex) continue
+    if (resolveCollectedEffectSourceSlot(item) !== slotIndex) continue
     const key = `${source}:${effect.convert.from}`
     if (!marks.has(key)) {
       marks.set(key, { attr: effect.convert.from, panelSource: source })
@@ -1029,7 +1027,7 @@ export function collectConvertSupportSlots(
     if (source === 'manual') continue
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
 
-    const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+    const slotIndex = resolveCollectedEffectSourceSlot(item)
     if (slotIndex == null) continue
 
     const agentId = ctx.teamSlots[slotIndex]?.agentId
@@ -2009,25 +2007,6 @@ export function excludeExtraGainEntries(
   return items.filter((item) => !item.sourceKey.startsWith('extra-'))
 }
 
-/**
- * 行级例外是否关掉了这个额外 Buff。
- *
- * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
- * （见下），所以必须单独判一次 —— 否则会出现"表里关得掉、结算里关不掉"。
- */
-export function isExtraGainDisabledByRowOverride(
-  gain: Pick<ExtraBuffGain, 'id'> & Partial<Pick<ExtraBuffGain, 'effects'>>,
-  override: FlowBuffOverride | null | undefined,
-): boolean {
-  if (!override) return false
-  if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
-  // 单条禁用按**底层效果 id**判；旧数据里可能存的是卡片 id，一并认（Spec §5.1 第 1 项）
-  const effectIds = new Set((gain.effects ?? []).map((effect) => effect.id))
-  return (override.disabledEffectIds ?? []).some(
-    (effectId) => effectId === gain.id || effectIds.has(effectId),
-  )
-}
-
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {
   let total = createEmptyBuffStatModifiers()
   for (const source of sources) {
@@ -2480,23 +2459,6 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       })
     }
   })
-
-  if (ctx.extraGains?.length) {
-    const extraEffects = (ctx.extraGains ?? [])
-      .filter(
-        (gain) =>
-          extraGainAppliesToSlot(gain, ctx.mainSlotIndex) &&
-          !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
-      )
-      .flatMap((gain) => extraGainToEffects(gain))
-    sources.push({
-      key: 'extra',
-      label: '额外 Buff',
-      // 额外增益的数值走统一收集；这条 source 只保留它的效果清单（供来源展示）
-      mods: createEmptyBuffStatModifiers(),
-      effects: extraEffects,
-    })
-  }
 
   return sources
 }
