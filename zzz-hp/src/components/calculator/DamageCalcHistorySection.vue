@@ -795,23 +795,69 @@ function formatImportResult(result: DamageCalcHistoryImportResult): string {
   return `已覆盖导入 ${result.added} 个方案、${result.customSkillCount} 条自建招式、${result.customGroupCount} 个技能组${legacyHint}${missHint}`
 }
 
+function downloadJsonFile(json: string, fileName: string) {
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportFileName(prefix = 'schemes') {
+  return `zzz-hp-${prefix}-${new Date().toISOString().slice(0, 10)}.json`
+}
+
 function exportAll() {
   confirmThen(
     { title: '导出全部方案', message: '确认将当前方案库、自建招式和技能组导出为 JSON 文件？' },
     () => {
       const json = exportDamageCalcHistory(buffStore.skillGroups)
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `zzz-hp-schemes-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadJsonFile(json, exportFileName())
       const parsed = JSON.parse(json) as { warnings?: string[] }
       const n = parsed.warnings?.length ?? 0
       formMessage.value = n
         ? `已导出全部方案、自建招式和技能组（有 ${n} 条引用缺口，见文件 warnings）`
         : '已导出全部方案、自建招式和技能组'
+    },
+  )
+}
+
+/** 选区 → 方案 id（选中目录时包含其下全部方案） */
+function selectedSchemeIds(): string[] {
+  const ids = new Set<string>()
+  for (const path of selectedIds.value) {
+    if (pathType(path) === 'scheme') {
+      ids.add(path)
+      continue
+    }
+    for (const entry of props.entries) {
+      if (entry.folder === path || entry.folder.startsWith(`${path}/`)) ids.add(entry.id)
+    }
+  }
+  return [...ids]
+}
+
+function exportSelected() {
+  const ids = selectedSchemeIds()
+  if (!ids.length) {
+    formMessage.value = '所选目录里没有可导出的方案'
+    return
+  }
+  confirmThen(
+    {
+      title: '导出所选方案',
+      message: `确认导出选中的 ${ids.length} 个方案（连同其引用的自建招式 / 技能组）？`,
+    },
+    () => {
+      const json = exportDamageCalcHistory(buffStore.skillGroups, { schemeIds: ids })
+      downloadJsonFile(json, exportFileName('schemes-selected'))
+      const parsed = JSON.parse(json) as { warnings?: string[] }
+      const n = parsed.warnings?.length ?? 0
+      formMessage.value = n
+        ? `已导出所选 ${ids.length} 个方案（有 ${n} 条引用缺口，见文件 warnings）`
+        : `已导出所选 ${ids.length} 个方案`
     },
   )
 }
@@ -1136,6 +1182,14 @@ defineExpose({
         <div v-if="manageMode" class="scheme-batch">
           <span class="batch-count">已选 {{ selectedIds.length }} 项</span>
           <button type="button" class="batch-btn" @click="selectAllInFolder">全部选择</button>
+          <button
+            type="button"
+            class="batch-btn batch-bexport"
+            :disabled="!selectedIds.length"
+            @click="exportSelected"
+          >
+            导出所选
+          </button>
           <button type="button" class="batch-btn batch-bdel" @click="batchDelete">删除</button>
           <button type="button" class="batch-btn batch-bcopy" @click="batchCopy">复制</button>
           <button type="button" class="batch-btn batch-bcut" @click="batchCut">剪切</button>
