@@ -920,6 +920,13 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const anomalyExpectedFullCrit = anomalyPreCrit * anomalyFullCritZone
 
   // 异放：基础用触发面板；综合增伤加算；综合暴击率/爆伤加算后再乘
+  if (subKind === 'anomalyRelease') {
+    markUse(bonusPanel, 'anomalyReleaseDmgBonus', 'anomalyReleaseDmgBonusZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'anomalyReleaseMult', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'anomalyReleaseMultFactor', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'anomalyReleaseCritRate', 'anomalyReleaseCritRateRatio', ['anomalyCrit'])
+    markUse(bonusPanel, 'anomalyReleaseCritDmg', 'anomalyReleaseCritDmgRatio', ['anomalyCrit'])
+  }
   const anomalyReleaseDmgBonusZone = 1 + bonusPanel.anomalyReleaseDmgBonus / 100
   const anomalyReleaseCombinedDmgBonusZone =
     1 + (bonusPanel.anomalyReleaseDmgBonus + bonusPanel.anomalyDmgBonus) / 100
@@ -946,6 +953,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     durationElement,
   )
 
+  if (subKind === 'disorder') {
+    markUse(bonusPanel, 'disorderDmgBonus', 'disorderDmgBonusZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'disorderCritRate', 'disorderCritZone', ['anomalyCrit'])
+    markUse(bonusPanel, 'disorderCritDmg', 'disorderCritZone', ['anomalyCrit'])
+  }
   const disorderDmgBonusZone = 1 + bonusPanel.disorderDmgBonus / 100
   const disorderCompMultRatio = multPanel.disorderCompMult / 100
   // 只有紊乱/乱流才真正采用这组倍率面板（同一份 multPanel 读数在其它子类里只是顺带算出）
@@ -986,6 +998,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const disorderExpectedNoCrit = disorderPreCrit
   const disorderExpectedFullCrit = disorderPreCrit * disorderFullCritZone
 
+  if (subKind === 'turbulence') {
+    markUse(bonusPanel, 'turbulenceDmgBonus', 'turbulenceDmgBonusZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'turbulenceCritRate', 'turbulenceCritZone', ['anomalyCrit'])
+    markUse(bonusPanel, 'turbulenceCritDmg', 'turbulenceCritZone', ['anomalyCrit'])
+  }
   const turbulenceDmgBonusZone = 1 + bonusPanel.turbulenceDmgBonus / 100
   const turbulenceCombinedDmgBonusZone =
     1 + (bonusPanel.turbulenceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
@@ -1025,6 +1042,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceExpectedFullCrit = turbulencePreCrit * turbulenceFullCritZone
 
   // 耀变综合增伤 = 耀变增伤 + 异常增伤，二者均取异常类触发者面板（含队友赋予的耀变增伤）
+  if (subKind === 'radiance') {
+    markUse(bonusPanel, 'radianceDmgBonus', 'radianceMultZone', ['anomalyTypeBonus'])
+    markUse(bonusPanel, 'radianceCritRate', 'radianceCritZone', ['anomalyCrit'])
+    markUse(bonusPanel, 'radianceCritDmg', 'radianceCritZone', ['anomalyCrit'])
+    markUse(bonusPanel, 'radianceMult', 'radianceMultZone', ['anomalyTypeBonus'])
+  }
   const radianceDmgBonusForCombined = bonusPanel.radianceDmgBonus
   const anomalyDmgBonusForCombined = bonusPanel.anomalyDmgBonus
   const radianceCombinedDmgBonusZone =

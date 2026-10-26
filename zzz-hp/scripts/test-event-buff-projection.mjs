@@ -666,6 +666,21 @@ console.log('== K6 详情实际采用：乘区角色由记录决定（不按伤�
       has(anomaly, 'powerProviderPanel', 'atk') &&
       has(anomaly, 'powerProviderPanel', 'mastery'),
     '')
+  const release = buildUsage('anomalyRelease')
+  // 触发者 === 持有者时面板是同一个对象，按 owner 记（不伪造第二份归属）
+  const bonusRoleFields = release
+    .filter((usage) => usage.usedView === 'anomalyTriggerPanel' || usage.usedView === 'ownerPanel')
+    .map((usage) => String(usage.field))
+  check('K6 异放：类型增伤/倍率/暴击都标在触发者（或同一份 owner）视图上',
+    bonusRoleFields.includes('anomalyReleaseDmgBonus') &&
+      bonusRoleFields.includes('anomalyReleaseMult') &&
+      bonusRoleFields.includes('anomalyReleaseCritDmg') &&
+      !release.some((usage) => usage.usedView === 'powerProviderPanel' && String(usage.field).startsWith('anomalyRelease')),
+    JSON.stringify(release.filter((u) => String(u.field).startsWith('anomalyRelease')).map((u) => [u.usedView, String(u.field)])))
+  check('K6 异放不把紊乱/乱流字段标成已采用',
+    !has(release, 'powerProviderPanel', 'disorderCompMult') &&
+      !has(release, 'anomalyTriggerPanel', 'disorderDmgBonus'),
+    JSON.stringify(release.map((u) => String(u.field))))
   check('K6 抗穿回退：接受触者/提供者任一侧，但必须有记录',
     anomaly.some((usage) => String(usage.field) === 'resPen'),
     JSON.stringify(anomaly.map((u) => String(u.field))))
