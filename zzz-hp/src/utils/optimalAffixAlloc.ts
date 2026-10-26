@@ -797,6 +797,7 @@ function resolveLuminousTeamModifiersForOptimal(
   ctx: OptimalEvalContext,
   mainExternal: PanelStats,
   includeDetails = true,
+  hit?: ResolvedHit,
 ): {
   mutationZone: number
   radianceResPen: number
@@ -809,20 +810,19 @@ function resolveLuminousTeamModifiersForOptimal(
   if (!found) return { mutationZone: 1, radianceResPen: 0 }
   const tSlotIndex = found.slotIndex
   const producerExternal = resolveExternalForAgent(ctx, found.id, tSlotIndex, mainExternal)
+  const luminousContext: PanelCalcContext = hit
+    ? buildEventPanelContext(ctx, mainExternal, hit, tSlotIndex)
+    : {
+        ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
+        skillContext: {
+          damageKind: 'anomaly', categoryId: 'basic', subcategoryId: null,
+          element: found.element, staggerPhase: 'stagger', isFollowUp: false,
+          anomalySubKind: 'radiance',
+        },
+      }
   const breakdown = computeFinalPanel(
     producerExternal,
-    {
-      ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
-      skillContext: {
-        damageKind: 'anomaly',
-        categoryId: 'basic',
-        subcategoryId: null,
-        element: found.element,
-        staggerPhase: 'stagger',
-        isFollowUp: false,
-        anomalySubKind: 'radiance',
-      },
-    },
+    luminousContext,
     includeDetails ? undefined : PANEL_NUMBERS_ONLY,
   )
   const panel = breakdown.finalPanel
@@ -1012,7 +1012,7 @@ export function evaluateOptimalEventDetail(
   let effectiveSub =
     sub && panelOverrides ? mergeSkillSubcategoryMultOverrides(sub, panelOverrides) : sub
 
-  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainPanel, includeDetails)
+  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainPanel, includeDetails, hit)
 
   // 属性异常/异放/耀变类型增伤取触发者；紊乱/乱流取持有者；直伤回落 owner
   let anomalyTriggerPanel = evtFinalPanel

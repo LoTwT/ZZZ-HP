@@ -308,5 +308,20 @@ for (const mode of ['ordinary', 'extra-slot']) for (const disabledBy of ['parent
   const changed = evaluateAffixCountsWithCacheInfo(f.context, counts)
   check('E8 auto role element invalidates actual affix cache', changed.cacheHit, false)
 }
+for (const mode of ['ordinary', 'extra-team']) {
+  const effect = createEmptyBuffEffect({ id: 'event-mutation', stat: 'mutationCoeff', value: 100, applyTarget: 'team', elementFilter: ['电'], enabledDefault: true })
+  const f = eventFixture({ mode, damageType: 'radiance', effects: [effect],
+    agents: [testAgent('owner', { element: '流明', name: '蕾米埃尔' }), testAgent('power', { element: '电' })],
+    prepared: [{ id: 'prepared', skillId: 'event-skill', anomalyPowerAgentId: 'power', triggerAgentId: 'owner' }],
+    panels: { owner: makePanel({ atk: 1000, radianceMult: 360 }), power: makePanel({ atk: 2000, mastery: 100 }) },
+  })
+  const hit = f.hits[0], eid = f.items.find(item => item.effect.id.endsWith('event-mutation')).effect.id
+  const actual = evaluateSkillFlowHit(f.context, null, hit, true)
+  check(`E4 luminous team ${mode} event element match`, actual.result.mutationZone, 2)
+  check(`E5 luminous team ${mode} detail source matches event`, actual.mutationFinalPanel.mutationCoeff, 100)
+  const disabled = { ...hit, buffOverride: { disabledEffectIds: [eid] } }
+  check(`E5 luminous team ${mode} row disable`, evaluateSkillFlowHit(f.context, null, disabled, true).result.mutationZone, 1)
+  check(`E5 luminous team ${mode} preview disable`, resolveEventBuffPreviewInputs(f.context, null, disabled, 0).effectAmounts[eid], 0)
+}
 console.log(`event-element: ${passed} passed, ${failed} failed`)
 process.exitCode = failed ? 1 : 0
