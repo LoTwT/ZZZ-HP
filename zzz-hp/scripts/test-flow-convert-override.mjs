@@ -316,11 +316,23 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
   const stacked = imports['@/utils/buffEffect'].createEmptyBuffEffect({ id: 'component-stack', stat: 'atk', kind: 'stacked', valuePerStack: 10, defaultStacks: 2, maxStacks: 5, enabledDefault: true })
   const item = { effect, sourceKey: 'agent-0-0', blockId: 'component-block', blockName: '测', group: '角色', providerSlot: 0, applicableSlots: [0] }
   const parent = { convertInputsByEffectId: { [effect.id]: 5000 }, stacksByEffectId: { [stacked.id]: 4 } }
+  const { resolveBuffEffectParameters } = imports['@/utils/buffEffect']
+  const parametersForDraft = (rowOverride) => {
+    const base =
+      rowOverride?.convertInputsByEffectId?.[effect.id] ??
+      parent.convertInputsByEffectId[effect.id] ??
+      3000
+    return { [effect.id]: resolveBuffEffectParameters(effect, { overrideBase: base, attrValues: {} }) }
+  }
   const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
     imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText', 'restoreEffectInherit'],
     props: { effects: [item], open: true, override: null, parentOverride: parent,
       globalConvertInput: () => 3000, globalStacksFor: () => 2,
-      convertResolveInputs: () => ({ attrDefaults: {} }) },
+      // 真实页面会给的「待选配置参数」：本夹具用共享解析器按草稿 override 现算（不是 UI 自算）
+      convertResolveInputs: (_slotIndex, rowOverride) => ({
+        attrDefaults: {},
+        configurationParameters: parametersForDraft(rowOverride),
+      }) },
   })
   try {
     check('R4 真实组件输入继承父组 5000', mounted.vm.convertBaseModel(item) === 5000)
@@ -339,7 +351,11 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
     imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText'],
     props: { effects: [], open: true, override: null, parentOverride: parent,
       globalConvertInput: () => 9000, globalStacksFor: () => 9,
-      convertResolveInputs: () => ({ attrDefaults: {} }) },
+      // 真实页面会给的「待选配置参数」：本夹具用共享解析器按草稿 override 现算（不是 UI 自算）
+      convertResolveInputs: (_slotIndex, rowOverride) => ({
+        attrDefaults: {},
+        configurationParameters: parametersForDraft(rowOverride),
+      }) },
   })
   try {
     const extra = { ...item, effect: { ...effect, extraGain: true } }
