@@ -194,9 +194,10 @@ function buildEventCase(modules, mode) {
 async function runMeasurements(rounds, warmup) {
   const probe = createProbe()
   const loading = await loadInstrumented(probe)
-  const { evaluateSkillFlowHit } = loading.modules.skillFlowCalculation
+  const { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = loading.modules.skillFlowCalculation
   const { resolveEventBuffPreviewInputs } = loading.modules.optimalAffixAlloc
-  const { clearHitEvalCache } = loading.modules.hitEvalCache
+  const { buildHitEvalFingerprint, hitEvalCacheKey, internHitEvalContext } =
+    loading.modules.hitEvalCache
 
   const results = []
   // 每个 (mode, path) 用各自新建的上下文：避免上一条路径的热缓存替下一路径预热，
@@ -206,9 +207,22 @@ async function runMeasurements(rounds, warmup) {
       'event-numeric': (item) => evaluateSkillFlowHit(item.context, null, item.hit, false),
       'event-detail': (item) => evaluateSkillFlowHit(item.context, null, item.hit, true),
       'event-preview': (item) => resolveEventBuffPreviewInputs(item.context, null, item.hit, 0),
+      // 与组件同一条真实路径：先取同快照 detail 条目（冷态一次正式重放并写回），再纯投影。
+      // 热态应当命中 detail 轴、效果运算 0 次（K15）。
+      'event-preview-cached': (item) => {
+        const key = hitEvalCacheKey(
+          buildHitEvalFingerprint(item.hit),
+          internHitEvalContext(`bench|${item.mode}`),
+          { ...item.panel },
+          true,
+        )
+        const detail = resolveSkillFlowCalculationDetail(item.context, null, item.hit, key)
+        return resolveEventBuffPreviewInputs(item.context, null, item.hit, 0, detail?.evaluation ?? null)
+      },
     }
     for (const [name, run] of Object.entries(paths)) {
       const item = buildEventCase(loading.modules, mode)
+      item.panel = mode === 'ordinary' ? item.context.panelContext.activeSlotPanels?.owner : item.context.panelContext.activeSlotPanels?.owner
       for (let i = 0; i < warmup; i += 1) run(item)
       const samples = []
       const counts = []
@@ -323,11 +337,18 @@ if (hasFlag('child')) {
     )
   }
 
-  console.log('\n== 效果运算计数（冷态首样本） ==')
+  console.log('\n== 效果运算计数（冷态首样本首轮） ==')
   for (const item of coldSamples[0]?.results ?? []) {
     const count = item.counts[0] ?? {}
     console.log(
       `  ${`${item.mode}/${item.path}`.padEnd(28)} judge=${count.judge ?? 0} op=${count.op ?? 0} ops=${JSON.stringify(count.opsByEffect ?? {})} ${JSON.stringify(count.counters ?? {})}`,
+    )
+  }
+  console.log('\n== 效果运算计数（热态最后一轮，K15 门禁：热态应为 0） ==')
+  for (const item of hot?.results ?? []) {
+    const count = item.counts[item.counts.length - 1] ?? {}
+    console.log(
+      `  ${`${item.mode}/${item.path}`.padEnd(28)} judge=${count.judge ?? 0} op=${count.op ?? 0} counters=${JSON.stringify(count.counters ?? {})}`,
     )
   }
   const hashesStable = [...coldSamples, hot].filter(Boolean).every((run) => run.unchanged)
