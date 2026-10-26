@@ -87,8 +87,10 @@ export interface DamageCalcPanelSnapshot {
     import('@/utils/skillTalentLevels').SkillTalentLevels
   >
   /**
-   * @deprecated 旧格式的扁平额外 Buff 属性。**只读**：仅供导入老配置文件时转成下面的条目
-   * （`PanelCalcSection` 的兼容分支）。新文件不再写它；彻底删除见代办 T23。
+   * @deprecated 旧格式的扁平额外 Buff 属性（扁平增益模型时代）。**当前没有任何读取点**：
+   * 归一化只在 `PanelCalcSection.loadSnapshot` 对 `extraGains` 做，这里的数据会被**静默忽略**
+   * （既不转成条目、也不计入"已跳过 N 条"提示）。用户 2026-10-26 明确：这类旧数据丢了可接受，
+   * 不做兼容迁移。字段本身的删除按代办 T23 处理。
    */
   extraMods?: BuffStatModifiers
   /** 额外 Buff 卡片（类型定义唯一来源：`@/types/extraBuff`） */
