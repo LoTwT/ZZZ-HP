@@ -17,11 +17,12 @@
  */
 import type { SkillGroup } from '@/types/calculator'
 import type { FlowBuffOverride, FlowEntry } from '@/types/damageCalcHistory'
-import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
+import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
 import {
   blockKeyOfCollected,
   getBuffEffectStacks,
   resolveCollectedEffectSourceSlot,
+  resolveCollectedEffectPanelSourceValues,
   type BuffSelectionState,
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
@@ -176,7 +177,7 @@ export function buildFlowBuffEffectText(
     const multi = options.selection as Parameters<typeof getBuffEffectStacks>[0] | null | undefined
     const stacks =
       rowStacks ??
-      (multi && (multi as { bySlot?: unknown }).bySlot
+      (multi && (multi as { bySlot?: unknown }).bySlot && !effect.extraGain
         ? getBuffEffectStacks(
             multi,
             options.slotIndex,
@@ -185,17 +186,15 @@ export function buildFlowBuffEffectText(
             effect.defaultStacks ?? 1,
           )
         : (effect.defaultStacks ?? 1))
-    amount = (effect.valuePerStack ?? 0) * stacks
+    amount = resolveEffectBaseValue(effect, stacks)
   } else if (effect.kind === 'convert') {
-    const panelSourceValues =
-      sourceSlot != null && options.panelSourceValuesBySlot?.[sourceSlot]
-        ? options.panelSourceValuesBySlot[sourceSlot]
-        : options.panelSourceValues
+    const panelSourceValues = resolveCollectedEffectPanelSourceValues(item, options)
     const agentId = sourceSlot != null ? options.agentIdBySlot?.[sourceSlot] : null
     amount = resolveConvertValue(
       effect,
       options.attrDefaults ?? {},
-      rowOverride?.convertInputsByEffectId?.[effect.id] ?? options.convertInputFor?.(effect) ?? null,
+      rowOverride?.convertInputsByEffectId?.[effect.id] ??
+        (!effect.extraGain ? options.convertInputFor?.(effect) : undefined) ?? null,
       panelSourceValues,
       agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
     )

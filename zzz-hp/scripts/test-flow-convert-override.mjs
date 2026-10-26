@@ -299,5 +299,142 @@ console.log('\n[8] 同一转模配置：常规增益与额外 Buff 结果一致�
   )
 }
 
+console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
+{
+  const { mountVueSetup } = await import('./_vueSetupHarness.mjs')
+  const { nextTick } = await import('vue')
+  const imports = {
+    '@/utils/panelBuffCalc': await import('../src/utils/panelBuffCalc.ts'),
+    '@/utils/buffEffect': await import('../src/utils/buffEffect.ts'),
+    '@/utils/flowBuffTable': await import('../src/utils/flowBuffTable.ts'),
+    '@/utils/calculatorUi': await import('../src/utils/calculatorUi.ts'),
+    '@/utils/calcNumberFormat': await import('../src/utils/calcNumberFormat.ts'),
+    '@/utils/skillTalentLevels': await import('../src/utils/skillTalentLevels.ts'),
+    '@/composables/useMaskClose': await import('../src/composables/useMaskClose.ts'),
+  }
+  const effect = convertEffect('component-convert', 'atk', { from: 'atk', panelSource: 'manual', ratioPercent: 10, defaultBase: 3000, initialBase: 0, cap: null })
+  const stacked = imports['@/utils/buffEffect'].createEmptyBuffEffect({ id: 'component-stack', stat: 'atk', kind: 'stacked', valuePerStack: 10, defaultStacks: 2, maxStacks: 5, enabledDefault: true })
+  const item = { effect, sourceKey: 'agent-0-0', blockId: 'component-block', blockName: '测', group: '角色', providerSlot: 0, applicableSlots: [0] }
+  const parent = { convertInputsByEffectId: { [effect.id]: 5000 }, stacksByEffectId: { [stacked.id]: 4 } }
+  const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
+    imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText', 'restoreEffectInherit'],
+    props: { effects: [item], open: true, override: null, parentOverride: parent,
+      globalConvertInput: () => 3000, globalStacksFor: () => 2,
+      convertResolveInputs: () => ({ attrDefaults: {} }) },
+  })
+  try {
+    check('R4 真实组件输入继承父组 5000', mounted.vm.convertBaseModel(item) === 5000)
+    check('R4 真实组件结果继承父组 500', mounted.vm.convertResult(item) === 500)
+    check('R4 真实组件层数继承父组 4', mounted.vm.stacksModel(stacked) === 4)
+    check('R4 真实组件叠层摘要显示 40', mounted.vm.effectResultText({ ...item, effect: stacked }).includes('40'))
+    mounted.props.override = { convertInputsByEffectId: { [effect.id]: 7000 } }
+    await nextTick()
+    check('R4 成员自己的模型覆盖为 700', mounted.vm.convertResult(item) === 700)
+    mounted.vm.restoreEffectInherit(effect)
+    await nextTick()
+    check('R4 恢复继承后回到 500', mounted.vm.convertResult(item) === 500)
+    check('R4 恢复没有改写父组记录', parent.convertInputsByEffectId[effect.id] === 5000)
+  } finally { mounted.unmount() }
+  const extraMounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
+    imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText'],
+    props: { effects: [], open: true, override: null, parentOverride: parent,
+      globalConvertInput: () => 9000, globalStacksFor: () => 9,
+      convertResolveInputs: () => ({ attrDefaults: {} }) },
+  })
+  try {
+    const extra = { ...item, effect: { ...effect, extraGain: true } }
+    check('R4 额外 Buff 成员输入及结果继承父组', extraMounted.vm.convertBaseModel(extra) === 5000 && extraMounted.vm.convertResult(extra) === 500)
+    check('R4 额外 Buff 层数和摘要继承父组', extraMounted.vm.stacksModel({ ...stacked, extraGain: true }) === 4 && extraMounted.vm.effectResultText({ ...item, effect: { ...stacked, extraGain: true } }) === '攻击力（数值） + 40')
+    extraMounted.props.override = { stacksByEffectId: { [stacked.id]: 8 } }
+    await nextTick()
+    check('R6 真实弹窗摘要按最大层数夹紧', extraMounted.vm.effectResultText({ ...item, effect: { ...stacked, extraGain: true } }) === '攻击力（数值） + 50')
+  } finally { extraMounted.unmount() }
+  const extraItem = { ...item, effect: { ...effect, extraGain: true }, sourceKey: 'extra-component', extraGainSourceSlot: 1 }
+  check('R2 预览忽略额外 Buff 的选择器残留', buildFlowBuffEffectText(extraItem, { selection: null, slotIndex: 0, convertInputFor: () => 9000 }).includes('+300'))
+  const emptySource = { ...extraItem, effect: { ...extraItem.effect, convert: { ...effect.convert, panelSource: 'external' } } }
+  check('R5 空来源不能回落受益者攻击', buildFlowBuffEffectText(emptySource, { selection: null, slotIndex: 0, attrDefaults: { atk: 1000 }, panelSourceValues: { external: { atk: 1000 } }, panelSourceValuesBySlot: {} }).endsWith(' 0'))
+  for (const [stacks, expected] of [[8, 50], [1.33, 13.3], [0, 0]]) {
+    for (const extraGain of [false, true]) {
+      const text = buildFlowBuffEffectText({ ...item, effect: { ...stacked, extraGain } }, { selection: null, slotIndex: 0 }, { stacksByEffectId: { [stacked.id]: stacks } })
+      check(`R6 ${extraGain ? '额外' : '普通'} ${stacks} 层显示 ${expected}`, text.endsWith(` ${expected ? '+' : ''}${expected}`), text)
+    }
+  }
+}
+
+console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的真实接线')
+{
+  const { bindVueFunctions, mountVueSetup } = await import('./_vueSetupHarness.mjs')
+  const { ref, nextTick } = await import('vue')
+  const core = await import('../src/utils/panelBuffCalc.ts')
+  const buff = await import('../src/utils/buffEffect.ts')
+  const { createExtraBuffGain } = await import('../src/utils/extraBuffCalc.ts')
+  const { makePanel, mindscapeWithEffects } = await import('./_effectPipelineHarness.mjs')
+  const { buildSkillContextFromHit, skillNeedsDualAgents } = await import('../src/utils/resolvedHit.ts')
+  const pageUrl = new URL('../src/components/calculator/DamageCalcPage.vue', import.meta.url)
+  const blankSelection = () => ({ enabledIds: {}, stacksByEffectId: {}, convertInputs: {}, manualTouchedIds: {} })
+  const state = { team: blankSelection(), bySlot: [blankSelection()] }
+  const normal = convertEffect('sync-normal', 'atk', { from: 'atk', panelSource: 'manual', ratioPercent: 10, defaultBase: 1000 })
+  const extra = { ...normal, convert: { ...normal.convert }, id: 'sync-extra', extraGain: true }
+  const sync = bindVueFunctions(pageUrl, ['syncManualConvertDefaults'], {
+    restoringWorkingState: false, buffPickerSlotOptions: ref([{ index: 0 }]),
+    buildBuffCollectContext: () => ({}), collectAllBuffEffects: () => [{ effect: normal }, { effect: extra }], multiSlotBuffSelection: state,
+  })
+  sync.syncManualConvertDefaults()
+  extra.convert.defaultBase = 2000
+  sync.syncManualConvertDefaults()
+  check('R2 真实默认同步保留普通默认值', state.bySlot[0].convertInputs[normal.id] === 1000)
+  check('R2 真实默认同步不写额外 Buff，改默认后也不写', !Object.hasOwn(state.bySlot[0].convertInputs, extra.id))
+
+  for (const extraGain of [false, true]) {
+    const fixed = buff.createEmptyBuffEffect({ id: 'event-fixed', stat: 'atk', value: 500, enabledDefault: true, elementFilter: ['电'], skillTargets: [{ category: 'basic', subcategoryId: null }] })
+    const convert = convertEffect('event-final', 'dmgBonus', { from: 'atk', panelSource: 'final', ratioPercent: 10, initialBase: 0, cap: null })
+    const agent = testAgent('a', { mindscapeBuffs: extraGain ? undefined : mindscapeWithEffects([fixed, convert]) })
+    if (extraGain) agent.mindscapeBuffs = testAgent('a').mindscapeBuffs
+    const external = makePanel({ atk: 1000 })
+    const ctx = makePanelCtx({ agents: [agent], mainExternalPanel: external, slotExternalPanels: new Map([[0, external]]),
+      extraGains: extraGain ? [fixed, convert].map((effect) => createExtraBuffGain({ id: `event-card-${effect.id}`, name: '事件来源', sourceSlot: 0, applySlot: 0, effects: [effect] })) : [] })
+    const items = collectAllBuffEffects(ctx)
+    const fixedItem = items.find((it) => it.effect.id.endsWith(fixed.id))
+    const convertItem = items.find((it) => it.effect.id.endsWith(convert.id))
+    const override = { disabledEffectIds: [fixedItem.effect.id] }
+    const panel = bindVueFunctions(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), ['getPanelSourceValuesBySlot'], {
+      buildPanelCalcContextForSlot: () => ctx,
+      buildPanelSourceValuesBySlotRecord: core.buildPanelSourceValuesBySlotRecord,
+      resolveExternalPanelForSlotIndex: () => external,
+    })
+    const hit = { id: 'event-a', ownerAgentId: 'a', anomalyPowerAgentId: 'b', skill: { damageType: 'direct' }, damageKind: 'direct', coords: [{ category: 'basic', subcategoryId: null }], staggerPhase: 'stagger', isFollowUp: false }
+    const globalSources = panel.getPanelSourceValuesBySlot(0)
+    const opts = { selection: null, slotIndex: 0, panelSourceValuesBySlot: globalSources, panelSourceValues: globalSources[0] }
+    const page = bindVueFunctions(pageUrl, ['buffConvertResolveInputsForSlot', 'flowBuffEffectTextFor'], {
+      hits: ref([hit]), agents: ref([agent, testAgent('b', { element: '冰' })]), buildSkillContextFromHit, skillNeedsDualAgents,
+      activeSlot: ref(0), collectedEffectsForFlowTable: ref(items), flowBuffTextOptions: ref(opts), buildFlowBuffEffectText,
+      panelCalcSectionRef: ref({ ...panel, getAttrDefaultsForSlot: () => ({ atk: 1000 }), panelSourceValuesBySlot: globalSources }),
+    })
+    const rowInputs = page.buffConvertResolveInputsForSlot(0, override, hit.id)
+    const rowMods = collectPanelBuffMods({ ...ctx, rowBuffOverride: override, panelSourceValues: rowInputs.panelSourceValues, panelSourceValuesBySlot: new Map(Object.entries(rowInputs.panelSourceValuesBySlot).map(([key, value]) => [Number(key), value])) })
+    check(`R5 ${extraGain ? '额外' : '普通'} A 行结算与真实页面文本均为 100`, rowMods.dmgBonus === 100 && page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).endsWith('+100'))
+    check(`R5 ${extraGain ? '额外' : '普通'} B 行与全局仍为 150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hit.id).endsWith('+150') && buildFlowBuffEffectText(convertItem, opts).endsWith('+150'))
+    const imports = {
+      '@/utils/panelBuffCalc': core, '@/utils/buffEffect': buff,
+      '@/utils/flowBuffTable': await import('../src/utils/flowBuffTable.ts'),
+      '@/utils/calculatorUi': await import('../src/utils/calculatorUi.ts'),
+      '@/utils/calcNumberFormat': await import('../src/utils/calcNumberFormat.ts'),
+      '@/utils/skillTalentLevels': await import('../src/utils/skillTalentLevels.ts'),
+      '@/composables/useMaskClose': await import('../src/composables/useMaskClose.ts'),
+    }
+    const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
+      imports, expose: ['convertResult'], props: { effects: items, open: true, override: null, rowKey: hit.id, convertResolveInputs: page.buffConvertResolveInputsForSlot },
+    })
+    try {
+      check(`R5 ${extraGain ? '额外' : '普通'} 打开弹窗初值 150`, mounted.vm.convertResult(convertItem) === 150)
+      mounted.props.override = override
+      await nextTick()
+      check(`R5 ${extraGain ? '额外' : '普通'} 弹窗内修改后来源实时变为 100`, mounted.vm.convertResult(convertItem) === 100)
+    } finally { mounted.unmount() }
+    hit.coords = [{ category: 'special', subcategoryId: null }]
+    check(`R5 ${extraGain ? '额外' : '普通'} 来源面板按真实事件招式条件匹配`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hit.id).endsWith('+100'))
+  }
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

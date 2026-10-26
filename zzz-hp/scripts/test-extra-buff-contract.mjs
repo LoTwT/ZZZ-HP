@@ -294,11 +294,13 @@ console.log('\n[7] 同 id 卡片逐字段改动：缓存与清缓存结果一致
         panelSourceValues: { external: { atk: 2000 }, final: { atk: 2000 } },
       })
 
+    const ctx = makeCtx()
+    const first = collectPanelBuffMods(ctx)
+    const warm = collectPanelBuffMods(ctx)
     invalidateBuffCatalogCache()
-    const warm = collectPanelBuffMods(makeCtx())
-    invalidateBuffCatalogCache()
-    const cold = collectPanelBuffMods(makeCtx())
+    const cold = collectPanelBuffMods(ctx)
     const same =
+      first.atk === cold.atk && first.dmgBonus === cold.dmgBonus &&
       warm.atk === cold.atk && warm.dmgBonus === cold.dmgBonus
     check(`缓存命中与清缓存一致：${variant.label}`, same, `warm atk=${warm.atk} dmg=${warm.dmgBonus} / cold atk=${cold.atk} dmg=${cold.dmgBonus}`)
     results.push(`${warm.atk}/${warm.dmgBonus}`)
@@ -872,6 +874,66 @@ console.log('\n[12] §7.2 第 18/21 项：只施加一次、页级与词条增�
     extraGains: [pageCard, affixCard],
   }).entries.filter((entry) => entry.sourceKey.startsWith('extra-'))
   check('#21 两条卡片各出一列（不合并）', coexistEntries.length === 2, String(coexistEntries.length))
+}
+
+console.log('\n[七类修复 R1–R3] 真实缓存、状态隔离与异放来源')
+{
+  const { collectPanelBuffMods, collectPanelBuffModSources, invalidateBuffCatalogCache,
+    resolveAnomalyReleaseSkillConvertMods } = await import('../src/utils/panelBuffCalc.ts')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const { makePanelCtx, testAgent, testSlot } = await import('./_effectPipelineHarness.mjs')
+  const card = (id, convert, extra = {}) => api.createExtraBuffGain({
+    id, applySlot: 0, sourceSlot: 1,
+    effects: [createEmptyBuffEffect({ id: `${id}-e`, stat: 'atk', kind: 'convert',
+      enabledDefault: true, convert, ...extra })],
+  })
+  const convert = { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: 1000 }
+  const context = (gain, extra = {}) => makePanelCtx({
+    teamSlots: [testSlot('a'), testSlot('b')], agents: [testAgent('a'), testAgent('b')],
+    extraGains: [gain], panelSourceValues: { external: { atk: 1000 }, final: { atk: 1000 } },
+    panelSourceValuesBySlot: new Map([[0, { external: { atk: 1000 }, final: { atk: 1000 } }],
+      [1, { external: { atk: 2000 }, final: { atk: 2000 } }]]),
+    skillTalentLevelsByAgent: { a: { basic: 6 }, b: { basic: 12 } }, ...extra,
+  })
+  const gain = card('real-cache', convert)
+  const ctx = context(gain) // 此后复用同一上下文，不再调用会清缓存的 makePanelCtx。
+  const first = collectPanelBuffMods(ctx).atk
+  const hit = collectPanelBuffMods(ctx).atk
+  const sources = collectPanelBuffModSources(ctx).reduce((sum, source) => sum + source.mods.atk, 0)
+  invalidateBuffCatalogCache()
+  const cold = collectPanelBuffMods(ctx).atk
+  check('R1 首次/真实命中/来源合计/清缓存一致为 200', [first, hit, sources, cold].every((value) => value === 200), JSON.stringify({ first, hit, sources, cold }))
+  const skill = card('real-skill', { ...convert, from: 'skillLevelBasic' }, { stat: 'anomalyReleaseMult' })
+  const skillCtx = context(skill)
+  check('R1 技能等级首次为 1.2', collectPanelBuffMods(skillCtx).anomalyReleaseMult === 1.2)
+  check('R1 技能等级命中仍为 1.2', collectPanelBuffMods(skillCtx).anomalyReleaseMult === 1.2)
+  check('R3 异放入口读取独立来源槽位 12 级', resolveAnomalyReleaseSkillConvertMods(skillCtx, '电').anomalyReleaseMult === 1.2)
+  const manual = card('isolated', { ...convert, panelSource: 'manual', defaultBase: 2000 })
+  const selection = { enabledIds: {}, stacksByEffectId: {}, convertInputs: { 'isolated-e': 1000 } }
+  const isolated = context(manual, { buffSelection: selection, rowBuffOverride: { stacksByEffectId: { unrelated: 1 } } })
+  check('R2 无关行级参数不能带回选择器旧基数', collectPanelBuffMods(isolated).atk === 200)
+  check('R2 真正缓存命中仍忽略选择器旧基数', collectPanelBuffMods(isolated).atk === 200)
+  const own = context(manual, { buffSelection: selection, rowBuffOverride: { convertInputsByEffectId: { 'isolated-e': 3000 } } })
+  check('R2 自己的行覆盖仍生效为 300', collectPanelBuffMods(own).atk === 300)
+  const release = card('release-input', { ...convert, panelSource: 'manual', defaultBase: 2000 }, { stat: 'anomalyReleaseMult' })
+  const releaseCtx = context(release, { buffSelection: { enabledIds: {}, stacksByEffectId: {}, convertInputs: { 'release-input-e': 9000 } } })
+  check('R3 异放入口也隔离选择器残留', resolveAnomalyReleaseSkillConvertMods(releaseCtx, '电').anomalyReleaseMult === 200)
+  const fromOne = card('release-slot-one', convert, { stat: 'anomalyReleaseMult' })
+  const fromZero = api.createExtraBuffGain({ ...fromOne, id: 'release-slot-zero', sourceSlot: 0,
+    effects: [createEmptyBuffEffect({ ...fromOne.effects[0], id: 'release-zero-e' })] })
+  const twoSources = context(fromOne, { extraGains: [fromOne, fromZero] })
+  check('R3 属性转模保留两个来源：200 + 100 = 300', resolveAnomalyReleaseSkillConvertMods(twoSources, '电').anomalyReleaseMult === 300)
+  const { mindscapeWithEffects } = await import('./_effectPipelineHarness.mjs')
+  const ordinaryAgent = testAgent('b', { mindscapeBuffs: mindscapeWithEffects([
+    createEmptyBuffEffect({ id: 'release-ordinary-e', kind: 'convert', stat: 'anomalyReleaseMult', applyTarget: 'team', enabledDefault: true, convert: { ...convert, from: 'skillLevelBasic' } }),
+  ]) })
+  const ordinary = context(skill, { extraGains: [], agents: [testAgent('a'), ordinaryAgent] })
+  check('R3 普通队友增益仍读取来源技能 12 级', resolveAnomalyReleaseSkillConvertMods(ordinary, '电').anomalyReleaseMult === 1.2)
+  const empty = context(gain, { teamSlots: [testSlot('a'), testSlot('')], panelSourceValuesBySlot: new Map() })
+  check('R1 空来源首次为零', collectPanelBuffMods(empty).atk === 0)
+  check('R1 空来源缓存命中仍为零', collectPanelBuffMods(empty).atk === 0)
+  const emptyRelease = context(fromOne, { teamSlots: [testSlot('a'), testSlot('')], panelSourceValuesBySlot: new Map() })
+  check('R3 异放空来源同样为零', resolveAnomalyReleaseSkillConvertMods(emptyRelease, '电').anomalyReleaseMult === 0)
 }
 
 console.log(`\n结果：${passed} passed, ${failed} failed`)

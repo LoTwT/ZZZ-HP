@@ -133,11 +133,11 @@ const props = defineProps<{
    * 单元格文本：按**该行合并后的例外**（组 + 成员）取事件值。
    * 与 `buffEffectTexts`（列级说明）分开：单元格显示"这一行吃多少"，列头说明保留全局口径。
    */
-  buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null) => string | null
+  buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
   /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
-  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
+  convertResolveInputs?: (slotIndex: number, rowOverride?: FlowBuffOverride | null, rowKey?: string | null) => ConvertResolveInputs
 }>()
 
 const emit = defineEmits<{
@@ -162,6 +162,11 @@ const buffOverrideOpen = computed({
 const buffOverrideEntry = computed(() =>
   currentSlot.value?.flow.find((item) => item.id === buffOverrideEntryId.value) ?? null,
 )
+
+const buffOverrideRowKey = computed(() => flowBuffTableRows.value.find((row) =>
+  row.entryId === buffOverrideEntryId.value &&
+  (buffOverrideMemberKey.value ? row.memberKey === buffOverrideMemberKey.value : row.kind !== 'member'),
+)?.key)
 
 /** 正在编辑的组内成员（整行编辑时为 null） */
 const buffOverrideMember = computed(() => {
@@ -208,6 +213,7 @@ const buffOverrideParent = computed<FlowBuffOverride | null>(() => {
 /** 本行弹窗的「继承全局」读取函数：与局内增益同一份按槽合并的勾选状态（multi → 槽位合并） */
 
 function globalStacksFor(effect: BuffEffect): number {
+  if (effect.extraGain) return effect.defaultStacks ?? 1
   const multi = props.multiBuffSelection
   if (!multi) return effect.defaultStacks ?? 1
   return (
@@ -222,6 +228,7 @@ function globalStacksFor(effect: BuffEffect): number {
 }
 
 function globalConvertInput(effect: BuffEffect): number | undefined {
+  if (effect.extraGain) return undefined
   const multi = props.multiBuffSelection
   if (!multi) return undefined
   return getBuffEffectConvertInput(
@@ -369,7 +376,7 @@ function flowBuffCellText(rowKey: string, effectId: string): string | null {
     ? ((currentSlot.value?.flow ?? []).find((item) => item.id === row.entryId) ?? null)
     : null
   const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
-  return props.buffEffectTextFor?.(effectId, rowOverride) ?? null
+  return props.buffEffectTextFor?.(effectId, rowOverride, rowKey) ?? null
 }
 
 const flowBuffTableSubtitle = computed(() => {  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
@@ -3480,6 +3487,7 @@ const showcaseTitle = computed(() => {
               :global-stacks-for="globalStacksFor"
               :global-convert-input="globalConvertInput"
               :parent-override="buffOverrideParent"
+              :row-key="buffOverrideRowKey"
               :slot-index="activeSlotIndex"
               :convert-resolve-inputs="convertResolveInputs"
               :skill-talent-levels-by-agent="skillTalentLevelsByAgent"

@@ -147,6 +147,8 @@ import {
   resolveFlow,
   resolveSkillPreviews,
   buildGenericPanelSkillContext,
+  buildSkillContextFromHit,
+  skillNeedsDualAgents,
   schemeSlotsHaveContent,
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
@@ -1117,29 +1119,46 @@ const flowBuffEffectTexts = computed(() =>
 function flowBuffEffectTextFor(
   effectId: string,
   rowOverride: FlowBuffOverride | null,
+  rowKey?: string | null,
 ): string | null {
   const item = collectedEffectsForFlowTable.value.find((entry) => entry.effect.id === effectId)
   if (!item) return null
-  return buildFlowBuffEffectText(item, flowBuffTextOptions.value, rowOverride)
+  const options = item.effect.kind === 'convert'
+    ? { ...flowBuffTextOptions.value, ...buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey) }
+    : flowBuffTextOptions.value
+  return buildFlowBuffEffectText(item, options, rowOverride)
 }
 
 /**
  * 本行增益例外弹窗的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）。
  *
- * **按槽位现给**（弹窗打开时取一次）：转模行的数值与局内增益选择器同一套口径，
- * 且在页面渲染期不做多余的面板取值计算。
+ * 用当前事件与合并后的行级例外构建来源面板；弹窗内修改例外时同样重新求值。
  */
-function buffConvertResolveInputsForSlot(slotIndex: number): ConvertResolveInputs {
+function buffConvertResolveInputsForSlot(
+  slotIndex: number,
+  rowOverride?: FlowBuffOverride | null,
+  rowKey?: string | null,
+): ConvertResolveInputs {
+  const hit = rowKey ? hits.value.find((item) => item.id === rowKey) : undefined
+  const sourceAgentId = hit
+    ? (skillNeedsDualAgents(hit.skill.damageType) ? hit.anomalyPowerAgentId : hit.ownerAgentId)
+    : undefined
+  const element = agents.value.find((agent) => agent.id === sourceAgentId)?.element
+  const eventSources = panelCalcSectionRef.value?.getPanelSourceValuesBySlot?.(
+    slotIndex,
+    rowOverride,
+    hit ? buildSkillContextFromHit(hit, element) : undefined,
+  )
   return {
     attrDefaults:
       panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(slotIndex) ??
       panelCalcSectionRef.value?.convertAttrDefaults ??
       {},
     panelSourceValues:
-      panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(slotIndex) ??
+      eventSources?.[slotIndex] ?? panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(slotIndex) ??
       panelCalcSectionRef.value?.convertPanelSourceValues ??
       undefined,
-    panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+    panelSourceValuesBySlot: eventSources ?? panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
   }
 }
 
@@ -1240,29 +1259,32 @@ watch(
   },
 )
 
+function syncManualConvertDefaults() {
+  if (restoringWorkingState) return
+  for (const opt of buffPickerSlotOptions.value) {
+    const effects = collectAllBuffEffects(buildBuffCollectContext(opt.index))
+    for (const item of effects) {
+      if (item.effect.extraGain) continue
+      if (item.effect.kind !== 'convert' || !item.effect.convert) continue
+      const source = item.effect.convert.panelSource ?? 'external'
+      if (source !== 'manual') continue
+      const store =
+        item.effect.applyTarget === 'team'
+          ? multiSlotBuffSelection.team
+          : multiSlotBuffSelection.bySlot[opt.index]
+      if (!store) continue
+      const id = item.effect.id
+      if (id in store.convertInputs) continue
+      const configured = item.effect.convert.defaultBase
+      store.convertInputs[id] =
+        configured != null && Number.isFinite(configured) ? configured : 0
+    }
+  }
+}
+
 watch(
   () => panelCalcSectionRef.value?.convertAttrDefaults,
-  () => {
-    if (restoringWorkingState) return
-    for (const opt of buffPickerSlotOptions.value) {
-      const effects = collectAllBuffEffects(buildBuffCollectContext(opt.index))
-      for (const item of effects) {
-        if (item.effect.kind !== 'convert' || !item.effect.convert) continue
-        const source = item.effect.convert.panelSource ?? 'external'
-        if (source !== 'manual') continue
-        const store =
-          item.effect.applyTarget === 'team'
-            ? multiSlotBuffSelection.team
-            : multiSlotBuffSelection.bySlot[opt.index]
-        if (!store) continue
-        const id = item.effect.id
-        if (id in store.convertInputs) continue
-        const configured = item.effect.convert.defaultBase
-        store.convertInputs[id] =
-          configured != null && Number.isFinite(configured) ? configured : 0
-      }
-    }
-  },
+  syncManualConvertDefaults,
 )
 
 watch(
@@ -1753,7 +1775,7 @@ function applyWorkingState(entry: {
   if (entry.envBuffFrontierId != null) envBuffFrontierId.value = entry.envBuffFrontierId
   if (entry.envBuffNodeId != null) envBuffNodeId.value = entry.envBuffNodeId
 
-  const applyPanelSnapshot = () => {
+  const applyPanelSnapshot = (isRestoreReplay = false) => {
     if (!entry.panelState) return
     const panelState = {
       ...entry.panelState,
@@ -1763,6 +1785,7 @@ function applyWorkingState(entry: {
     }
     panelCalcSectionRef.value?.loadSnapshot(panelState, {
       preserveBaseDamageSource: entry.preserveBaseDamageSource,
+      isRestoreReplay,
     })
     for (const key of Object.keys(skillTalentLevelsByAgent)) delete skillTalentLevelsByAgent[key]
     const talentMap = entry.panelState.skillTalentLevelsByAgent
@@ -1781,7 +1804,7 @@ function applyWorkingState(entry: {
   void nextTick(() => {
     multiSlotBuffSelection.team = restoredBuff.team
     multiSlotBuffSelection.bySlot = restoredBuff.bySlot
-    applyPanelSnapshot()
+    applyPanelSnapshot(true)
     void nextTick(() => {
       persistWorkingDraftNow(true)
       restoringWorkingState = false

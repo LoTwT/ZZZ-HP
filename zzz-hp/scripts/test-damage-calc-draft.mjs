@@ -439,5 +439,39 @@ console.log('[6] 额外 Buff 草稿往返：结构完整、空数组不回退旧
     JSON.stringify({ n: mixed.gains.length, d: mixed.discardedCount }))
 }
 
+console.log('\n[七类修复 R7] 真实 loadSnapshot 的加载/重放/关闭生命周期')
+{
+  const { bindVueFunctions } = await import('./_vueSetupHarness.mjs')
+  const { ref } = await import('vue')
+  const { normalizeExtraGains, serializeExtraGains, createExtraBuffGain } = await import('../src/utils/extraBuffCalc.ts')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const state = { extraGains: ref([]), extraGainsDiscardedCount: ref(0),
+    externalPanel: {}, enemyInput: ref({}), baseDamageSource: ref('atk'),
+    loadAffixFromCurrentSlot: () => {}, createDefaultExternalPanel: () => ({}),
+    normalizeDamageEnemyInput: () => ({ level: 60 }), normalizeExtraGains, serializeExtraGains }
+  const { loadSnapshot, dismissExtraGainsNotice } = bindVueFunctions(
+    new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url),
+    ['loadSnapshot', 'dismissExtraGainsNotice'], state)
+  const invalid = { extraGains: [{ id: 'legacy', stat: 'atk', value: 50 }] }
+  loadSnapshot(invalid)
+  check('R7 无效加载提示 1', state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [] }, { isRestoreReplay: true })
+  check('R7 同次规范化重放不抹首次提示', state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [], externalPanel: { atk: 2000 } })
+  check('R7 明确加载合法空方案清除旧提示', state.extraGainsDiscardedCount.value === 0)
+  check('R7 其他快照字段仍正常恢复', state.externalPanel.atk === 2000)
+  const valid = createExtraBuffGain({ id: 'valid-load', name: '合法卡片', applySlot: 0, sourceSlot: 0, effects: [createEmptyBuffEffect({ id: 'valid-load-e', stat: 'atk', value: 20 })] })
+  loadSnapshot({ extraGains: [valid, ...invalid.extraGains] })
+  check('R7 混合快照保留合法卡片并提示 1', state.extraGains.value.length === 1 && state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [valid] })
+  check('R7 明确加载内容相同的合法非空方案也清除提示', state.extraGains.value.length === 1 && state.extraGainsDiscardedCount.value === 0)
+  loadSnapshot(invalid)
+  dismissExtraGainsNotice()
+  loadSnapshot(invalid, { isRestoreReplay: true })
+  check('R7 关闭后同次重放不重新提示', state.extraGainsDiscardedCount.value === 0)
+  loadSnapshot(invalid)
+  check('R7 再次明确加载相同无效源重新提示', state.extraGainsDiscardedCount.value === 1)
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

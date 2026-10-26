@@ -11,9 +11,10 @@ import type {
   BaseDamageSource,
   CharacterAttrKey,
   DriveDiscBuffDoc,
+  SkillCalcContext,
   WengineBuffDoc,
 } from '@/types/calculator'
-import type { DamageCalcPanelSnapshot, DamageCalcSchemePanelSnapshot } from '@/types/damageCalcHistory'
+import type { DamageCalcPanelSnapshot, DamageCalcSchemePanelSnapshot, FlowBuffOverride } from '@/types/damageCalcHistory'
 import {
   applyAgentBaseToPanelStats,
   createDefaultExternalPanel,
@@ -419,11 +420,19 @@ function getAttrDefaultsForSlot(slotIndex: number) {
 }
 
 function getPanelSourceValuesForSlot(slotIndex: number) {
-  const record = buildPanelSourceValuesBySlotRecord(
-    buildPanelCalcContextForSlot(slotIndex),
+  return getPanelSourceValuesBySlot(slotIndex)[slotIndex]
+}
+
+function getPanelSourceValuesBySlot(
+  slotIndex: number,
+  rowOverride?: FlowBuffOverride | null,
+  skillContext?: SkillCalcContext,
+) {
+  const context = buildPanelCalcContextForSlot(slotIndex)
+  return buildPanelSourceValuesBySlotRecord(
+    { ...context, rowBuffOverride: rowOverride, skillContext: skillContext ?? context.skillContext },
     resolveExternalPanelForSlotIndex(slotIndex),
   )
-  return record[slotIndex]
 }
 
 /**
@@ -976,7 +985,7 @@ function dismissExtraGainsNotice() {
 
 function loadSnapshot(
   snapshot: DamageCalcPanelSnapshot | DamageCalcSchemePanelSnapshot,
-  options?: { preserveBaseDamageSource?: boolean },
+  options?: { preserveBaseDamageSource?: boolean; isRestoreReplay?: boolean },
 ) {
   // baseDamageSource 属于计算器内部公式入口；方案快照不应影响它。
   // 只有在恢复“工作草稿”（需要沿用当前页运行时状态）时才保留。
@@ -987,18 +996,9 @@ function loadSnapshot(
   loadAffixFromCurrentSlot()
   // 恢复是**唯一的丢弃点**：一次归一化同时拿到合法卡片与丢弃数（Spec §6 第 3、6 项）
   const normalizedExtraGains = normalizeExtraGains(snapshot.extraGains)
-  /**
-   * 同一份快照会被再应用一次（换人 watch 在恢复同一轮里写回面板快照）：
-   * 那次再应用拿到的是**已归一化**的数组，丢弃数必然为 0。若直接覆盖，
-   * 用户刚看到的"已跳过 N 条"会被悄悄抹掉（Spec §6 第 8 项要求不因重算消失）。
-   * 因此：结果与当前一致且没有新的丢弃时，视为幂等重放，保留现有提示状态。
-   */
-  const nextSignature = JSON.stringify(serializeExtraGains(normalizedExtraGains.gains))
-  const currentSignature = JSON.stringify(serializeExtraGains(extraGains.value))
-  const isIdempotentReplay =
-    normalizedExtraGains.discardedCount === 0 && nextSignature === currentSignature
-  if (!isIdempotentReplay) {
-    extraGains.value = normalizedExtraGains.gains
+  extraGains.value = normalizedExtraGains.gains
+  // 同次恢复的 nextTick 重放只恢复数据；提示沿用首次加载或用户关闭后的状态。
+  if (!options?.isRestoreReplay) {
     extraGainsDiscardedCount.value = normalizedExtraGains.discardedCount
   }
   Object.assign(enemyInput.value, normalizeDamageEnemyInput(snapshot.enemyInput))
@@ -1041,6 +1041,7 @@ defineExpose({
   panelSourceValuesBySlot,
   getAttrDefaultsForSlot,
   getPanelSourceValuesForSlot,
+  getPanelSourceValuesBySlot,
   panelBreakdown,
   enemyInput,
   slotPanelPreviews: computed(() => {

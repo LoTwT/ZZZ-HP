@@ -1124,6 +1124,8 @@ export interface BuffModSource {
   note?: string
   effects?: BuffEffect[]
   blockName?: string
+  /** 缓存重建运算包时保留真实来源及选择器隔离策略。 */
+  sourceOptions?: PackSourceOptions
 }
 
 export interface CollectedEffect {
@@ -1206,6 +1208,39 @@ function zeroSourceValuesFor(effects: readonly BuffEffect[]): PanelSourceValues 
   return { external: { ...zero }, final: { ...zero } }
 }
 
+function sourceOptionsForCollectedEffect(
+  item: CollectedEffect,
+  ctx: PanelCalcContext,
+  effects: readonly BuffEffect[],
+): PackSourceOptions | undefined {
+  if (!item.effect.extraGain) return undefined
+  const sourceSlotIndex = resolveCollectedEffectSourceSlot(item)
+  const available = sourceSlotIndex != null && Boolean(ctx.teamSlots[sourceSlotIndex]?.agentId)
+  return {
+    sourceSlotIndex,
+    panelSourceValuesOverride: available ? undefined : zeroSourceValuesFor(effects),
+    extraGainPack: true,
+  }
+}
+
+/** 展示与结算共用来源缺失规则，不能把有主的空来源替换为受益者面板。 */
+export function resolveCollectedEffectPanelSourceValues(
+  item: CollectedEffect,
+  inputs: {
+    panelSourceValues?: PanelSourceValues
+    panelSourceValuesBySlot?: Record<number, PanelSourceValues | undefined>
+  },
+): PanelSourceValues | undefined {
+  const sourceSlot = resolveCollectedEffectSourceSlot(item)
+  if (sourceSlot != null && inputs.panelSourceValuesBySlot?.[sourceSlot]) {
+    return inputs.panelSourceValuesBySlot[sourceSlot]
+  }
+  if (item.effect.extraGain || (sourceSlot != null && inputs.panelSourceValuesBySlot)) {
+    return zeroSourceValuesFor([item.effect])
+  }
+  return inputs.panelSourceValues
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
@@ -1232,8 +1267,9 @@ function resolvePackMods(
   const slotAgentId =
     sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
   // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
-  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
   const isExtraPack = sourceOptions?.extraGainPack === true
+  const selection = isExtraPack ? null : ctx.buffSelection
+  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
   return resolveEffectsToMods(effects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
@@ -1999,6 +2035,7 @@ type BuffCatalogPack = {
   nonConvertEffects: BuffEffect[]
   convertEffects: BuffEffect[]
   slotIndex?: number
+  sourceOptions?: PackSourceOptions
 }
 
 type BuffCatalogEntry = {
@@ -2237,6 +2274,7 @@ function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
       note: source.note,
       blockName: source.blockName,
       effects,
+      sourceOptions: source.sourceOptions,
       ...split,
     }
   })
@@ -2266,6 +2304,7 @@ function resolvePackEffectMods(
     isMain,
     { ...ctx, skillContext: skillCtx, skipConvert },
     pack.slotIndex,
+    pack.sourceOptions,
   )
 }
 
@@ -2318,6 +2357,7 @@ function materializeBuffCatalogPacks(
       blockName: pack.blockName,
       effects: pack.effects,
       mods,
+      sourceOptions: pack.sourceOptions,
     }
   })
 }
@@ -2385,19 +2425,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
      * 额外 Buff：受益槽位由 `applicableSlots` 决定，**来源槽位**由卡片单独给（Spec §5.1 第 4 项）。
      * 来源不可用时按显式零值算，不回退到受益槽位的面板（§5.2 第 6 项）。
      */
-    const isExtraPack = first.sourceKey.startsWith('extra-')
-    const extraSourceSlot = isExtraPack ? (first.extraGainSourceSlot ?? null) : null
-    const extraSourceAvailable =
-      extraSourceSlot != null && Boolean(ctx.teamSlots[extraSourceSlot]?.agentId)
-    const sourceOptions = isExtraPack
-      ? {
-          sourceSlotIndex: extraSourceSlot,
-          panelSourceValuesOverride: extraSourceAvailable
-            ? undefined
-            : zeroSourceValuesFor(effects),
-          extraGainPack: true,
-        }
-      : undefined
+    const sourceOptions = sourceOptionsForCollectedEffect(first, ctx, effects)
     const mods = resolvePackModsViaEffectSpec(
       effects,
       isMain,
@@ -2413,6 +2441,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       effects,
       blockName: first.blockName,
       note: first.blockNote || undefined,
+      sourceOptions,
     })
   }
 
@@ -2703,38 +2732,28 @@ function resolveReleaseMultMods(
   skillCtx: SkillCalcContext,
   triggerElement?: string,
 ): BuffStatModifiers {
-  // 等级转模按「效果来源角色」取等级：按提供者槽位分组，各组带各自的技能等级表
-  const effectsByProviderSlot = new Map<number | null, BuffEffect[]>()
+  // 保留来源条目：额外 Buff 的来源槽位独立于 providerSlot，不能把它们并成无主组。
+  const bySource = new Map<string, CollectedEffect[]>()
   for (const item of entries) {
-    const list = effectsByProviderSlot.get(item.providerSlot)
-    if (list) list.push(item.effect)
-    else effectsByProviderSlot.set(item.providerSlot, [item.effect])
-  }
-
-  const releaseRowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
-  const effectOptions = {
-    ctx: skillCtx,
-    element: triggerElement,
-    stacksByEffectId:
-      releaseRowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
-    convertInputs: releaseRowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
-    attrValues: ctx.attrValues,
-    panelSourceValues: ctx.panelSourceValues,
-    selection: ctx.buffSelection,
-    resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
+    const key = `${item.sourceKey}-${item.blockId}`
+    const list = bySource.get(key)
+    if (list) list.push(item)
+    else bySource.set(key, [item])
   }
   let mods = createEmptyBuffStatModifiers()
-  for (const [providerSlot, effects] of effectsByProviderSlot) {
-    const slotAgentId =
-      providerSlot != null ? ctx.teamSlots[providerSlot]?.agentId : undefined
+  for (const items of bySource.values()) {
+    const first = items[0]!
+    const effects = items.map((item) => item.effect)
+    const providerSlot = first.providerSlot
     mods = mergeBuffStatModifiers(
       mods,
-      resolveEffectsToMods(effects, {
-        ...effectOptions,
-        skillTalentLevels: slotAgentId
-          ? ctx.skillTalentLevelsByAgent?.[slotAgentId]
-          : undefined,
-      }),
+      resolvePackModsViaEffectSpec(
+        effects,
+        providerSlot == null || providerSlot === ctx.mainSlotIndex,
+        { ...ctx, skillContext: { ...skillCtx, element: triggerElement } },
+        providerSlot ?? undefined,
+        sourceOptionsForCollectedEffect(first, ctx, effects),
+      ),
     )
   }
   return mods

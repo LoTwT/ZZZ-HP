@@ -27,10 +27,11 @@ import {
   availableBuffGroupTabs,
   blockKeyOfCollected,
   resolveCollectedEffectSourceSlot,
+  resolveCollectedEffectPanelSourceValues,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
-import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty } from '@/utils/flowBuffTable'
+import { formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
+import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty, mergeFlowBuffOverride } from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 import { isSkillConvertFromKey, type SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -48,9 +49,10 @@ const props = defineProps<{
   slotIndex?: number
   /**
    * 该槽位的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）——**页面按槽位现给**：
-   * 每次打开弹窗取一次（弹窗开着时面板不可编辑），不在页面渲染期空转。
+   * 打开期间随有效行级例外重新求值，关闭时不计算。
    */
-  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
+  convertResolveInputs?: (slotIndex: number, rowOverride?: FlowBuffOverride | null, rowKey?: string | null) => ConvertResolveInputs
+  rowKey?: string | null
   /** 技能等级转模来源：按角色 id 的五大类技能等级 */
   skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
   /** 队伍槽位（技能等级转模按效果所属槽位取角色） */
@@ -71,13 +73,15 @@ const props = defineProps<{
 
 const open = defineModel<boolean>('open', { default: false })
 const override = defineModel<FlowBuffOverride | null>('override', { default: null })
+const effectiveOverride = computed(() => mergeFlowBuffOverride(props.parentOverride, override.value))
 
 /**
- * 转模解析输入：只在**打开时**取一次（`open` 进依赖 → 每次打开重算）。
- * 弹窗开着时面板编辑不了，所以这一次取值就是最新的；不在页面渲染期反复算面板值。
+ * 转模解析输入：打开期间跟踪有效行配置，避免禁用来源增益后仍使用全局面板。
  */
 const resolveInputs = computed<ConvertResolveInputs | null>(() =>
-  open.value ? (props.convertResolveInputs?.(props.slotIndex ?? 0) ?? null) : null,
+  open.value
+    ? (props.convertResolveInputs?.(props.slotIndex ?? 0, effectiveOverride.value, props.rowKey) ?? null)
+    : null,
 )
 
 type BlockGroup = {
@@ -172,9 +176,9 @@ function isStackable(effect: BuffEffect): boolean {
 
 /** 本行生效层数 = 行级覆盖 ?? 继承全局 ?? defaultStacks */
 function stacksModel(effect: BuffEffect): number {
-  const overridden = override.value?.stacksByEffectId?.[effect.id]
+  const overridden = effectiveOverride.value?.stacksByEffectId?.[effect.id]
   if (overridden != null) return overridden
-  return props.globalStacksFor?.(effect) ?? effect.defaultStacks ?? 1
+  return (!effect.extraGain ? props.globalStacksFor?.(effect) : undefined) ?? effect.defaultStacks ?? 1
 }
 
 function setStacks(effect: BuffEffect, value: number) {
@@ -196,11 +200,9 @@ function isConvertBaseEditable(item: CollectedEffect): boolean {
  * 本层覆盖 ?? 父组（组行）覆盖 ?? 继承全局手填 ?? 面板/默认 —— 与结算的合并顺序一致。
  */
 function convertBaseModel(item: CollectedEffect): number {
-  const overridden = override.value?.convertInputsByEffectId?.[item.effect.id]
+  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
   if (overridden != null) return overridden
-  const fromParent = props.parentOverride?.convertInputsByEffectId?.[item.effect.id]
-  if (fromParent != null) return fromParent
-  const inherited = props.globalConvertInput?.(item.effect)
+  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
   if (inherited != null) return inherited
   return convertLiveBase(item)
 }
@@ -279,12 +281,7 @@ function statLabel(stat: string): string {
 
 /** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  const inputs = resolveInputs.value
-  if (slotIndex != null && inputs?.panelSourceValuesBySlot?.[slotIndex]) {
-    return inputs.panelSourceValuesBySlot[slotIndex]
-  }
-  return inputs?.panelSourceValues
+  return resolveCollectedEffectPanelSourceValues(item, resolveInputs.value ?? {})
 }
 
 /** 技能等级转模的来源角色等级表（按效果所属槽位取） */
@@ -299,8 +296,9 @@ function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLev
  * 与结算同一套取值顺序与同一个 `resolveConvertValue`，保证"这一行显示 = 这一行实际"。
  */
 function convertResult(item: CollectedEffect): number {
-  const overridden = override.value?.convertInputsByEffectId?.[item.effect.id]
-  const overrideBase = overridden ?? props.globalConvertInput?.(item.effect) ?? null
+  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
+  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
+  const overrideBase = overridden ?? inherited ?? null
   return resolveConvertValue(
     item.effect,
     resolveInputs.value?.attrDefaults ?? {},
@@ -315,7 +313,7 @@ function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
   let amountText: string
   if (isStackable(effect)) {
-    amountText = formatCalcSigned((effect.valuePerStack ?? 0) * stacksModel(effect))
+    amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
   } else if (effect.kind === 'convert') {
     amountText = formatCalcSigned(convertResult(item))
   } else {
