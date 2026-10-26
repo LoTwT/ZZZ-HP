@@ -350,13 +350,14 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
     check('R6 真实弹窗摘要按最大层数夹紧', extraMounted.vm.effectResultText({ ...item, effect: { ...stacked, extraGain: true } }) === '攻击力（数值） + 50')
   } finally { extraMounted.unmount() }
   const extraItem = { ...item, effect: { ...effect, extraGain: true }, sourceKey: 'extra-component', extraGainSourceSlot: 1 }
-  check('R2 预览忽略额外 Buff 的选择器残留', buildFlowBuffEffectText(extraItem, { selection: null, slotIndex: 0, convertInputFor: () => 9000 }).includes('+300'))
+  check('R2 预览忽略额外 Buff 的选择器残留', buildFlowBuffEffectText(extraItem, { selection: null, slotIndex: 0, convertInputFor: () => 9000 }).replace(/\s+/g, '').includes('+300'))
   const emptySource = { ...extraItem, effect: { ...extraItem.effect, convert: { ...effect.convert, panelSource: 'external' } } }
   check('R5 空来源不能回落受益者攻击', buildFlowBuffEffectText(emptySource, { selection: null, slotIndex: 0, attrDefaults: { atk: 1000 }, panelSourceValues: { external: { atk: 1000 } }, panelSourceValuesBySlot: {} }).endsWith(' 0'))
   for (const [stacks, expected] of [[8, 50], [1.33, 13.3], [0, 0]]) {
     for (const extraGain of [false, true]) {
       const text = buildFlowBuffEffectText({ ...item, effect: { ...stacked, extraGain } }, { selection: null, slotIndex: 0 }, { stacksByEffectId: { [stacked.id]: stacks } })
-      check(`R6 ${extraGain ? '额外' : '普通'} ${stacks} 层显示 ${expected}`, text.endsWith(` ${expected ? '+' : ''}${expected}`), text)
+      // 文本格式已统一到 formatCalcSigned（`+ 50` 带空格），比对时忽略空白
+      check(`R6 ${extraGain ? '额外' : '普通'} ${stacks} 层显示 ${expected}`, text.replace(/\s+/g, '').endsWith(`${expected ? '+' : ''}${expected}`), text)
     }
   }
 }
@@ -407,8 +408,8 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
     const total = damageType === 'direct' ? actual.finalPanel.dmgBonus : actual.defenseTriggerFinalPanel.anomalyReleaseMult
     check(`R5 ${mode} ${damageType} 独立实际计算 A 正确`, total === (damageType === 'direct' ? 100 : 150))
     check(`R5 ${mode} ${damageType} 详情与计算同源`, JSON.stringify(actual.result) === JSON.stringify(detailed.result))
-    check(`R5 ${mode} ${damageType} 真实页面 A 文本为100`, page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).endsWith('+100'))
-    check(`R5 ${mode} ${damageType} 真实页面 B 文本为150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hits[1].id).endsWith('+150'))
+    check(`R5 ${mode} ${damageType} 真实页面 A 文本为100`, page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).replace(/\s+/g, '').endsWith('+100'))
+    check(`R5 ${mode} ${damageType} 真实页面 B 文本为150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hits[1].id).replace(/\s+/g, '').endsWith('+150'))
     check(`R5 ${mode} ${damageType} 组头无伪造数值`, page.flowBuffEffectTextFor(convertItem.effect.id, null, 'group-no-hit').includes('数值见成员'))
     const imports = {
       '@/utils/panelBuffCalc': core, '@/utils/buffEffect': buff,

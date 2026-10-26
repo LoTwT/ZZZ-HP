@@ -27,6 +27,7 @@ import {
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatCalcSigned } from '@/utils/calcNumberFormat'
 
 export interface FlowBuffTableRow {
   /** 唯一键：普通行 = 流程行 id；组成员 = `${行id}#${序号}:${skillId}` */
@@ -119,7 +120,7 @@ function effectSummary(item: CollectedEffect): string {
   const effect = item.effect
   const field = BUFF_STAT_FIELDS.find((entry) => entry.key === effect.stat)
   const label = field ? buffStatFieldLabel(field) : String(effect.stat ?? '')
-  const value = typeof effect.value === 'number' && effect.value !== 0 ? `+${effect.value}` : ''
+  const value = typeof effect.value === 'number' && effect.value !== 0 ? formatCalcSigned(effect.value) : ''
   return `${label}${value ? ` ${value}` : ''}`.trim()
 }
 
@@ -206,13 +207,17 @@ export function buildFlowBuffEffectText(
   } else {
     amount = Number(effect.value) || 0
   }
-  const amountText = amount > 0 ? `+${amount}` : String(amount)
+  // 与「行详情 / 覆盖弹窗 / 面板显示」统一：4 位四舍五入 + 千分位
+  // （原先直接拼字符串，会把 2.0999999999999996 这种浮点噪声原样露出来）
+  const amountText = formatCalcSigned(amount)
   return formatBuffEffectResultText(effect, amountText, {
     statLabelFn: (stat) => {
       const field = BUFF_STAT_FIELDS.find((entry) => entry.key === stat)
       return field ? buffStatFieldLabel(field) : String(stat)
     },
     skillSubcategories: options.skillSubcategories,
+    // 与弹窗一致：非全局作用期加 [失衡期] / [非失衡期] 前缀（全局不加，避免噪音）
+    applySituation: true,
   })
 }
 
