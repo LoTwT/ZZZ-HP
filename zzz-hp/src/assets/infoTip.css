@@ -8,7 +8,9 @@
 
 .info-tip {
   position: fixed;
-  z-index: 1200;
+  /* 必须高于弹窗层：方案库遮罩 1400、确认框 1500、管理端确认 2000；
+     问号说明可能出现在这些层里（如方案库弹窗标题旁的 ?） */
+  z-index: 3000;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
