@@ -165,6 +165,23 @@ export interface SkillFlowHitContextInput {
   mainSlotIndex: number
   /** 按角色 id 的五大类技能等级：技能等级转模 / 倍率的来源 */
   skillTalentLevelsByAgent: unknown
+  /**
+   * 面板页额外需要的身份字段（Spec §2.6 第 1 项：两个组件从同一字段表派生）。
+   * 缺任一项都会让「配置变了却命中旧结果」，所以宁可多进字段。
+   */
+  calcMode?: string | null
+  triggerAnomalyAgentId?: string | null
+  anomalySubKind?: string | null
+  skillCategoryId?: string | null
+  skillSubcategoryId?: string | null
+  /** 主槽本次实际使用的局外面板（候选面板会替换它） */
+  mainExternalPanel?: unknown
+  /** 各槽位已解析的局外面板（未编辑槽位才有） */
+  slotExternalPanels?: unknown
+  /** 副词条分配（面板页快速调参） */
+  affixCounts?: unknown
+  /** 行级增益例外 */
+  rowBuffOverride?: unknown
 }
 
 /**

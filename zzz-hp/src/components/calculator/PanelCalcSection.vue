@@ -54,6 +54,7 @@ import {
   type ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
 import { resolveSlotAttrValues, resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
+import { buildSkillFlowHitContextSignature } from '@/utils/skillFlowPanelSource'
 import {
 
 
@@ -772,50 +773,42 @@ const skillFlowCalculationContext = computed(() =>
  * 另有 `mainExternal` 承担。
  */
 const hitCalcGlobalSignature = computed(() =>
-  JSON.stringify({
-    src: baseDamageSource.value,
-    elements: props.agents.map(agent => [agent.id, agent.element]),
-    slots: props.teamSlots.map((slot, index) => [
-      slot.agentId,
-      slot.rank,
-      slot.wengineId,
-      slot.wengineRefine,
-      slot.twoPieceDriveDiscId,
-      slot.fourPieceDriveDiscId,
-      index === props.editedSlotIndex
-        ? ''
-        : JSON.stringify(
-            resolveActivePanel(slot.agentId ? props.slotPanels?.[slot.agentId] : undefined) ?? null,
-          ),
-    ]),
-    bangboo: [props.selectedBangbooId, props.bangbooRefine],
-    edit: props.editedSlotIndex,
-    mode: props.calcMode,
-    stagger: props.staggerPhase,
-    kind: [
-      props.triggerAnomalyAgentId,
-      props.damageKind,
-      props.anomalySubKind,
-      props.skillCategoryId,
-      props.skillSubcategoryId,
-    ],
-    buffs: slotBuffSelectionsSignature.value,
-    convert: convertSlotPanelsSignature.value,
-    // 激活那份局外（已解析）必须进指纹，否则导入/切换来源后流程与伤害可能不重算
-    anomaly: resolvedActiveSlotPanels.value,
-    env: (props.environmentBuffs ?? []).map((item) => item.id),
-    extra: extraGains.value,
+  // 身份字段表单点维护（`buildSkillFlowHitContextSignature`）：与词条页同一份，
+  // 任何影响命中结果的输入都在表里（含技能等级、影画、精炼、行级例外、主槽面板）。
+  buildSkillFlowHitContextSignature({
+    baseDamageSource: baseDamageSource.value,
+    agentElements: props.agents.map((agent) => [agent.id, agent.element]),
+    teamSlots: props.teamSlots,
+    bangbooId: props.selectedBangbooId,
+    bangbooRefine: props.bangbooRefine,
+    driveDiscMainStats: affixDriveDiscMainStats,
+    mainSlotIndex: props.editedSlotIndex,
+    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
+    buffSelection: slotBuffSelectionsSignature.value,
+    slotBuffSelections: slotBuffSelectionsSignature.value,
+    convertSlotPanels: convertSlotPanelsSignature.value,
+    activeSlotPanels: resolvedActiveSlotPanels.value,
+    environmentBuffIds: (props.environmentBuffs ?? []).map((item) => item.id),
+    extraGains: extraGains.value,
     sourceExtraGains: props.skillFlowSourceExtraGains,
     enemy: enemyInput.value,
-    ext: externalPanel,
-    affix: affixCounts,
-    mains: affixDriveDiscMainStats,
-    // 五大类技能等级：技能等级转模 / 招式倍率的来源（C7）。漏掉的症状是改来源角色等级后
-    // 面板与伤害不重算、命中旧缓存（K17）。
-    levels: props.skillTalentLevelsByAgent,
+    damageKind: props.damageKind ?? null,
+    staggerPhase: props.staggerPhase,
+    calcMode: props.calcMode,
+    triggerAnomalyAgentId: props.triggerAnomalyAgentId ?? null,
+    anomalySubKind: props.anomalySubKind ?? null,
+    skillCategoryId: props.skillCategoryId ?? null,
+    skillSubcategoryId: props.skillSubcategoryId ?? null,
+    mainExternalPanel: externalPanel,
+    slotExternalPanels: props.teamSlots.map((slot, index) =>
+      index === props.editedSlotIndex
+        ? ''
+        : JSON.stringify(resolveActivePanel(props.slotPanels?.[slot.agentId]) ?? null),
+    ),
+    affixCounts,
+    rowBuffOverride: null,
   }),
 )
-
 /** 准备招式的单次预览行（只用于上报，不参与流程总伤） */
 const previewHitLineById: Record<string, HitLine> = {}
 
