@@ -1,4 +1,5 @@
 import type {
+  AgentBuffDoc,
   AnomalyDamageSubKind,
   DamageCalcKind,
   DamageEventCritMode,
@@ -43,6 +44,7 @@ import {
 } from '@/utils/skillGroup'
 import { buildSkillMatchCoords, skillTypesIncludeFollowUp } from '@/utils/skillTypes'
 import { mergeFlowBuffOverride } from '@/utils/flowBuffTable'
+import { AGENT_ELEMENTS, type AgentElement } from '@/utils/calculatorUi'
 import {
   resolveEffectiveBaseMult,
   type SkillTalentLevels,
@@ -118,6 +120,7 @@ export function buildDefaultMemberAgents(
  * 因此「准备阶段改的倍率」「流程里的次数与失衡状态」对两者一致生效。
  */
 export interface ResolvedHit {
+  elementOverride: AgentElement | null
   /** 取流程条目 id，方便回指 UI */
   id: string
   /**
@@ -151,6 +154,38 @@ export interface ResolvedHit {
   effectiveBaseMult: number
   /** 映射到的五大类等级；无法映射则为 null */
   skillTalentLevel: number | null
+}
+
+export function normalizeEventElement(value: unknown): AgentElement | undefined {
+  return typeof value === 'string' && AGENT_ELEMENTS.includes(value as AgentElement)
+    ? value as AgentElement
+    : undefined
+}
+
+export function normalizeFlowEventElements(entry: FlowEntry): FlowEntry {
+  const next = { ...entry }
+  const element = normalizeEventElement(next.elementOverride)
+  if (element) next.elementOverride = element
+  else delete next.elementOverride
+  if (next.memberOverrides) next.memberOverrides = next.memberOverrides.map(member => {
+    const clean = { ...member }
+    const ownElement = normalizeEventElement(clean.elementOverride)
+    if (ownElement) clean.elementOverride = ownElement
+    else delete clean.elementOverride
+    return clean
+  })
+  return next
+}
+
+export function resolveEventElement(
+  hit: Pick<ResolvedHit, 'skill' | 'ownerAgentId' | 'anomalyPowerAgentId' | 'elementOverride'>,
+  agents: ReadonlyArray<Pick<AgentBuffDoc, 'id' | 'element'>>,
+): AgentElement | undefined {
+  const manual = normalizeEventElement(hit.elementOverride)
+  if (manual) return manual
+  const agentId = skillNeedsDualAgents(hit.skill.damageType)
+    ? hit.anomalyPowerAgentId : hit.ownerAgentId
+  return normalizeEventElement(agents.find(agent => agent.id === agentId)?.element)
 }
 
 /** 每种伤害类型的倍率写到哪两个覆写字段 */
@@ -242,6 +277,7 @@ function resolveOne(
     anomalyPowerAgentId?: string | null
     triggerAgentId?: string | null
     buffOverride?: FlowBuffOverride | null
+    elementOverride?: AgentElement | null
   },
 ): ResolvedHit {
   const { damageKind, anomalySubKind } = mapEventKindToCalc(skill.damageType)
@@ -284,6 +320,8 @@ function resolveOne(
   )
   return {
     id: overrides?.hitId ?? entry.id,
+    elementOverride: normalizeEventElement(overrides?.elementOverride)
+      ?? normalizeEventElement(entry.elementOverride) ?? null,
     buffOverride:
       overrides && 'buffOverride' in overrides ? overrides.buffOverride : entry.buffOverrides,
     skill,
@@ -391,6 +429,7 @@ export function resolveFlow(options: ResolveFlowOptions): ResolveFlowResult {
               count: segmentCount,
               staggerPhase: ov?.staggerPhase ?? entry.staggerPhase,
               critMode: entry.critMode,
+              elementOverride: ov?.elementOverride,
               hitId: `${entry.id}#${memberIndex}:${member.skillId}`,
               // 这一段生效的例外 = 整组 + 本段**合并**（本段只叠加；不能把整组关掉的放回来）
               buffOverride: mergeFlowBuffOverride(entry.buffOverrides, ov?.buffOverrides),

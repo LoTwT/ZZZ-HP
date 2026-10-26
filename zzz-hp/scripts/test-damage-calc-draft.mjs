@@ -331,5 +331,160 @@ check(
   !!memory.get(storeKey) && !memory.get(storeKey).trimStart().startsWith('['),
 )
 
+console.log('[6] 额外 Buff 草稿往返：结构完整、空数组不回退旧扁平值')
+
+{
+  const { createExtraBuffGain, normalizeExtraGains, serializeExtraGains } = await import(
+    '../src/utils/extraBuffCalc.ts'
+  )
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+
+  const fixedCard = createExtraBuffGain({
+    id: 'draft-fixed',
+    name: '固定攻击',
+    applySlot: 'team',
+    effects: [createEmptyBuffEffect({ id: 'draft-fixed-eff', stat: 'atk', value: 120 })],
+  })
+  const stackedCard = createExtraBuffGain({
+    id: 'draft-stacked',
+    name: '叠层',
+    applySlot: 1,
+    effects: [
+      createEmptyBuffEffect({
+        id: 'draft-stacked-eff',
+        kind: 'stacked',
+        stat: 'dmgBonus',
+        valuePerStack: 10,
+        maxStacks: 5,
+        defaultStacks: 1.33,
+      }),
+    ],
+  })
+  const convertCard = createExtraBuffGain({
+    id: 'draft-convert',
+    name: '转模',
+    applySlot: 'team',
+    sourceSlot: 1,
+    effects: [
+      createEmptyBuffEffect({
+        id: 'draft-convert-eff',
+        kind: 'convert',
+        stat: 'dmgBonus',
+        convert: {
+          from: 'atk',
+          panelSource: 'external',
+          ratioPercent: 10,
+          initialBase: 0,
+          cap: null,
+          defaultBase: null,
+        },
+        conditions: { damageTypes: ['normal', 'anomalyRelease'] },
+      }),
+    ],
+  })
+
+  memory.clear()
+  const saved = [fixedCard, stackedCard, convertCard]
+  saveWorkingDraft(draftBase({ panelState: snapshot(serializeExtraGains(saved), { bossName: 'D' }) }))
+  const restoredRaw = loadWorkingDraft()?.panelState?.extraGains ?? []
+  const restored = normalizeExtraGains(restoredRaw)
+  check('草稿往返保留 3 张卡片', restored.gains.length === 3, `实际 ${restored.gains.length}`)
+  check('正常卡片不被丢弃', restored.discardedCount === 0, `实际 ${restored.discardedCount}`)
+  // 结构比较用稳定序列化（键排序）：Spec §7.1 要求递归比较，不比字符串顺序
+  const stable = (value) =>
+    Array.isArray(value)
+      ? `[${value.map(stable).join(',')}]`
+      : value && typeof value === 'object'
+        ? `{${Object.keys(value)
+            .sort()
+            .map((key) => `${key}:${stable(value[key])}`)
+            .join(',')}}`
+        : JSON.stringify(value ?? null)
+  check(
+    '结构与保存前一致（稳定序列化后相等）',
+    stable(serializeExtraGains(restored.gains)) === stable(serializeExtraGains(saved)),
+  )
+  check(
+    '多选伤害类型不丢',
+    JSON.stringify(restored.gains[2]?.effects[0]?.conditions) ===
+      JSON.stringify({ damageTypes: ['normal', 'anomalyRelease'] }),
+  )
+  check('叠层小数层数保留', restored.gains[1]?.effects[0]?.defaultStacks === 1.33)
+
+  // 空数组 = 没有额外 Buff：不能回退到旧的扁平 extraMods
+  memory.clear()
+  saveWorkingDraft(
+    draftBase({ panelState: { ...snapshot([], { bossName: 'E' }), extraMods: { atk: 999 } } }),
+  )
+  const emptyGains = loadWorkingDraft()?.panelState?.extraGains
+  check('extraGains=[] 原样保存为空（不回落 extraMods）', Array.isArray(emptyGains) && emptyGains.length === 0)
+  check('读取归一化后仍为 0 条', normalizeExtraGains(emptyGains).gains.length === 0)
+
+  // 旧格式 / 无效卡片：整卡丢弃并计数
+  memory.clear()
+  saveWorkingDraft(
+    draftBase({
+      panelState: snapshot(
+        [
+          serializeExtraGains([fixedCard])[0],
+          { id: 'legacy-1', name: '旧条目', stat: 'atk', value: 5 },
+          { id: '', name: '无 id', effects: [] },
+        ],
+        { bossName: 'F' },
+      ),
+    }),
+  )
+  const mixed = normalizeExtraGains(loadWorkingDraft()?.panelState?.extraGains ?? [])
+  check('旧格式/无效卡片整卡丢弃并计数 2', mixed.gains.length === 1 && mixed.discardedCount === 2,
+    JSON.stringify({ n: mixed.gains.length, d: mixed.discardedCount }))
+}
+
+console.log('\n[七类修复 R7] 真实 loadSnapshot 的加载/重放/关闭生命周期')
+{
+  const { bindVueFunctions } = await import('./_vueSetupHarness.mjs')
+  const { ref } = await import('vue')
+  const { normalizeExtraGains, serializeExtraGains, createExtraBuffGain } = await import('../src/utils/extraBuffCalc.ts')
+  const { createEmptyBuffEffect } = await import('../src/utils/buffEffect.ts')
+  const state = { extraGains: ref([]), extraGainsDiscardedCount: ref(0),
+    externalPanel: {}, enemyInput: ref({}), baseDamageSource: ref('atk'),
+    loadAffixFromCurrentSlot: () => {}, createDefaultExternalPanel: () => ({}),
+    normalizeDamageEnemyInput: () => ({ level: 60 }), normalizeExtraGains, serializeExtraGains }
+  const { loadSnapshot, dismissExtraGainsNotice } = bindVueFunctions(
+    new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url),
+    ['loadSnapshot', 'dismissExtraGainsNotice'], state)
+  const invalid = { extraGains: [{ id: 'legacy', stat: 'atk', value: 50 }] }
+  loadSnapshot(invalid)
+  check('R7 无效加载提示 1', state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [] }, { isRestoreReplay: true })
+  check('R7 同次规范化重放不抹首次提示', state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [], externalPanel: { atk: 2000 } })
+  check('R7 明确加载合法空方案清除旧提示', state.extraGainsDiscardedCount.value === 0)
+  check('R7 其他快照字段仍正常恢复', state.externalPanel.atk === 2000)
+  const valid = createExtraBuffGain({ id: 'valid-load', name: '合法卡片', applySlot: 0, sourceSlot: 0, effects: [createEmptyBuffEffect({ id: 'valid-load-e', stat: 'atk', value: 20 })] })
+  loadSnapshot({ extraGains: [valid, ...invalid.extraGains] })
+  check('R7 混合快照保留合法卡片并提示 1', state.extraGains.value.length === 1 && state.extraGainsDiscardedCount.value === 1)
+  loadSnapshot({ extraGains: [valid] })
+  check('R7 明确加载内容相同的合法非空方案也清除提示', state.extraGains.value.length === 1 && state.extraGainsDiscardedCount.value === 0)
+  loadSnapshot(invalid)
+  dismissExtraGainsNotice()
+  loadSnapshot(invalid, { isRestoreReplay: true })
+  check('R7 关闭后同次重放不重新提示', state.extraGainsDiscardedCount.value === 0)
+  loadSnapshot(invalid)
+  check('R7 再次明确加载相同无效源重新提示', state.extraGainsDiscardedCount.value === 1)
+}
+
+{
+  clearWorkingDraft()
+  const flow = [{ id: 'A', elementOverride: '火', memberOverrides: [{ skillId: 's', memberKey: '0:s', elementOverride: '冰' }] }, { id: 'auto', elementOverride: null }, { id: 'bad', elementOverride: 'invalid' }]
+  check('E7 event element draft save', saveWorkingDraft(draftBase({ savedAt: Date.now(), slots: [{ prepared: [], flow }], panelState: snapshot([], {}) })) === 'ok')
+  const restored = loadWorkingDraft().slots[0].flow
+  check('E7 draft preserves own group/member element', restored[0].elementOverride === '火' && restored[0].memberOverrides[0].elementOverride === '冰')
+  check('E7 draft removes auto/invalid field without dropping events', restored.length === 3 && !Object.hasOwn(restored[1], 'elementOverride') && !Object.hasOwn(restored[2], 'elementOverride'))
+  const saved = saveDamageCalcHistory({ name: '事件元素', teamSlots: [], slots: [{ prepared: [], flow }], panelState: snapshot([], {}) })
+  const scheme = listAllDamageCalcHistory().find(item => item.name === '事件元素')
+  check('E7 actual scheme save/read preserves own fields', !!saved && scheme.slots[0].flow[0].memberOverrides[0].elementOverride === '冰')
+  check('E7 scheme invalid event remains automatic', scheme.slots[0].flow.length === 3 && !Object.hasOwn(scheme.slots[0].flow[2], 'elementOverride'))
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

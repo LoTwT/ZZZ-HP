@@ -272,6 +272,7 @@ export function createEmptyBuffEffect(
     appliesToAnomaly: overrides.appliesToAnomaly,
     enabledDefault: overrides.enabledDefault ?? true,
     note: overrides.note ?? '',
+    extraGain: overrides.extraGain,
   }
   const conditions = normalizeEffectConditionsForStat(overrides.conditions, overrides.scope, stat)
   if (conditions) effect.conditions = conditions
@@ -801,8 +802,9 @@ export function resolveEffectsToMods(
     }
     if (!isEffectEnabled(effect, options.selection)) continue
     if (!effectMatchesContext(effect, options.ctx)) continue
-    const matchElement =
-      effect.applyTarget === 'team'
+    const matchElement = options.ctx && !options.ctx.generic
+      ? options.ctx.element
+      : effect.applyTarget === 'team'
         ? (options.beneficiaryElement ?? options.element ?? options.ctx?.element)
         : (options.element ?? options.ctx?.element)
     if (!effectMatchesElement(effect, matchElement)) continue

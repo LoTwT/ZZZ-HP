@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { type ExtraBuffGain } from '@/types/extraBuff'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type {
@@ -9,12 +10,12 @@ import type {
   AnomalyDamageSubKind,
   BangbooBuffDoc,
   BaseDamageSource,
-  BuffStatKey,
   CharacterAttrKey,
   DriveDiscBuffDoc,
+  SkillCalcContext,
   WengineBuffDoc,
 } from '@/types/calculator'
-import type { DamageCalcPanelSnapshot, DamageCalcSchemePanelSnapshot } from '@/types/damageCalcHistory'
+import type { DamageCalcPanelSnapshot, DamageCalcSchemePanelSnapshot, FlowBuffOverride } from '@/types/damageCalcHistory'
 import {
   applyAgentBaseToPanelStats,
   createDefaultExternalPanel,
@@ -34,8 +35,6 @@ import {
 } from '@/utils/agentPanelSources'
 import type { AgentPanelSources } from '@/types/damageCalcHistory'
 import {
-  BUFF_STAT_FIELDS,
-  buffStatFieldLabel,
   createEmptyBuffStatModifiers,
   createEmptyRefinementMods,
 } from '@/utils/calculatorUi'
@@ -83,9 +82,11 @@ import {
   writeHitEvalCache,
   type HitEvalCacheEntry,
 } from '@/utils/hitEvalCache'
+import { resolveEventBuffPreviewInputs } from '@/utils/optimalAffixAlloc'
 import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import {
-  normalizeExtraGain,
+  normalizeExtraGains,
+  serializeExtraGains,
 } from '@/utils/extraBuffCalc'
 import {
 
@@ -421,11 +422,41 @@ function getAttrDefaultsForSlot(slotIndex: number) {
 }
 
 function getPanelSourceValuesForSlot(slotIndex: number) {
-  const record = buildPanelSourceValuesBySlotRecord(
-    buildPanelCalcContextForSlot(slotIndex),
+  return getPanelSourceValuesBySlot(slotIndex)[slotIndex]
+}
+
+function getPanelSourceValuesBySlot(
+  slotIndex: number,
+  rowOverride?: FlowBuffOverride | null,
+  skillContext?: SkillCalcContext,
+  hit?: ResolvedHit,
+) {
+  if (hit) return getEventBuffPreviewInputs(slotIndex, hit, rowOverride).panelSourceValuesBySlot ?? {}
+  const context = buildPanelCalcContextForSlot(slotIndex)
+  return buildPanelSourceValuesBySlotRecord(
+    { ...context, rowBuffOverride: rowOverride, skillContext: skillContext ?? context.skillContext },
     resolveExternalPanelForSlotIndex(slotIndex),
   )
-  return record[slotIndex]
+}
+
+
+const eventBuffPreviewCache = new Map<string, ReturnType<typeof resolveEventBuffPreviewInputs>>()
+
+function getEventBuffPreviewInputs(slotIndex: number, hit: ResolvedHit, rowOverride?: FlowBuffOverride | null) {
+  const effectiveHit = { ...hit, buffOverride: rowOverride === undefined ? hit.buffOverride : rowOverride }
+  const key = `${slotIndex}|${hitEvalCacheKey(
+    buildHitEvalFingerprint(effectiveHit), internHitEvalContext(hitCalcGlobalSignature.value),
+    skillFlowMainExternal.value, true,
+  )}`
+  const cached = eventBuffPreviewCache.get(key)
+  if (cached) return cached
+  const inputs = resolveEventBuffPreviewInputs(
+    skillFlowCalculationContext.value, skillFlowMainExternal.value,
+    effectiveHit, slotIndex,
+  )
+  if (eventBuffPreviewCache.size >= 128) eventBuffPreviewCache.delete(eventBuffPreviewCache.keys().next().value!)
+  eventBuffPreviewCache.set(key, inputs)
+  return inputs
 }
 
 /**
@@ -712,6 +743,7 @@ const skillFlowCalculationContext = computed(() =>
 const hitCalcGlobalSignature = computed(() =>
   JSON.stringify({
     src: baseDamageSource.value,
+    elements: props.agents.map(agent => [agent.id, agent.element]),
     slots: props.teamSlots.map((slot, index) => [
       slot.agentId,
       slot.rank,
@@ -963,14 +995,22 @@ function getSnapshot(): DamageCalcPanelSnapshot {
   return {
     baseDamageSource: baseDamageSource.value,
     externalPanel: { ...externalPanel },
-    extraGains: extraGains.value.map((item) => ({ ...item })),
+    // 只做完整深拷贝：不归一化、不清零、不丢弃（Spec §3.2 第 4 项）
+    extraGains: serializeExtraGains(extraGains.value),
     enemyInput: { ...enemyInput.value },
   }
 }
 
+/** 本次加载被丢弃的额外 Buff 条数（0 = 不提示；Spec §6 第 6、8 项） */
+const extraGainsDiscardedCount = ref(0)
+
+function dismissExtraGainsNotice() {
+  extraGainsDiscardedCount.value = 0
+}
+
 function loadSnapshot(
   snapshot: DamageCalcPanelSnapshot | DamageCalcSchemePanelSnapshot,
-  options?: { preserveBaseDamageSource?: boolean },
+  options?: { preserveBaseDamageSource?: boolean; isRestoreReplay?: boolean },
 ) {
   // baseDamageSource 属于计算器内部公式入口；方案快照不应影响它。
   // 只有在恢复“工作草稿”（需要沿用当前页运行时状态）时才保留。
@@ -979,39 +1019,12 @@ function loadSnapshot(
   }
   Object.assign(externalPanel, createDefaultExternalPanel(), snapshot.externalPanel)
   loadAffixFromCurrentSlot()
-  if (snapshot.extraGains?.length) {
-    extraGains.value = snapshot.extraGains.map((item) =>
-      normalizeExtraGain({
-        id: item.id,
-        name: item.name,
-        stat: item.stat as BuffStatKey,
-        value: item.value,
-        applySituation: item.applySituation ?? 'global',
-        scope: item.scope,
-        applyTarget: item.applyTarget,
-        applySlot: item.applySlot,
-        skillCategory: item.skillCategory,
-        skillSubcategoryId: item.skillSubcategoryId,
-        appliesToAnomaly: item.appliesToAnomaly,
-        applyProfession: item.applyProfession ?? null,
-        teamProfession: item.teamProfession ?? null,
-        teamProfessionValues: item.teamProfessionValues ?? null,
-        teamProfessionMinCount: item.teamProfessionMinCount ?? null,
-      }),
-    )
-  } else {
-    const mods = { ...createEmptyBuffStatModifiers(), ...snapshot.extraMods }
-    extraGains.value = BUFF_STAT_FIELDS.filter((field) => mods[field.key] !== 0).map(
-      (field, index) => ({
-        id: `legacy-${field.key}-${index}`,
-        name: buffStatFieldLabel(field),
-        stat: field.key,
-        value: mods[field.key],
-        applySituation: 'global' as const,
-        applySlot: 0,
-        applyTarget: 'self' as const,
-      }),
-    )
+  // 恢复是**唯一的丢弃点**：一次归一化同时拿到合法卡片与丢弃数（Spec §6 第 3、6 项）
+  const normalizedExtraGains = normalizeExtraGains(snapshot.extraGains)
+  extraGains.value = normalizedExtraGains.gains
+  // 同次恢复的 nextTick 重放只恢复数据；提示沿用首次加载或用户关闭后的状态。
+  if (!options?.isRestoreReplay) {
+    extraGainsDiscardedCount.value = normalizedExtraGains.discardedCount
   }
   Object.assign(enemyInput.value, normalizeDamageEnemyInput(snapshot.enemyInput))
   if (!Number.isFinite(enemyInput.value.level) || enemyInput.value.level < 1) {
@@ -1053,6 +1066,8 @@ defineExpose({
   panelSourceValuesBySlot,
   getAttrDefaultsForSlot,
   getPanelSourceValuesForSlot,
+  getPanelSourceValuesBySlot,
+  getEventBuffPreviewInputs,
   panelBreakdown,
   enemyInput,
   slotPanelPreviews: computed(() => {
@@ -1088,17 +1103,30 @@ defineExpose({
   <section :id="sectionId" class="section-card panel-section damage-anchor">
     <header class="section-header">
       <div>
-        <h2>伤害计算</h2>
-        <p class="section-desc">
-          全队局外 / 词条 / 局内面板请在「导入」中录入与查看；悬停顶部槽位可预览局外与局内（随 Buff
-          增益实时更新）。此处仅结算伤害结果。
-        </p>
+        <h2>
+          伤害计算
+          <InfoTip
+            label="伤害计算说明"
+            text="全队局外 / 词条 / 局内面板请在「导入」中录入与查看；悬停顶部槽位可预览局外与局内（随 Buff 增益实时更新）。此处仅结算伤害结果。"
+          />
+        </h2>
         <!-- 没面板就不出伤害（所有者口径 2026-09-12）：给一句提示，别让人对着 0 猜 -->
         <p v-if="mainPanelMissing" class="section-desc panel-missing-hint" role="status">
           当前角色还没有面板（局外面板为 0，伤害不计算）——请点顶部「导入」录入或截图识别后「确定导入」。
         </p>
       </div>
     </header>
+
+    <p
+      v-if="extraGainsDiscardedCount > 0"
+      class="section-desc extra-gains-skip-notice"
+      role="status"
+    >
+      已跳过 {{ extraGainsDiscardedCount }} 条旧格式或无效的额外 Buff，请重新添加。
+      <button type="button" class="extra-gains-skip-close" @click="dismissExtraGainsNotice">
+        关闭
+      </button>
+    </p>
 
     <p v-if="teamSummary" class="team-summary">{{ teamSummary }}</p>
     <p v-if="isMbMainAgent" class="mb-hint">
@@ -1167,6 +1195,29 @@ defineExpose({
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
   color: #9aa3b0;
+}
+
+/* 额外 Buff 恢复时跳过无效条目：放在根内容第一个可见位置，可关闭（Spec §6 第 6、8 项） */
+.extra-gains-skip-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  border: 1px dashed #8a6d3b;
+  background: rgba(201, 165, 92, 0.12);
+  color: #f0d7a2;
+}
+
+.extra-gains-skip-close {
+  border: 1px solid #8a6d3b;
+  border-radius: 6px;
+  background: transparent;
+  color: #f0d7a2;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+  cursor: pointer;
 }
 
 /* 没面板就没伤害：这句要显眼，别让人对着 0 猜 */

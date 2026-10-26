@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import ExtraBuffGainEditor, {
-  type ExtraBuffGain,
-} from '@/components/calculator/ExtraBuffGainEditor.vue'
+import ExtraBuffGainEditor from '@/components/calculator/ExtraBuffGainEditor.vue'
+import type { ExtraBuffGain } from '@/types/extraBuff'
 import { useMaskClose } from '@/composables/useMaskClose'
 import type { SkillCategoryId } from '@/types/calculator'
 import type { AgentBuffDoc } from '@/types/calculator'
@@ -77,6 +76,10 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 </template>
 
 <style scoped>
+/*
+ * 弹窗 Teleport 到 body，用全局 `--color-*`（随 html[data-theme] 翻转）而不是写死深色，
+ * 白天/暗夜同一套声明。字号整体上调一档：标题 1.2rem、正文 0.95rem、按钮 0.95rem。
+ */
 .buff-picker-overlay {
   position: fixed;
   inset: 0;
@@ -85,31 +88,39 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(8, 12, 20, 0.72);
+  background: rgba(8, 12, 20, 0.62);
 }
 
 .buff-picker-modal {
-  width: min(980px, calc(100vw - 16px));
-  max-height: min(88vh, 900px);
+  --eb-surface: var(--color-background-soft, #141922);
+  --eb-surface-2: var(--color-background-mute, #1a1f2a);
+  --eb-border: var(--color-border, #2d3646);
+  --eb-text: var(--color-text, #e8ecf4);
+  --eb-muted: color-mix(in srgb, var(--color-text, #e8ecf4) 64%, transparent);
+  --eb-accent: #c9a55c;
+  width: min(1240px, calc(100vw - 24px));
+  /* 初始高度给足（用户 2026-10-25：初始高度太低） */
+  height: min(86vh, 840px);
+  max-height: min(92vh, 1000px);
   display: flex;
   flex-direction: column;
-  border: 1px solid #4a5563;
-  border-radius: 14px;
-  background: #141922;
-  color: #e8ecf4;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--eb-border);
+  border-radius: 16px;
+  background: var(--eb-surface);
+  color: var(--eb-text);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
 }
 
 .buff-picker-header {
-  padding: 1rem 1.1rem 0.85rem;
-  border-bottom: 1px solid #2d3646;
+  padding: 1.1rem 1.3rem 0.95rem;
+  border-bottom: 1px solid var(--eb-border);
   flex-shrink: 0;
 }
 
 .buff-picker-header-main {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.6rem;
 }
 
 .buff-picker-title-row {
@@ -121,30 +132,36 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
 
 .buff-picker-header h3 {
   margin: 0;
-  font-size: 1.05rem;
-  color: #f4f7fc;
+  font-size: 1.2rem;
+  color: var(--color-heading, var(--eb-text));
 }
 
 .buff-picker-header p {
   margin: 0;
-  font-size: 0.78rem;
-  color: #9aa3b5;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--eb-muted);
 }
 
 .close-btn {
   border: none;
   background: transparent;
-  font-size: 1.45rem;
+  font-size: 1.7rem;
   line-height: 1;
   cursor: pointer;
-  color: #c5ccd8;
+  color: var(--eb-muted);
+  padding: 0 0.25rem;
+}
+
+.close-btn:hover {
+  color: var(--eb-text);
 }
 
 .extra-buff-modal-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.9rem 1.1rem;
+  padding: 1.05rem 1.3rem;
 }
 
 .buff-picker-footer {
@@ -152,27 +169,29 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.75rem 1.1rem;
-  border-top: 1px solid #2d3646;
+  padding: 0.85rem 1.3rem;
+  border-top: 1px solid var(--eb-border);
   flex-shrink: 0;
 }
 
 .buff-picker-footer .muted {
-  font-size: 0.8rem;
-  color: #9aa3b5;
+  font-size: 0.9rem;
+  color: var(--eb-muted);
 }
 
 .primary {
-  border: 1px solid #6b8f4e;
-  border-radius: 8px;
-  background: #243018;
-  color: #e8f0dc;
-  padding: 0.4rem 0.95rem;
-  font-size: 0.84rem;
+  border: 1px solid color-mix(in srgb, #6b8f4e 70%, var(--eb-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #6b8f4e 26%, var(--eb-surface-2));
+  color: var(--eb-text);
+  padding: 0.5rem 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-height: 2.4rem;
   cursor: pointer;
 }
 
 .primary:hover {
-  background: #2c3a1c;
+  background: color-mix(in srgb, #6b8f4e 38%, var(--eb-surface-2));
 }
 </style>

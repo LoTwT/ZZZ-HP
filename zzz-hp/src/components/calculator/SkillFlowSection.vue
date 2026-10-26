@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
@@ -30,6 +31,8 @@ import {
 } from '@/utils/damageEvent'
 import {
   buildDefaultMemberAgents,
+  normalizeEventElement,
+  resolveEventElement,
   defaultAnomalyAgents,
   ensureSchemeSlots,
   getHitSkipReason,
@@ -40,6 +43,7 @@ import {
   summarizeFlowHit,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
+import { AGENT_ELEMENTS } from '@/utils/calculatorUi'
 import { isLuminousAgent } from '@/utils/remielUtils'
 import {
   buildSkillCalcZoneRows,
@@ -108,6 +112,7 @@ import {
   buildFlowBuffTableColumns,
   buildFlowBuffTableRows,
   buildFlowBuffTableStates,
+  effectiveRowOverride,
   flowBuffOverrideExceptionCount,
   isFlowBuffOverrideEmpty,
   resolveRowBeneficiarySlots,
@@ -144,10 +149,15 @@ const props = defineProps<{
   buffEffects?: CollectedEffect[]
   /** 每条增益的显示文本（`effect.id` → `+123 攻击力（数值）`）；与勾选器同一套取值，转模才看得到数 */
   buffEffectTexts?: Record<string, string>
+  /**
+   * 单元格文本：按**该行合并后的例外**（组 + 成员）取事件值。
+   * 与 `buffEffectTexts`（列级说明）分开：单元格显示"这一行吃多少"，列头说明保留全局口径。
+   */
+  buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
   /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
-  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
+  convertResolveInputs?: (slotIndex: number, rowOverride?: FlowBuffOverride | null, rowKey?: string | null) => ConvertResolveInputs
 }>()
 
 const emit = defineEmits<{
@@ -172,6 +182,11 @@ const buffOverrideOpen = computed({
 const buffOverrideEntry = computed(() =>
   currentSlot.value?.flow.find((item) => item.id === buffOverrideEntryId.value) ?? null,
 )
+
+const buffOverrideRowKey = computed(() => flowBuffTableRows.value.find((row) =>
+  row.entryId === buffOverrideEntryId.value &&
+  (buffOverrideMemberKey.value ? row.memberKey === buffOverrideMemberKey.value : row.kind !== 'member'),
+)?.key)
 
 /** 正在编辑的组内成员（整行编辑时为 null） */
 const buffOverrideMember = computed(() => {
@@ -206,12 +221,19 @@ const buffOverrideModel = computed<FlowBuffOverride | null>({
   },
 })
 
-/** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** ——
- *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
+/** 成员行编辑时：整组那一层的例外（父级关掉的项在这一段同样不吃，也开不回来） */
+const buffOverrideParent = computed<FlowBuffOverride | null>(() => {
+  const entry = buffOverrideEntry.value
+  if (!entry || !buffOverrideMember.value) return null
+  return entry.buffOverrides ?? null
+})
+
+/** 本行增益例外弹窗要列的效果：**与流程增益表同一口径** —— *  表里该行（整行编辑 = 组行含其成员行；成员编辑 = 该成员行）呈 on/off 的才列；
  *  表里是 na 的不列（na = 全局未开 / 受益者与本行对不上 / 整组已关）。 */
 /** 本行弹窗的「继承全局」读取函数：与局内增益同一份按槽合并的勾选状态（multi → 槽位合并） */
 
 function globalStacksFor(effect: BuffEffect): number {
+  if (effect.extraGain) return effect.defaultStacks ?? 1
   const multi = props.multiBuffSelection
   if (!multi) return effect.defaultStacks ?? 1
   return (
@@ -226,6 +248,7 @@ function globalStacksFor(effect: BuffEffect): number {
 }
 
 function globalConvertInput(effect: BuffEffect): number | undefined {
+  if (effect.extraGain) return undefined
   const multi = props.multiBuffSelection
   if (!multi) return undefined
   return getBuffEffectConvertInput(
@@ -363,8 +386,20 @@ const flowBuffTableStates = computed(() =>
   }),
 )
 
-const flowBuffTableSubtitle = computed(() => {
-  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
+/**
+ * 单元格文本：行键 → 该行有效例外（组 + 成员合并）→ 页面给的按行求值函数。
+ * 列级说明（`buffEffectTexts`）不含行级覆盖，二者不能混用。
+ */
+function flowBuffCellText(rowKey: string, effectId: string): string | null {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  const entry = row
+    ? ((currentSlot.value?.flow ?? []).find((item) => item.id === row.entryId) ?? null)
+    : null
+  const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
+  return props.buffEffectTextFor?.(effectId, rowOverride, rowKey) ?? null
+}
+
+const flowBuffTableSubtitle = computed(() => {  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
   const agentName = props.agents.find((item) => item.id === agentId)?.name
   return [props.schemeName, agentName].filter(Boolean).join(' · ')
 })
@@ -522,7 +557,8 @@ function skillMatchesLibraryCategory(skill: Skill, category: LibrarySkillCategor
 }
 const showCustomForm = ref(false)
 const expanded = ref(true)
-const modalTab = ref<'prep' | 'flow'>('prep')
+// 用户 2026-10-26：刷新后默认落在「流程」，准备阶段要点一下才进
+const modalTab = ref<'prep' | 'flow'>('flow')
 const flowDragEnabled = ref(false)
 const flowDraggingId = ref<string | null>(null)
 /** n 条招式对应 n+1 条插入缝，拖放只认缝不认行的上/下沿。 */
@@ -946,7 +982,7 @@ function skillMultText(skill: Skill, calcKey?: string | null) {
     buffAnchorId: anchorId,
     subcategory: sub,
     agent,
-    element: skill.element || agent?.element,
+    element: calcKey ? resolveEventElement(props.hits?.find(hit => hit.id === calcKey) ?? { skill, ownerAgentId: currentAgentId.value, anomalyPowerAgentId: null, elementOverride: null }, props.agents) : skill.element || agent?.element,
   })
   if (fromInherent != null) return String(fromInherent)
   if (skillMultNeedsAnomalyPowerProvider(skill.damageType)) return '待选择'
@@ -1230,6 +1266,17 @@ const detailSkill = computed((): Skill | null => {
     return preparedSkill(prepared)
   }
   return null
+})
+
+/**
+ * 详情弹窗里正在看的流程行（用户 2026-10-26：事件元素移进详情里选，流程行上内容太多）。
+ * 只对「流程行」生效：技能组行走技能组详情，成员行的事件元素仍在该弹窗内。
+ */
+const detailFlowRow = computed((): FlowEntry | null => {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind !== 'flow' && current.kind !== 'flowMember') return null
+  return currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
 })
 
 const detailPrepared = computed((): PreparedSkill | null => {
@@ -2421,6 +2468,30 @@ function updateFlow(entryId: string, patch: Partial<FlowEntry>) {
   Object.assign(entry, patch)
 }
 
+
+function setFlowElement(entryId: string, value: unknown) {
+  const entry = getActiveSlot()?.flow.find(item => item.id === entryId)
+  if (!entry) return
+  const element = normalizeEventElement(value)
+  if (element) entry.elementOverride = element
+  else delete entry.elementOverride
+}
+
+function setMemberElement(entryId: string, member: { order: number; skillId: string; count: number }, value: unknown) {
+  setMemberOverride(entryId, member, { elementOverride: normalizeEventElement(value) ?? null })
+}
+
+function eventElementLabel(entry: FlowEntry, member?: { order: number; skillId: string }) {
+  if (!member && flowIsGroup(entry)) return entry.elementOverride ? `整组：${entry.elementOverride}` : '整组：自动'
+  const memberIndex = member ? sortSkillGroupMembers(flowGroup(entry)?.members ?? []).findIndex(item => skillGroupMemberKey(item) === skillGroupMemberKey(member)) : -1
+  const key = member ? `${entry.id}#${memberIndex}:${member.skillId}` : entry.id
+  const hit = props.hits?.find(item => item.id === key)
+  const element = hit ? resolveEventElement(hit, props.agents) : undefined
+  const own = member ? memberOverrideFor(entry, member)?.elementOverride : entry.elementOverride
+  const origin = own ? '手动' : member && entry.elementOverride ? '继承整组' : '自动'
+  return `${element ?? '待选择'}（${origin}）`
+}
+
 function removeFlow(entryId: string) {
   const slot = getActiveSlot()
   if (!slot) return
@@ -3008,6 +3079,7 @@ function setMemberOverride(
   const base: FlowGroupMemberOverride = {
     memberKey: key,
     skillId: member.skillId,
+    ...prev,
     count: prev?.count ?? null,
     staggerPhase: prev?.staggerPhase ?? null,
     // 技能组详情（流程行）不再提供暴击覆盖
@@ -3016,12 +3088,14 @@ function setMemberOverride(
     triggerAgentId: prev?.triggerAgentId ?? null,
     ...patch,
   }
+  if (!normalizeEventElement(base.elementOverride)) delete base.elementOverride
   if (patch.count === null) base.count = null
   if (patch.staggerPhase === null) base.staggerPhase = null
   if (patch.anomalyPowerAgentId === null) base.anomalyPowerAgentId = null
   if (patch.triggerAgentId === null) base.triggerAgentId = null
   // 成员例外的空条目判据：次数 / 失衡 / 两个代理人 + 例外本身是否为空（同一份判据）
   const empty =
+    !base.elementOverride &&
     base.count == null &&
     base.staggerPhase == null &&
     !base.anomalyPowerAgentId &&
@@ -3221,10 +3295,13 @@ const showcaseTitle = computed(() => {
 <template>
   <section id="skill-flow" class="calc-mode-section damage-anchor">
     <header class="calc-mode-header">
-      <h2>招式流程</h2>
-      <p class="calc-mode-desc">
-        从招式库加入当前角色的准备招式，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。
-      </p>
+      <h2>
+        招式流程
+        <InfoTip
+          label="招式流程说明"
+          text="从招式库加入当前角色的准备招式，再排进流程。异常类必须选定双代理人才能出伤；换掉队伍角色后不会自动改成新人。"
+        />
+      </h2>
     </header>
 
     <div class="sf-agent-tabs" role="tablist" aria-label="角色流程">
@@ -3716,7 +3793,7 @@ const showcaseTitle = computed(() => {
                   {{
                     flowDragEnabled
                       ? '打开拖动后，按住招式行可改顺序。详情、次数和失衡仍是点击。'
-                      : '只改次数和是否失衡。需要换顺序时打开「拖动排序」。'
+                      : '可改次数、是否失衡和事件元素。需要换顺序时打开「拖动排序」。'
                   }}
                 </p>
               </div>
@@ -3860,6 +3937,8 @@ const showcaseTitle = computed(() => {
               :row-label="buffOverrideRowLabel"
               :global-stacks-for="globalStacksFor"
               :global-convert-input="globalConvertInput"
+              :parent-override="buffOverrideParent"
+              :row-key="buffOverrideRowKey"
               :slot-index="activeSlotIndex"
               :convert-resolve-inputs="convertResolveInputs"
               :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
@@ -3874,6 +3953,7 @@ const showcaseTitle = computed(() => {
               :columns="flowBuffTableColumns"
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
+              :cell-text="flowBuffCellText"
               @toggle="toggleFlowBuffCell"
               @set-column="setFlowBuffColumn"
             />
@@ -3921,9 +4001,11 @@ const showcaseTitle = computed(() => {
               }}</strong>
               <span class="muted">（各段倍率×次数之和）</span>
             </p>
-            <p class="col-desc">
-              与流程里普通招式相同：可改本段次数与失衡。留空/重置则继承组定义次数与整组失衡。
-            </p>
+
+            <InfoTip
+              label="组调整说明"
+              text="与流程里普通招式相同：可改本段次数、失衡与事件元素。留空/重置则继承组定义次数、整组失衡与整组元素。"
+            />
             <ul class="sf-list group-tune-list">
               <SkillFlowCard
                 v-for="(member, memberIndex) in sortSkillGroupMembers(tuningGroup.members)"
@@ -4011,6 +4093,15 @@ const showcaseTitle = computed(() => {
                   })
                 "
               >
+                <template #parameters>
+                  <label class="sf-event-element">事件元素
+                    <select :value="memberOverrideFor(tuningFlowEntry!, member)?.elementOverride ?? ''" @change="setMemberElement(tuningFlowEntry!.id, member, ($event.target as HTMLSelectElement).value)">
+                      <option value="">继承整组</option>
+                      <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">{{ element }}</option>
+                    </select>
+                    <span>{{ eventElementLabel(tuningFlowEntry!, member) }}</span>
+                  </label>
+                </template>
                 <template #actions>
                   <button
                     type="button"
@@ -4294,6 +4385,24 @@ const showcaseTitle = computed(() => {
               </ul>
             </div>
             <div v-else-if="detailSkill" class="skill-detail-body">
+              <!-- 事件元素：用户 2026-10-26 移到详情里选，流程行上不再占位 -->
+              <div v-if="detailFlowRow && !flowIsGroup(detailFlowRow)" class="agent-row">
+                <label>
+                  <span>事件元素</span>
+                  <select
+                    :value="detailFlowRow.elementOverride ?? ''"
+                    @change="
+                      setFlowElement(detailFlowRow!.id, ($event.target as HTMLSelectElement).value)
+                    "
+                  >
+                    <option value="">自动</option>
+                    <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">
+                      {{ element }}
+                    </option>
+                  </select>
+                  <span class="detail-element-hint">{{ eventElementLabel(detailFlowRow) }}</span>
+                </label>
+              </div>
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
                 <p class="detail-section-title">双代理人</p>
@@ -4687,6 +4796,16 @@ const showcaseTitle = computed(() => {
 </template>
 
 <style scoped>
+/* 详情里的事件元素：解析结果提示。
+   不要用 --calc-text 的浅色回退（浅色主题下没有该变量 → 回退近白，直接看不见），
+   跟随 .agent-row label 已确定的次要文字色即可，深浅主题都读得清。 */
+.detail-element-hint {
+  font-size: 0.78rem;
+  color: inherit;
+  opacity: 0.95;
+  margin-left: 0.35rem;
+}
+
 .sf-agent-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -6097,4 +6216,10 @@ const showcaseTitle = computed(() => {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+</style>
+
+<style scoped>
+.sf-event-element { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; font-size: 0.78rem; }
+.sf-event-element select { color: inherit; background: var(--calc-input-bg, transparent); border: 1px solid currentColor; border-radius: 5px; padding: 0.15rem 0.3rem; }
+.sf-event-element span { opacity: 0.75; }
 </style>

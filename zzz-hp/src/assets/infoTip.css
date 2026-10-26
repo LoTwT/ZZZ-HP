@@ -1,0 +1,144 @@
+/* ============================================================
+   说明浮层（问号说明 / 悬停数值组成）统一外观 · 全站唯一来源
+   - 交互规则：src/composables/useInfoTipPopover.ts
+   - 用法：common/InfoTip.vue；数值组成见 StatValueWithSources.vue
+   - 浮层 Teleport 到 body，因此颜色用 html[data-theme] 切换，
+     不能依赖 .calculator-page.theme-light 这类祖先选择器
+   ============================================================ */
+
+.info-tip {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: max-content;
+  min-width: 200px;
+  max-width: min(430px, calc(100vw - 24px));
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #4a5462;
+  border-radius: 8px;
+  background: #232a34;
+  color: #dfe5ee;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: normal;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  user-select: text;
+}
+
+.info-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: var(--arrow-x, 50%);
+  border: 7px solid transparent;
+  border-top-color: #4a5462;
+  transform: translateX(-50%);
+}
+
+.info-tip--below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: #4a5462;
+}
+
+/* 悬停间隙桥：指针从触发元素移到浮层时不掉 */
+.info-tip::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.info-tip--below::before {
+  bottom: auto;
+  top: -10px;
+}
+
+.info-tip .info-tip-title {
+  margin: 0;
+  color: #e8d4a8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.info-tip .info-tip-text {
+  margin: 0;
+  color: #dfe5ee;
+}
+
+.info-tip .info-tip-list {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding-left: 1.05em;
+}
+
+.info-tip .info-tip-list li {
+  color: #c3ccd8;
+}
+
+.info-tip .info-tip-list li::marker {
+  color: #d4b06a;
+}
+
+[data-theme='light'] .info-tip {
+  border-color: #c9a55c;
+  background: #f7fbfe;
+  color: #1c3a52;
+  box-shadow: 0 10px 28px rgba(22, 50, 74, 0.22);
+}
+
+[data-theme='light'] .info-tip::after {
+  border-top-color: #c9a55c;
+}
+
+[data-theme='light'] .info-tip--below::after {
+  border-top-color: transparent;
+  border-bottom-color: #c9a55c;
+}
+
+[data-theme='light'] .info-tip .info-tip-title {
+  color: #16324a;
+}
+
+[data-theme='light'] .info-tip .info-tip-text {
+  color: #1c3a52;
+}
+
+[data-theme='light'] .info-tip .info-tip-list li {
+  color: #4d6a80;
+}
+
+[data-theme='light'] .info-tip .info-tip-list li::marker {
+  color: #9f7d3f;
+}
+/* ============================================================
+   带问号的标题字号（用户 2026-10-26 定）
+   判据：标题文字不能比 17px 的问号图标还小，同类型统一。
+   - 区块标题（h2）：20px
+   - 小节标题（h3 / h4）：18px
+   - 词条库那种 span 标题：18px
+   只有挂着问号的标题会命中，没问号的标题不受影响。
+   ============================================================ */
+h2:has(> .info-tip-host),
+h2:has(.info-tip-host) {
+  font-size: 20px !important;
+  line-height: 1.35;
+}
+
+h3:has(.info-tip-host),
+h4:has(.info-tip-host) {
+  font-size: 18px !important;
+  line-height: 1.4;
+}
+
+.pane-title:has(+ .info-tip-host) {
+  font-size: 18px !important;
+}

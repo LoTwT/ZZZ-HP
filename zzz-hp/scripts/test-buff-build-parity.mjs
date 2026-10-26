@@ -34,6 +34,7 @@ import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
 import { createEmptyAffixCounts } from '../src/types/calculatorPanel.ts'
 import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
 import { BUFFS_JSON, DEV_ROOT, FRONTEND_ROOT, resolveSchemePath } from './_paths.mjs'
+import { extraCard } from './_effectPipelineHarness.mjs'
 
 const WRITE = process.argv.includes('--write')
 const SNAPSHOT_DIR = path.join(DEV_ROOT, '.dim', 'tmp', 'buff-build-snapshots')
@@ -195,17 +196,19 @@ function snapshotDisplay(panelContext, slotIndex) {
  */
 function snapshotExtraGainsCase(evalCtx) {
   const gains = [
-    { id: 'probe-extra-team', name: '探针额外·全队', stat: 'dmgBonus', value: 12, applySlot: 'team' },
-    { id: 'probe-extra-slot1', name: '探针额外·槽位2', stat: 'inCombatAtkPercent', value: 7, applySlot: 1 },
-    {
-      id: 'probe-extra-gate',
-      name: '探针额外·人数档',
-      stat: 'dmgBonus',
-      value: 5,
-      applySlot: 'team',
-      teamProfession: '支援',
-      teamProfessionValues: [null, 2, null],
-    },
+    extraCard('probe-extra-team', { stat: 'dmgBonus', value: 12, applyTarget: 'team' }, { name: '探针额外·全队', applySlot: 'team' }),
+    extraCard('probe-extra-slot1', { stat: 'inCombatAtkPercent', value: 7, applyTarget: 'self' }, { name: '探针额外·槽位2', applySlot: 1 }),
+    extraCard(
+      'probe-extra-gate',
+      {
+        stat: 'dmgBonus',
+        value: 5,
+        applyTarget: 'team',
+        teamProfession: '支援',
+        teamProfessionValues: [null, 2, null],
+      },
+      { name: '探针额外·人数档', applySlot: 'team' },
+    ),
   ]
   const ctx = { ...evalCtx, extraGains: gains, panelContext: { ...evalCtx.panelContext, extraGains: gains } }
   clearAffixEvalCache()

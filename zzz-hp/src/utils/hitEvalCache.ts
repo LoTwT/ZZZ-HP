@@ -101,6 +101,7 @@ export function buildHitEvalFingerprint(hit: ResolvedHit): string {
     id: hit.id,
     // 行级增益例外：只影响本行结算 —— 必须进指纹，否则两行会互相命中对方的缓存
     buffOverride: hit.buffOverride ?? null,
+    elementOverride: hit.elementOverride ?? null,
     ownerAgentId: hit.ownerAgentId,
     anomalyPowerAgentId: hit.anomalyPowerAgentId,
     triggerAgentId: hit.triggerAgentId,

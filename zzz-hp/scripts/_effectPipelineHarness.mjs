@@ -154,3 +154,27 @@ export function affixEntry(id, target, perRoll) {
     enabledByDefault: true,
   }
 }
+
+/**
+ * 一张单效果的额外 Buff 卡片（新结构：卡片 + effects[]）。
+ * 脚本里有旧的扁平夹具时一律改成这个入口，别再用 `{ stat, value }` 直接塞 `extraGains`。
+ */
+export function extraCard(id, effectOverrides = {}, cardOverrides = {}) {
+  return {
+    id,
+    name: cardOverrides.name ?? id,
+    applySlot: cardOverrides.applySlot ?? 0,
+    sourceSlot: cardOverrides.sourceSlot ?? 0,
+    effects: [
+      createEmptyBuffEffect({
+        id: `${id}-eff`,
+        stat: 'dmgBonus',
+        kind: 'fixed',
+        value: 0,
+        enabledDefault: true,
+        applyTarget: (cardOverrides.applySlot ?? 0) === 'team' ? 'team' : 'self',
+        ...effectOverrides,
+      }),
+    ],
+  }
+}

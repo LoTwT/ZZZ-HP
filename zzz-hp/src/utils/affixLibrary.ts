@@ -11,7 +11,8 @@ import {
 } from '@/types/calculator'
 import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
+import type { ExtraBuffGain } from '@/types/extraBuff'
+import { createEmptyBuffEffect } from '@/utils/buffEffect'
 import type { AffixEffectTemplate } from '@/utils/affixEffectTemplate'
 import { buffScopeLabel, normalizeBuffScopes } from '@/utils/buffScope'
 
@@ -329,9 +330,9 @@ const AFFIX_BUFF_SCOPES: ReadonlySet<string> = new Set([
 ])
 
 /**
- * 把一条 `gain:` 条目折成给主 C 的 extraGain。
+ * 把一条 `gain:` 条目折成给主 C 的额外 Buff 卡片（Spec §5.3 第 1 项）。
  *
- * `applySlot` 在评估入口按 `mainSlotIndex` 覆盖；这里只填默认 0。
+ * 一条条目 → 一张卡片 + 一条固定值效果；`applySlot` 在评估入口按 `mainSlotIndex` 覆盖，这里只填默认 0。
  * `panel:` 返回 null。
  */
 export function extraGainFromLibraryEntry(
@@ -343,20 +344,31 @@ export function extraGainFromLibraryEntry(
   if (!field) return null
   const scopeList = normalizeBuffScopes(entry.scope)
   const scoped = Boolean(entry.skillCategory) || scopeList.includes('skill')
+  const skillTargets = entry.skillCategory
+    ? [{ category: entry.skillCategory, subcategoryId: entry.skillSubcategoryId ?? null }]
+    : undefined
   return {
-    id: `${AFFIX_GAIN_SOURCE_ID_PREFIX}${entry.id}`,
+    id: `affix-gain:${entry.id}`,
     name: entry.label,
-    stat: field,
-    value: rolls * entry.perRoll,
-    applySituation: entry.applySituation ?? 'global',
-    scope: scoped && scopeList.length === 1 && scopeList[0] === 'general'
-      ? normalizeBuffScopes('skill')
-      : scopeList,
-    applyTarget: 'self',
     applySlot: 0,
-    skillCategory: entry.skillCategory,
-    skillSubcategoryId: entry.skillSubcategoryId ?? null,
-    appliesToAnomaly: entry.appliesToAnomaly,
+    sourceSlot: 0,
+    effects: [
+      createEmptyBuffEffect({
+        // 固定 id：同一份分配走两次评估（库路径 / 适配器路径）必须得到同一张卡片
+        id: `affix-gain:${entry.id}-eff`,
+        stat: field,
+        kind: 'fixed',
+        value: rolls * entry.perRoll,
+        applySituation: entry.applySituation ?? 'global',
+        applyTarget: 'self',
+        scope: scoped && scopeList.length === 1 && scopeList[0] === 'general'
+          ? normalizeBuffScopes('skill')
+          : scopeList,
+        skillTargets,
+        appliesToAnomaly: entry.appliesToAnomaly,
+        enabledDefault: true,
+      }),
+    ],
   }
 }
 

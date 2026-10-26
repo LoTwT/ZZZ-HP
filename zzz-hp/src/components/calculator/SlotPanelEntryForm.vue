@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { AgentBuffDoc, CharacterAttrKey, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
 import { CHARACTER_ATTR_OPTIONS } from '@/types/calculator'
 import {
@@ -209,7 +210,13 @@ function formatValue(key: keyof PanelStats, value: number) {
 <template>
   <div class="slot-panel-entry" :class="{ 'is-disabled': disabled }">
     <div class="entry-mode-row">
-      <span class="entry-mode-label">录入方式</span>
+      <span class="entry-mode-label">
+        录入方式
+        <InfoTip
+          label="录入方式说明"
+          text="导入方式 2 者取其一，以最后一次点击「确认导入」时的选择作为基准的局外面板。"
+        />
+      </span>
       <button
         type="button"
         class="entry-mode-tab"
@@ -228,7 +235,7 @@ function formatValue(key: keyof PanelStats, value: number) {
       >
         词条导入
       </button>
-      <p class="entry-mode-hint">导入方式2者取其一，以最后一次点击「确认导入」时的选择作为基准的局外面板</p>
+
     </div>
 
     <p v-if="disabled" class="disabled-hint">请先在「角色」Tab 选择代理人后再录入面板。</p>
@@ -297,8 +304,13 @@ function formatValue(key: keyof PanelStats, value: number) {
 
     <section v-if="isAffixMode" class="panel-block">
       <header class="panel-block-header">
-        <h3>词条数</h3>
-        <p>基于角色基础面板、音擎与驱动盘属性推导局外；每条副词条按固定数值折算。</p>
+        <h3>
+          词条数
+          <InfoTip
+            label="词条数说明"
+            text="基于角色基础面板、音擎与驱动盘属性推导局外；每条副词条按固定数值折算。"
+          />
+        </h3>
       </header>
       <p v-if="!agent" class="hint">请先在「角色」Tab 选择代理人。</p>
       <div class="grid four">

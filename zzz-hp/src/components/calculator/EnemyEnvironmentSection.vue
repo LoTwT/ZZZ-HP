@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import EnemyBossPickerModal from '@/components/calculator/EnemyBossPickerModal.vue'
 import EnemyPresetCombo from '@/components/calculator/EnemyPresetCombo.vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import {
   ENEMY_DEFENSE_PRESETS,
   STAGGER_MULTIPLIER_PRESETS,
@@ -175,7 +176,10 @@ function switchMode(mode: EnemyInputMode) {
       >
         清除怪物
       </button>
-      <p class="database-hint">应用后自动填入防御与失衡易伤；下方仅展示有弱点或有抗性的属性。</p>
+      <InfoTip
+        label="怪物库说明"
+        text="应用后自动填入防御与失衡易伤；下方仅展示有弱点或有抗性的属性。"
+      />
     </div>
 
     <div class="enemy-fields grid four">
@@ -472,12 +476,6 @@ function switchMode(mode: EnemyInputMode) {
   border-color: #4a5568;
 }
 
-.database-hint {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 0.76rem;
-  color: #9aa3b2;
-}
 
 .grid {
   display: grid;

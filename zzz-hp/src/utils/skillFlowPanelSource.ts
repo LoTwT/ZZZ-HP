@@ -135,6 +135,7 @@ export function buildSkillFlowPageSignature(input: {
  * 只换令牌不改 watch 则根本不会触发重算。
  */
 export interface SkillFlowHitContextInput {
+  agentElements?: ReadonlyArray<readonly [string, string]>
   enemy: unknown
   /** 页级额外 Buff */
   extraGains: unknown
@@ -201,6 +202,7 @@ export function buildSkillFlowHitContextSignature(input: SkillFlowHitContextInpu
     ]),
     main: input.mainSlotIndex,
     levels: input.skillTalentLevelsByAgent ?? null,
+    elements: input.agentElements ?? null,
   })
 }
 

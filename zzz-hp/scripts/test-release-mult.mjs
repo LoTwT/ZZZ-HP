@@ -244,4 +244,14 @@ if (basicOnly !== 240 || ultOnly !== 324) {
   console.log(`PASS 行级等级转模: 焚罪 +${basicOnly} / 烬火 +${ultOnly}`)
 }
 
+{
+  const { r3Fixture } = await import('./_eventElementHarness.mjs')
+  for (const mode of ['ordinary', 'extra-slot', 'extra-team']) {
+    const f = r3Fixture(mode)
+    const actual = resolveAnomalyReleaseSkillConvertMods(f.panelContext, '电').anomalyReleaseMult
+    if (actual !== 1.2) { failed = true; console.error(`FAIL R3 ${mode} cross-element ${actual}`) }
+    else console.log(`PASS R3 ${mode} cross-element 1.2`)
+  }
+}
+
 process.exit(failed ? 1 : 0)

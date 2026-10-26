@@ -30,6 +30,11 @@ const props = defineProps<{
   states: Record<string, FlowBuffCellState>
   /** 表格副标题（槽位 / 方案名），仅展示 */
   subtitle?: string
+  /**
+   * 单元格数值行：按**该行有效例外**（本层/父组/全局）取，返回 `+500 攻击力（数值）` 这类文本。
+   * 缺省/返回 null 时退回列级说明（等同旧行为）。
+   */
+  cellText?: (rowKey: string, effectId: string) => string | null
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -161,13 +166,16 @@ function showTitleTip(event: MouseEvent, row: FlowBuffTableRow) {
  * **不带**状态词，也**不带**那条长长的触发说明（其他维持现状）。
  */
 function showCellTip(event: MouseEvent, row: FlowBuffTableRow, column: FlowBuffTableColumn) {
+  // 数值行按**这一行**的有效值取（行级/组级覆盖）；列级说明只作为列头那份“全局口径”保留
+  const rowLine = props.cellText?.(row.key, column.key) ?? column.details?.[0]
+  const details = [...(rowLine ? [rowLine] : []), ...(column.details ?? []).slice(1)]
   showTipParts(
     event,
     [
       { text: row.label, badge: row.badge ?? null },
       { text: ` × ${column.label}`, badge: column.badge ?? null },
     ],
-    column.details ?? [],
+    details,
   )
 }
 

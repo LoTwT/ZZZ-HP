@@ -12,6 +12,7 @@
  * - 只影响本行结算：不改面板、不动层数累计、不影响其它行
  * - 白天主题覆盖在 `assets/calculatorLight.css`（与局内增益同一处，惯例一致）
  */
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
 import BuffRichText from '@/components/calculator/BuffRichText.vue'
@@ -26,13 +27,14 @@ import type {
 import {
   availableBuffGroupTabs,
   blockKeyOfCollected,
-  parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
+  resolveCollectedEffectPanelSourceValues,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
-import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty } from '@/utils/flowBuffTable'
+import { formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
+import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty, mergeFlowBuffOverride } from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
-import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
+import { isSkillConvertFromKey, type SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
 
 const props = defineProps<{
@@ -48,9 +50,10 @@ const props = defineProps<{
   slotIndex?: number
   /**
    * 该槽位的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）——**页面按槽位现给**：
-   * 每次打开弹窗取一次（弹窗开着时面板不可编辑），不在页面渲染期空转。
+   * 打开期间随有效行级例外重新求值，关闭时不计算。
    */
-  convertResolveInputs?: (slotIndex: number) => ConvertResolveInputs
+  convertResolveInputs?: (slotIndex: number, rowOverride?: FlowBuffOverride | null, rowKey?: string | null) => ConvertResolveInputs
+  rowKey?: string | null
   /** 技能等级转模来源：按角色 id 的五大类技能等级 */
   skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
   /** 队伍槽位（技能等级转模按效果所属槽位取角色） */
@@ -62,17 +65,24 @@ const props = defineProps<{
    * 也从这里开不回来 —— 不说明的话用户只会看到"列表里少了几条"。
    */
   inheritedDisabledCount?: number
+  /**
+   * 父级（整组）这一层的例外：成员行编辑时传入。
+   * 父级关掉的块/效果在这里同样显示为关闭，且不能从这一段单独开回来（与流程增益表同一套规则）。
+   */
+  parentOverride?: FlowBuffOverride | null
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
 const override = defineModel<FlowBuffOverride | null>('override', { default: null })
+const effectiveOverride = computed(() => mergeFlowBuffOverride(props.parentOverride, override.value))
 
 /**
- * 转模解析输入：只在**打开时**取一次（`open` 进依赖 → 每次打开重算）。
- * 弹窗开着时面板编辑不了，所以这一次取值就是最新的；不在页面渲染期反复算面板值。
+ * 转模解析输入：打开期间跟踪有效行配置，避免禁用来源增益后仍使用全局面板。
  */
 const resolveInputs = computed<ConvertResolveInputs | null>(() =>
-  open.value ? (props.convertResolveInputs?.(props.slotIndex ?? 0) ?? null) : null,
+  open.value
+    ? (props.convertResolveInputs?.(props.slotIndex ?? 0, effectiveOverride.value, props.rowKey) ?? null)
+    : null,
 )
 
 type BlockGroup = {
@@ -136,23 +146,40 @@ const disabledEffects = computed(() => new Set(override.value?.disabledEffectIds
 /** 例外条数（禁用 + 层数 / 转模覆盖）——与流程行、细调成员用的是同一份计数 */
 const exceptionCount = computed(() => flowBuffOverrideExceptionCount(override.value))
 
+/** 效果 id → 所属块键（与流程增益表同一套 `blockKeyOfCollected`） */
+const blockKeyByEffectId = computed(() => {
+  const map = new Map<string, string>()
+  for (const item of props.effects) map.set(item.effect.id, blockKeyOfCollected(item))
+  return map
+})
+/** 父级（整组）这一层关掉的效果 / 块：成员行同样不吃，且不能从这里开回来 */
+const parentDisabledEffectIds = computed(
+  () => new Set(props.parentOverride?.disabledEffectIds ?? []),
+)
+const parentDisabledBlockKeys = computed(
+  () => new Set(props.parentOverride?.disabledBlockIds ?? []),
+)
+
+/** 是否被父级整组关掉（流程增益表里对应格子也是这种状态：灰、不可单独开） */
+function isEffectOffByParent(id: string): boolean {
+  if (parentDisabledEffectIds.value.has(id)) return true
+  const blockKey = blockKeyByEffectId.value.get(id)
+  return blockKey != null && parentDisabledBlockKeys.value.has(blockKey)
+}
+
 function isEffectOff(id: string): boolean {
-  return disabledEffects.value.has(id)
+  return disabledEffects.value.has(id) || isEffectOffByParent(id)
 }
 
 function isStackable(effect: BuffEffect): boolean {
   return effect.kind === 'stacked' || Boolean(effect.stackable)
 }
 
-function isManualConvert(effect: BuffEffect): boolean {
-  return effect.kind === 'convert' && effect.convert?.panelSource === 'manual'
-}
-
 /** 本行生效层数 = 行级覆盖 ?? 继承全局 ?? defaultStacks */
 function stacksModel(effect: BuffEffect): number {
-  const overridden = override.value?.stacksByEffectId?.[effect.id]
+  const overridden = effectiveOverride.value?.stacksByEffectId?.[effect.id]
   if (overridden != null) return overridden
-  return props.globalStacksFor?.(effect) ?? effect.defaultStacks ?? 1
+  return (!effect.extraGain ? props.globalStacksFor?.(effect) : undefined) ?? effect.defaultStacks ?? 1
 }
 
 function setStacks(effect: BuffEffect, value: number) {
@@ -161,14 +188,45 @@ function setStacks(effect: BuffEffect, value: number) {
   write({ stacksByEffectId: next })
 }
 
-/** 本行生效转模输入 = 行级覆盖 ?? 继承全局输入 ?? defaultBase ?? 0 */
-function convertModel(effect: BuffEffect): number {
-  const overridden = override.value?.convertInputsByEffectId?.[effect.id]
+/** 该效果在这条行里能不能改「转模基数」（技能等级来源只有 manual 才手填基数） */
+function isConvertBaseEditable(item: CollectedEffect): boolean {
+  const convert = item.effect.convert
+  if (!convert || item.effect.kind !== 'convert') return false
+  if (!isSkillConvertFromKey(convert.from)) return true
+  return (convert.panelSource ?? 'external') === 'manual'
+}
+
+/**
+ * 本行当前生效的转模基数：
+ * 本层覆盖 ?? 父组（组行）覆盖 ?? 继承全局手填 ?? 面板/默认 —— 与结算的合并顺序一致。
+ */
+function convertBaseModel(item: CollectedEffect): number {
+  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
   if (overridden != null) return overridden
-  const inherited = props.globalConvertInput?.(effect)
+  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
   if (inherited != null) return inherited
-  const base = effect.convert?.defaultBase
-  return Number.isFinite(base) ? Number(base) : 0
+  return convertLiveBase(item)
+}
+
+/** 未做任何手填时的基数：自行设置取 defaultBase，其余取该效果来源槽位的面板值 */
+function convertLiveBase(item: CollectedEffect): number {
+  const convert = item.effect.convert
+  if (!convert) return 0
+  const inputs = resolveInputs.value
+  const source = convert.panelSource ?? 'external'
+  if (source === 'manual') {
+    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
+      ? Number(convert.defaultBase)
+      : 0
+  }
+  if (isSkillConvertFromKey(convert.from)) return 0
+  const panelSources = panelSourceValuesForEffect(item)
+  const map =
+    (source === 'final' || source === 'external' ? panelSources?.[source] : undefined) ??
+    inputs?.attrDefaults ??
+    {}
+  const value = map[convert.from] ?? inputs?.attrDefaults?.[convert.from] ?? 0
+  return Number.isFinite(value) ? Number(value) : 0
 }
 
 function setConvertInput(effect: BuffEffect, value: number) {
@@ -224,27 +282,29 @@ function statLabel(stat: string): string {
 
 /** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
 function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
-  const inputs = resolveInputs.value
-  if (slotIndex != null && inputs?.panelSourceValuesBySlot?.[slotIndex]) {
-    return inputs.panelSourceValuesBySlot[slotIndex]
-  }
-  return inputs?.panelSourceValues
+  return resolveCollectedEffectPanelSourceValues(item, resolveInputs.value ?? {})
 }
 
 /** 技能等级转模的来源角色等级表（按效果所属槽位取） */
 function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLevels> | null {
-  const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+  const slotIndex = resolveCollectedEffectSourceSlot(item)
   const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
   return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
 }
 
-/** 转模解析值：自行设置走行级输入，其余按面板值算（与局内增益同一套 `resolveConvertValue`） */
+/**
+ * 转模解析值（行内显示）：行级覆盖 ?? 继承全局手填 ?? null（= 按面板/默认值）。
+ * 与结算同一套取值顺序与同一个 `resolveConvertValue`，保证"这一行显示 = 这一行实际"。
+ */
 function convertResult(item: CollectedEffect): number {
+  if (resolveInputs.value?.effectAmounts) return resolveInputs.value.effectAmounts[item.effect.id] ?? 0
+  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
+  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
+  const overrideBase = overridden ?? inherited ?? null
   return resolveConvertValue(
     item.effect,
     resolveInputs.value?.attrDefaults ?? {},
-    isManualConvert(item.effect) ? convertModel(item.effect) : null,
+    overrideBase,
     panelSourceValuesForEffect(item),
     skillTalentLevelsForItem(item),
   )
@@ -254,8 +314,11 @@ function convertResult(item: CollectedEffect): number {
 function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
   let amountText: string
-  if (isStackable(effect)) {
-    amountText = formatCalcSigned((effect.valuePerStack ?? 0) * stacksModel(effect))
+  if (resolveInputs.value?.configurationOnly) return `${statLabel(effect.stat)}（整组配置；数值见成员）`
+  if (resolveInputs.value?.effectAmounts) {
+    amountText = formatCalcSigned(resolveInputs.value.effectAmounts[effect.id] ?? 0)
+  } else if (isStackable(effect)) {
+    amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
   } else if (effect.kind === 'convert') {
     amountText = formatCalcSigned(convertResult(item))
   } else {
@@ -292,10 +355,11 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
             </h3>
             <button type="button" class="bo-close" aria-label="关闭" @click="open = false">×</button>
           </div>
-          <p class="bo-hint">
-            勾掉 = <b>这一行不吃</b>该增益；「层数 / 数值」按行改，缺省继承全局。
-            只影响本行结算：不改面板、不影响全局层数累计、不影响其它行。
-          </p>
+
+          <InfoTip
+            label="行级增益例外说明"
+            text="这里是比全局更高一级的行级调整：勾掉 = 这一行不吃该增益；「层数 / 基数」按行改，覆盖全局，没改的项继承全局。只影响这一行的结算与显示：面板仍按全局值（带招式条件的增益本来就不进面板），不影响其它行。"
+          />
           <p v-if="inheritedDisabledCount" class="bo-hint bo-hint-inherit">
             整组还关着 <b>{{ inheritedDisabledCount }}</b> 条 —— 这一段<b>同样不吃</b>，
             在组内开不回来（要放开请到整组的「增益」里改）。
@@ -355,12 +419,16 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                       type="checkbox"
                       class="bo-check"
                       :checked="!isEffectOff(item.effect.id)"
+                      :disabled="isEffectOffByParent(item.effect.id)"
                       @change="toggleEffect(item.effect.id)"
                     />
                     <span class="bo-effect-text">
                       <BuffRichText :text="effectResultText(item)" />
                     </span>
                   </label>
+                  <span v-if="isEffectOffByParent(item.effect.id)" class="bo-tag bo-tag-parent">
+                    整组已关闭
+                  </span>
                   <label v-if="isStackable(item.effect)" class="bo-effect-control" @click.stop>
                     <span>层数</span>
                     <NumberStepper
@@ -373,10 +441,10 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                       @update:model-value="setStacks(item.effect, $event)"
                     />
                   </label>
-                  <label v-else-if="isManualConvert(item.effect)" class="bo-effect-control" @click.stop>
-                    <span>数值</span>
+                  <label v-else-if="isConvertBaseEditable(item)" class="bo-effect-control" @click.stop>
+                    <span>基数</span>
                     <NumberStepper
-                      :model-value="convertModel(item.effect)"
+                      :model-value="convertBaseModel(item)"
                       :min="0"
                       :max="999999"
                       :step="10"
@@ -489,6 +557,18 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
   border-radius: 999px;
   font-size: 0.8rem;
   color: #ffd479;
+}
+.bo-tag {
+  flex-shrink: 0;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  border: 1px solid #4a5563;
+  color: #9aa3b5;
+}
+.bo-tag-parent {
+  border-color: #6b4a4a;
+  color: #d79a9a;
 }
 .bo-spacer {
   flex: 1;

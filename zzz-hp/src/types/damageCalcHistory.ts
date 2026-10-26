@@ -15,6 +15,7 @@ import type {
 import type { CharacterAttrKey } from '@/types/calculator'
 import type { DamageEnemyInput, EnemyResistanceType } from '@/utils/enemyResistance'
 import type { MultiSlotBuffSelection } from '@/utils/panelBuffCalc'
+import type { AgentElement } from '@/utils/calculatorUi'
 
 /** 兼容旧存档的敌方环境快照 */
 export type DamageCalcEnemyInputSnapshot = DamageEnemyInput & {
@@ -86,30 +87,14 @@ export interface DamageCalcPanelSnapshot {
     import('@/utils/skillTalentLevels').SkillTalentLevels
   >
   /**
-   * @deprecated 旧格式的扁平额外 Buff 属性。**只读**：仅供导入老配置文件时转成下面的条目
-   * （`PanelCalcSection` 的兼容分支）。新文件不再写它；彻底删除见代办 T23。
+   * @deprecated 旧格式的扁平额外 Buff 属性（扁平增益模型时代）。**当前没有任何读取点**：
+   * 归一化只在 `PanelCalcSection.loadSnapshot` 对 `extraGains` 做，这里的数据会被**静默忽略**
+   * （既不转成条目、也不计入"已跳过 N 条"提示）。用户 2026-10-26 明确：这类旧数据丢了可接受，
+   * 不做兼容迁移。字段本身的删除按代办 T23 处理。
    */
   extraMods?: BuffStatModifiers
-  /** 额外 Buff 增益条目（优先于扁平 extraMods） */
-  extraGains?: Array<{
-    id: string
-    name: string
-    stat: keyof BuffStatModifiers
-    value: number
-    applySituation?: import('@/types/calculator').BuffApplySituation
-    /** 作用域（数组口径；历史数据里的单值字符串读时会归一化） */
-    scope?: import('@/types/calculator').BuffScope[]
-    applyTarget?: import('@/types/calculator').BuffApplyTarget
-    applySlot?: number | 'team'
-    skillCategory?: import('@/types/calculator').BuffSkillTargetId
-    skillSubcategoryId?: string | null
-    appliesToAnomaly?: boolean
-    applyProfession?: string | null
-    teamProfession?: string | null
-    teamProfessionValues?: Array<number | null> | null
-    /** @deprecated */
-    teamProfessionMinCount?: number | null
-  }>
+  /** 额外 Buff 卡片（类型定义唯一来源：`@/types/extraBuff`） */
+  extraGains?: import('@/types/extraBuff').ExtraBuffGain[]
   enemyInput: DamageCalcEnemyInputSnapshot
 }
 
@@ -195,6 +180,7 @@ export interface FlowBuffOverride {
  * 流程组行上的成员覆盖（仅该方案实例；缺省 = 继承整组 FlowEntry + 组定义）。
  */
 export interface FlowGroupMemberOverride {
+  elementOverride?: AgentElement | null
   /** 稳定键：`${order}:${skillId}` */
   memberKey: string
   skillId: string
@@ -211,6 +197,7 @@ export interface FlowGroupMemberOverride {
 
 /** 流程里的一条编排（普通招式或整组各占一行） */
 export interface FlowEntry {
+  elementOverride?: AgentElement | null
   id: string
   /** 该流程所属角色；为将来三条流程合并显示预留 */
   ownerAgentId: string

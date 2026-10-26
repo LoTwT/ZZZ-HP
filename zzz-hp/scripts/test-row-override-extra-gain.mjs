@@ -26,6 +26,8 @@ import {
   invalidateBuffCatalogCache,
 } from '../src/utils/panelBuffCalc.ts'
 import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
+import { createExtraBuffGain } from '../src/utils/extraBuffCalc.ts'
+import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
 import { BUFFS_JSON, FRONTEND_ROOT } from './_paths.mjs'
 
 const SCHEME =
@@ -109,13 +111,22 @@ const evalCtx = buildOptimalEvalContext({
 })
 
 const EXTRA_ID = 'test-extra-in-combat-atk'
-const EXTRA_GAIN = {
+const EXTRA_EFFECT_ID = 'test-extra-in-combat-atk-eff'
+const EXTRA_GAIN = createExtraBuffGain({
   id: EXTRA_ID,
   name: '测试额外 Buff',
-  stat: 'inCombatAtkPercent',
-  value: 30,
   applySlot: 'team',
-}
+  effects: [
+    createEmptyBuffEffect({
+      id: EXTRA_EFFECT_ID,
+      stat: 'inCombatAtkPercent',
+      kind: 'fixed',
+      value: 30,
+      applyTarget: 'team',
+      enabledDefault: true,
+    }),
+  ],
+})
 const EXTRA_KEY = extraGainBlockKey(EXTRA_ID)
 
 invalidateBuffCatalogCache()
@@ -144,7 +155,7 @@ check('块禁用后局内攻击力% 少了 30', Math.abs(modsBase - modsBlockOff
 check('块禁用后收集列表里没有它', extraOnly(blockOffCtx).length === 0)
 
 console.log('\n=== 3. 行级「单条禁用」同样生效 ===')
-const effectOffCtx = { ...base, rowBuffOverride: { disabledEffectIds: [EXTRA_ID] } }
+const effectOffCtx = { ...base, rowBuffOverride: { disabledEffectIds: [EXTRA_EFFECT_ID] } }
 const modsEffectOff = collectPanelBuffMods(effectOffCtx).inCombatAtkPercent
 console.log(`  单条禁用后 ${modsEffectOff}（差 ${modsBase - modsEffectOff}）`)
 check('单条禁用后同样少 30', Math.abs(modsBase - modsEffectOff - 30) < 1e-6, `差 ${modsBase - modsEffectOff}`)

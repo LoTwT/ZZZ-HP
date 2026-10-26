@@ -3,6 +3,7 @@ import UnifiedPresetPicker, {
   type UnifiedPresetConfirmPayload,
 } from '@/components/calculator/UnifiedPresetPicker.vue'
 import TeamSlotCard from '@/components/calculator/TeamSlotCard.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentPanelSourceKind, AgentPanelSources } from '@/types/damageCalcHistory'
 import type { AgentBuffDoc, DriveDiscBuffDoc, WengineBuffDoc } from '@/types/calculator'
@@ -59,8 +60,13 @@ function updateSlotRefine(index: number, value: number) {
 <template>
   <section id="damage-team" class="section-card agent-section damage-anchor">
     <header class="section-header">
-      <h2>代理人</h2>
-      <p class="section-desc">选择槽位后，为当前槽位指定代理人；面板请在「导入」中录入</p>
+      <h2>
+        代理人
+        <InfoTip
+          label="代理人选择说明"
+          text="选择槽位后，为当前槽位指定代理人；面板请在「导入」中录入。"
+        />
+      </h2>
     </header>
 
     <div class="team-slots">
@@ -122,11 +128,6 @@ function updateSlotRefine(index: number, value: number) {
   color: #f0f2f6;
 }
 
-.section-desc {
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
-  color: #9aa3b0;
-}
 
 .search-input {
   width: min(320px, 100%);
@@ -423,10 +424,6 @@ function updateSlotRefine(index: number, value: number) {
     font-size: 0.98rem;
   }
 
-  .section-desc {
-    font-size: 0.72rem;
-    line-height: 1.4;
-  }
 
   .search-input {
     font-size: 0.85rem;

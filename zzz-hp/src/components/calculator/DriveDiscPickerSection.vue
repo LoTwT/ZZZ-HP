@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CalculatorAvatar from '@/components/calculator/CalculatorAvatar.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc, DriveDiscBuffDoc } from '@/types/calculator'
 import { collectTeamDriveDiscNoteLines } from '@/utils/driveDiscNotes'
@@ -32,8 +33,13 @@ const selectedFourPiece = computed(() =>
   <section id="damage-drive-disc" class="section-card damage-anchor">
     <header class="section-header">
       <div>
-        <h2>驱动盘</h2>
-        <p class="section-desc">为各槽位代理人选择 2 件套与 4 件套；4 件套已包含该套装的 2 件套增益</p>
+        <h2>
+          驱动盘
+          <InfoTip
+            label="驱动盘套装说明"
+            text="为各槽位代理人选择 2 件套与 4 件套；4 件套已包含该套装的 2 件套增益。"
+          />
+        </h2>
       </div>
     </header>
 
@@ -112,11 +118,6 @@ const selectedFourPiece = computed(() =>
   color: #f0f2f6;
 }
 
-.section-desc {
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
-  color: #9aa3b0;
-}
 
 .slot-toolbar {
   display: flex;
@@ -241,10 +242,6 @@ const selectedFourPiece = computed(() =>
     font-size: 0.98rem;
   }
 
-  .section-desc {
-    font-size: 0.72rem;
-    line-height: 1.4;
-  }
 
   .slot-toolbar {
     flex-wrap: wrap;

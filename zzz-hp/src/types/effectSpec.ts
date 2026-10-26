@@ -72,6 +72,11 @@ export interface EffectInstance extends EffectSpec {
   defaultStacks?: number
   /** 叠层 / 转模等旧 kind；operation 不表达 stacked */
   buffKind?: BuffEffectKind
+  /**
+   * 运行期额外 Buff 标记：由卡片构造时写入，构造/克隆/适配往返都要保留。
+   * 它只表示"无需选择器启用"（Spec §5.1 第 8 项），不是持久化真值。
+   */
+  extraGain?: boolean
   /** 旧 Buff 执行器回退；生产切换后删除 */
   legacyBuffEffect?: BuffEffect
   /** 迁移期回读旧词条 target */

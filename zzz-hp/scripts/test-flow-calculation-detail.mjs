@@ -9,7 +9,7 @@ import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDis
 import { pickEventDamage } from '../src/utils/damageEvent.ts'
 import { createDefaultAffixDriveDiscMainStats } from '../src/types/calculatorPanel.ts'
 import { invalidateBuffCatalogCache } from '../src/utils/panelBuffCalc.ts'
-import { makePanel, dummyBangboo, testAgent, testSlot } from './_effectPipelineHarness.mjs'
+import { makePanel, dummyBangboo, testAgent, testSlot, extraCard } from './_effectPipelineHarness.mjs'
 
 let passed = 0
 function check(name, action) {
@@ -64,7 +64,11 @@ const hits = resolveFlow({
   slots, teamSlots, findSkill: (id) => skills[id], findSkillGroup: () => group,
   resolveAgentProfession: (id) => agents.find((agent) => agent.id === id)?.profession,
 }).hits
-const gain = { id: 'allocated-dmg', name: '分配产生的局内增伤', stat: 'dmgBonus', value: 19, applySlot: 'team' }
+const gain = extraCard(
+  'allocated-dmg',
+  { stat: 'dmgBonus', value: 19, applyTarget: 'team' },
+  { name: '分配产生的局内增伤', applySlot: 'team' },
+)
 function context(overrides = {}) {
   invalidateBuffCatalogCache()
   return buildOptimalEvalContext({
@@ -231,4 +235,17 @@ check('敌方变化后，详情不复用旧数字', () => {
   assert.ok(after.perHit < before.perHit)
   assert.deepEqual(after.result, evaluateSkillFlowHit(ctx, null, hits[0]).result)
 })
+for (const mode of ['ordinary', 'extra-slot', 'extra-team']) {
+  const { r3Fixture, r5Fixture } = await import('./_eventElementHarness.mjs')
+  const f = r3Fixture(mode)
+  check(`R3 ${mode} real flow detail cross-element`, () => {
+    const result = resolveSkillFlowCalculationDetail(f.context, null, f.hits[0]).evaluation
+    assert.equal(result.defenseTriggerFinalPanel.anomalyReleaseMult, 51.2)
+    assert.equal(result.eventElement, '电')
+    assert.deepEqual(result.result, evaluateSkillFlowHit(f.context, null, f.hits[0]).result)
+  })
+  const r5 = r5Fixture(mode)
+  check(`R5 ${mode} real release detail`, () => assert.equal(resolveSkillFlowCalculationDetail(r5.context, null, r5.hits[0]).evaluation.defenseTriggerFinalPanel.anomalyReleaseMult, 150))
+}
+
 console.log(`\n${passed} passed, 0 failed`)

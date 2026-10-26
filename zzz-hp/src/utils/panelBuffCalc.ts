@@ -51,11 +51,10 @@ import {
 import type { EnvironmentBuffEntry } from '@/utils/environmentBuffCalc'
 import { resolveAssetUrl } from '@/utils/gameData'
 import {
-  extraGainAppliesToSlot,
-  extraGainToEffect,
+  extraGainToEffects,
   resolveExtraGainApplySlot,
-  type ExtraBuffGain,
 } from '@/utils/extraBuffCalc'
+import type { ExtraBuffGain, ExtraBuffSlotIndex } from '@/types/extraBuff'
 import {
   effectInstanceToBuffEffect,
   instantiateBuffEffect,
@@ -123,6 +122,8 @@ export function availableBuffGroupTabs(
  * 局内增益选择器与本行增益例外弹窗共用这一份形状（页面按槽位现给，见 `SkillBuffOverrideModal`）。
  */
 export interface ConvertResolveInputs {
+  effectAmounts?: Record<string, number>
+  configurationOnly?: boolean
   attrDefaults: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
   panelSourceValuesBySlot?: Record<number, PanelSourceValues>
@@ -411,6 +412,8 @@ export function syncTeamProfessionAutoEnabled(
   }
 
   for (const item of effects) {
+    // 额外 Buff 不由选择器启用：不写 enabledIds / 层数 / 转模输入（Spec §5.1 第 6、8 项）
+    if (item.effect.extraGain) continue
     const effect = item.effect
     if (!effect.teamProfession?.trim()) continue
     const store = buffStoreForEffect(multi, slotIndex, effect.applyTarget)
@@ -911,8 +914,8 @@ export function slotHasPanelConvertEffect(
     const effect = item.effect
     if (effect.kind !== 'convert' || !effect.convert) continue
     if ((effect.convert.panelSource ?? 'external') === 'manual') continue
-    const idx = parseSourceKeySlotIndex(item.sourceKey)
-    if (idx === slotIndex) return true
+    // 额外 Buff 的来源槽位在 `extraGainSourceSlot` 上（providerSlot 恒 null），统一走这个解析
+    if (resolveCollectedEffectSourceSlot(item) === slotIndex) return true
   }
   return false
 }
@@ -927,8 +930,7 @@ export function slotParticipatesInConvertBuff(
     if (effect.kind !== 'convert' || !effect.convert) continue
     if ((effect.convert.panelSource ?? 'external') === 'manual') continue
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
-    const idx = parseSourceKeySlotIndex(item.sourceKey)
-    if (idx === slotIndex) return true
+    if (resolveCollectedEffectSourceSlot(item) === slotIndex) return true
   }
   return false
 }
@@ -957,7 +959,7 @@ export function collectConvertSourceMarksForSlot(
     // 技能等级转模没有面板属性值，不参与「转模来源面板属性」收集
     if (isSkillConvertFromKey(effect.convert.from)) continue
     if (requireEnabled && !isEffectEnabled(effect, ctx.buffSelection)) continue
-    if (parseSourceKeySlotIndex(item.sourceKey) !== slotIndex) continue
+    if (resolveCollectedEffectSourceSlot(item) !== slotIndex) continue
     const key = `${source}:${effect.convert.from}`
     if (!marks.has(key)) {
       marks.set(key, { attr: effect.convert.from, panelSource: source })
@@ -1025,7 +1027,7 @@ export function collectConvertSupportSlots(
     if (source === 'manual') continue
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
 
-    const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+    const slotIndex = resolveCollectedEffectSourceSlot(item)
     if (slotIndex == null) continue
 
     const agentId = ctx.teamSlots[slotIndex]?.agentId
@@ -1122,6 +1124,8 @@ export interface BuffModSource {
   note?: string
   effects?: BuffEffect[]
   blockName?: string
+  /** 缓存重建运算包时保留真实来源及选择器隔离策略。 */
+  sourceOptions?: PackSourceOptions
 }
 
 export interface CollectedEffect {
@@ -1142,8 +1146,13 @@ export interface CollectedEffect {
    * 2026-09-24 起由收集器统一填（施工规格 `dev-docs/specs/buff-build-refactor-spec.md` §2.1）。
    */
   applicableSlots: number[]
-  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地） */
+  /** 提供者槽位：这条是谁给的；null = 无主（邦布 / 场地 / 额外 Buff） */
   providerSlot: number | null
+  /**
+   * 额外 Buff 的**来源槽位**（读面板/技能等级的槽位）；非额外 Buff 不填。
+   * 用 `resolveCollectedEffectSourceSlot` 取值，别拿 `providerSlot` 冒充（会改变 restrictToSlotIndex 语义）。
+   */
+  extraGainSourceSlot?: ExtraBuffSlotIndex
 }
 
 function clampRefine(value: number) {
@@ -1177,16 +1186,75 @@ function resolveTeamProfessionCountOption(ctx: PanelCalcContext) {
   return (profession: string) => countTeamProfession(ctx.teamSlots, ctx.agents, profession)
 }
 
+/** 运算包的来源侧覆盖：额外 Buff 的来源槽位与"来源不可用"的显式零值（Spec §5.1 第 4 项、§5.2 第 6 项） */
+interface PackSourceOptions {
+  /** 读面板/技能等级用的来源槽位（与"受益槽位"无关） */
+  sourceSlotIndex?: number | null
+  /** 显式给出的来源面板值（例如来源不可用时全 0），优先于按槽位取 */
+  panelSourceValuesOverride?: PanelSourceValues
+  /** 额外 Buff 运算包：不读选择器里的层数/转模输入 */
+  extraGainPack?: boolean
+}
+
+/** 来源不可用时的零值：只覆盖这些效果真正会读的 `from` 键，避免回落受益槽位的面板 */
+function zeroSourceValuesFor(effects: readonly BuffEffect[]): PanelSourceValues {
+  const zero: Partial<Record<CharacterAttrKey, number>> = {}
+  for (const effect of effects) {
+    const convert = effect.convert
+    if (!convert || effect.kind !== 'convert') continue
+    if (isSkillConvertFromKey(convert.from)) continue
+    zero[convert.from] = 0
+  }
+  return { external: { ...zero }, final: { ...zero } }
+}
+
+function sourceOptionsForCollectedEffect(
+  item: CollectedEffect,
+  ctx: PanelCalcContext,
+  effects: readonly BuffEffect[],
+): PackSourceOptions | undefined {
+  if (!item.effect.extraGain) return undefined
+  const sourceSlotIndex = resolveCollectedEffectSourceSlot(item)
+  const available = sourceSlotIndex != null && Boolean(ctx.teamSlots[sourceSlotIndex]?.agentId)
+  return {
+    sourceSlotIndex,
+    panelSourceValuesOverride: available ? undefined : zeroSourceValuesFor(effects),
+    extraGainPack: true,
+  }
+}
+
+/** 展示与结算共用来源缺失规则，不能把有主的空来源替换为受益者面板。 */
+export function resolveCollectedEffectPanelSourceValues(
+  item: CollectedEffect,
+  inputs: {
+    panelSourceValues?: PanelSourceValues
+    panelSourceValuesBySlot?: Record<number, PanelSourceValues | undefined>
+  },
+): PanelSourceValues | undefined {
+  const sourceSlot = resolveCollectedEffectSourceSlot(item)
+  if (sourceSlot != null && inputs.panelSourceValuesBySlot?.[sourceSlot]) {
+    return inputs.panelSourceValuesBySlot[sourceSlot]
+  }
+  if (item.effect.extraGain || (sourceSlot != null && inputs.panelSourceValuesBySlot)) {
+    return zeroSourceValuesFor([item.effect])
+  }
+  return inputs.panelSourceValues
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
   ctx: PanelCalcContext,
   slotIndex?: number,
+  sourceOptions?: PackSourceOptions,
 ): BuffStatModifiers {
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
+  const sourceSlotIndex = sourceOptions?.sourceSlotIndex ?? slotIndex
   let panelSourceValues = ctx.panelSourceValues
-  if (slotIndex != null && ctx.panelSourceValuesBySlot?.has(slotIndex)) {
-    panelSourceValues = ctx.panelSourceValuesBySlot.get(slotIndex)
+  if (sourceOptions?.panelSourceValuesOverride) {
+    panelSourceValues = sourceOptions.panelSourceValuesOverride
+  } else if (sourceSlotIndex != null && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
+    panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
   }
   const slotElement =
     slotIndex != null
@@ -1197,17 +1265,24 @@ function resolvePackMods(
   )?.profession
   // 技能等级转模：取「效果来源角色」的等级（self/team 效果都由来源槽位提供）
   const slotAgentId =
-    slotIndex != null ? ctx.teamSlots[slotIndex]?.agentId : undefined
+    sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
   // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
-  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
+  const isExtraPack = sourceOptions?.extraGainPack === true
+  const selection = isExtraPack ? null : ctx.buffSelection
+  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
   return resolveEffectsToMods(effects, {
     applyTargets: isMain ? ['self', 'team'] : ['team'],
     ctx: skillCtx,
     element: isMain ? skillCtx.element : slotElement,
     beneficiaryElement: resolveBeneficiaryElement(ctx),
     beneficiaryProfession,
-    stacksByEffectId: rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
-    convertInputs: rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
+    // 额外 Buff 不吃选择器的层数/转模输入，只吃**本行**覆盖（Spec §5.1 第 6 项）
+    stacksByEffectId: isExtraPack
+      ? rowOverlay?.stacksByEffectId
+      : (rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId),
+    convertInputs: isExtraPack
+      ? rowOverlay?.convertInputs
+      : (rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs),
     attrValues: ctx.attrValues,
     panelSourceValues,
     skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
@@ -1215,6 +1290,17 @@ function resolvePackMods(
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
   })
+}
+
+/** 单条贡献仍经过正式的共享匹配、行级过滤和来源解析，供事件展示复用。 */
+export function resolveCollectedEffectAmount(item: CollectedEffect, ctx: PanelCalcContext): number {
+  if (!collectAllBuffEffects(ctx).some(entry => entry.effect.id === item.effect.id)) return 0
+  const providerSlot = item.providerSlot
+  const mods = resolvePackMods(
+    [item.effect], providerSlot == null || providerSlot === ctx.mainSlotIndex,
+    ctx, providerSlot ?? undefined, sourceOptionsForCollectedEffect(item, ctx, [item.effect]),
+  )
+  return mods[item.effect.stat] ?? 0
 }
 
 /** 旧路径：直接 resolveEffectsToMods。阶段 6 双跑对照用。 */
@@ -1236,12 +1322,13 @@ export function resolvePackModsViaEffectSpec(
   isMain: boolean,
   ctx: PanelCalcContext,
   slotIndex?: number,
+  sourceOptions?: PackSourceOptions,
 ): BuffStatModifiers {
   if (!effects.length) return createEmptyBuffStatModifiers()
   const reconstructed = effects.map((effect) =>
     effectInstanceToBuffEffect(instantiateBuffEffect(effect, { sourceKey: 'buff' })),
   )
-  return resolvePackMods(reconstructed, isMain, ctx, slotIndex)
+  return resolvePackMods(reconstructed, isMain, ctx, slotIndex, sourceOptions)
 }
 
 export function collectSlotDriveDiscEffects(
@@ -1763,22 +1850,28 @@ export function buildBuffCatalog(config: BuffBuildConfig): BuffBuild {
       }
     }
   }
-  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。适用槽位用它自己的作用槽位折算；
-  // 提供者槽位 = null（无主）；行级例外由消费侧按 `extra-<id>` 判（键不变）。
+  // 额外增益：并入同一份构建（2026-09-24 阶段 3）。**一条底层效果 = 一个条目**（Spec §5.1 第 1 项）；
+  // 适用槽位按卡片的 applySlot 折算；来源槽位写进 `extraGainSourceSlot`（providerSlot 仍为 null）；
+  // 行级例外由消费侧按 `extra-<id>` 判（键不变）。
   for (const gain of config.extraGains ?? []) {
     const applySlot = resolveExtraGainApplySlot(gain)
-    entries.push({
-      effect: extraGainToEffect(gain),
-      sourceKey: `extra-${gain.id}`,
-      sourceLabel: '额外 Buff',
-      providerName: gain.name || '额外 Buff',
-      providerAvatar: null,
-      group: '额外 Buff',
-      blockId: gain.id,
-      blockName: gain.name || '额外 Buff',
-      applicableSlots: applySlot === 'team' ? config.teamSlots.map((_, i) => i) : [applySlot],
-      providerSlot: null,
-    })
+    const applicableSlots =
+      applySlot === 'team' ? config.teamSlots.map((_, index) => index) : [applySlot]
+    for (const effect of extraGainToEffects(gain)) {
+      entries.push({
+        effect,
+        sourceKey: `extra-${gain.id}`,
+        sourceLabel: '额外 Buff',
+        providerName: gain.name || '额外 Buff',
+        providerAvatar: null,
+        group: '额外 Buff',
+        blockId: gain.id,
+        blockName: gain.name || '额外 Buff',
+        applicableSlots,
+        providerSlot: null,
+        extraGainSourceSlot: gain.sourceSlot,
+      })
+    }
   }
   const build: BuffBuild = { entries, key }
   // 淘汰策略沿用现有行为：超限删最旧
@@ -1894,19 +1987,24 @@ export function blockKeyOfCollected(item: CollectedEffect): string {
 }
 
 /**
- * 行级例外是否关掉了这个额外 Buff。
+ * 收集条目的**来源槽位**（Spec §5.1 第 4 项）。
  *
- * 目录效果的行级过滤在 `collectAllBuffEffects` 内部（唯一入口），但额外 Buff **不经过**那里
- * （见下），所以必须单独判一次 —— 否则会出现"表里关得掉、结算里关不掉"。
+ * 额外 Buff 用收集时写入的 `extraGainSourceSlot`；普通增益仍按 sourceKey 解析。
+ * 缺元数据返回 null（调用方按"来源不可用"处理，不回落当前受益槽位）。
  */
-export function isExtraGainDisabledByRowOverride(
-  gain: Pick<ExtraBuffGain, 'id'>,
-  override: FlowBuffOverride | null | undefined,
-): boolean {
-  if (!override) return false
-  if ((override.disabledBlockIds ?? []).includes(extraGainBlockKey(gain.id))) return true
-  // 额外 Buff 的效果 id 就是 gain.id（见 extraGainToEffect），单条禁用也按它判
-  return (override.disabledEffectIds ?? []).includes(gain.id)
+export function resolveCollectedEffectSourceSlot(item: CollectedEffect): number | null {
+  if (item.sourceKey.startsWith('extra-')) return item.extraGainSourceSlot ?? null
+  return parseSourceKeySlotIndex(item.sourceKey)
+}
+
+/**
+ * 局内 Buff 选择器只列普通增益（Spec §4.3 第 3 项、§5.1 第 6 项）：
+ * 额外 Buff 由自己的模块管理，不进选择器列表（流程表仍按同一收集走）。
+ */
+export function excludeExtraGainEntries(
+  items: readonly CollectedEffect[],
+): CollectedEffect[] {
+  return items.filter((item) => !item.sourceKey.startsWith('extra-'))
 }
 
 function mergeModsFromSources(sources: BuffModSource[]): BuffStatModifiers {
@@ -1929,6 +2027,7 @@ type BuffCatalogPack = {
   nonConvertEffects: BuffEffect[]
   convertEffects: BuffEffect[]
   slotIndex?: number
+  sourceOptions?: PackSourceOptions
 }
 
 type BuffCatalogEntry = {
@@ -2167,6 +2266,7 @@ function packsFromSources(sources: BuffModSource[]): BuffCatalogPack[] {
       note: source.note,
       blockName: source.blockName,
       effects,
+      sourceOptions: source.sourceOptions,
       ...split,
     }
   })
@@ -2196,6 +2296,7 @@ function resolvePackEffectMods(
     isMain,
     { ...ctx, skillContext: skillCtx, skipConvert },
     pack.slotIndex,
+    pack.sourceOptions,
   )
 }
 
@@ -2248,6 +2349,7 @@ function materializeBuffCatalogPacks(
       blockName: pack.blockName,
       effects: pack.effects,
       mods,
+      sourceOptions: pack.sourceOptions,
     }
   })
 }
@@ -2311,7 +2413,18 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
     const effects = items.map((item) => item.effect)
     const slotIndex = key === 'bangboo' ? ctx.mainSlotIndex : parseSourceKeySlotIndex(first.sourceKey)
     const isMain = slotIndex == null || slotIndex === ctx.mainSlotIndex
-    const mods = resolvePackModsViaEffectSpec(effects, isMain, ctxForResolve, slotIndex ?? undefined)
+    /**
+     * 额外 Buff：受益槽位由 `applicableSlots` 决定，**来源槽位**由卡片单独给（Spec §5.1 第 4 项）。
+     * 来源不可用时按显式零值算，不回退到受益槽位的面板（§5.2 第 6 项）。
+     */
+    const sourceOptions = sourceOptionsForCollectedEffect(first, ctx, effects)
+    const mods = resolvePackModsViaEffectSpec(
+      effects,
+      isMain,
+      ctxForResolve,
+      slotIndex ?? undefined,
+      sourceOptions,
+    )
     if (!hasNonZeroBuffMods(mods) && !effects.length && !first.blockNote) continue
     sources.push({
       key,
@@ -2320,6 +2433,7 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       effects,
       blockName: first.blockName,
       note: first.blockNote || undefined,
+      sourceOptions,
     })
   }
 
@@ -2345,23 +2459,6 @@ function collectPanelBuffModSourcesUncached(ctx: PanelCalcContext): BuffModSourc
       })
     }
   })
-
-  if (ctx.extraGains?.length) {
-    const extraEffects = (ctx.extraGains ?? [])
-      .filter(
-        (gain) =>
-          extraGainAppliesToSlot(gain, ctx.mainSlotIndex) &&
-          !isExtraGainDisabledByRowOverride(gain, ctx.rowBuffOverride),
-      )
-      .map((gain) => extraGainToEffect(gain))
-    sources.push({
-      key: 'extra',
-      label: '额外 Buff',
-      // 额外增益的数值走统一收集；这条 source 只保留它的效果清单（供来源展示）
-      mods: createEmptyBuffStatModifiers(),
-      effects: extraEffects,
-    })
-  }
 
   return sources
 }
@@ -2559,7 +2656,7 @@ function effectMatchesReleaseMultElement(effect: BuffEffect, triggerElement?: st
   return filter.includes(triggerElement)
 }
 
-/** 异放结算用技能上下文：子类固定异放，元素取触发者 */
+/** 异放结算上下文：子类固定异放，元素参数由事件的共享解析入口提供。 */
 function buildReleaseMultSkillContext(
   ctx: PanelCalcContext,
   triggerElement?: string,
@@ -2610,38 +2707,28 @@ function resolveReleaseMultMods(
   skillCtx: SkillCalcContext,
   triggerElement?: string,
 ): BuffStatModifiers {
-  // 等级转模按「效果来源角色」取等级：按提供者槽位分组，各组带各自的技能等级表
-  const effectsByProviderSlot = new Map<number | null, BuffEffect[]>()
+  // 保留来源条目：额外 Buff 的来源槽位独立于 providerSlot，不能把它们并成无主组。
+  const bySource = new Map<string, CollectedEffect[]>()
   for (const item of entries) {
-    const list = effectsByProviderSlot.get(item.providerSlot)
-    if (list) list.push(item.effect)
-    else effectsByProviderSlot.set(item.providerSlot, [item.effect])
-  }
-
-  const releaseRowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
-  const effectOptions = {
-    ctx: skillCtx,
-    element: triggerElement,
-    stacksByEffectId:
-      releaseRowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId,
-    convertInputs: releaseRowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs,
-    attrValues: ctx.attrValues,
-    panelSourceValues: ctx.panelSourceValues,
-    selection: ctx.buffSelection,
-    resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
+    const key = `${item.sourceKey}-${item.blockId}`
+    const list = bySource.get(key)
+    if (list) list.push(item)
+    else bySource.set(key, [item])
   }
   let mods = createEmptyBuffStatModifiers()
-  for (const [providerSlot, effects] of effectsByProviderSlot) {
-    const slotAgentId =
-      providerSlot != null ? ctx.teamSlots[providerSlot]?.agentId : undefined
+  for (const items of bySource.values()) {
+    const first = items[0]!
+    const effects = items.map((item) => item.effect)
+    const providerSlot = first.providerSlot
     mods = mergeBuffStatModifiers(
       mods,
-      resolveEffectsToMods(effects, {
-        ...effectOptions,
-        skillTalentLevels: slotAgentId
-          ? ctx.skillTalentLevelsByAgent?.[slotAgentId]
-          : undefined,
-      }),
+      resolvePackModsViaEffectSpec(
+        effects,
+        providerSlot == null || providerSlot === ctx.mainSlotIndex,
+        { ...ctx, skillContext: { ...skillCtx, element: triggerElement } },
+        providerSlot ?? undefined,
+        sourceOptionsForCollectedEffect(first, ctx, effects),
+      ),
     )
   }
   return mods
@@ -2786,6 +2873,8 @@ export function buildDefaultBuffSelection(
   const stacksByEffectId: Record<string, number> = {}
   const convertInputs: Record<string, number> = {}
   for (const item of collected) {
+    // 额外 Buff 直接参与计算，不进选择器状态（Spec §5.1 第 6、8 项）
+    if (item.effect.extraGain) continue
     // 危局 / Boss 场地 / 防线：目录默认不勾选；点效果块时按 enabledDefault + 队内职业人数开启
     // 非场地的队内职业人数条件：默认不勾，由 syncTeamProfessionAutoEnabled 按恰好 N 人写入
     const startEnabled = isEnvironmentBuffSourceKey(item.sourceKey)

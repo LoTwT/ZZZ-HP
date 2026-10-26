@@ -1,6 +1,7 @@
 // Run: npx vite-node scripts/test-buff-catalog-cache.mjs
 import assert from 'node:assert/strict'
 import { createEmptyBuffStatModifiers } from '../src/utils/calculatorUi.ts'
+import { extraCard } from './_effectPipelineHarness.mjs'
 import {
   collectPanelBuffMods,
   invalidateBuffCatalogCache,
@@ -86,22 +87,19 @@ assert.equal(again.atk, 50, '再次失效后应读到攻击 +50')
   invalidateBuffCatalogCache()
 
   const typedCtx = makeCtx(makeBangboo(0))
-  const gain = {
-    id: 'cache-probe-gain',
-    name: '缓存探针',
-    stat: 'atk',
-    value: 30,
-    applySituation: 'global',
-    applySlot: 'team',
-    applyTarget: 'team',
-  }
+  // 新结构：卡片 + effects[]（一条底层效果）
+  const gain = extraCard(
+    'cache-probe-gain',
+    { stat: 'atk', value: 30, applyTarget: 'team' },
+    { name: '缓存探针', applySlot: 'team' },
+  )
   typedCtx.extraGains = [gain]
   typedCtx.skipConvert = true
 
   assert.equal(collectPanelBuffMods(typedCtx).atk, 30, '首次应读到额外增益的攻击 +30')
 
   // 契约内：就地改 + 失效 → 必须读到新值
-  gain.value = 70
+  gain.effects[0].value = 70
   invalidateBuffCatalogCache()
   assert.equal(
     collectPanelBuffMods(typedCtx).atk,

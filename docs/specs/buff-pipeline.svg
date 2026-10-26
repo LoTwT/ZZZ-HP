@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1500" viewBox="0 0 1400 1500" role="img" aria-labelledby="title desc">
+  <title id="title">增益链路：两个配置入口，同一套全局与事件结算</title>
+  <desc id="desc">管理侧增益经过选择 Buff，额外 Buff 直接使用自身配置。两者汇入全局设置，分别供全局面板和事件结算使用。行级弹窗与流程增益表读写同一份事件配置；事件详情对应实际结算，不反写全局面板。完整规则见 buff-pipeline.md。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 1 L8 5 L0 9" fill="none" stroke="#52617b" stroke-width="1.6"/></marker>
+    <style>
+      text { font-family: 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif; fill: #192c45; }
+      .heading { font-size: 33px; font-weight: 700; }
+      .sub { font-size: 19px; fill: #53647a; }
+      .label { font-size: 24px; font-weight: 700; }
+      .body { font-size: 20px; }
+      .small { font-size: 18px; fill: #53647a; }
+      .box { fill: #fff; stroke: #ced8e6; stroke-width: 2; rx: 18; }
+      .blue { fill: #edf4ff; stroke: #8eafe2; }
+      .green { fill: #edf8f2; stroke: #8cbda4; }
+      .purple { fill: #f3effb; stroke: #b3a0d5; }
+      .line { fill: none; stroke: #52617b; stroke-width: 2.4; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1400" height="1500" fill="#f7f9fc"/>
+  <text x="70" y="64" class="heading">增益链路</text>
+  <text x="70" y="99" class="sub">两个配置入口 · 同一套增益规则 · 全局与事件分开求值 · 详情对应实际结算</text>
+
+  <rect x="70" y="135" width="560" height="104" class="box blue"/>
+  <text x="100" y="178" class="label">管理侧增益</text>
+  <text x="100" y="213" class="body">增益库维护的效果与条件</text>
+  <rect x="770" y="135" width="560" height="104" class="box green"/>
+  <text x="800" y="178" class="label">额外 Buff</text>
+  <text x="800" y="213" class="body">用户直接配置的临时增益，与管理侧平级</text>
+
+  <path d="M350 239 V282" class="line"/>
+  <path d="M1050 239 V282" class="line"/>
+  <rect x="70" y="285" width="560" height="110" class="box blue"/>
+  <text x="100" y="329" class="label">选择 Buff</text>
+  <text x="100" y="365" class="body">启用状态、已有的层数与转模基数调整</text>
+  <rect x="770" y="285" width="560" height="110" class="box green"/>
+  <text x="800" y="329" class="label">直接使用额外 Buff 配置</text>
+  <text x="800" y="365" class="body">不经过选择 Buff 再次启用或修改</text>
+
+  <path d="M350 395 V432 H560 V467" class="line"/>
+  <path d="M1050 395 V432 H840 V467" class="line"/>
+  <rect x="310" y="470" width="780" height="114" class="box purple"/>
+  <text x="340" y="514" class="label">全局增益设置</text>
+  <text x="340" y="551" class="body">保留效果参数、受益对象及条件；全局不等于无条件生效</text>
+
+  <path d="M560 584 V618 H350 V667" class="line"/>
+  <path d="M840 584 V618 H1050 V667" class="line"/>
+  <text x="80" y="638" class="small">全局视角：不读取流程行修改</text>
+  <text x="780" y="638" class="small">事件视角：针对指定的招式事件</text>
+
+  <rect x="70" y="670" width="560" height="142" class="box blue"/>
+  <text x="100" y="714" class="label">全局条件匹配 → 全局面板</text>
+  <text x="100" y="751" class="body">只汇总适用于全局面板上下文的贡献</text>
+  <text x="100" y="786" class="body">招式／伤害类型条件留到对应事件判断</text>
+
+  <rect x="770" y="670" width="560" height="205" class="box green"/>
+  <text x="800" y="714" class="label">行级增益管理：同一个功能</text>
+  <rect x="800" y="738" width="225" height="54" rx="12" fill="#fff" stroke="#8cbda4"/>
+  <rect x="1060" y="738" width="240" height="54" rx="12" fill="#fff" stroke="#8cbda4"/>
+  <text x="824" y="773" class="body">行级增益弹窗</text>
+  <text x="1092" y="773" class="body">流程增益表</text>
+  <text x="800" y="826" class="body">两个入口读写同一份行级配置</text>
+  <text x="800" y="856" class="small">不同输入能力；共同操作互相同步</text>
+
+  <path d="M350 812 V922" class="line"/>
+  <rect x="70" y="925" width="560" height="116" class="box blue"/>
+  <text x="100" y="970" class="label">全局详情</text>
+  <text x="100" y="1007" class="body">解释全局面板实际采用的增益与结果</text>
+
+  <path d="M1050 875 V922" class="line"/>
+  <rect x="770" y="925" width="560" height="150" class="box green"/>
+  <text x="800" y="969" class="label">得到该事件的有效增益</text>
+  <text x="800" y="1006" class="body">全局设置 + 行级修改 + 事件条件匹配</text>
+  <text x="800" y="1041" class="small">技能组先合并组／成员配置，再统一求值</text>
+
+  <path d="M1050 1075 V1122" class="line"/>
+  <rect x="770" y="1125" width="560" height="115" class="box green"/>
+  <text x="800" y="1169" class="label">事件属性与伤害结算</text>
+  <text x="800" y="1206" class="body">内部按需重算临时面板，不反写全局面板</text>
+
+  <path d="M1050 1240 V1287" class="line"/>
+  <rect x="770" y="1290" width="560" height="115" class="box green"/>
+  <text x="800" y="1334" class="label">事件详情与流程汇总</text>
+  <text x="800" y="1371" class="body">对应实际事件结算，展示与伤害同步更新</text>
+
+  <rect x="70" y="1125" width="560" height="280" class="box purple"/>
+  <text x="100" y="1171" class="label">始终遵守的边界</text>
+  <text x="100" y="1213" class="body">① 额外 Buff 不受选择器残留状态管理</text>
+  <text x="100" y="1254" class="body">② 行级修改不反写全局或其他事件配置</text>
+  <text x="100" y="1295" class="body">③ 输入、预览、详情使用对应上下文真值</text>
+  <text x="100" y="1336" class="body">④ 分组和布局不改变身份、条件或贡献</text>
+  <text x="100" y="1375" class="small">取值、技能等级边界与验收用例见说明 F5–F7</text>
+
+  <text x="70" y="1460" class="small">功能规则及维护入口：buff-pipeline.md　｜　图中箭头表示数据使用关系，不代表重复施加增益。</text>
+</svg>

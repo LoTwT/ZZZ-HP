@@ -17,15 +17,17 @@
  */
 import type { SkillGroup } from '@/types/calculator'
 import type { FlowBuffOverride, FlowEntry } from '@/types/damageCalcHistory'
-import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue } from '@/utils/buffEffect'
+import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
 import {
   blockKeyOfCollected,
   getBuffEffectStacks,
-  parseSourceKeySlotIndex,
+  resolveCollectedEffectSourceSlot,
+  resolveCollectedEffectPanelSourceValues,
   type BuffSelectionState,
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatCalcSigned } from '@/utils/calcNumberFormat'
 
 export interface FlowBuffTableRow {
   /** 唯一键：普通行 = 流程行 id；组成员 = `${行id}#${序号}:${skillId}` */
@@ -118,7 +120,7 @@ function effectSummary(item: CollectedEffect): string {
   const effect = item.effect
   const field = BUFF_STAT_FIELDS.find((entry) => entry.key === effect.stat)
   const label = field ? buffStatFieldLabel(field) : String(effect.stat ?? '')
-  const value = typeof effect.value === 'number' && effect.value !== 0 ? `+${effect.value}` : ''
+  const value = typeof effect.value === 'number' && effect.value !== 0 ? formatCalcSigned(effect.value) : ''
   return `${label}${value ? ` ${value}` : ''}`.trim()
 }
 
@@ -133,69 +135,105 @@ function effectSummary(item: CollectedEffect): string {
  * 跨槽位的效果（比如队友提供、作用到别人身上的）取值要走
  * `panelSourceValuesBySlot[该效果所属槽位]`，不能用当前槽位那一份。
  */
+export interface FlowBuffEffectTextOptions {
+  effectAmounts?: Record<string, number>
+  configurationOnly?: boolean
+  /** **全队勾选对象**（不是单槽位解析结果）—— 与局内 Buff 勾选器传的是同一个东西 */
+  selection: Parameters<typeof getBuffEffectStacks>[0] | null | undefined
+  /** 当前槽位（叠层取值用） */
+  slotIndex: number
+  /** 槽位 → 角色 id（技能等级转模按效果所属角色取） */
+  agentIdBySlot?: (string | null | undefined)[]
+  attrDefaults?: Parameters<typeof resolveConvertValue>[1]
+  panelSourceValues?: Parameters<typeof resolveConvertValue>[3]
+  panelSourceValuesBySlot?: Record<number, Parameters<typeof resolveConvertValue>[3]>
+  /**
+   * 全局（「选择局内 Buff」）手填的转模基数，按效果 id 取；缺省/返回 undefined = 按面板或默认值。
+   * 与结算同一份输入：结算把 `BuffSelectionState.convertInputs` 作为覆盖值传给 `resolveConvertValue`。
+   */
+  convertInputFor?: (effect: CollectedEffect['effect']) => number | undefined
+  skillTalentLevelsByAgent?: Record<string, Parameters<typeof resolveConvertValue>[4]>
+  skillSubcategories?: NonNullable<
+    Parameters<typeof formatBuffEffectResultText>[2]
+  >['skillSubcategories']
+}
+
+/**
+ * 单条效果的显示文本。
+ *
+ * `rowOverride` = **这一行**合并后的行级例外（组 + 成员）：叠层取它的层数、转模取它的基数，
+ * 优先于全局选择器与默认值；传 null = 只看全局/面板（列级说明用）。
+ */
+export function buildFlowBuffEffectText(
+  item: CollectedEffect,
+  options: FlowBuffEffectTextOptions,
+  rowOverride?: FlowBuffOverride | null,
+): string {
+  const effect = item.effect
+  const sourceSlot = resolveCollectedEffectSourceSlot(item)
+  if (options.configurationOnly) return `${effectSummary({ ...item, effect: { ...effect, value: 0 } })}（整组配置；数值见成员）`
+  let amount = 0
+  if (options.effectAmounts) {
+    amount = options.effectAmounts[effect.id] ?? 0
+  } else if (effect.kind === 'stacked' || effect.stackable) {
+    // ⚠️ 与局内 Buff 勾选器同一套调用：getBuffEffectStacks(全队勾选对象, 槽位, 效果 id, 作用目标, 兜底值)。
+    // 这个 computed 在**渲染期**跑，形状不对就退回默认层数、绝不抛
+    // —— 2026-09-22 踩过：这里一抛，整个伤害页的交互（含方案库按钮）全挂。
+    const rowStacks = rowOverride?.stacksByEffectId?.[effect.id]
+    const multi = options.selection as Parameters<typeof getBuffEffectStacks>[0] | null | undefined
+    const stacks =
+      rowStacks ??
+      (multi && (multi as { bySlot?: unknown }).bySlot && !effect.extraGain
+        ? getBuffEffectStacks(
+            multi,
+            options.slotIndex,
+            effect.id,
+            effect.applyTarget,
+            effect.defaultStacks ?? 1,
+          )
+        : (effect.defaultStacks ?? 1))
+    amount = resolveEffectBaseValue(effect, stacks)
+  } else if (effect.kind === 'convert') {
+    const panelSourceValues = resolveCollectedEffectPanelSourceValues(item, options)
+    const agentId = sourceSlot != null ? options.agentIdBySlot?.[sourceSlot] : null
+    amount = resolveConvertValue(
+      effect,
+      options.attrDefaults ?? {},
+      rowOverride?.convertInputsByEffectId?.[effect.id] ??
+        (!effect.extraGain ? options.convertInputFor?.(effect) : undefined) ?? null,
+      panelSourceValues,
+      agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
+    )
+  } else {
+    amount = Number(effect.value) || 0
+  }
+  // 与「行详情 / 覆盖弹窗 / 面板显示」统一：4 位四舍五入 + 千分位
+  // （原先直接拼字符串，会把 2.0999999999999996 这种浮点噪声原样露出来）
+  const amountText = formatCalcSigned(amount)
+  return formatBuffEffectResultText(effect, amountText, {
+    statLabelFn: (stat) => {
+      const field = BUFF_STAT_FIELDS.find((entry) => entry.key === stat)
+      return field ? buffStatFieldLabel(field) : String(stat)
+    },
+    skillSubcategories: options.skillSubcategories,
+    // 与弹窗一致：非全局作用期加 [失衡期] / [非失衡期] 前缀（全局不加，避免噪音）
+    applySituation: true,
+  })
+}
+
+/**
+ * 全表共用的一份文本（按效果 id）。
+ *
+ * ⚠️ 这是**列级说明**：只反映全局选择器/面板值，不含某一行的行级覆盖。
+ * 单元格要显示"这一行的事件值"时用 `buildFlowBuffEffectText(item, options, rowOverride)`。
+ */
 export function buildFlowBuffEffectTexts(
   items: CollectedEffect[] | null | undefined,
-  options: {
-    /** **全队勾选对象**（不是单槽位解析结果）—— 与局内 Buff 勾选器传的是同一个东西 */
-    selection: Parameters<typeof getBuffEffectStacks>[0] | null | undefined
-    /** 当前槽位（叠层取值用） */
-    slotIndex: number
-    /** 槽位 → 角色 id（技能等级转模按效果所属角色取） */
-    agentIdBySlot?: (string | null | undefined)[]
-    attrDefaults?: Parameters<typeof resolveConvertValue>[1]
-    panelSourceValues?: Parameters<typeof resolveConvertValue>[3]
-    panelSourceValuesBySlot?: Record<number, Parameters<typeof resolveConvertValue>[3]>
-    skillTalentLevelsByAgent?: Record<string, Parameters<typeof resolveConvertValue>[4]>
-    skillSubcategories?: NonNullable<
-      Parameters<typeof formatBuffEffectResultText>[2]
-    >['skillSubcategories']
-  },
+  options: FlowBuffEffectTextOptions,
 ): Record<string, string> {
   const out: Record<string, string> = {}
   for (const item of items ?? []) {
-    const effect = item.effect
-    const sourceSlot = parseSourceKeySlotIndex(item.sourceKey)
-    let amount = 0
-    if (effect.kind === 'stacked' || effect.stackable) {
-      // ⚠️ 与局内 Buff 勾选器同一套调用：getBuffEffectStacks(全队勾选对象, 槽位, 效果 id, 作用目标, 兜底值)。
-      // 这个 computed 在**渲染期**跑，形状不对就退回默认层数、绝不抛
-      // —— 2026-09-22 踩过：这里一抛，整个伤害页的交互（含方案库按钮）全挂。
-      const multi = options.selection as Parameters<typeof getBuffEffectStacks>[0] | null | undefined
-      const stacks =
-        multi && (multi as { bySlot?: unknown }).bySlot
-          ? getBuffEffectStacks(
-              multi,
-              options.slotIndex,
-              effect.id,
-              effect.applyTarget,
-              effect.defaultStacks ?? 1,
-            )
-          : (effect.defaultStacks ?? 1)
-      amount = (effect.valuePerStack ?? 0) * stacks
-    } else if (effect.kind === 'convert') {
-      const panelSourceValues =
-        sourceSlot != null && options.panelSourceValuesBySlot?.[sourceSlot]
-          ? options.panelSourceValuesBySlot[sourceSlot]
-          : options.panelSourceValues
-      const agentId = sourceSlot != null ? options.agentIdBySlot?.[sourceSlot] : null
-      amount = resolveConvertValue(
-        effect,
-        options.attrDefaults ?? {},
-        null,
-        panelSourceValues,
-        agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
-      )
-    } else {
-      amount = Number(effect.value) || 0
-    }
-    const amountText = amount > 0 ? `+${amount}` : String(amount)
-    out[effect.id] = formatBuffEffectResultText(effect, amountText, {
-      statLabelFn: (stat) => {
-        const field = BUFF_STAT_FIELDS.find((entry) => entry.key === stat)
-        return field ? buffStatFieldLabel(field) : String(stat)
-      },
-      skillSubcategories: options.skillSubcategories,
-    })
+    out[item.effect.id] = buildFlowBuffEffectText(item, options, null)
   }
   return out
 }
@@ -236,7 +274,7 @@ export function buildFlowBuffTableColumns(input: {
   const slotCount = input.slotLabels.length
   const groups = new Map<string, FlowBuffTableColumn[]>()
   for (const item of input.items ?? []) {
-    const slotIndex = parseSourceKeySlotIndex(item.sourceKey)
+    const slotIndex = resolveCollectedEffectSourceSlot(item)
     const isExtra = item.sourceKey.startsWith('extra-')
     const groupKey = isExtra
       ? 'extra'

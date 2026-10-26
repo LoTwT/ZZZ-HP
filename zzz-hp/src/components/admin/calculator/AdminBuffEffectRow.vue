@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import NumberStepper from '@/components/common/NumberStepper.vue'
 import type {
@@ -41,6 +41,7 @@ import {
 } from '@/utils/buffStatZones'
 import { damageTypeLabel, damageTypesLabel, BUFF_DAMAGE_TYPE_IDS } from '@/utils/buffDamageTypes'
 import { canConfirmMerge, type EffectRow } from '@/utils/buffEffectRows'
+import type { ExtraBuffApplySlot, ExtraBuffSlotIndex } from '@/types/extraBuff'
 
 const props = defineProps<{
   row: EffectRow
@@ -49,6 +50,15 @@ const props = defineProps<{
   mergeMode?: boolean
   selected?: boolean
   onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
+  /**
+   * `catalog`（缺省）= 增益库编辑器；`extra` = 额外 Buff 卡片（一卡一行、目标按槽位）。
+   * extra 模式下隐藏块级操作（合并/拆开/对齐/默认启用/新建小类/行内删除），
+   * 目标控件换成「作用对象」，转模多一个「来源槽位」。
+   */
+  contextMode?: 'catalog' | 'extra'
+  applySlot?: ExtraBuffApplySlot
+  sourceSlot?: ExtraBuffSlotIndex
+  slotOptions?: Array<{ value: ExtraBuffSlotIndex; label: string }>
 }>()
 
 const emit = defineEmits<{
@@ -59,12 +69,24 @@ const emit = defineEmits<{
   'confirm-merge': []
   align: []
   'toggle-select': []
+  'update:applySlot': [value: ExtraBuffApplySlot]
+  'update:sourceSlot': [value: ExtraBuffSlotIndex]
 }>()
 
 const calculatorBuffStore = useCalculatorBuffStore()
 const { agents, skillSubcategories } = storeToRefs(calculatorBuffStore)
 
 const first = computed(() => props.row.effects[0]!)
+/** 额外 Buff 卡片模式：一卡一行，卡片级操作在卡片头部，不在这里 */
+const isExtraMode = computed(() => props.contextMode === 'extra')
+const applySlotModel = computed(() => String(props.applySlot ?? 0))
+function onApplySlotChange(event: Event) {
+  const raw = (event.target as HTMLSelectElement).value
+  emit('update:applySlot', raw === 'team' ? 'team' : (Number(raw) as ExtraBuffSlotIndex))
+}
+function onSourceSlotChange(event: Event) {
+  emit('update:sourceSlot', Number((event.target as HTMLSelectElement).value) as ExtraBuffSlotIndex)
+}
 const zone = computed(() => props.row.zone)
 const allowedTypes = computed(() =>
   zone.value ? allowedDamageTypesOf(zone.value) : undefined,
@@ -244,11 +266,35 @@ const skillTargetsOf = computed(() => getEffectSkillTargets(first.value))
 function skillTargetLabel(target: BuffSkillTarget) {
   return formatSkillTargetBracket(target, skillSubcategories.value)
 }
+
+/**
+ * 招式 chip 文案：额外 Buff 会同时列出三名队员的小类，同名时补上所属角色名；
+ * 管理端传了 `agentId`（只列本角色），保持原来的纯名字。
+ */
+function skillTargetName(target: BuffSkillTarget) {
+  const base = skillTargetLabel(target).replace(/^\[|\]$/g, '')
+  if (props.agentId || !target.subcategoryId) return base
+  const sub = skillSubcategories.value.find((item) => item.id === target.subcategoryId)
+  if (!sub?.agentId) return base
+  const agent = agents.value.find((item) => item.id === sub.agentId)
+  return agent ? `${base}（${agent.name}）` : base
+}
 function onDraftCategoryChange(category: BuffSkillTargetId) {
   const draft = ensureDraftSkill(first.value)
   draft.category = category
   draft.subcategoryId = null
 }
+/**
+ * 招式小类选项文案：**额外 Buff 不按编辑角色过滤**，所以会同时列出三名队员的小类，
+ * 同名（如「特殊技」）必须带上所属角色名才能区分（Spec §4.2 第 4 项）。
+ * 管理端传了 `agentId`，只列本角色的，保持原来的纯名字。
+ */
+function subcategoryLabel(sub: SkillSubcategory): string {
+  if (props.agentId || !sub.agentId) return sub.name
+  const agent = agents.value.find((item) => item.id === sub.agentId)
+  return agent ? `${sub.name}（${agent.name}）` : sub.name
+}
+
 function subcategoriesForCategory(category: BuffSkillTargetId): SkillSubcategory[] {
   const agentFilter = props.agentId
   return skillSubcategories.value.filter((item) => {
@@ -401,6 +447,63 @@ function onSplit() {
 /** 下拉菜单开关（行本身不再有折叠态：行、条件、高级、块备注都常显） */
 const condMenuOpen = ref(false)
 const skillMenuOpen = ref(false)
+/**
+ * 「＋ 条件」菜单向上弹：按钮固定在条件行最左后，卡片贴近底部时菜单仍可能越过滚动容器底边，
+ * 所以打开后按实际位置决定朝上还是朝下（不写死，两种情况都要能完整看到）。
+ */
+const condMenuUp = ref(false)
+
+/**
+ * 「＋ 条件」菜单定位：**固定定位 + 视口夹紧**。
+ *
+ * 之前用「相对按钮的绝对定位 + 找滚动容器算空间」有两个坑（用户 2026-10-26 反馈"方向有时是反的"）：
+ * ① 容器是卡片里的可滚区域，量出来的"上方空间"和用户看到的并不一致；
+ * ② 曾经给过 140px 最小高度，上方只剩几十像素时会顶出容器、首行被裁。
+ * 现在统一按**视口**算：放得下就朝下，装不下且上方更宽就朝上，再把 left/top 夹进视口。
+ */
+async function toggleCondMenu() {
+  condMenuOpen.value = !condMenuOpen.value
+  if (!condMenuOpen.value) {
+    detachCondMenuListeners()
+    return
+  }
+  await nextTick()
+  positionCondMenu()
+  window.addEventListener('scroll', positionCondMenu, true)
+  window.addEventListener('resize', positionCondMenu)
+}
+
+function detachCondMenuListeners() {
+  window.removeEventListener('scroll', positionCondMenu, true)
+  window.removeEventListener('resize', positionCondMenu)
+}
+
+function positionCondMenu() {
+  const menu = document.querySelector('.cond-menu') as HTMLElement | null
+  const anchor = menu?.parentElement ?? null
+  if (!menu || !anchor) return
+  const margin = 8
+  menu.style.maxHeight = ''
+  menu.style.top = '0px'
+  menu.style.left = '0px'
+  const wanted = menu.getBoundingClientRect().height
+  const rect = anchor.getBoundingClientRect()
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - margin)
+  const spaceAbove = Math.max(0, rect.top - margin)
+  const openUp = wanted > spaceBelow && spaceAbove > spaceBelow
+  const available = openUp ? spaceAbove : spaceBelow
+  const maxHeight = Math.max(28, Math.min(wanted, available))
+  const height = Math.min(wanted, maxHeight)
+  const top = openUp ? rect.top - 4 - height : rect.bottom + 4
+  const left = rect.left
+  menu.style.maxHeight = `${maxHeight}px`
+  menu.style.top = `${Math.max(margin, Math.min(top, window.innerHeight - margin - height))}px`
+  menu.style.left = `${Math.max(
+    margin,
+    Math.min(left, window.innerWidth - margin - menu.offsetWidth),
+  )}px`
+  condMenuUp.value = openUp
+}
 
 interface RevealState {
   situation: boolean
@@ -568,9 +671,7 @@ function resetCondition(key: RevealKey) {
 }
 
 /** 招式 chip 文字：去掉 [ ] 便于压一行 */
-function skillTargetName(target: BuffSkillTarget) {
-  return skillTargetLabel(target).replace(/^\[|\]$/g, '')
-}
+
 
 function onCreateSubcatFromMenu() {
   skillMenuOpen.value = false
@@ -586,9 +687,13 @@ function onAddSkillTarget() {
 function onDocumentClick() {
   condMenuOpen.value = false
   skillMenuOpen.value = false
+  detachCondMenuListeners()
 }
 onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  detachCondMenuListeners()
+})
 </script>
 
 <template>
@@ -601,9 +706,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <div class="effect-title">
         <strong>{{ rowTitle }}</strong>
-        <span v-if="memberCount > 1" class="badge">{{ memberCount }} 条</span>
-        <span v-if="row.groupId" class="badge badge-group">组</span>
-        <span v-else-if="row.heuristic" class="badge badge-ungrouped">未分组</span>
+        <span v-if="!isExtraMode && memberCount > 1" class="badge">{{ memberCount }} 条</span>
+        <span v-if="!isExtraMode && row.groupId" class="badge badge-group">组</span>
+        <span v-else-if="!isExtraMode && row.heuristic" class="badge badge-ungrouped">未分组</span>
         <span v-if="row.issues.length" class="badge badge-warn">⚠ 不一致</span>
       </div>
 
@@ -611,7 +716,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <span class="summary-value">{{ amountText }}</span>
 
-      <div class="effect-actions">
+      <div v-if="!isExtraMode" class="effect-actions">
         <button
           v-if="canConfirmMerge(row)"
           type="button"
@@ -632,14 +737,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </div>
     </header>
 
-    <p v-if="row.issues.length" class="row-warn">
+    <p v-if="!isExtraMode && row.issues.length" class="row-warn">
       <span>⚠ {{ row.issues.map((issue) => issue.label).join(' / ') }}不一致</span>
       <button type="button" class="ghost-btn" @click="emit('align')">一键对齐</button>
     </p>
 
     <div class="row-body">
       <div class="body-main">
-        <p v-if="memberCount > 1" class="member-line">
+        <p v-if="!isExtraMode && memberCount > 1" class="member-line">
           <span class="muted">组内：</span>
           <span v-for="(label, index) in memberLabels" :key="index" class="member-chip">{{ label }}</span>
         </p>
@@ -648,7 +753,48 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <div class="cond-line">
           <span class="line-label">条件</span>
 
-          <label v-if="!lockApplyTarget" class="inline-field">
+          <!--
+            「＋ 条件」固定在条件行最前：伤害类型多选后换行时，它不会跟着被挤下去，
+            下拉菜单也不会跑出容器（用户 2026-10-25 反馈）。
+          -->
+          <span class="add-cond">
+            <button
+              type="button"
+              class="ghost-btn add-cond-btn"
+              title="把默认不占位的条件控件加回来"
+              @click.stop="toggleCondMenu"
+            >
+              ＋ 条件
+            </button>
+            <div v-if="condMenuOpen" class="cond-menu" :class="{ 'is-up': condMenuUp }" @click.stop>
+              <button
+                v-for="item in condMenuItems"
+                :key="item.key"
+                type="button"
+                class="cond-item"
+                :disabled="item.shown"
+                @click="reveal(item.key)"
+              >
+                <span class="cond-item-mark">{{ item.shown ? '✓' : '＋' }}</span>
+                {{ item.label }}
+              </button>
+            </div>
+          </span>
+
+          <label v-if="isExtraMode" class="inline-field">
+            <span>作用对象</span>
+            <select :value="applySlotModel" @change="onApplySlotChange">
+              <option value="team">全队</option>
+              <option
+                v-for="opt in slotOptions ?? []"
+                :key="`slot-${opt.value}`"
+                :value="String(opt.value)"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
+          <label v-else-if="!lockApplyTarget" class="inline-field">
             <span>目标</span>
             <select v-model="applyTarget">
               <option value="self">自身</option>
@@ -795,7 +941,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                       :key="sub.id"
                       :value="sub.id"
                     >
-                      {{ sub.name }}
+                      {{ subcategoryLabel(sub) }}
                     </option>
                   </select>
                 </label>
@@ -803,7 +949,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                   <button type="button" class="ghost-btn" @click="onAddSkillTarget">
                     ＋ 添加动作
                   </button>
-                  <button type="button" class="ghost-btn" @click="onCreateSubcatFromMenu">
+                  <button
+                    v-if="!isExtraMode"
+                    type="button"
+                    class="ghost-btn"
+                    @click="onCreateSubcatFromMenu"
+                  >
                     ＋ 新建小类
                   </button>
                 </div>
@@ -817,30 +968,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             >
               ✕
             </button>
-          </span>
-
-          <span class="add-cond">
-            <button
-              type="button"
-              class="ghost-btn add-cond-btn"
-              title="把默认不占位的条件控件加回来"
-              @click.stop="condMenuOpen = !condMenuOpen"
-            >
-              ＋ 条件
-            </button>
-            <div v-if="condMenuOpen" class="cond-menu" @click.stop>
-              <button
-                v-for="item in condMenuItems"
-                :key="item.key"
-                type="button"
-                class="cond-item"
-                :disabled="item.shown"
-                @click="reveal(item.key)"
-              >
-                <span class="cond-item-mark">{{ item.shown ? '✓' : '＋' }}</span>
-                {{ item.label }}
-              </button>
-            </div>
           </span>
         </div>
 
@@ -861,7 +988,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </button>
           </span>
 
-          <span v-if="showEnabledDefault" class="inline-check">
+          <span v-if="!isExtraMode && showEnabledDefault" class="inline-check">
             <input v-model="enabledDefault" type="checkbox" />
             <span>默认启用</span>
             <button
@@ -980,6 +1107,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               "
             >
               <option v-for="opt in CONVERT_PANEL_SOURCE_OPTIONS" :key="opt.id" :value="opt.id">
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
+          <label
+            v-if="isExtraMode && (convert.panelSource ?? 'external') !== 'manual'"
+            class="inline-field"
+          >
+            <span>来源槽位</span>
+            <select :value="String(sourceSlot ?? 0)" @change="onSourceSlotChange">
+              <option
+                v-for="opt in slotOptions ?? []"
+                :key="`src-${opt.value}`"
+                :value="String(opt.value)"
+              >
                 {{ opt.label }}
               </option>
             </select>
@@ -1358,11 +1500,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .cond-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 30;
+  /* 位置由 positionCondMenu() 按视口算好写进 inline style（fixed 可逃出滚动容器裁剪） */
+  position: fixed;
+  z-index: 2000;
   min-width: 11.5rem;
+  max-height: min(60vh, 22rem);
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.05rem;
@@ -1372,6 +1515,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   background: var(--color-background);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
 }
+
+
 
 .cond-item {
   display: flex;

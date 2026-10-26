@@ -1,3 +1,4 @@
+import { normalizeFlowEventElements } from '@/utils/resolvedHit'
 import { loadCustomSkills, parseCustomSkillList, replaceCustomSkills } from '@/utils/skillLibrary'
 import {
   loadCustomSkillGroups,
@@ -29,7 +30,6 @@ import {
 } from '@/utils/schemePack'
 import { SCHEME_STORE_VERSION } from '@/types/damageCalcHistory'
 import type { AffixCounts, AffixDriveDiscMainStats, PanelStats } from '@/types/calculatorPanel'
-import type { ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
 import {
   createDefaultAffixDriveDiscMainStats,
   createEmptyAffixCounts,
@@ -40,7 +40,6 @@ import {
   migrateLegacyPanelIntoSource,
   writeAffixInputsIntoSource,
 } from '@/utils/agentPanelSources'
-import { normalizeExtraGain } from '@/utils/extraBuffCalc'
 
 const STORAGE_KEY = 'zzz-hp-damage-calc-history'
 const LOADED_KEY = 'zzz-hp-scheme-loaded'
@@ -289,13 +288,13 @@ function sanitizeSchemePanelState(
   const ps = panelState as Record<string, unknown>
   const { baseDamageSource: _ignored, externalPanel, ...rest } = ps
   const nextExternalPanel = sanitizeSchemePanelLike(externalPanel)
-  const extraGains = Array.isArray(ps.extraGains)
-    ? ps.extraGains.map((item: unknown) => normalizeExtraGain(item as ExtraBuffGain))
-    : ps.extraGains
+  // 额外 Buff 的原始值原样保留：归一化只在 `PanelCalcSection.loadSnapshot`（唯一丢弃点）做，
+  // 这里删条或计数会让"跳过 N 条"丢失（Spec §6 第 3 项）。
+  const extraGains = ps.extraGains
 
   return {
     ...rest,
-    extraGains,
+    extraGains: extraGains as DamageCalcSchemePanelSnapshot['extraGains'],
     externalPanel: nextExternalPanel ?? externalPanel,
   } as DamageCalcSchemePanelSnapshot
 }
@@ -410,6 +409,7 @@ function migrateEntryToDualPanel(entry: DamageCalcHistoryEntry): void {
 function sanitizeSchemeEntry(entry: DamageCalcHistoryEntry): DamageCalcHistoryEntry {
   const next: DamageCalcHistoryEntry = {
     ...entry,
+    slots: entry.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })),
     panelState: sanitizeSchemePanelState(entry.panelState) ?? entry.panelState,
   }
   // 老结构的归位与清洗都在这里做：方案库读盘、导出包导入都经过本函数
@@ -988,7 +988,7 @@ function readStoredDraft(): DamageCalcWorkingDraft | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as DamageCalcWorkingDraft
     if (!parsed || !Array.isArray(parsed.teamSlots)) return null
-    return parsed
+    return { ...parsed, slots: parsed.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })) }
   } catch {
     return null
   }
@@ -1014,7 +1014,8 @@ export function saveWorkingDraft(draft: DamageCalcWorkingDraft): SaveWorkingDraf
     const stored = readStoredDraft()
     const otherTabWroteNewer = !!stored && stored.savedAt > lastSeenDraftSavedAt
     const payload = draft.panelState ? draft : { ...draft, panelState: stored?.panelState ?? null }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+    const normalizedPayload = { ...payload, slots: payload.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })) }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(normalizedPayload))
     // 关键：无论是否 stale 都要把「已见时间戳」推进，否则下一次还会判 stale → 永久阻断
     lastSeenDraftSavedAt = Math.max(lastSeenDraftSavedAt, payload.savedAt || 0)
     return otherTabWroteNewer ? 'stale' : 'ok'

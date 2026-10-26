@@ -44,6 +44,7 @@ import {
 } from '../src/utils/affixTargetBranches.ts'
 import { computeDefenseZone } from '../src/utils/damageCalc.ts'
 import { computeAffixBenefitTable } from '../src/utils/affixBenefitAnalysis.ts'
+import { extraCard } from './_effectPipelineHarness.mjs'
 import {
   buildOptimalEvalContext,
   evaluateAffixCounts,
@@ -234,16 +235,11 @@ check('库路径把 gain: 写成 extraGains，不写 deltas', viaLib.extraGains.
 // 4b. 增益路径：手工把同样 4 个百分点塞进 extraGains
 const ctxWithGain = makeCtx({
   extraGains: [
-    {
-      id: 'manual:inCombatAtk',
-      name: '手工局内攻击',
-      stat: 'inCombatAtkPercent',
-      value: 4,
-      applySituation: 'global',
-      scope: 'general',
-      applyTarget: 'self',
-      applySlot: 0,
-    },
+    extraCard(
+      'manual:inCombatAtk',
+      { stat: 'inCombatAtkPercent', value: 4, applyTarget: 'self', scope: 'general' },
+      { name: '手工局内攻击', applySlot: 0 },
+    ),
   ],
 })
 const viaGain = evaluateAffixCounts(ctxWithGain, zeros, undefined)
@@ -393,16 +389,11 @@ console.log('\n[8] 重叠字段（penRate / dmgBonus）只加一次')
 
   const shredCtx = makeCtx({
     extraGains: [
-      {
-        id: 'test-shred',
-        name: '减防',
-        stat: 'reduceDefense',
-        value: 41,
-        applySituation: 'global',
-        scope: 'general',
-        applyTarget: 'self',
-        applySlot: 0,
-      },
+      extraCard(
+        'test-shred',
+        { stat: 'reduceDefense', value: 41, applyTarget: 'self', scope: 'general' },
+        { name: '减防', applySlot: 0 },
+      ),
     ],
   })
   const shredBase = evaluateAffixCounts(shredCtx, zeros, undefined)

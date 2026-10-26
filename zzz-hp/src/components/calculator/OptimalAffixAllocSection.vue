@@ -15,11 +15,12 @@ import {
   readSingleQueryValue,
   buildQueryWithValues,
 } from '@/utils/panelUrlState'
-import { type ExtraBuffGain } from '@/components/calculator/ExtraBuffGainEditor.vue'
+import { type ExtraBuffGain } from '@/types/extraBuff'
 import BenefitCurvePanel from '@/components/calculator/BenefitCurvePanel.vue'
 import OptimalDamageBarChart from '@/components/calculator/OptimalDamageBarChart.vue'
 import IkModalShell from '@/components/common/IkModalShell.vue'
 import AffixBenefitTable from '@/components/calculator/AffixBenefitTable.vue'
+import InfoTip from '@/components/common/InfoTip.vue'
 import AffixAllocationResult from '@/components/calculator/AffixAllocationResult.vue'
 import AffixSearchAdvancedModal from '@/components/calculator/AffixSearchAdvancedModal.vue'
 import GameAffixRulesModal from '@/components/calculator/GameAffixRulesModal.vue'
@@ -1650,6 +1651,7 @@ let pendingSkillFlowEmit = false
  */
 const skillFlowContextFingerprint = computed(() =>
   buildSkillFlowHitContextSignature({
+    agentElements: props.agents.map(agent => [agent.id, agent.element]),
     enemy: enemyInput.value,
     extraGains: extraGains.value,
     sourceExtraGains: props.skillFlowSourceExtraGains,
@@ -3901,14 +3903,14 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
               {{ affixAllocCollapsed ? '展开求解结果' : '收起求解结果' }}
             </button>
           </div>
-          <ul class="alloc-mode-notes">
-            <li>
-              <b>求最优分配</b>：自适应 Beam —— 同一预算下并行保留多条分法，再各做一轮换档兜底；不清楚规则就用预设「均衡」。
-            </li>
-            <li>
-              <b>游戏专用规则分配</b>：模拟 4 号位主属性与副词条重复、以及 5/6 号位选到攻击/生命/防御时的总词条数损失，比左边慢。
-            </li>
-          </ul>
+          <InfoTip
+            label="两种分配方式说明"
+            title="分配方式"
+            :items="[
+              '求最优分配：自适应 Beam —— 同一预算下并行保留多条分法，再各做一轮换档兜底；不清楚规则就用预设「均衡」。',
+              '游戏专用规则分配：模拟 4 号位主属性与副词条重复、以及 5/6 号位选到攻击/生命/防御时的总词条数损失，比左边慢。',
+            ]"
+          />
         </div>
         <p v-if="affixAllocError" class="err">{{ affixAllocError }}</p>
         <!--
@@ -4087,15 +4089,16 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
           </select>
         </label>
       </div>
-      <p class="hint">
-        <template v-if="sweepMainStatsEditable">
-          初始面板口径：这里的 4/5/6 决定面板推导（词条上限 / 柱图 / 差异 / 曲线 / 组合试算），
-          不改动导入面板与词条分析页。改完需重新点「开始计算」。
-        </template>
-        <template v-else>
-          导入面板口径：4/5/6 固定按导入的来，不在此处修改（要改请切「初始面板」）。
-        </template>
-      </p>
+      <InfoTip
+        v-if="sweepMainStatsEditable"
+        label="面板口径说明"
+        text="初始面板口径：这里的 4/5/6 决定面板推导（词条上限 / 柱图 / 差异 / 曲线 / 组合试算），不改动导入面板与词条分析页。改完需重新点「开始计算」。"
+      />
+      <InfoTip
+        v-else
+        label="面板口径说明"
+        text="导入面板口径：4/5/6 固定按导入的来，不在此处修改（要改请切「初始面板」）。"
+      />
     </div>
     <div class="alloc-layout">
       <div class="alloc-left">
@@ -4598,10 +4601,13 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
 
         <template v-if="combinedMainStatPreview">
           <header class="main-stat-section-heading">
-            <h4 class="sub-title">主词条组合替换（4/5/6 与 2 件套）</h4>
-            <p class="hint">
-              在保持当前副词条分配不变的前提下，同时替换 4/5/6 号盘主属性与 2 件套并对比总伤害变化。
-            </p>
+            <h4 class="sub-title">
+              主词条组合替换（4/5/6 与 2 件套）
+              <InfoTip
+                label="主词条组合替换说明"
+                text="在保持当前副词条分配不变的前提下，同时替换 4/5/6 号盘主属性与 2 件套并对比总伤害变化。"
+              />
+            </h4>
           </header>
 
           <div class="combined-main-stat-card">
@@ -5519,22 +5525,7 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   visibility: hidden;
 }
 
-.alloc-mode-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #9aa3b0;
-}
 
-.alloc-mode-notes b {
-  color: #cfd5df;
-  font-weight: 700;
-}
 
 .alloc-note {
   margin: 0;

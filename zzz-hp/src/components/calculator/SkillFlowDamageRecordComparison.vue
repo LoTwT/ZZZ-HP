@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import type { SkillFlowDamageRecord } from '@/utils/skillFlowDamageRecords'
 import { skillFlowDamageRecordLabel } from '@/utils/skillFlowDamageRecords'
@@ -151,7 +152,13 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
 
 <template>
   <section class="sf-record-compare" aria-label="伤害记录结构对比">
-    <h4>记录结构对比</h4>
+    <h4>
+      记录结构对比
+      <InfoTip
+        label="记录结构对比说明"
+        text="比较记录时的完整伤害快照；队伍、流程或配置变化均会影响差值。角色按身份对齐，换槽不会被视为换人。"
+      />
+    </h4>
     <p v-if="records.length < 2" class="sf-record-hint">
       记录两次伤害后，可比较角色、伤害类型与招式的变化。
     </p>
@@ -193,9 +200,7 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
             >{{ signed(result.total.delta) }}（{{ change(result.total) }}）</span
           >
         </p>
-        <p class="sf-record-hint">
-          比较记录时的完整伤害快照；队伍、流程或配置变化均会影响差值。角色按身份对齐，换槽不会被视为换人。
-        </p>
+
         <p v-if="!result.hasDetails" class="sf-record-hint sf-record-legacy">
           {{ missingNames }} 仅保存总伤，无法还原结构；重新记录后可比较角色、类型和招式。
         </p>
@@ -271,13 +276,18 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
               </dd>
             </div>
           </dl>
-          <p v-if="countView" class="sf-record-hint">
-            数量按已计入伤害的招式统计；同角色的同一招式合并为一种，技能组按展开的子招式累计次数。
-          </p>
+
+          <InfoTip
+            v-if="countView"
+            label="数量统计说明"
+            text="数量按已计入伤害的招式统计；同角色的同一招式合并为一种，技能组按展开的子招式累计次数。"
+          />
           <template v-if="dimension === 'skill' && skillView === 'single'">
-            <p class="sf-record-hint">
-              平均单次按次数加权；以下直接列出各流程段的单次变化。平均值不变时，段内涨跌仍会显示。无有效次数时显示「—」。
-            </p>
+
+            <InfoTip
+              label="平均单次说明"
+              text="平均单次按次数加权；以下直接列出各流程段的单次变化。平均值不变时，段内涨跌仍会显示。无有效次数时显示「—」。"
+            />
             <p v-if="unmatchedCount" class="sf-record-hint sf-record-unmatched-hint">
               有
               {{ unmatchedCount }}

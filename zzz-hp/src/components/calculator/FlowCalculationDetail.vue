@@ -23,6 +23,7 @@ function formatDamage(value: number) {
     <p class="calculation-context">
       {{ detail.displayName }} · {{ detail.hit.staggerPhase === 'stagger' ? '失衡期' : '非失衡期' }}
       · {{ critModeLabel }}
+      · 事件元素 {{ detail.eventElement ?? '待选择' }}
     </p>
     <p class="calculation-total">
       单次 <strong>{{ formatDamage(detail.perHit) }}</strong>

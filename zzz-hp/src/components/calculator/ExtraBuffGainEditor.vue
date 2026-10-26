@@ -1,510 +1,515 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type {
-  BuffApplySituation,
-  BuffApplyTarget,
-  BuffScope,
-  BuffSkillTargetId,
-  BuffStatKey,
-  SkillCategoryId,
-} from '@/types/calculator'
+/**
+ * 额外 Buff 编辑器（Spec §4.1 / §4.2）。
+ *
+ * 布局与增益库一致：**左侧是增益清单（每条一个名字，依次排下去），选中的那条在右侧编辑**。
+ * 不折叠、不做树、卡片内不加效果 —— 一条增益 = 一行共享效果行。
+ *
+ * 其它约束：
+ * - `v-model` 的入参/出参是 `ExtraBuffGain[]`，类型定义只在 `@/types/extraBuff`。
+ * - 任何字段改动都**重建卡片对象并广播新数组**：目录缓存键按对象身份记忆化，
+ *   就地改同一个数组会让计算结果不刷新（Spec §4.2 第 6 项）。
+ */
+import { computed, nextTick, ref, watch } from 'vue'
+import AdminBuffEffectRow from '@/components/admin/calculator/AdminBuffEffectRow.vue'
+import type { AgentBuffDoc, BuffDamageType, BuffEffect } from '@/types/calculator'
+import type { ExtraBuffApplySlot, ExtraBuffGain, ExtraBuffSlotIndex } from '@/types/extraBuff'
 import {
-  BUFF_SCOPE_OPTIONS,
-  BUFF_SKILL_TARGET_OPTIONS,
-} from '@/types/calculator'
-import { BUFF_STAT_FIELDS, AGENT_ROLES, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatTeamProfessionGateLabel } from '@/utils/buffEffect'
-import {
-  extraGainApplySlotLabel,
-  normalizeExtraGain,
-  resolveExtraGainApplySlot,
-  scopeLabel,
-  type ExtraBuffApplySlot,
+  createExtraBuffGain,
+  extraGainAppliesToSlot,
+  serializeExtraGains,
 } from '@/utils/extraBuffCalc'
-import { hasBuffScope, normalizeBuffScopes } from '@/utils/buffScope'
+import {
+  buildEffectRows,
+  changeRowZone,
+  toggleRowDamageType,
+  type EffectRow,
+} from '@/utils/buffEffectRows'
+import { findBuffStatZoneById } from '@/utils/buffStatZones'
 import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
-import type { AgentBuffDoc } from '@/types/calculator'
-
-export interface ExtraBuffGain {
-  id: string
-  name: string
-  stat: BuffStatKey
-  value: number
-  /** 作用情况，默认全局 */
-  applySituation?: BuffApplySituation
-  /** 作用域（**数组**口径，多选；读时兼容单值字符串），默认通用 */
-  scope?: BuffScope[]
-  /** 作用目标；与 applySlot 同步，team=全队，self=指定槽位 */
-  applyTarget?: BuffApplyTarget
-  /** 作用槽位：'team' = 全队；0/1/2 = 角色1/2/3。旧 self 视为 0 */
-  applySlot?: ExtraBuffApplySlot
-  /** 受益职业；空 = 不限 */
-  applyProfession?: string | null
-  /** 队内职业人数条件；空 = 不限 */
-  teamProfession?: string | null
-  /** 启用的人数档（非 null = 该人数生效） */
-  teamProfessionValues?: Array<number | null> | null
-  /** @deprecated */
-  teamProfessionMinCount?: number | null
-  /** 招式 scope 时的大类（兼容字段） */
-  skillCategory?: BuffSkillTargetId
-  /** 招式 scope 时的小类；空 = 整大类 */
-  skillSubcategoryId?: string | null
-  /** 异常结算是否也吃这条效果（招式 scope） */
-  appliesToAnomaly?: boolean
-}
+import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
+import { formatCalcDecimal } from '@/utils/calcNumberFormat'
 
 const props = defineProps<{
-  skillSubcategories?: Array<{
-    id: string
-    agentId: string
-    categoryId: SkillCategoryId
-    name: string
-  }>
   teamSlots?: Array<{ agentId?: string | null }>
   agents?: AgentBuffDoc[]
 }>()
 
 const gains = defineModel<ExtraBuffGain[]>({ required: true })
 
-const draftName = ref('自定义增益')
-const draftStat = ref<BuffStatKey>('dmgBonus')
-const draftValue = ref(0)
-const draftSituation = ref<BuffApplySituation>('global')
-const draftScope = ref<BuffScope>('general')
-const draftApplySlot = ref<ExtraBuffApplySlot>(0)
-const draftApplyProfession = ref('')
-const draftTeamProfession = ref('')
-const draftTeamProfessionValues = ref<Array<number | null>>([null, null, null])
-const draftSkillCategory = ref<BuffSkillTargetId>('basic')
-const draftSkillSubcategoryId = ref<string>('')
-const draftAppliesToAnomaly = ref(false)
+/** 编辑副本：共享效果行会就地改传入的对象，所以这里只碰副本，改完再广播 */
+const local = ref<ExtraBuffGain[]>(serializeExtraGains(gains.value))
+let lastSignature = JSON.stringify(serializeExtraGains(gains.value))
 
-const SITUATION_LABELS: Record<BuffApplySituation, string> = {
-  global: '全局',
-  stagger: '失衡期',
-  non_stagger: '非失衡期',
+function signatureOf(cards: readonly ExtraBuffGain[]): string {
+  return JSON.stringify(serializeExtraGains([...cards]))
 }
 
-const slotOptions = computed(() => {
-  const slots = props.teamSlots ?? [{ agentId: '' }, { agentId: '' }, { agentId: '' }]
-  const agents = props.agents ?? []
-  return [0, 1, 2].map((index) => ({
-    value: index,
-    label: teamSlotDisplayLabel(slots[index] ?? { agentId: '' }, index, agents),
-  }))
-})
+/** 右侧正在编辑的那条（只存 id；不持久化） */
+const selectedId = ref<string>(local.value[0]?.id ?? '')
 
-const draftSubcategories = computed(() =>
-  (props.skillSubcategories ?? []).filter(
-    (item) => item.categoryId === draftSkillCategory.value,
-  ),
+function ensureSelection() {
+  if (!local.value.length) {
+    selectedId.value = ''
+    return
+  }
+  if (!local.value.some((card) => card.id === selectedId.value)) {
+    selectedId.value = local.value[0]!.id
+  }
+}
+
+watch(
+  () => gains.value,
+  (next) => {
+    const signature = signatureOf(next ?? [])
+    if (signature === lastSignature) return
+    local.value = serializeExtraGains(next ?? [])
+    lastSignature = signature
+    ensureSelection()
+  },
 )
 
-function onDraftTeamProfessionChange() {
-  if (!draftTeamProfession.value) {
-    draftTeamProfessionValues.value = [null, null, null]
-  }
+/** 广播：把副本重建为新数组（派生 applyTarget，保持 id/顺序） */
+function broadcast() {
+  const rebuilt = serializeExtraGains(local.value).map((card) => ({
+    ...card,
+    effects: card.effects.map((effect) => ({
+      ...effect,
+      applyTarget: (card.applySlot === 'team' ? 'team' : 'self') as BuffEffect['applyTarget'],
+    })),
+  }))
+  const signature = signatureOf(rebuilt)
+  if (signature === lastSignature) return
+  lastSignature = signature
+  gains.value = rebuilt
 }
 
-function isDraftTierOn(index: number) {
-  return draftTeamProfessionValues.value[index] != null
-}
+watch(local, broadcast, { deep: true })
 
-function setDraftTierOn(index: number, on: boolean) {
-  const next = [...draftTeamProfessionValues.value]
-  next[index] = on ? 0 : null
-  draftTeamProfessionValues.value = next
-}
+const selectedCard = computed(
+  () => local.value.find((card) => card.id === selectedId.value) ?? null,
+)
+
+const nameInput = ref<HTMLInputElement | null>(null)
+
+/** 槽位选项：作用对象与来源槽位共用（Spec §4.2 第 1 项） */
+const slotOptions = computed(() => {
+  const slots = props.teamSlots ?? []
+  const agents = props.agents ?? []
+  return [0, 1, 2].map((index) => {
+    const slot = slots[index] ?? { agentId: '' }
+    const label = teamSlotDisplayLabel(slot, index, agents)
+    return { value: index as ExtraBuffSlotIndex, label: `${label}（槽位 ${index + 1}）` }
+  })
+})
+
+const applySlotOptions = computed(() => slotOptions.value)
 
 function addGain() {
-  const name = draftName.value.trim() || '自定义增益'
-  const gain: ExtraBuffGain = {
-    id: `extra-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    name,
-    stat: draftStat.value,
-    value: Number.isFinite(draftValue.value) ? draftValue.value : 0,
-    applySituation: draftSituation.value,
-    // scope 数组口径（编辑器仍是单选，写出去统一数组）
-    scope: normalizeBuffScopes(draftScope.value),
-    applySlot: draftApplySlot.value,
-    applyTarget: draftApplySlot.value === 'team' ? 'team' : 'self',
-  }
-  if (draftApplyProfession.value.trim()) {
-    gain.applyProfession = draftApplyProfession.value.trim()
-  }
-  if (draftTeamProfession.value.trim()) {
-    gain.teamProfession = draftTeamProfession.value.trim()
-    gain.teamProfessionValues = [...draftTeamProfessionValues.value]
-  }
-  if (draftScope.value === 'skill') {
-    gain.skillCategory = draftSkillCategory.value
-    gain.skillSubcategoryId = draftSkillSubcategoryId.value || null
-    if (draftAppliesToAnomaly.value) gain.appliesToAnomaly = true
-  }
-  gains.value = [...gains.value, normalizeExtraGain(gain)]
-  draftValue.value = 0
-  draftSituation.value = 'global'
-  draftScope.value = 'general'
-  draftApplySlot.value = 0
-  draftApplyProfession.value = ''
-  draftTeamProfession.value = ''
-  draftTeamProfessionValues.value = [null, null, null]
-  draftSkillSubcategoryId.value = ''
-  draftAppliesToAnomaly.value = false
+  const card = createExtraBuffGain({ applySlot: 0, sourceSlot: 0 })
+  local.value = [...local.value, card]
+  selectedId.value = card.id
+  void nextTick(() => {
+    nameInput.value?.focus()
+    nameInput.value?.select()
+  })
 }
 
 function removeGain(id: string) {
-  gains.value = gains.value.filter((item) => item.id !== id)
-}
-
-function parseApplySlot(value: string): ExtraBuffApplySlot {
-  return value === 'team' ? 'team' : Number(value)
-}
-
-function setGainApplySlot(id: string, value: string) {
-  const applySlot = parseApplySlot(value)
-  gains.value = gains.value.map((item) =>
-    item.id === id
-      ? normalizeExtraGain({
-          ...item,
-          applySlot,
-          applyTarget: applySlot === 'team' ? 'team' : 'self',
-        })
-      : item,
-  )
-}
-
-function situationLabel(value?: BuffApplySituation) {
-  return SITUATION_LABELS[value ?? 'global']
-}
-
-function skillTargetSummary(item: ExtraBuffGain): string {
-  if (!hasBuffScope(item.scope, 'skill')) return ''
-  const cat =
-    BUFF_SKILL_TARGET_OPTIONS.find((opt) => opt.id === item.skillCategory)?.label ??
-    item.skillCategory ??
-    '招式'
-  if (!item.skillSubcategoryId) return cat
-  const sub = props.skillSubcategories?.find((s) => s.id === item.skillSubcategoryId)
-  return sub ? `${cat} · ${sub.name}` : cat
-}
-
-function gainMeta(item: ExtraBuffGain): string {
-  const parts = [
-    scopeLabel(item.scope),
-    extraGainApplySlotLabel(item, props.teamSlots ?? [], props.agents ?? []),
-  ]
-  if (item.applyProfession?.trim()) {
-    parts.push(`职业·${item.applyProfession.trim()}`)
+  const index = local.value.findIndex((card) => card.id === id)
+  local.value = local.value.filter((card) => card.id !== id)
+  if (selectedId.value === id) {
+    const fallback = local.value[Math.min(index, local.value.length - 1)] ?? null
+    selectedId.value = fallback?.id ?? ''
   }
-  const gate = formatTeamProfessionGateLabel(item)
-  if (gate) parts.push(gate)
-  parts.push(situationLabel(item.applySituation))
-  const skill = skillTargetSummary(item)
-  if (skill) parts.push(skill)
-  if (item.appliesToAnomaly) parts.push('异常也生效')
-  return parts.join(' · ')
+  ensureSelection()
 }
+
+function normalizeName(card: ExtraBuffGain) {
+  const text = card.name.trim()
+  card.name = text || '自定义增益'
+}
+
+function setApplySlot(card: ExtraBuffGain, value: ExtraBuffApplySlot) {
+  card.applySlot = value
+}
+
+function setSourceSlot(card: ExtraBuffGain, value: ExtraBuffSlotIndex) {
+  card.sourceSlot = value
+}
+
+/** 一条增益在共享效果行里的当前行（一卡恰好一行） */
+function rowsOf(card: ExtraBuffGain): EffectRow[] {
+  return buildEffectRows(card.effects)
+}
+
+function onChangeZone(card: ExtraBuffGain, row: EffectRow, zoneId: string, types: BuffDamageType[]) {
+  const zone = findBuffStatZoneById(zoneId)
+  if (!zone) return
+  card.effects = changeRowZone(card.effects, row, zone, types)
+}
+
+function onToggleType(card: ExtraBuffGain, row: EffectRow, type: BuffDamageType, checked: boolean) {
+  card.effects = toggleRowDamageType(card.effects, row, type, checked)
+}
+
+const appliesToLabel = (card: ExtraBuffGain): string =>
+  card.applySlot === 'team'
+    ? '全队'
+    : (slotOptions.value.find((opt) => opt.value === card.applySlot)?.label ?? '槽位 1')
+
+const listNameOf = (card: ExtraBuffGain): string => card.name.trim() || '自定义增益'
+
+/** 左栏一行摘要：属性 + 数值（够判断是哪条，不用展开看） */
+function summaryOf(card: ExtraBuffGain): string {
+  const effect = card.effects[0]
+  if (!effect) return ''
+  const field = BUFF_STAT_FIELDS.find((item) => item.key === effect.stat)
+  const label = field ? buffStatFieldLabel(field) : effect.stat
+  const num = (value: number) => formatCalcDecimal(value)
+  if (effect.kind === 'stacked') {
+    return `${label} ${num(effect.valuePerStack ?? 0)}/层 × ${num(effect.defaultStacks ?? 0)} 层`
+  }
+  if (effect.kind === 'convert') {
+    return `${label} 转模 ${num(effect.convert?.ratioPercent ?? 0)}%`
+  }
+  return `${label} +${num(effect.value ?? 0)}`
+}
+
+defineExpose({
+  /** 给测试/调试用：当前卡片数 */
+  gainCount: computed(() => local.value.length),
+  appliesToLabel,
+  extraGainAppliesToSlot,
+})
 </script>
 
 <template>
   <div class="extra-buff-editor">
-    <p class="extra-buff-hint">
-      额外 Buff 添加后立即参与计算。目标按槽位固定（全队或角色1/2/3），切换编辑中角色不会改作用对象。队内职业人数条件只限制何时生效，不改变数值本身。
-    </p>
-    <div class="extra-buff-form">
-      <label class="field">
-        <span>名称</span>
-        <input v-model="draftName" type="text" placeholder="自定义增益" />
-      </label>
-      <label class="field">
-        <span>增益类型</span>
-        <select v-model="draftStat">
-          <option v-for="field in BUFF_STAT_FIELDS" :key="field.key" :value="field.key">
-            {{ buffStatFieldLabel(field) }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>作用域</span>
-        <select v-model="draftScope">
-          <option v-for="opt in BUFF_SCOPE_OPTIONS" :key="opt.id" :value="opt.id">
-            {{ opt.label }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>作用对象</span>
-        <select
-          :value="draftApplySlot"
-          @change="draftApplySlot = parseApplySlot(($event.target as HTMLSelectElement).value)"
-        >
-          <option value="team">全队</option>
-          <option v-for="opt in slotOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>职业</span>
-        <select v-model="draftApplyProfession">
-          <option value="">不限</option>
-          <option v-for="role in AGENT_ROLES" :key="role" :value="role">
-            {{ role }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>队内职业人数条件</span>
-        <select v-model="draftTeamProfession" @change="onDraftTeamProfessionChange">
-          <option value="">不限</option>
-          <option v-for="role in AGENT_ROLES" :key="`gate-${role}`" :value="role">
-            {{ role }}
-          </option>
-        </select>
-      </label>
-      <label class="field">
-        <span>作用情况</span>
-        <select v-model="draftSituation">
-          <option value="global">全局</option>
-          <option value="stagger">失衡期</option>
-          <option value="non_stagger">非失衡期</option>
-        </select>
-      </label>
-      <label class="field">
-        <span>数值</span>
-        <input v-model.number="draftValue" type="number" step="any" />
-      </label>
-      <template v-if="draftScope === 'skill'">
-        <label class="field">
-          <span>招式大类</span>
-          <select v-model="draftSkillCategory" @change="draftSkillSubcategoryId = ''">
-            <option v-for="opt in BUFF_SKILL_TARGET_OPTIONS" :key="opt.id" :value="opt.id">
-              {{ opt.label }}
-            </option>
-          </select>
-        </label>
-        <label class="field">
-          <span>招式小类</span>
-          <select v-model="draftSkillSubcategoryId">
-            <option value="">整大类</option>
-            <option v-for="sub in draftSubcategories" :key="sub.id" :value="sub.id">
-              {{ sub.name }}
-            </option>
-          </select>
-        </label>
-        <label class="field field-check">
-          <input v-model="draftAppliesToAnomaly" type="checkbox" />
-          <span>异常结算时也生效</span>
-        </label>
-      </template>
-      <button type="button" class="add-btn" @click="addGain">添加增益</button>
-    </div>
-
-    <div v-if="draftTeamProfession" class="team-prof-tiers">
-      <span class="tiers-label">何时生效（勾选人数）</span>
-      <div class="team-prof-tier-row">
-        <label v-for="n in 3" :key="`draft-tier-${n}`" class="tier-cell">
-          <span class="tier-head">
-            <input
-              type="checkbox"
-              :checked="isDraftTierOn(n - 1)"
-              @change="setDraftTierOn(n - 1, ($event.target as HTMLInputElement).checked)"
-            />
-            <span>恰好{{ n }}人时生效</span>
-          </span>
-        </label>
+    <aside class="extra-buff-side">
+      <div class="extra-buff-side-head">
+        <button type="button" class="add-btn" @click="addGain">＋ 添加增益</button>
+        <span class="extra-buff-count">共 {{ local.length }} 条</span>
       </div>
-    </div>
 
-    <ul v-if="gains.length" class="extra-buff-list">
-      <li v-for="item in gains" :key="item.id" class="extra-buff-item">
-        <div class="extra-buff-copy">
-          <strong>{{ item.name }}</strong>
-          <span>
-            {{
-              buffStatFieldLabel(
-                BUFF_STAT_FIELDS.find((field) => field.key === item.stat) ?? {
-                  key: item.stat,
-                  label: item.stat,
-                  unit: 'flat',
-                  hint: '',
-                },
-              )
-            }}
-            +{{ item.value }} · {{ gainMeta(item) }}
+      <p v-if="!local.length" class="extra-buff-empty">
+        还没有额外 Buff。点「添加增益」新建一条。
+      </p>
+
+      <!--
+        左侧是**清单**：一条一行依次排下去（用户 2026-10-26：下拉框里只看得到一条、点不到其它）。
+        条目多时在框内滚动（`max-height` + `overflow`），弹窗高度不跟着涨。
+      -->
+      <ul v-else class="extra-buff-list">
+        <li v-for="card in local" :key="card.id">
+          <button
+            type="button"
+            class="extra-buff-list-item"
+            :class="{ 'is-active': card.id === selectedId }"
+            :aria-current="card.id === selectedId ? 'true' : undefined"
+            @click="selectedId = card.id"
+          >
+            <span class="extra-buff-list-name" :title="listNameOf(card)">{{ listNameOf(card) }}</span>
+            <span class="extra-buff-list-slot">
+              {{ appliesToLabel(card) }} · {{ summaryOf(card) }}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </aside>
+
+    <section class="extra-buff-detail">
+      <template v-if="selectedCard">
+        <header class="extra-buff-detail-head">
+          <input
+            ref="nameInput"
+            v-model="selectedCard.name"
+            type="text"
+            class="extra-buff-name"
+            placeholder="自定义增益"
+            :aria-label="`额外 Buff 名称 ${selectedCard.name}`"
+            @blur="normalizeName(selectedCard)"
+          />
+          <span class="extra-buff-scope" :title="appliesToLabel(selectedCard)">
+            {{ appliesToLabel(selectedCard) }}
           </span>
+          <button type="button" class="extra-buff-remove" @click="removeGain(selectedCard.id)">
+            移除
+          </button>
+        </header>
+
+        <div class="extra-buff-card-body">
+          <AdminBuffEffectRow
+            v-for="row in rowsOf(selectedCard)"
+            :key="row.key"
+            :row="row"
+            :agent-id="undefined"
+            context-mode="extra"
+            :apply-slot="selectedCard.applySlot"
+            :source-slot="selectedCard.sourceSlot"
+            :slot-options="applySlotOptions"
+            @change-zone="(zoneId, types) => onChangeZone(selectedCard!, row, zoneId, types)"
+            @toggle-type="(type, checked) => onToggleType(selectedCard!, row, type, checked)"
+            @update:applySlot="(value) => setApplySlot(selectedCard!, value)"
+            @update:sourceSlot="(value) => setSourceSlot(selectedCard!, value)"
+          />
         </div>
-        <select
-          class="item-slot-select"
-          :value="String(resolveExtraGainApplySlot(item))"
-          @change="setGainApplySlot(item.id, ($event.target as HTMLSelectElement).value)"
-        >
-          <option value="team">全队</option>
-          <option v-for="opt in slotOptions" :key="`item-${item.id}-${opt.value}`" :value="String(opt.value)">
-            {{ opt.label }}
-          </option>
-        </select>
-        <button type="button" class="remove-btn" @click="removeGain(item.id)">移除</button>
-      </li>
-    </ul>
-    <p v-else class="extra-buff-empty">尚未添加额外 Buff 增益</p>
+      </template>
+
+      <p v-else class="extra-buff-empty">
+        左侧选一条增益开始编辑，或点「＋ 添加增益」新建。
+      </p>
+    </section>
   </div>
 </template>
 
 <style scoped>
+/*
+ * 主题：弹窗 Teleport 到 body，拿不到 `.calculator-page` 上的 `--calc-*`，
+ * 所以这里用全局 `--color-*`（随 `html[data-theme]` 翻转）+ `color-mix` 派生，
+ * 白天/暗夜共用一套声明，不再各写一份覆盖。
+ */
 .extra-buff-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.extra-buff-hint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--calc-muted, #9aa3b5);
-  line-height: 1.45;
-}
-
-.extra-buff-form {
+  --eb-surface: var(--color-background-soft, #141922);
+  --eb-surface-2: var(--color-background-mute, #1a1f2a);
+  --eb-border: var(--color-border, #2d3646);
+  --eb-text: var(--color-text, #e8ecf4);
+  --eb-muted: color-mix(in srgb, var(--color-text, #e8ecf4) 64%, transparent);
+  --eb-input-bg: color-mix(in srgb, var(--color-background, #10141c) 88%, var(--color-text, #e8ecf4) 5%);
+  --eb-accent: #c9a55c;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
-  gap: 0.55rem;
-  align-items: end;
+  /*
+   * 左栏放下拉框 + 摘要即可，不必占一半：共享效果行在 780px 以下会开始换行、反而更难读，
+   * 所以左栏取 1/3（最小 260px），右侧拿剩余空间。要改回一半只动这一行。
+   */
+  grid-template-columns: minmax(260px, 33%) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  font-size: 0.95rem;
+  color: var(--eb-text);
 }
 
-.field {
+/* ---------- 左侧：增益清单 ---------- */
+.extra-buff-side {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
-  font-size: 0.78rem;
-  color: var(--calc-muted, #c9d0dc);
+  gap: 0.6rem;
+  min-width: 0;
+  padding-right: 0.9rem;
+  border-right: 1px solid var(--eb-border);
 }
 
-.field-check {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.4rem;
-  padding-bottom: 0.35rem;
-}
-
-.field input,
-.field select {
-  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: var(--calc-panel, #151922);
-  color: var(--calc-text, #edf1f7);
-  padding: 0.42rem 0.55rem;
-  font-size: 0.82rem;
-}
-
-.team-prof-tiers {
+.extra-buff-side-head {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
-.tiers-label {
-  font-size: 0.78rem;
-  color: var(--calc-muted, #c9d0dc);
-}
-
-.team-prof-tier-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-
-.tier-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  padding: 0.45rem 0.55rem;
-  background: var(--calc-panel, #151922);
-}
-
-.tier-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.78rem;
-  color: var(--calc-text, #edf1f7);
-}
-
-.add-btn,
-.remove-btn {
-  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.14));
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--calc-text, #edf1f7);
-  padding: 0.45rem 0.7rem;
+.add-btn {
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: var(--eb-surface-2);
+  color: var(--eb-text);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-height: 2.4rem;
   cursor: pointer;
-  font-size: 0.8rem;
 }
 
+.add-btn:hover {
+  border-color: var(--eb-accent);
+  background: color-mix(in srgb, var(--eb-accent) 12%, var(--eb-surface-2));
+}
+
+.extra-buff-count {
+  font-size: 0.85rem;
+  color: var(--eb-muted);
+}
+
+/* ---------- 左侧清单（条目多时框内滚动，不撑高弹窗） ---------- */
 .extra-buff-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.15rem;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.25rem;
+  max-height: 52vh;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
-.extra-buff-item {
+.extra-buff-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--eb-text);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.extra-buff-list-item:hover {
+  background: color-mix(in srgb, var(--eb-text) 7%, transparent);
+}
+
+.extra-buff-list-item.is-active {
+  border-color: var(--eb-accent);
+  background: color-mix(in srgb, var(--eb-accent) 14%, transparent);
+}
+
+.extra-buff-list-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-buff-list-slot {
+  font-size: 0.78rem;
+  color: var(--eb-muted);
+}
+
+/* ---------- 右侧：选中那条的编辑区（自己滚，不跟左侧联动） ---------- */
+.extra-buff-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  /* 右侧独立滚动：长表单不会把弹窗顶高 */
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.extra-buff-detail-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.1));
-  border-radius: 10px;
-  padding: 0.55rem 0.7rem;
-}
-
-.item-slot-select {
-  flex-shrink: 0;
-  max-width: 8.5rem;
-  border: 1px solid var(--calc-border, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: var(--calc-panel, #151922);
-  color: var(--calc-text, #edf1f7);
-  padding: 0.32rem 0.45rem;
-  font-size: 0.78rem;
-}
-
-.extra-buff-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.extra-buff-copy strong {
-  font-size: 0.88rem;
-}
-
-.extra-buff-copy span {
-  font-size: 0.75rem;
-  color: var(--calc-muted, #9aa3b5);
-  word-break: break-word;
+  gap: 0.7rem;
 }
 
 .extra-buff-empty {
   margin: 0;
-  font-size: 0.78rem;
-  color: var(--calc-muted, #9aa3b5);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--eb-muted);
 }
 
+.extra-buff-name {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--eb-border);
+  border-radius: 9px;
+  background: var(--eb-input-bg);
+  color: var(--eb-text);
+  padding: 0.5rem 0.7rem;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.extra-buff-name:focus-visible {
+  outline: 2px solid var(--eb-accent);
+  outline-offset: 1px;
+}
+
+.extra-buff-scope {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--eb-muted);
+  border: 1px solid var(--eb-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  white-space: nowrap;
+}
+
+.extra-buff-remove {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, #d9534f 55%, var(--eb-border));
+  border-radius: 9px;
+  background: transparent;
+  color: color-mix(in srgb, #d9534f 78%, var(--eb-text) 22%);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  min-height: 2.2rem;
+  cursor: pointer;
+}
+
+.extra-buff-remove:hover {
+  background: color-mix(in srgb, #d9534f 14%, transparent);
+}
+
+.extra-buff-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/*
+ * 共享效果行本身是管理端的紧凑排版；额外 Buff 一屏只有一条，空间充足 ——
+ * 这里只在**本容器内**把它放大，不改共享组件，也不影响增益库那侧的密度。
+ */
+.extra-buff-card-body :deep(.effect-row) {
+  font-size: 0.95rem;
+  padding: 0.75rem 0.85rem;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--eb-border) 80%, transparent);
+}
+
+.extra-buff-card-body :deep(.effect-title strong) {
+  font-size: 1rem;
+}
+
+.extra-buff-card-body :deep(.line-label),
+.extra-buff-card-body :deep(.inline-field > span) {
+  font-size: 0.9rem;
+}
+
+.extra-buff-card-body :deep(select),
+.extra-buff-card-body :deep(input[type='text']),
+.extra-buff-card-body :deep(.step-input) {
+  font-size: 0.95rem;
+  min-height: 2.1rem;
+}
+
+.extra-buff-card-body :deep(.summary-value) {
+  font-size: 1rem;
+}
+
+/* 窄屏：清单在上、详情在下，仍然不产生横向滚动 */
 @media (max-width: 900px) {
-  .extra-buff-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .extra-buff-editor {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.8rem;
   }
 
-  .team-prof-tier-row {
-    grid-template-columns: 1fr;
+  .extra-buff-side {
+    border-right: none;
+    border-bottom: 1px solid var(--eb-border);
+    padding-right: 0;
+    padding-bottom: 0.7rem;
+  }
+
+  .extra-buff-list {
+    max-height: 28vh;
+  }
+
+  .extra-buff-detail {
+    max-height: none;
+  }
+
+  .extra-buff-detail-head {
+    flex-wrap: wrap;
+  }
+
+  .extra-buff-name {
+    flex-basis: 100%;
   }
 }
 </style>

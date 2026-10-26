@@ -540,7 +540,11 @@ try {
       )
       assert.equal(mounted.one('.sf-record-diff-table'), null)
       assert.equal(mounted.one('[aria-label="招式数量差异"]'), null)
-      assert.ok(mounted.one('[aria-label="伤害记录结构对比"]').textContent.includes('按次数加权'))
+      // 2026-10-26：平均单次的口径说明收进问号浮层，正文不再常显；断言改为该说明仍在（挂在问号上）
+      assert.ok(
+        mounted.one('[aria-label="伤害记录结构对比"] [aria-label="平均单次说明"]'),
+        '平均单次说明应以问号形式保留',
+      )
     })
     await mounted.clickText('[aria-label="招式对比内容"] button', '使用次数')
     check('次数视图独立显示完整数量摘要，不混入单次与累计伤害', () => {

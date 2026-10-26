@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { ensureAffixPresetLoaded, loadAffixPresetScheme } from '@/utils/affixPresetLoader'
 import type {
@@ -821,14 +822,14 @@ function submitForm() {
           <aside class="set-pane">
             <div class="pane-head">
               <span class="pane-title">我的词条库（{{ store.sets.length }}）</span>
+              <InfoTip
+                label="官方预设说明"
+                text="官方预设在服务器上、仅由管理员维护。你新建时可以复制其中的预设方案用于快速创建；新建后存于本机浏览器，后续由你维护。"
+              />
               <button type="button" class="mini-btn" @click="startNewSet">+ 新建</button>
             </div>
 
-            <!-- 常驻说明：界面上看不到「官方预设」那一套，它是所有库的底料，容易被误当成 bug -->
-            <p class="set-list-hint">
-              官方预设在服务器上、仅由管理员维护。你新建时可以复制其中的预设方案用于快速创建；
-              新建后存于本机浏览器，后续由你维护。
-            </p>
+
 
             <div v-if="newSetMode" class="set-new-panel">
               <input
@@ -1222,11 +1223,12 @@ function submitForm() {
               <p v-if="draftError" class="err">{{ draftError }}</p>
             </div>
 
-            <p v-if="activeTab !== 'manage'" class="footnote">
-              同一字段有多条词条时，档数会<strong>相加</strong>（各条按自己的每档值分别折算后累加），
-              排列顺序不影响结果。
-              <span v-if="simpleMode">（「高级编辑」打开后才能改结构）</span>
-            </p>
+
+            <InfoTip
+              v-if="activeTab !== 'manage'"
+              label="词条档数说明"
+              text="同一字段有多条词条时，档数会相加（各条按自己的每档值分别折算后累加），排列顺序不影响结果。"
+            />
 
             <!-- 组管理页：建 / 改名 / 改额度 / 删（额度只在这一处维护） -->
             <template v-else>
@@ -1345,10 +1347,12 @@ function submitForm() {
                 当前是只读模式：可以勾选条目、调单词条上限；新建 / 删除 / 改名分组、
                 改组额度需要先勾上右上角的「高级编辑」。
               </p>
-              <p v-else class="footnote">
-                删分组只删组本身，组内条目会变回未分组（条目不会被删掉）。
-                条目在「词条」页的下拉里选组，额度不够时求解器会少分配档数。
-              </p>
+
+              <InfoTip
+                v-else
+                label="删分组说明"
+                text="删分组只删组本身，组内条目会变回未分组（条目不会被删掉）。条目在「词条」页的下拉里选组，额度不够时求解器会少分配档数。"
+              />
               <div class="pane-actions">
                 <button
                   type="button"
@@ -1582,13 +1586,6 @@ function submitForm() {
 }
 
 /* 常驻说明：官方预设是底料，列表里看不到它 —— 不写一句会被当成 bug */
-.set-list-hint {
-  margin: 0 0 0.35rem;
-  font-size: 0.7rem;
-  line-height: 1.45;
-  color: #7d8694;
-  flex-shrink: 0;
-}
 
 .set-new-panel {
   display: flex;

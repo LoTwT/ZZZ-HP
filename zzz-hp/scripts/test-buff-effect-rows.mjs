@@ -264,5 +264,87 @@ console.log('\n[11] 保存前整组校验')
   check('跨块同组被拦', !validateEffectGroups(cross).ok)
 }
 
+console.log('\n[12] 异常子类展开的身份保留（Spec §7.2 第 13 项）')
+{
+  const zone = findBuffStatZoneById('zone:anomalyDmg')
+  const anomaly = fx('anomalyDmgBonus', 75, { id: 'effect-anomaly', groupId: 'g-ident' })
+  const turbulence = fx('turbulenceDmgBonus', 75, { id: 'effect-turbulence', groupId: 'g-ident' })
+  const pivot = () => [anomaly, turbulence].map((effect) => ({ ...effect }))
+
+  // 移除属性异常 → 乱流保留自己的 id
+  {
+    const start = pivot()
+    const next = changeRowZone(start, buildEffectRows(start)[0], zone, ['turbulence'])
+    check(
+      '移除属性异常后乱流仍为 effect-turbulence',
+      next.length === 1 && next[0].id === 'effect-turbulence',
+      JSON.stringify(next.map((effect) => [effect.stat, effect.id])),
+    )
+  }
+
+  // 添加耀变 → 原两条 id 不变，耀变取新唯一 id
+  {
+    const start = pivot()
+    const next = changeRowZone(start, buildEffectRows(start)[0], zone, [
+      'anomaly',
+      'turbulence',
+      'radiance',
+    ])
+    const kept = next.filter((effect) =>
+      ['effect-anomaly', 'effect-turbulence'].includes(effect.id),
+    )
+    check('添加耀变后原两条 id 均保留', kept.length === 2, JSON.stringify(next.map((effect) => [effect.stat, effect.id])))
+    const newest = next.find((effect) => effect.stat === 'radianceDmgBonus')
+    check(
+      '耀变取得新唯一 id',
+      !!newest &&
+        !['effect-anomaly', 'effect-turbulence'].includes(newest.id) &&
+        new Set(next.map((effect) => effect.id)).size === next.length,
+      newest?.id,
+    )
+  }
+
+  // 三条里移除中间的乱流 → 属性异常与耀变各保留自己的 id
+  {
+    const start = pivot()
+    const withRadiance = changeRowZone(start, buildEffectRows(start)[0], zone, [
+      'anomaly',
+      'turbulence',
+      'radiance',
+    ])
+    const next = changeRowZone(withRadiance, buildEffectRows(withRadiance)[0], zone, [
+      'anomaly',
+      'radiance',
+    ])
+    check(
+      '移除乱流后属性异常 id 不变',
+      next.find((effect) => effect.stat === 'anomalyDmgBonus')?.id === 'effect-anomaly',
+    )
+    const radianceNext = next.find((effect) => effect.stat === 'radianceDmgBonus')
+    check(
+      '移除乱流后耀变 id 不继承 effect-turbulence',
+      !!radianceNext && radianceNext.id !== 'effect-turbulence',
+      radianceNext?.id,
+    )
+  }
+
+  // 顺序倒置后添加耀变 → 原两条仍按各自 stat 保留 id
+  {
+    const start = pivot().reverse()
+    const next = changeRowZone(start, buildEffectRows(start)[0], zone, [
+      'anomaly',
+      'turbulence',
+      'radiance',
+    ])
+    const byStat = new Map(next.map((effect) => [effect.stat, effect.id]))
+    check(
+      '倒置顺序后身份仍按属性映射',
+      byStat.get('anomalyDmgBonus') === 'effect-anomaly' &&
+        byStat.get('turbulenceDmgBonus') === 'effect-turbulence',
+      JSON.stringify([...byStat]),
+    )
+  }
+}
+
 console.log(`\n结果：${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)
