@@ -540,7 +540,8 @@ function skillMatchesLibraryCategory(skill: Skill, category: LibrarySkillCategor
 }
 const showCustomForm = ref(false)
 const expanded = ref(true)
-const modalTab = ref<'prep' | 'flow'>('prep')
+// 用户 2026-10-26：刷新后默认落在「流程」，准备阶段要点一下才进
+const modalTab = ref<'prep' | 'flow'>('flow')
 const flowDragEnabled = ref(false)
 const flowDraggingId = ref<string | null>(null)
 /** n 条招式对应 n+1 条插入缝，拖放只认缝不认行的上/下沿。 */
@@ -1279,6 +1280,17 @@ const detailSkill = computed((): Skill | null => {
     return preparedSkill(prepared)
   }
   return null
+})
+
+/**
+ * 详情弹窗里正在看的流程行（用户 2026-10-26：事件元素移进详情里选，流程行上内容太多）。
+ * 只对「流程行」生效：技能组行走技能组详情，成员行的事件元素仍在该弹窗内。
+ */
+const detailFlowRow = computed((): FlowEntry | null => {
+  const current = detail.value
+  if (!current) return null
+  if (current.kind !== 'flow' && current.kind !== 'flowMember') return null
+  return currentSlot.value.flow.find((item) => item.id === current.entryId) ?? null
 })
 
 const detailPrepared = computed((): PreparedSkill | null => {
@@ -3459,15 +3471,6 @@ const showcaseTitle = computed(() => {
                     @dragstart="onFlowDragStart(entry.id, $event)"
                     @dragend="onFlowDragEnd"
                   >
-                    <template #parameters>
-                      <label class="sf-event-element">事件元素
-                        <select :value="entry.elementOverride ?? ''" @change="setFlowElement(entry.id, ($event.target as HTMLSelectElement).value)">
-                          <option value="">自动</option>
-                          <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">{{ element }}</option>
-                        </select>
-                        <span>{{ eventElementLabel(entry) }}</span>
-                      </label>
-                    </template>
                     <template #actions>
                       <!-- 顺序统一（用户 2026-10-22）：详情一律最左，其次增益，危险操作最右 -->
                       <button
@@ -3980,6 +3983,24 @@ const showcaseTitle = computed(() => {
               </ul>
             </div>
             <div v-else-if="detailSkill" class="skill-detail-body">
+              <!-- 事件元素：用户 2026-10-26 移到详情里选，流程行上不再占位 -->
+              <div v-if="detailFlowRow && !flowIsGroup(detailFlowRow)" class="agent-row">
+                <label>
+                  <span>事件元素</span>
+                  <select
+                    :value="detailFlowRow.elementOverride ?? ''"
+                    @change="
+                      setFlowElement(detailFlowRow!.id, ($event.target as HTMLSelectElement).value)
+                    "
+                  >
+                    <option value="">自动</option>
+                    <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">
+                      {{ element }}
+                    </option>
+                  </select>
+                  <span class="detail-element-hint">{{ eventElementLabel(detailFlowRow) }}</span>
+                </label>
+              </div>
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
                 <p class="detail-section-title">双代理人</p>
@@ -4215,6 +4236,13 @@ const showcaseTitle = computed(() => {
 </template>
 
 <style scoped>
+/* 详情里的事件元素：解析结果的轻提示 */
+.detail-element-hint {
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--calc-text, #e8ecf4) 62%, transparent);
+  margin-left: 0.35rem;
+}
+
 .sf-agent-tabs {
   display: flex;
   flex-wrap: wrap;
