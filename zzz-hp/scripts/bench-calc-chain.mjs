@@ -146,6 +146,8 @@ async function loadInstrumented(probe) {
   const optimalAffixAlloc = await server.ssrLoadModule('/src/utils/optimalAffixAlloc.ts')
   const hitEvalCache = await server.ssrLoadModule('/src/utils/hitEvalCache.ts')
   const buffEffect = await server.ssrLoadModule('/src/utils/buffEffect.ts')
+  // 候选评估/扫掠要的工厂与缓存清理
+  const calculatorPanel = await server.ssrLoadModule('/src/types/calculatorPanel.ts')
   // 夹具也走同一份模块图：否则计数发生在另一份实例上
   const harness = await server.ssrLoadModule('/scripts/_eventElementHarness.mjs')
   const pipelineHarness = await server.ssrLoadModule('/scripts/_effectPipelineHarness.mjs')
@@ -157,7 +159,15 @@ async function loadInstrumented(probe) {
     server,
     verify,
     sourceHashes,
-    modules: { skillFlowCalculation, optimalAffixAlloc, hitEvalCache, buffEffect, harness, pipelineHarness },
+    modules: {
+      skillFlowCalculation,
+      optimalAffixAlloc,
+      hitEvalCache,
+      buffEffect,
+      harness,
+      pipelineHarness,
+      calculatorPanel,
+    },
   }
 }
 
@@ -195,11 +205,48 @@ async function runMeasurements(rounds, warmup) {
   const probe = createProbe()
   const loading = await loadInstrumented(probe)
   const { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = loading.modules.skillFlowCalculation
+  const { evaluateAffixCounts, evaluateAffixCountsForSweep, clearAffixEvalCache } =
+    loading.modules.optimalAffixAlloc
+  const { createEmptyAffixCounts } = loading.modules.calculatorPanel
   const { resolveEventBuffPreviewInputs } = loading.modules.optimalAffixAlloc
   const { buildHitEvalFingerprint, hitEvalCacheKey, internHitEvalContext } =
     loading.modules.hitEvalCache
 
   const results = []
+  // 候选评估 / 扫掠路径（Spec §7.4 第 7 项）：同一事件夹具上跑词条评估
+  const affixCountsFor = (seed) => {
+    const counts = createEmptyAffixCounts()
+    counts.atkFlat = seed % 7
+    counts.critRate = (seed + 3) % 5
+    counts.mastery = seed % 4
+    return counts
+  }
+  for (const mode of ['ordinary', 'extra-team']) {
+    for (const [name, run] of Object.entries({
+      // 候选评估：每次换一组词条，走完整事件汇总（含逐事件求值）
+      'affix-candidate': (seed) => evaluateAffixCounts(buildEventCase(loading.modules, mode).context, affixCountsFor(seed)),
+      // 扫掠：同一组词条 + 每次不同 panelDelta，走扫掠缓存键
+      'affix-sweep': (seed) =>
+        evaluateAffixCountsForSweep(
+          buildEventCase(loading.modules, mode).context,
+          affixCountsFor(seed),
+          { dmgBonus: seed % 3 },
+        ),
+    })) {
+      const samples = []
+      const counts = []
+      for (let i = 0; i < Math.max(1, rounds); i += 1) {
+        clearAffixEvalCache()
+        probe.reset()
+        const started = performance.now()
+        run(i + 1)
+        samples.push(performance.now() - started)
+        counts.push(probe.snapshot())
+      }
+      results.push({ mode, path: name, samplesMs: samples, medianMs: median(samples), counts })
+    }
+  }
+
   // 每个 (mode, path) 用各自新建的上下文：避免上一条路径的热缓存替下一路径预热，
   // 否则「先跑 numeric 再跑 detail」会把 detail 的求值全部命中成 0。
   for (const mode of ['ordinary', 'extra-team']) {
