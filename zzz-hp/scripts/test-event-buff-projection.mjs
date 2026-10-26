@@ -625,7 +625,55 @@ console.log('== K12 预览投影缓存 128 条上限（真实组件函数） =='
 }
 
 console.log('')
+console.log('== K6 详情实际采用：乘区角色由记录决定（不按伤害子类猜） ==')
+{
+  const buildUsage = (damageType) => {
+    const effect = createEmptyBuffEffect({
+      id: 'usage-bonus',
+      stat: 'dmgBonus',
+      value: 25,
+      kind: 'fixed',
+      enabledDefault: true,
+      applyTarget: 'team',
+      applyProfession: '支援',
+    })
+    const fixture = eventFixture({
+      damageType,
+      effects: [effect],
+      agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
+    })
+    const detail = evaluateSkillFlowHit(fixture.context, null, fixture.hits[0], true)
+    return detail.damageInputUsages ?? []
+  }
+  const disorder = buildUsage('disorder')
+  const anomaly = buildUsage('anomaly')
+  const has = (list, view, field) => list.some((usage) => usage.usedView === view && String(usage.field) === field)
+
+  check('K6 紊乱：倍率面板字段标在强度提供者视图上',
+    has(disorder, 'powerProviderPanel', 'disorderCompMult') &&
+      has(disorder, 'powerProviderPanel', 'disorderBaseMultFactor'),
+    JSON.stringify(disorder.filter((u) => String(u.field).includes('disorder')).map((u) => [u.usedView, String(u.field)])))
+  check('K6 属性异常：不把紊乱/乱流倍率标成已采用',
+    !disorder.length ? false : !has(anomaly, 'powerProviderPanel', 'disorderCompMult') &&
+      !has(anomaly, 'powerProviderPanel', 'turbulenceCompMult'),
+    JSON.stringify(anomaly.filter((u) => String(u.field).includes('Mult')).map((u) => [u.usedView, String(u.field)])))
+  check('K6 防御区混拼：穿透与减防分别标到各自角色',
+    has(anomaly, 'powerProviderPanel', 'penRate') &&
+      (has(anomaly, 'anomalyTriggerPanel', 'ignoreDefense') || has(anomaly, 'ownerPanel', 'ignoreDefense')),
+    JSON.stringify(anomaly.filter((u) => u.usedView === 'powerProviderPanel').map((u) => String(u.field))))
+  check('K6 通用增伤/基础/精通都落在强度提供者视图',
+    has(anomaly, 'powerProviderPanel', 'dmgBonus') &&
+      has(anomaly, 'powerProviderPanel', 'atk') &&
+      has(anomaly, 'powerProviderPanel', 'mastery'),
+    '')
+  check('K6 抗穿回退：接受触者/提供者任一侧，但必须有记录',
+    anomaly.some((usage) => String(usage.field) === 'resPen'),
+    JSON.stringify(anomaly.map((u) => String(u.field))))
+}
+
+console.log('')
 console.log(`结果：${passed} passed, ${failed} failed`)
+if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1
 if (failed > 0) process.exitCode = 1

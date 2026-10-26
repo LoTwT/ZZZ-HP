@@ -948,6 +948,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
 
   const disorderDmgBonusZone = 1 + bonusPanel.disorderDmgBonus / 100
   const disorderCompMultRatio = multPanel.disorderCompMult / 100
+  // 只有紊乱/乱流才真正采用这组倍率面板（同一份 multPanel 读数在其它子类里只是顺带算出）
+  if (subKind === 'disorder') {
+    markUse(multPanel, 'disorderCompMult', 'disorderCompMultRatio', ['anomalyTypeBonus'])
+    markUse(multPanel, 'disorderBaseMultFactor', 'disorderBaseMultRatio', ['anomalyTypeBonus'])
+  }
   const disorderPanelFactor = readFactor(multPanel.disorderBaseMultFactor)
   let disorderBaseMultRatio: number
   let disorderMultFactor: number
@@ -985,6 +990,10 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceCombinedDmgBonusZone =
     1 + (bonusPanel.turbulenceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
   const turbulenceCompMultRatio = multPanel.turbulenceCompMult / 100
+  if (subKind === 'turbulence') {
+    markUse(multPanel, 'turbulenceCompMult', 'turbulenceCompMultRatio', ['anomalyTypeBonus'])
+    markUse(multPanel, 'turbulenceBaseMultFactor', 'turbulenceBaseMultRatio', ['anomalyTypeBonus'])
+  }
   const turbulencePanelFactor = readFactor(multPanel.turbulenceBaseMultFactor)
   let turbulenceBaseMultRatio: number
   let turbulenceMultFactor: number

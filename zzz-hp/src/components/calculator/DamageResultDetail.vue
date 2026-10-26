@@ -369,8 +369,23 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const external = useProducerPanel ? props.producerExternalPanel! : ownerExternal
   const sources = useProducerPanel ? props.producerSources! : ownerSources
 
+  /** 某视图实际被采用的字段（Spec §2.5：详情只读实际采用，不再按伤害子类推断） */
+  const usageFieldsOn = (view: string) =>
+    (props.damageInputUsages ?? [])
+      .filter((usage) => usage.usedView === view)
+      .map((usage) => String(usage.field))
+  const producerMultFields = usageFieldsOn('powerProviderPanel')
+  const usesProducerMultByUsage = producerMultFields.some(
+    (field) =>
+      field === 'disorderCompMult' ||
+      field === 'disorderBaseMultFactor' ||
+      field === 'turbulenceCompMult' ||
+      field === 'turbulenceBaseMultFactor',
+  )
   const usesProducerMult =
-    (sub === 'turbulence' || sub === 'disorder') &&
+    (props.damageInputUsages?.length
+      ? usesProducerMultByUsage
+      : sub === 'turbulence' || sub === 'disorder') &&
     Boolean(props.producerFinalPanel && props.producerExternalPanel && props.producerSources)
   const multPanel = usesProducerMult ? props.producerFinalPanel! : ownerPanel
   const multExternal = usesProducerMult ? props.producerExternalPanel! : ownerExternal
@@ -399,8 +414,12 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const bonusExternal = props.bonusExternalPanel ?? ownerExternal
   const bonusSources = props.bonusSources ?? ownerSources
   // 减防/无视：属性异常/异放/耀变可用 bonus（触发者）
-  const usesBonusAsDefTrig =
-    sub === 'anomaly' || sub === 'anomalyRelease' || sub === 'radiance'
+  const triggerDefenseFields = usageFieldsOn('anomalyTriggerPanel')
+  const usesBonusAsDefTrigByUsage =
+    triggerDefenseFields.includes('ignoreDefense') || triggerDefenseFields.includes('reduceDefense')
+  const usesBonusAsDefTrig = props.damageInputUsages?.length
+    ? usesBonusAsDefTrigByUsage
+    : sub === 'anomaly' || sub === 'anomalyRelease' || sub === 'radiance'
   const defTrigPanel = usesBonusAsDefTrig
     ? bonusPanel
     : (props.defenseTriggerFinalPanel ?? ownerPanel)
