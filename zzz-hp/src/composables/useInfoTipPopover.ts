@@ -25,10 +25,11 @@ export function useInfoTipPopover() {
   let pointerOverTip = false
 
   async function updatePosition() {
+    // 先等一帧让浮层真正渲染出来，再取元素；顺序反了会一直量不到
+    await nextTick()
     const trigger = triggerRef.value
     const tip = tipRef.value
     if (!trigger || !tip) return
-    await nextTick()
 
     const rect = trigger.getBoundingClientRect()
     const box = tip.getBoundingClientRect()
