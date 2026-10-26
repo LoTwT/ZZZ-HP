@@ -523,6 +523,32 @@ console.log('== K4 真实 SFC 输入模型（行级弹窗读共享参数） ==')
       typeof model.effectRecipientNote(item) === 'string', model.effectRecipientNote(item))
   }
 
+  // 整组配置：没有唯一事件值 → 只给「整组配置；数值见成员」，不伪造成员值
+  const groupModel = (() => {
+    try {
+      return bindVueFunctions(modalUrl, ['effectResultText'], {
+        props: { slotIndex: 0, skillSubcategories: [], globalConvertInput: () => undefined },
+        effectiveOverride: vue.ref(null),
+        resolveInputs: vue.ref({ attrDefaults: {}, configurationOnly: true }),
+        statLabel: (stat) => String(stat),
+        formatBuffEffectResultText,
+        formatCalcSigned,
+        isStackable: () => false,
+        stacksModel: () => 1,
+        convertResult: () => 0,
+        buildEffectRecipientNote: effectRecipientNote,
+      })
+    } catch (error) {
+      check('K4 能绑定整组配置场景', false, String(error?.message ?? error))
+      return null
+    }
+  })()
+  if (groupModel) {
+    check('K4 整组配置：文案指向成员、不给伪造数值',
+      groupModel.effectResultText(item).includes('整组配置') &&
+        groupModel.effectResultText(item).includes('数值见成员'),
+      groupModel.effectResultText(item))
+  }
   // 禁用行：配置参数仍可解析（行级禁用不得把配置参数一起过滤掉）
   const disabledFixture = eventFixture({
     damageType: 'direct',
