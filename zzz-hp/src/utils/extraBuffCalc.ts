@@ -1,13 +1,11 @@
-import type { BuffEffect, BuffScope } from '@/types/calculator'
+import type { BuffEffect } from '@/types/calculator'
 import type {
   ExtraBuffApplySlot,
   ExtraBuffGain,
   ExtraBuffSlotIndex,
 } from '@/types/extraBuff'
-import { buffScopeLabel } from '@/utils/buffScope'
 import { createEmptyBuffEffect, normalizeBuffEffect } from '@/utils/buffEffect'
 import { buildEffectRows } from '@/utils/buffEffectRows'
-import { teamSlotDisplayLabel } from '@/utils/teamSlotLabel'
 
 export type { ExtraBuffApplySlot, ExtraBuffGain, ExtraBuffSlotIndex }
 
@@ -245,24 +243,4 @@ export function extraGainToEffects(gain: ExtraBuffGain): BuffEffect[] {
     applyTarget: applyTargetOf(applySlot),
     extraGain: true,
   }))
-}
-
-/**
- * 卡片的目标展示名（界面/日志用）：全队，或「角色名（槽位 N）」，空槽位给「角色N」。
- */
-export function extraGainApplySlotLabel(
-  gain: Pick<ExtraBuffGain, 'applySlot'>,
-  teamSlots: Array<{ agentId?: string | null }>,
-  agents: Array<{ id: string; name: string }>,
-): string {
-  const applySlot = resolveExtraGainApplySlot(gain)
-  if (applySlot === 'team') return '全队'
-  const slot = teamSlots[applySlot]
-  const label = slot ? teamSlotDisplayLabel(slot, applySlot, agents) : `角色${applySlot + 1}`
-  return `${label}（槽位 ${applySlot + 1}）`
-}
-
-/** 旧口径的作用域文案（界面过渡期仍在用，额外 Buff 不再单独维护 scope 语义） */
-export function scopeLabel(scope: BuffScope | BuffScope[] | undefined | null): string {
-  return buffScopeLabel(scope)
 }

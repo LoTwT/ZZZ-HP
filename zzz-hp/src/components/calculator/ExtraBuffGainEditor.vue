@@ -10,7 +10,7 @@
  * - 任何字段改动都**重建卡片对象并广播新数组**：目录缓存键按对象身份记忆化，
  *   就地改同一个数组会让计算结果不刷新（Spec §4.2 第 6 项）。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import AdminBuffEffectRow from '@/components/admin/calculator/AdminBuffEffectRow.vue'
 import type { AgentBuffDoc, BuffDamageType, BuffEffect } from '@/types/calculator'
 import type { ExtraBuffApplySlot, ExtraBuffGain, ExtraBuffSlotIndex } from '@/types/extraBuff'
@@ -178,13 +178,44 @@ function summaryOf(card: ExtraBuffGain): string {
 
 /**
  * 左侧是**下拉框**（不是会越撑越高的列表）：条目多时框内滚动，弹窗高度不变。
- * 打开状态不持久化，点选后自动收起。
+ * 打开状态不持久化；关闭规则与全站下拉一致（`BuffOverviewPanel` / `AdminBuffEffectRow` 同款）：
+ * 点选后关、**点空白处关、按 Esc 关**，监听只在展开期间挂载。
  */
 const selectorOpen = ref(false)
 
+function closeSelector() {
+  selectorOpen.value = false
+}
+
+function onDocumentClick() {
+  closeSelector()
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeSelector()
+}
+
+watch(selectorOpen, (open) => {
+  if (open) {
+    // 下一帧再挂，避免触发本次点击立刻被判定为"点到外面"
+    void nextTick(() => {
+      document.addEventListener('click', onDocumentClick)
+      document.addEventListener('keydown', onDocumentKeydown)
+    })
+    return
+  }
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
 function chooseCard(id: string) {
   selectedId.value = id
-  selectorOpen.value = false
+  closeSelector()
 }
 
 defineExpose({
@@ -226,7 +257,7 @@ defineExpose({
           <span class="extra-buff-selector-caret">▾</span>
         </button>
 
-        <ul v-if="selectorOpen" class="extra-buff-selector-menu">
+        <ul v-if="selectorOpen" class="extra-buff-selector-menu" @click.stop>
           <li v-for="card in local" :key="card.id">
             <button
               type="button"
