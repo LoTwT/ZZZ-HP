@@ -1,10 +1,9 @@
 /** 流程数字、完整来源与展示公式的同源回归；不依赖服务或外部方案。 */
 import assert from 'node:assert/strict'
-import { computed, effectScope } from 'vue'
-import { useDamageProcessEvents } from '../src/composables/useDamageProcessEvents.ts'
 import { buildOptimalEvalContext, withAffixLibraryExtraGains } from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '../src/utils/skillFlowCalculation.ts'
-import { resolveFlow } from '../src/utils/resolvedHit.ts'
+import { resolveFlow, resolveFlowEntryCount, resolveFlowMemberCount, summarizeFlowHit } from '../src/utils/resolvedHit.ts'
+import { findMemberOverride, sortSkillGroupMembers } from '../src/utils/skillGroup.ts'
 import { buildAlignedDirectFormulaGroup } from '../src/utils/directDamageDisplay.ts'
 import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDisplay.ts'
 import { pickEventDamage } from '../src/utils/damageEvent.ts'
@@ -126,6 +125,70 @@ check('组内同名招式保留独立事件、成员次数乘整组次数', () =
   const second = resolveSkillFlowCalculationDetail(context(), null, members[1]).evaluation
   assert.equal(second.total, first.total * 2)
 })
+check('轻量合计：单次 × 次数 与结算 total 一致（含技能组各段）', () => {
+  const evalCtx = context()
+  for (const hit of hits) {
+    const numeric = evaluateSkillFlowHit(evalCtx, null, hit)
+    assert.ok(numeric)
+    assert.deepEqual(summarizeFlowHit(numeric.result, hit.skill, hit.count), {
+      count: numeric.hit.count,
+      perHit: numeric.perHit,
+      total: numeric.total,
+    })
+  }
+})
+check('合计次数来源：普通行按整行，技能组段按 成员覆盖 > 成员定义 × 整行', () => {
+  const members = sortSkillGroupMembers(group.members)
+  for (const entry of slots.flatMap((slot) => slot.flow)) {
+    if (entry.id === 'flow-group') {
+      members.forEach((member, memberIndex) => {
+        const hit = hits.find((item) => item.id === `${entry.id}#${memberIndex}:${member.skillId}`)
+        assert.ok(hit)
+        assert.equal(
+          resolveFlowMemberCount(entry, member, findMemberOverride(entry.memberOverrides, member)),
+          hit.count,
+        )
+      })
+      continue
+    }
+    const hit = hits.find((item) => item.id === entry.id)
+    assert.ok(hit)
+    assert.equal(resolveFlowEntryCount(entry), hit.count)
+  }
+
+  const overrideEntry = {
+    id: 'flow-override', ownerAgentId: 'a', preparedId: 'prep-group',
+    count: 5, staggerPhase: 'normal', critMode: 'expected',
+    memberOverrides: [{ memberKey: '1:direct', skillId: 'direct', count: 3 }],
+  }
+  const overrideHits = resolveFlow({
+    slots: [
+      { prepared: [{ id: 'prep-group', skillGroupId: group.id, skillSource: 'custom' }], flow: [overrideEntry] },
+      { prepared: [], flow: [] },
+      { prepared: [], flow: [] },
+    ],
+    teamSlots,
+    findSkill: (id) => skills[id],
+    findSkillGroup: () => group,
+    resolveAgentProfession: (id) => agents.find((agent) => agent.id === id)?.profession,
+  }).hits
+  assert.deepEqual(overrideHits.map((hit) => hit.count), [10, 15])
+  members.forEach((member, memberIndex) => {
+    assert.equal(
+      resolveFlowMemberCount(overrideEntry, member, findMemberOverride(overrideEntry.memberOverrides, member)),
+      overrideHits[memberIndex].count,
+    )
+  })
+})
+check('合计缺数据时不显示：无结算结果 / 次数 0 / 非法单次伤害', () => {
+  const numeric = evaluateSkillFlowHit(context(), null, hits[0])
+  assert.ok(numeric)
+  assert.equal(summarizeFlowHit(null, numeric.hit.skill, 1), null)
+  assert.equal(summarizeFlowHit(numeric.result, null, 1), null)
+  assert.equal(summarizeFlowHit(numeric.result, numeric.hit.skill, 0), null)
+  assert.equal(summarizeFlowHit(numeric.result, numeric.hit.skill, -1), null)
+  assert.equal(summarizeFlowHit({}, numeric.hit.skill, 1), null)
+})
 check('主槽之外的锋御招式使用本人的面板及直伤路径', () => {
   const hit = { ...hits[0], id: 'other-owner', ownerAgentId: 'b' }
   const detail = resolveSkillFlowCalculationDetail(context(), null, hit).evaluation
@@ -167,39 +230,5 @@ check('敌方变化后，详情不复用旧数字', () => {
   const after = resolveSkillFlowCalculationDetail(ctx, null, hits[0]).evaluation
   assert.ok(after.perHit < before.perHit)
   assert.deepEqual(after.result, evaluateSkillFlowHit(ctx, null, hits[0]).result)
-})
-check('底部对比区按需解析选中事件，且同名组成员能回指正确结果', () => {
-  const scope = effectScope()
-  let requests = 0
-  try {
-    scope.run(() => {
-      const ctx = context()
-      const events = useDamageProcessEvents({
-        resolveDetail: (id) => {
-          requests += 1
-          return resolveSkillFlowCalculationDetail(ctx, null, hits.find((hit) => hit.id === id))?.evaluation ?? null
-        },
-        grandTotal: computed(() => 0),
-        eventLines: computed(() => hits.map((hit) => {
-          const evaluation = evaluateSkillFlowHit(ctx, null, hit)
-          return { eventId: hit.id, displayName: hit.skill.name, total: evaluation.total, perHit: evaluation.perHit }
-        })),
-        selectedEventIds: computed(() => null), totalLabel: computed(() => '总伤'),
-        hasEvents: computed(() => true), active: computed(() => true), enabled: computed(() => true),
-        hits: computed(() => hits), agents: computed(() => agents), teamSlots: computed(() => teamSlots),
-      })
-      assert.equal(events.eventRows.value.length, hits.length)
-      assert.equal(requests, 0)
-      assert.equal(events.selectedDetail.value.eventId, hits[0].id)
-      assert.equal(requests, 1)
-      const member = hits.find((hit) => hit.id.startsWith('flow-group#1'))
-      events.selectEvent(member.id)
-      assert.equal(events.selectedDetail.value.eventId, member.id)
-      assert.equal(events.selectedDetail.value.total, evaluateSkillFlowHit(ctx, null, member).total)
-      assert.equal(requests, 2)
-    })
-  } finally {
-    scope.stop()
-  }
 })
 console.log(`\n${passed} passed, 0 failed`)

@@ -24,6 +24,8 @@ const props = withDefaults(
     warn?: string | null
     damage?: string
     skip?: boolean
+    /** 无法计入伤害的原因（与 skip 配套；悬停弹层里用红字说明） */
+    skipReason?: string | null
     index?: number
     rowDraggable?: boolean
     dragging?: boolean
@@ -113,6 +115,7 @@ function emitCount(event: Event) {
           :style="namePopStyle"
         >
           <span class="sf-name-pop-title">{{ name }}</span>
+          <span v-if="skipReason" class="sf-name-pop-skip">未计入伤害：{{ skipReason }}</span>
           <span v-if="note" class="sf-name-pop-note">{{ note }}</span>
           <span v-if="popMultText" class="sf-name-pop-mult">
             <span class="sf-name-pop-mult-label">{{ popMultLabelText }}</span>
@@ -204,6 +207,26 @@ function emitCount(event: Event) {
 .sf-card--dragging {
   opacity: 0.35;
   cursor: grabbing;
+}
+/* 无法计入伤害的行（次数为 0、缺双代理人、强度提供者不合规等）：整行红色标记。
+ * 浅色覆盖在 assets/calculatorLight.css（那边用 !important，必须同权重覆盖） */
+.sf-card--skip {
+  border-color: #8f3a3a;
+  background: #1e1416;
+}
+.sf-card--skip .sf-name,
+.sf-card--skip .sf-mult,
+.sf-card--skip .sf-count {
+  color: #f0a0a0;
+  border-color: #8f3a3a;
+  background: #1a1012;
+}
+.sf-card--skip .sf-damage {
+  color: #f0a0a0;
+}
+.sf-card--skip .sf-index {
+  background: rgba(224, 122, 122, 0.18);
+  color: #f0a0a0;
 }
 .sf-lead {
   display: flex;
@@ -331,6 +354,18 @@ function emitCount(event: Event) {
   padding-top: 0.28rem;
   border-top: 1px solid #2d323a;
   color: #b8c0cc;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+.sf-name-pop-skip {
+  display: block;
+  margin-top: 0.28rem;
+  padding-top: 0.28rem;
+  border-top: 1px solid #5a3a3a;
+  color: #f0a0a0;
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.35;

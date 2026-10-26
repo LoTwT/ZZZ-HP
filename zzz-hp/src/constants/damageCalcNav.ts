@@ -6,7 +6,6 @@ export const DAMAGE_CALC_SECTIONS = [
   { id: 'damage-enemy', label: '敌方与环境' },
   { id: 'damage-panel', label: '词条配比分析' },
   { id: 'skill-flow', label: '招式流程' },
-  { id: 'damage-result', label: '事件详情' },
 ] as const
 
 /**
@@ -16,7 +15,9 @@ export const DAMAGE_CALC_SECTIONS = [
  * 面板读取统一走 `resolveActivePanel`（唯一入口），与模式无关。
  * 「词条配比分析」2026-09-13 起**常驻**：侧栏该项只作锚点滚动（#damage-panel）。
  *
- * 计算公式与数值来源已整合进招式流程详情；底部事件区暂留作对比。
+ * 底部「事件详情」区已于 2026-10-26 删除：总伤/单次/次数、角色占比、逐条乘区明细
+ * 均由招式流程（含其计算过程下钻）覆盖；无法计入伤害的行改为流程行红色标记 +
+ * 悬停弹层写明原因，因此不再需要单独的事件列表与跳过清单。
  */
 
 export type DamageCalcSectionId = (typeof DAMAGE_CALC_SECTIONS)[number]['id']

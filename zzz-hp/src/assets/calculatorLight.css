@@ -3021,6 +3021,18 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #f5f7fa !important;
 }
 
+/* 导入弹窗「高级设置」按钮（与取消同款，之前漏了浅色覆盖） */
+[data-theme='light'] .unified-modal .advanced-buff-btn {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #344054 !important;
+}
+
+[data-theme='light'] .unified-modal .advanced-buff-btn:hover {
+  background: #f5f7fa !important;
+  border-color: #c9d2de !important;
+}
+
 [data-theme='light'] .unified-modal .confirm-btn {
   background: #c9a55c !important;
   color: #ffffff !important;
@@ -3604,6 +3616,10 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-top-color: #e6e8ee !important;
   color: #5a6575 !important;
 }
+[data-theme='light'] .sf-name-pop-skip {
+  border-top-color: #e8c9c9 !important;
+  color: #a83838 !important;
+}
 [data-theme='light'] .sf-name-pop-mult {
   border-top-color: #e6e8ee !important;
 }
@@ -3649,6 +3665,25 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 }
 [data-theme='light'] .sf-card .sf-warn {
   color: #b42318 !important;
+}
+/* 无法计入伤害的流程行（次数为 0 等）：覆盖上面 !important 的常规配色 */
+[data-theme='light'] .sf-card.sf-card--skip {
+  border-color: #d29a9a !important;
+  background: #fdf5f5 !important;
+}
+[data-theme='light'] .sf-card.sf-card--skip .sf-name,
+[data-theme='light'] .sf-card.sf-card--skip .sf-mult,
+[data-theme='light'] .sf-card.sf-card--skip .sf-count {
+  border-color: #d29a9a !important;
+  background: #ffffff !important;
+  color: #a83838 !important;
+}
+[data-theme='light'] .sf-card.sf-card--skip .sf-damage {
+  color: #a83838 !important;
+}
+[data-theme='light'] .sf-card.sf-card--skip .sf-index {
+  background: rgba(168, 56, 56, 0.12) !important;
+  color: #a83838 !important;
 }
 [data-theme='light'] .sf-dtype.is-anomaly {
   background: #e8f4fc !important;

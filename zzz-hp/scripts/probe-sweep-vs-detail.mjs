@@ -155,7 +155,7 @@ for (const scheme of schemes) {
   const b2Eval = evaluateAffixCounts(ctx, picked.affixCounts)
   const b2Lines = sumLines(b2Eval.eventLines)
 
-  // C：详情面板逐事件（组件 useDamageProcessEvents 的路径）
+  // C：逐事件完整评估（evaluateOptimalEventDetail 的路径）
   let cSum = 0
   const perHit = []
   for (const hit of flow.hits) {
