@@ -94,7 +94,15 @@ export function groupFingerprint(group: SkillGroup): string {
 }
 
 export function schemeContentFingerprint(entry: DamageCalcHistoryEntry): string {
-  const { id: _id, savedAt: _savedAt, order: _order, name: _name, ...rest } = entry
+  const {
+    id: _id,
+    savedAt: _savedAt,
+    order: _order,
+    name: _name,
+    origin: _origin,
+    sharedPresetId: _sharedPresetId,
+    ...rest
+  } = entry
   return stableJson(rest)
 }
 

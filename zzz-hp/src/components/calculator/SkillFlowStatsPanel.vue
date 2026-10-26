@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InfoTip from '@/components/common/InfoTip.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
 import SkillFlowDamageCrossAnalysis from '@/components/calculator/SkillFlowDamageCrossAnalysis.vue'
 import SkillFlowDamageRecordComparison from '@/components/calculator/SkillFlowDamageRecordComparison.vue'
@@ -27,7 +27,9 @@ import {
 import {
   loadSkillFlowDamageRecords,
   MAX_SKILL_FLOW_DAMAGE_RECORDS,
+  normalizeSkillFlowDamageRecordName,
   saveSkillFlowDamageRecords,
+  skillFlowDamageRecordLabel,
   type SkillFlowDamageRecord,
 } from '@/utils/skillFlowDamageRecords'
 
@@ -48,6 +50,9 @@ const UNSAVED_SCHEME_LABEL = '未保存'
 
 const records = ref<SkillFlowDamageRecord[]>(loadSkillFlowDamageRecords())
 const recordSaveError = ref(false)
+/** 正在改名的记录 id；与记录列表同源，改名后由 watch(records) 自动落库 */
+const renamingRecordId = ref('')
+const renamingRecordValue = ref('')
 const analysisSlotIndex = ref<number | null>(null)
 const typeDimension = ref<'type' | 'category'>('type')
 const comparisonMode = ref<'damage' | 'percentage'>('damage')
@@ -307,9 +312,44 @@ function teamInitials(rec: SkillFlowDamageRecord) {
   return names.map(firstNameChar).join('')
 }
 
+function recordLabel(rec: SkillFlowDamageRecord) {
+  return skillFlowDamageRecordLabel(rec)
+}
+
 function recordTip(rec: SkillFlowDamageRecord) {
   const team = (rec.agentNames.length ? rec.agentNames : [rec.agentName]).join(' / ')
-  return `${rec.schemeName}\n队伍：${team}\n当前角色：${rec.agentName}`
+  const title = rec.name ? `${rec.name}（方案：${rec.schemeName}）` : rec.schemeName
+  return `${title}\n队伍：${team}\n当前角色：${rec.agentName}`
+}
+
+function startRenameRecord(rec: SkillFlowDamageRecord) {
+  // 切到另一行时先把正在编辑的输入落库，避免切换即静默丢失
+  if (renamingRecordId.value && renamingRecordId.value !== rec.id) commitRenameRecord()
+  renamingRecordId.value = rec.id
+  renamingRecordValue.value = rec.name || rec.schemeName
+  nextTick(() => {
+    const el = document.querySelector<HTMLInputElement>('.sf-rec-rename-input')
+    el?.focus()
+    el?.select()
+  })
+}
+
+/** 提交改名：清空即恢复默认（回落到方案名） */
+function commitRenameRecord() {
+  const id = renamingRecordId.value
+  if (!id) return
+  const value = normalizeSkillFlowDamageRecordName(renamingRecordValue.value)
+  renamingRecordId.value = ''
+  renamingRecordValue.value = ''
+  const record = records.value.find((item) => item.id === id)
+  if (!record) return
+  if ((record.name ?? undefined) === value) return
+  record.name = value
+}
+
+function cancelRenameRecord() {
+  renamingRecordId.value = ''
+  renamingRecordValue.value = ''
 }
 
 function recordNow() {
@@ -741,7 +781,7 @@ function clearRecords() {
           <thead>
             <tr>
               <th class="sf-rec-num">#</th>
-              <th class="sf-rec-ctx">方案</th>
+              <th class="sf-rec-ctx">名称</th>
               <th class="sf-rec-time">时间</th>
               <th>全队</th>
               <th>当前角色</th>
@@ -754,10 +794,23 @@ function clearRecords() {
             <tr v-for="(rec, index) in records" :key="rec.id">
               <td class="sf-rec-num">{{ index + 1 }}</td>
               <td class="sf-rec-ctx">
-                <span class="sf-rec-clip" :title="recordTip(rec)">{{ rec.schemeName }}</span>
-                <small class="sf-record-detail-status">{{
-                  rec.snapshot ? '含结构明细' : '仅总伤'
-                }}</small>
+                <input
+                  v-if="renamingRecordId === rec.id"
+                  v-model="renamingRecordValue"
+                  class="sf-rec-rename-input"
+                  type="text"
+                  maxlength="40"
+                  aria-label="伤害记录名称"
+                  @keydown.enter.prevent="commitRenameRecord"
+                  @keydown.esc.prevent="cancelRenameRecord"
+                  @blur="commitRenameRecord"
+                />
+                <template v-else>
+                  <span class="sf-rec-clip" :title="recordTip(rec)">{{ recordLabel(rec) }}</span>
+                  <small class="sf-record-detail-status">{{
+                    rec.snapshot ? '含结构明细' : '仅总伤'
+                  }}</small>
+                </template>
               </td>
               <td class="sf-rec-time">{{ formatRecordTime(rec.savedAt) }}</td>
               <td class="sf-rec-dmg">
@@ -771,7 +824,20 @@ function clearRecords() {
               <td>{{ teamDelta(index) }}</td>
               <td>{{ currentDelta(index) }}</td>
               <td class="sf-rec-actions">
-                <button type="button" class="mini-btn danger" @click="removeRecord(rec.id)">
+                <button
+                  type="button"
+                  class="mini-btn"
+                  :aria-label="`重命名第${index + 1}条伤害记录`"
+                  @click="startRenameRecord(rec)"
+                >
+                  改名
+                </button>
+                <button
+                  type="button"
+                  class="mini-btn danger"
+                  :aria-label="`删除第${index + 1}条伤害记录`"
+                  @click="removeRecord(rec.id)"
+                >
                   删除
                 </button>
               </td>
@@ -1173,7 +1239,7 @@ function clearRecords() {
   table-layout: fixed;
   font-size: 0.75rem;
   color: #d5dae4;
-  min-width: 850px;
+  min-width: 880px;
 }
 .sf-rec-scroll {
   max-width: 100%;
@@ -1215,6 +1281,21 @@ function clearRecords() {
   white-space: nowrap;
   cursor: default;
 }
+.sf-rec-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid #3a4a31;
+  border-radius: 5px;
+  background: #10141a;
+  color: #e8edf5;
+  font: inherit;
+  font-size: 0.75rem;
+}
+.sf-rec-rename-input:focus {
+  outline: none;
+  border-color: #c9a55c;
+}
 .sf-rec-dmg {
   white-space: nowrap;
 }
@@ -1225,9 +1306,12 @@ function clearRecords() {
   letter-spacing: 0.04em;
 }
 .sf-rec-actions {
-  width: 3.6rem;
+  width: 6.2rem;
   text-align: right;
   white-space: nowrap;
+}
+.sf-rec-actions .mini-btn + .mini-btn {
+  margin-left: 0.3rem;
 }
 @media (max-width: 800px) {
   .sf-stats-team,
@@ -1287,6 +1371,14 @@ function clearRecords() {
 :global([data-theme='light']) .sf-rec-table th,
 :global([data-theme='light']) .sf-rec-table td {
   border-bottom-color: #e4e8ef;
+}
+:global([data-theme='light']) .sf-rec-rename-input {
+  border-color: #cfd6e0;
+  background: #fff;
+  color: #2b3038;
+}
+:global([data-theme='light']) .sf-rec-rename-input:focus {
+  border-color: #8a6d33;
 }
 @container (max-width: 600px) {
   .sf-analysis-bar-row {

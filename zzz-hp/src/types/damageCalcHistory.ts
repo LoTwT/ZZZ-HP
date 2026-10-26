@@ -149,6 +149,8 @@ export interface PreparedSkill {
   /** 技能组 id；与 skillId 互斥 */
   skillGroupId?: string | null
   skillSource: SkillSource
+  /** 本方案内的显示名称覆盖；留空用招式/技能组原名（允许同名招式重复加入准备） */
+  alias?: string | null
   /** 异常强度提供者（agentId）。普通招式用；技能组优先看 memberAgents */
   anomalyPowerAgentId?: string | null
   /** 异常类触发者（agentId）。普通招式用；技能组优先看 memberAgents */
@@ -302,6 +304,10 @@ export interface DamageCalcHistoryEntry {
   folder: string
   /** 同目录内排序权重（小在前） */
   order: number
+  /** 来源：缺省 = 用户自己保存；preset = 从共用方案复制来的只读副本 */
+  origin?: 'preset' | 'user'
+  /** 来源共用方案 id（仅展示 / 溯源；不参与计算） */
+  sharedPresetId?: string
 }
 
 /** 目录节点元数据 */

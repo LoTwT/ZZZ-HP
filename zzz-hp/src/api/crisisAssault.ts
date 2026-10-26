@@ -24,6 +24,9 @@ interface ApiBoss {
   weakness: string | null
   resistance: string | null
   resistance_high?: string | null
+  /** 危局 Boss 多套弱点/抗性（怪物库配置）；后端按当期绑定解析后下发单套结果 */
+  weakness_set_id?: string | null
+  weakness_set_label?: string | null
   boss_image: string | null
   crisis_base_hp?: number | null
   hp_coeff_percent?: number | null
@@ -161,6 +164,8 @@ function mapBossToEnemy(boss: ApiBoss): EnemySlot {
     anomalyBarCoefficient: boss.anomaly_bar_coefficient ?? null,
     resistance: boss.resistance || undefined,
     resistanceHigh: boss.resistance_high || undefined,
+    weaknessSetId: boss.weakness_set_id ?? null,
+    weaknessSetLabel: boss.weakness_set_label ?? null,
     crisisBaseHp: boss.crisis_base_hp ?? null,
     hpCoeffPercent: boss.hp_coeff_percent ?? null,
     hpCoeffLabel: boss.hp_coeff_label ?? null,
@@ -264,6 +269,12 @@ export interface HpChartPoint {
   phase?: string
   bosses?: ChartBossPreview[]
   roomBuff?: ChartRoomBuffPreview
+  /** 该期实际使用的弱点/抗性（怪物数据库按套标记期数用） */
+  weakness?: string | null
+  resistance?: string | null
+  resistanceHigh?: string | null
+  weaknessSetId?: string | null
+  weaknessSetLabel?: string | null
 }
 
 export function getChartPointPhaseKey(point: HpChartPoint): string {
@@ -483,6 +494,11 @@ export async function fetchBossChart(
       HpChartPoint & {
         hpCoeffPercent?: number | null
         crisisBaseHp?: number | null
+        weakness?: string | null
+        resistance?: string | null
+        resistance_high?: string | null
+        weakness_set_id?: string | null
+        weakness_set_label?: string | null
       }
     >
   }
@@ -500,6 +516,11 @@ export async function fetchBossChart(
     phase: row.phase,
     bosses: row.bosses,
     roomBuff: row.roomBuff,
+    weakness: row.weakness ?? null,
+    resistance: row.resistance ?? null,
+    resistanceHigh: row.resistance_high ?? null,
+    weaknessSetId: row.weakness_set_id ?? null,
+    weaknessSetLabel: row.weakness_set_label ?? null,
   }))
 }
 

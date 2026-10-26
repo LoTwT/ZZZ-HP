@@ -62,7 +62,6 @@ import type {
   StaggerPhase,
 } from '@/types/calculator'
 import {
-  buildSkillBaseMultNote,
   createDefaultSkillTalentLevels,
   fillSkillTalentLevels,
   type SkillTalentLevels,
@@ -152,8 +151,6 @@ import {
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
-import { useDamageProcessEvents } from '@/composables/useDamageProcessEvents'
-import DamageProcessPanel from '@/components/calculator/DamageProcessPanel.vue'
 
 export interface TeamSlot {
   agentId: string
@@ -883,45 +880,6 @@ function resolveFlowCalculationDetail(hitId: string): SkillFlowCalculationDetail
     : panelCalcSectionRef.value
   return section?.resolveFlowCalculationDetail(hitId) ?? null
 }
-
-/** 底部事件区暂留作对比，数字和详情均沿用当前流程计算模块。 */
-const damageResultGrandTotal = computed(() =>
-  (hits.value ?? []).reduce((sum, hit) => sum + (hitDamages.value[hit.id] ?? 0), 0),
-)
-const damageResultEventLines = computed(() =>
-  (hits.value ?? []).map((hit) => {
-    const total = hitDamages.value[hit.id] ?? 0
-    return {
-      eventId: hit.id,
-      displayName: `${agents.value.find((agent) => agent.id === hit.ownerAgentId)?.name ?? ''} · ${hit.skill.name}`,
-      total,
-      perHit: hit.count > 0 ? total / hit.count : 0,
-    }
-  }).filter((line) => line.total > 0),
-)
-const {
-  ownerShareSummary: damageResultOwnerShareSummary,
-  skippedEvents: damageResultSkippedEvents,
-  selectedDetail: damageResultSelectedDetail,
-  selectedEventId: damageResultSelectedEventId,
-  selectEvent: damageResultSelectEvent,
-} = useDamageProcessEvents({
-  resolveDetail: (eventId) => resolveFlowCalculationDetail(eventId)?.evaluation ?? null,
-  grandTotal: damageResultGrandTotal,
-  eventLines: damageResultEventLines,
-  selectedEventIds: computed(() => null),
-  totalLabel: computed(() => '伤害事件总伤期望'),
-  hasEvents: computed(() => hits.value.length > 0),
-  active: computed(() => true),
-  enabled: computed(() => true),
-  hits,
-  agents: computed(() => agents.value),
-  teamSlots: computed(() => teamSlots),
-})
-const damageResultSkillMultLevelNote = computed(() => {
-  const detail = damageResultSelectedDetail.value
-  return detail ? buildSkillBaseMultNote(detail.hit.skill, detail.hit.skillTalentLevel) : null
-})
 
 const buffSelectionSignature = computed(() => JSON.stringify(multiSlotBuffSelection))
 const combatBuffBreakdown = computed(() => {
@@ -2600,22 +2558,6 @@ defineExpose({ scrollToSection })
         v-model:edited-slot-index="activeSlot"
       />
     </Teleport>
-
-    <!-- 用户要求暂留底部事件区，供与流程详情逐项对比。 -->
-    <section id="damage-result" class="section-card damage-result-section damage-anchor" aria-label="伤害结果">
-      <DamageProcessPanel
-        :has-events="hits.length > 0"
-        :summary="damageResultOwnerShareSummary"
-        :skipped-events="damageResultSkippedEvents"
-        :detail="damageResultSelectedDetail"
-        :selected-event-id="damageResultSelectedEventId"
-        :skill-mult-level-note="damageResultSkillMultLevelNote"
-        total-label="伤害事件总伤期望"
-        :enemy-input="enemyInput"
-        :is-mb="damageResultSelectedDetail?.kind === 'direct' && damageResultSelectedDetail.result.baseDamageSource === 'pierce'"
-        @select-event="damageResultSelectEvent"
-      />
-    </section>
   </div>
 </template>
 
@@ -2635,13 +2577,6 @@ defineExpose({ scrollToSection })
   color: #f0c9a8;
   font-size: 0.82rem;
   line-height: 1.5;
-}
-
-.damage-result-section {
-  padding: 1rem;
-  background: var(--zzz-card, #faf8f2);
-  border: 1px solid var(--color-border, rgba(60, 55, 40, 0.16));
-  border-radius: 12px;
 }
 
 .team-slot-sticky {

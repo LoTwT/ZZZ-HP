@@ -8,6 +8,7 @@ import {
   type BossInfoCatalog,
   type BossInfoFieldBuffSet,
   type BossInfoRecord,
+  type BossInfoWeaknessSet,
 } from '@/api/bossInfo'
 import AdminBossInfoImportExportPanel from '@/components/admin/AdminBossInfoImportExportPanel.vue'
 import AdminBuffEffectEditor from '@/components/admin/calculator/AdminBuffEffectEditor.vue'
@@ -43,6 +44,14 @@ interface FieldBuffSetDraft {
   blocks: BuffEffectBlock[]
 }
 
+interface WeaknessSetDraft {
+  id: string
+  label: string
+  weakness: string
+  resistance: string
+  resistanceHigh: string
+}
+
 const catalog = ref<BossInfoCatalog>('all')
 const pageTab = ref<'list' | 'io'>('list')
 const keyword = ref('')
@@ -57,6 +66,60 @@ const total = ref(0)
 const editingId = ref<number | null>(null)
 const draft = ref<BossInfoDraft>(createEmptyDraft())
 const fieldBuffSets = ref<FieldBuffSetDraft[]>([])
+const weaknessSets = ref<WeaknessSetDraft[]>([])
+const weakSetSeq = ref(0)
+
+function createEmptyWeaknessSet(partial?: Partial<WeaknessSetDraft>): WeaknessSetDraft {
+  weakSetSeq.value += 1
+  return {
+    id: partial?.id || `trait_${Date.now().toString(36)}_${weakSetSeq.value}`,
+    label: partial?.label ?? '',
+    weakness: partial?.weakness ?? '',
+    resistance: partial?.resistance ?? '',
+    resistanceHigh: partial?.resistanceHigh ?? '',
+  }
+}
+
+function weaknessSetsFromRecord(row: BossInfoRecord): WeaknessSetDraft[] {
+  const sets = Array.isArray(row.weakness_sets) ? row.weakness_sets : []
+  const drafts = sets.map((set: BossInfoWeaknessSet) =>
+    createEmptyWeaknessSet({
+      id: set.id,
+      label: set.label ?? '',
+      weakness: set.weakness ?? '',
+      resistance: set.resistance ?? '',
+      resistanceHigh: set.resistanceHigh ?? '',
+    }),
+  )
+  if (drafts.length) return drafts
+  // 旧基础三列 → 第一套；三项都空也保留一套空套（便于直接新增/填写）
+  const legacy = {
+    weakness: row.weakness ?? '',
+    resistance: row.resistance ?? '',
+    resistanceHigh: row.resistance_high ?? '',
+  }
+  return [createEmptyWeaknessSet({ id: 'legacy', ...legacy })]
+}
+
+function addWeaknessSet() {
+  weaknessSets.value.push(createEmptyWeaknessSet())
+}
+
+function removeWeaknessSet(index: number) {
+  weaknessSets.value.splice(index, 1)
+}
+
+function packWeaknessSetsPayload(): BossInfoWeaknessSet[] {
+  // 只要在编辑器里新增过就保留，空套也提交（不再按内容过滤）
+  return weaknessSets.value.map((set) => ({
+    id: set.id,
+    label: set.label.trim() || null,
+    weakness: set.weakness.trim() || null,
+    resistance: set.resistance.trim() || null,
+    resistanceHigh: set.resistanceHigh.trim() || null,
+  }))
+}
+
 const editPanelRef = ref<HTMLElement | null>(null)
 const confirmVisible = ref(false)
 const confirmMessage = ref('')
@@ -192,6 +255,7 @@ async function startEdit(row: BossInfoRecord) {
   editingId.value = row.id
   draft.value = toDraft(row)
   fieldBuffSets.value = setsFromRecord(row)
+  weaknessSets.value = weaknessSetsFromRecord(row)
   message.value = ''
   error.value = ''
   try {
@@ -207,6 +271,7 @@ function cancelEdit() {
   editingId.value = null
   draft.value = createEmptyDraft()
   fieldBuffSets.value = []
+  weaknessSets.value = []
 }
 
 function addFieldBuffSet() {
@@ -258,13 +323,16 @@ async function saveEdit() {
   try {
     const bossName = draft.value.boss_name.trim()
     const sets = packFieldBuffSetsPayload()
+    const weaknessSetsPayload = packWeaknessSetsPayload()
+    const firstWeakness = weaknessSetsPayload[0]
     await updateBossInfoRecord(editingId.value, {
       boss_name: bossName,
       defense: Number(draft.value.defense) || 0,
       level: Number(draft.value.level) || 1,
-      weakness: draft.value.weakness.trim() || null,
-      resistance: draft.value.resistance.trim() || null,
-      resistance_high: draft.value.resistance_high.trim() || null,
+      // 多套是权威来源：基础三列由第一套镜像，隐藏字段不再直接保存
+      weakness: firstWeakness?.weakness ?? null,
+      resistance: firstWeakness?.resistance ?? null,
+      resistance_high: firstWeakness?.resistanceHigh ?? null,
       boss_image: draft.value.boss_image.trim() || null,
       crisis_base_hp:
         draft.value.crisis_base_hp === '' || draft.value.crisis_base_hp == null
@@ -280,6 +348,7 @@ async function saveEdit() {
           ? null
           : Number(draft.value.anomaly_bar_coefficient),
       field_buff_sets: sets,
+      weakness_sets: packWeaknessSetsPayload(),
     })
     message.value = '已保存'
     cancelEdit()
@@ -514,18 +583,6 @@ onMounted(() => {
             placeholder="1.32"
           />
         </label>
-        <div class="field">
-          <ElementTraitChips v-model="draft.weakness" label="弱点" variant="weak" />
-        </div>
-        <div class="field">
-          <ElementTraitChips
-            v-model="draft.resistance"
-            v-model:high="draft.resistance_high"
-            label="抗性"
-            variant="resist"
-            allow-high
-          />
-        </div>
         <label class="field">
           <span>危局基础血量</span>
           <input v-model="draft.crisis_base_hp" type="number" min="0" step="1" />
@@ -534,6 +591,55 @@ onMounted(() => {
           <span>图片路径</span>
           <input v-model="draft.boss_image" type="text" placeholder="/boss_image/..." />
         </label>
+      </div>
+
+      <div class="field-buff-section">
+        <header class="field-buff-header">
+          <div>
+            <h3>弱点 / 抗性（多套）</h3>
+            <p class="field-hint">
+              多套是唯一来源，第一套即原来的基础弱点/抗性；危局按当期绑定的一套展示。
+              没有多套配置的怪物继续沿用旧格式。
+            </p>
+          </div>
+          <button type="button" class="ghost" @click="addWeaknessSet">新增一套</button>
+        </header>
+
+        <p v-if="!weaknessSets.length" class="field-hint empty-sets">
+          暂无多套配置；单套弱点/抗性用上方字段即可。
+        </p>
+
+        <div
+          v-for="(set, setIndex) in weaknessSets"
+          :key="set.id"
+          class="field-buff-set"
+          :title="`套 id：${set.id}`"
+        >
+          <header class="field-buff-set-head">
+            <strong>套 {{ setIndex + 1 }}</strong>
+            <button type="button" class="danger-btn" @click="removeWeaknessSet(setIndex)">
+              删除
+            </button>
+          </header>
+          <label class="field">
+            <span>备注（可选）</span>
+            <input v-model="set.label" type="text" placeholder="如：第一阶段 / 狂暴后" />
+          </label>
+          <div class="edit-grid">
+            <div class="field">
+              <ElementTraitChips v-model="set.weakness" label="弱点" variant="weak" />
+            </div>
+            <div class="field">
+              <ElementTraitChips
+                v-model="set.resistance"
+                v-model:high="set.resistanceHigh"
+                label="抗性"
+                variant="resist"
+                allow-high
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="field-buff-section">

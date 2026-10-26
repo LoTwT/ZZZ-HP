@@ -402,7 +402,10 @@ function convertPreviewText() {
   const cv = convert.value
   const attrLabel =
     CONVERT_FROM_OPTIONS.find((item) => item.id === cv.from)?.label ?? cv.from
-  const statLabelText = statLabel(first.value.stat)
+  const statLabelText =
+    first.value?.stat === 'anomalyControl' || first.value?.stat === 'anomalyControlPercent'
+      ? (zone.value?.label ?? statLabel(first.value.stat))
+      : statLabel(first.value.stat)
   const initial = cv.initialBase ?? 0
   const initialHint =
     initial > 0 ? `，超出初始值 ${formatCalcDecimal(initial)} 的部分参与折算` : ''

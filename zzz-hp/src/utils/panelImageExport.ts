@@ -18,6 +18,9 @@ export const PANEL_PORTAL_ID = 'mode-content-portal'
 /** 截图期间临时加在面板根节点上的类，样式见 assets/panelImageExport.css。 */
 export const CAPTURE_CLASS = 'zzz-capture-expand'
 
+/** 截图时需要隐藏的元素类：只在导出图片里隐藏，页面本身保持显示。 */
+export const CAPTURE_HIDE_CLASS = 'zzz-capture-hide'
+
 /**
  * 浏览器画布上限。各浏览器不等（Chrome 单边 65535、总面积约 2.68 亿像素，Safari / iOS 明显更低），
  * 这里取保守值：超限时压低像素比，而不是产出一张空白图。

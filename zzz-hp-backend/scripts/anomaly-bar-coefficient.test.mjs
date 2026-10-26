@@ -140,33 +140,34 @@ test('快照导入：camelCase 与 snake_case 都接受，空 / 缺字段 ⇒ nu
 })
 
 test('快照导入：params / UPDATE 参数在 stagger_time 之后同位置插入系数', () => {
-  assert.equal(paramItems.length, 16)
+  assert.equal(paramItems.length, 17)
   assert.deepEqual(paramItems.slice(8, 11), [
     'item.staggerMultiplier',
     'item.staggerTime',
     'item.anomalyBarCoefficient',
   ])
   assert.ok(updateColumns.includes('stagger_time = ?, anomaly_bar_coefficient = ?,'), updateColumns)
-  assert.equal(updateParamItems.length, 17)
+  assert.equal(updateParamItems.length, 18)
   assert.deepEqual(updateParamItems.slice(9, 12), [
     'item.staggerTime',
     'item.anomalyBarCoefficient',
     'item.fieldBuffName',
   ])
-  assert.equal(updateParamItems[16], 'targetId')
+  assert.equal(updateParamItems[17], 'targetId')
   // UPDATE 的 SET 占位符数 = 参数数 - 1（末尾 targetId 对应 WHERE）
   assert.equal((updateColumns.match(/\?/g) ?? []).length, updateParamItems.length - 1)
 })
 
-test('快照导入：四条 INSERT 都带 anomaly_bar_coefficient，占位符数与列数一致（16→17 / 15→16）', () => {
+test('快照导入：四条 INSERT 都带 anomaly_bar_coefficient / weakness_sets，占位符数与列数一致（17→18 / 16→17）', () => {
   assert.equal(insertStatements.length, 4)
   for (const { columns, placeholders } of insertStatements) {
     assert.equal(placeholders, columns.length, columns.join(','))
     assert.equal(columns.indexOf('anomaly_bar_coefficient'), columns.indexOf('stagger_time') + 1)
+    assert.ok(columns.includes('weakness_sets'), 'INSERT 必须带 weakness_sets')
   }
   assert.deepEqual(
     insertStatements.map(({ columns }) => columns.length).sort((a, b) => a - b),
-    [16, 16, 17, 17],
+    [17, 17, 18, 18],
   )
   assert.ok(snap.includes('version: 1,'))
 })

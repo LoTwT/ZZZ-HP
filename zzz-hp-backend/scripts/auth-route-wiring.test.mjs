@@ -10,6 +10,7 @@ import bossRoutes from '../src/routes/bossRoutes.js'
 import changelogRoutes from '../src/routes/changelogRoutes.js'
 import seasonContentRoutes from '../src/routes/seasonContentRoutes.js'
 import deductionAdminRoutes from '../src/routes/deductionAdminRoutes.js'
+import sharedSchemeRoutes from '../src/routes/sharedSchemeRoutes.js'
 import adminAuthRoutes from '../src/routes/adminAuthRoutes.js'
 
 function getRouteLayer(router, method, path) {
@@ -83,6 +84,16 @@ test('deductionAdmin 整组挂载 requireAdmin', () => {
 
 test('会话核验接口首中间件必须是 requireAdmin', () => {
   assertFirstHandler(adminAuthRoutes, 'get', '/session', requireAdmin)
+})
+
+test('共用方案：读公开，写全部 requireAdmin', () => {
+  assertFirstHandler(sharedSchemeRoutes, 'get', '/admin', requireAdmin)
+  assertFirstHandler(sharedSchemeRoutes, 'post', '/admin/import', requireAdmin)
+  assertFirstHandler(sharedSchemeRoutes, 'patch', '/admin/:id', requireAdmin)
+  assertFirstHandler(sharedSchemeRoutes, 'delete', '/admin/:id', requireAdmin)
+  // 公开读不应挂 requireAdmin
+  const handlers = getRouteHandlers(sharedSchemeRoutes, 'get', '/')
+  assert.notEqual(handlers[0], requireAdmin)
 })
 
 test('requireAdmin 无有效会话时返回 401 且不 next', () => {

@@ -2,6 +2,7 @@
 import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, ref, watch } from 'vue'
 import type { SkillFlowDamageRecord } from '@/utils/skillFlowDamageRecords'
+import { skillFlowDamageRecordLabel } from '@/utils/skillFlowDamageRecords'
 import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
 import {
   compareSkillFlowDamageRecords,
@@ -35,7 +36,7 @@ watch(
       return
     }
     if (!ids.includes(comparisonId.value)) comparisonId.value = ids[ids.length - 1]!
-    if (!ids.includes(baselineId.value) || baselineId.value === comparisonId.value)
+    if (!ids.includes(baselineId.value))
       baselineId.value = [...ids].reverse().find((id) => id !== comparisonId.value)!
   },
   { immediate: true },
@@ -44,7 +45,7 @@ watch(
 const baseline = computed(() => props.records.find((record) => record.id === baselineId.value))
 const comparison = computed(() => props.records.find((record) => record.id === comparisonId.value))
 const result = computed(() =>
-  baseline.value && comparison.value && baselineId.value !== comparisonId.value
+  baseline.value && comparison.value
     ? compareSkillFlowDamageRecords(baseline.value, comparison.value)
     : null,
 )
@@ -144,7 +145,8 @@ function segmentConditions(
   return labels.join(' · ')
 }
 function optionLabel(record: SkillFlowDamageRecord, index: number) {
-  return `#${index + 1} ${record.schemeName} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
+  const scheme = record.name ? `（${record.schemeName}）` : ''
+  return `#${index + 1} ${skillFlowDamageRecordLabel(record)}${scheme} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
 }
 </script>
 
@@ -168,7 +170,6 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
               v-for="(record, index) in records"
               :key="record.id"
               :value="record.id"
-              :disabled="record.id === comparisonId"
             >
               {{ optionLabel(record, index) }}
             </option>
@@ -181,7 +182,6 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
               v-for="(record, index) in records"
               :key="record.id"
               :value="record.id"
-              :disabled="record.id === baselineId"
             >
               {{ optionLabel(record, index) }}
             </option>

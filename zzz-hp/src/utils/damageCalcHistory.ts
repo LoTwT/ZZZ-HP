@@ -1189,27 +1189,61 @@ function commitReplacedStore(
   )
 }
 
-export function exportDamageCalcHistory(knownGroups: SkillGroup[] = []): string {
+export interface ExportDamageCalcHistoryOptions {
+  /** 只导出这些方案 id；为空/缺省时导出全部（目录会按所选方案裁剪） */
+  schemeIds?: string[]
+}
+
+/** 只保留所选方案实际用到的目录（含其上级目录） */
+function pruneDirsForSchemes(
+  dirs: Record<string, SchemeFolderMeta>,
+  schemes: Record<string, DamageCalcHistoryEntry>,
+): Record<string, SchemeFolderMeta> {
+  const keep = new Set<string>()
+  for (const entry of Object.values(schemes)) {
+    let folder = normFolder(entry?.folder ?? '')
+    while (folder) {
+      keep.add(folder)
+      const index = folder.lastIndexOf('/')
+      folder = index > 0 ? folder.slice(0, index) : ''
+    }
+  }
+  return Object.fromEntries(Object.entries(dirs).filter(([path]) => keep.has(path)))
+}
+
+export function exportDamageCalcHistory(
+  knownGroups: SkillGroup[] = [],
+  options: ExportDamageCalcHistoryOptions = {},
+): string {
   const store = readStore()
+  const selectedIds = new Set((options.schemeIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean))
+  const schemes =
+    selectedIds.size > 0
+      ? Object.fromEntries(
+          Object.entries(store.schemes).filter(([id]) => selectedIds.has(id)),
+        )
+      : store.schemes
+  const dirs = selectedIds.size > 0 ? pruneDirsForSchemes(store.dirs, schemes) : store.dirs
   const customSkills = loadCustomSkills()
   const customGroups = loadCustomSkillGroups()
   const skillGroups = buildExportedSkillGroups({
     customGroups,
     knownGroups,
-    schemes: store.schemes,
+    schemes,
   })
   const warnings = collectExportWarnings({
-    schemes: store.schemes,
+    schemes,
     customSkills,
     knownGroups: [...customGroups, ...knownGroups],
   })
+  const loadedId = getLoadedSchemeId()
   const payload: DamageCalcHistoryExport = {
     type: 'zzz-hp-schemes',
     version: SCHEME_STORE_VERSION,
     exportedAt: Date.now(),
-    dirs: store.dirs,
-    schemes: store.schemes,
-    currentId: getLoadedSchemeId(),
+    dirs,
+    schemes,
+    currentId: loadedId && schemes[loadedId] ? loadedId : null,
     customSkills,
     skillGroups,
     warnings,

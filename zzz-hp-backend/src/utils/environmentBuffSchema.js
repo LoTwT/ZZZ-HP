@@ -152,10 +152,22 @@ export async function ensureEnvironmentBuffSchema() {
        ADD COLUMN field_buff_sets JSON NULL COMMENT '危局 Boss 场地 Buff 多套（id/name/text/image/effectBlocks）'`,
     )
   }
+  if (!(await columnExists('boss_info', 'weakness_sets'))) {
+    await pool.query(
+      `ALTER TABLE boss_info
+       ADD COLUMN weakness_sets JSON NULL COMMENT '危局 Boss 多套弱点/抗性（id/label/weakness/resistance/resistanceHigh）'`,
+    )
+  }
   if (!(await columnExists('boss', 'field_buff_set_id'))) {
     await pool.query(
       `ALTER TABLE boss
        ADD COLUMN field_buff_set_id VARCHAR(64) NULL COMMENT '危局当期绑定的场地 Buff 套 id（boss_info.field_buff_sets）'`,
+    )
+  }
+  if (!(await columnExists('boss', 'weakness_set_id'))) {
+    await pool.query(
+      `ALTER TABLE boss
+       ADD COLUMN weakness_set_id VARCHAR(64) NULL COMMENT '危局当期绑定的弱点/抗性套 id（boss_info.weakness_sets）'`,
     )
   }
 

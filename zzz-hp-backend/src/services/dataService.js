@@ -106,6 +106,7 @@ export async function createBoss(payload) {
     anomaly_bar_coefficient = null,
     mode = null,
     field_buff_set_id = null,
+    weakness_set_id = null,
   } = payload
 
   const versionValue = String(version).trim()
@@ -119,6 +120,10 @@ export async function createBoss(payload) {
   const fieldBuffSetId =
     modeValue === 'crisis' && field_buff_set_id != null && String(field_buff_set_id).trim()
       ? String(field_buff_set_id).trim()
+      : null
+  const weaknessSetId =
+    modeValue === 'crisis' && weakness_set_id != null && String(weakness_set_id).trim()
+      ? String(weakness_set_id).trim()
       : null
 
   let bossId = id
@@ -212,6 +217,7 @@ export async function createBoss(payload) {
     staggerValue,
     staggerTimeValue,
     fieldBuffSetId,
+    weaknessSetId,
   ]
 
   if (bossId) {
@@ -221,7 +227,7 @@ export async function createBoss(payload) {
         `UPDATE boss
          SET version = ?, phase = ?, boss_name = ?, hp = ?, hp_coeff_percent = ?, defense = ?, level = ?,
              room = ?, weakness = ?, resistance = ?, resistance_high = ?, boss_image = ?, stagger_multiplier = ?, stagger_time = ?,
-             field_buff_set_id = ?, mode = ?
+             field_buff_set_id = ?, weakness_set_id = ?, mode = ?
          WHERE id = ?`,
         [...bossValues, modeValue, bossId],
       )
@@ -244,14 +250,15 @@ export async function createBoss(payload) {
         stagger_multiplier: staggerValue,
         stagger_time: staggerTimeValue,
         field_buff_set_id: fieldBuffSetId,
+        weakness_set_id: weaknessSetId,
         bossInfoSync,
         action: 'updated',
       }
     }
 
     await pool.execute(
-      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO boss (id, version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, weakness_set_id, mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [bossId, ...bossValues, modeValue],
     )
     return {
@@ -273,14 +280,15 @@ export async function createBoss(payload) {
       stagger_multiplier: staggerValue,
       stagger_time: staggerTimeValue,
       field_buff_set_id: fieldBuffSetId,
+      weakness_set_id: weaknessSetId,
       bossInfoSync,
       action: 'created',
     }
   }
 
   const [result] = await pool.execute(
-    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO boss (version, phase, boss_name, hp, hp_coeff_percent, defense, level, room, weakness, resistance, resistance_high, boss_image, stagger_multiplier, stagger_time, field_buff_set_id, weakness_set_id, mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...bossValues, modeValue],
   )
 

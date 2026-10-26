@@ -9,9 +9,11 @@ import { formatTraitTextWithPercent, parseElementIcons, weakTraitPercent } from 
 import {
   findMonsterEntries,
   findPreviousFieldBuff,
+  findPreviousMonsterTraits,
   getBossHpCoeffComparison,
   getBossHpComparison,
   isFieldBuffChanged,
+  isMonsterTraitsChanged,
   listMonsterAppearanceVersions,
 } from '../src/utils/historyMonsterDetail.ts'
 
@@ -97,7 +99,56 @@ check(
   isFieldBuffChanged({ name: '', text: '', effectBlocks: [{ note: '注' }] }, buffB) === true,
 )
 
-console.log('[3b] listMonsterAppearanceVersions：按 Boss 名（跨房间）汇总出现过的版本')
+console.log('[3b] 弱点/抗性转变：上一期为空也要作为对比侧')
+const traitPhases = [
+  makePhase('3.1', '第 1 期', [makeEnemy({ bossName: '基塔布鲁', room: '4' })]),
+  makePhase('3.2', '第 2 期', [
+    makeEnemy({
+      bossName: '基塔布鲁',
+      room: '4',
+      weakness: '火 电',
+      resistance: '冰',
+      resistanceHigh: '冰',
+    }),
+  ]),
+]
+const emptyTraits = findPreviousMonsterTraits(traitPhases, 1, { bossName: '基塔布鲁', room: '4' })
+check(
+  '上一期没有弱点/抗性时仍返回该期快照',
+  emptyTraits?.phaseLabel === '3.1 第 1 期' && !emptyTraits.weakness && !emptyTraits.resistance,
+  `${emptyTraits?.phaseLabel}`,
+)
+check(
+  '无 → 有 判定为变化',
+  isMonsterTraitsChanged(emptyTraits, {
+    weakness: '火 电',
+    resistance: '冰',
+    resistanceHigh: '冰',
+  }) === true,
+)
+check(
+  '有 → 无 判定为变化',
+  isMonsterTraitsChanged(
+    { phaseLabel: '3.1 第 1 期', weakness: '火', resistance: '冰' },
+    { weakness: '', resistance: '' },
+  ) === true,
+)
+check(
+  '两侧都为空不算变化',
+  isMonsterTraitsChanged(
+    { phaseLabel: '3.1 第 1 期', weakness: '', resistance: '' },
+    { weakness: '', resistance: '' },
+  ) === false,
+)
+check(
+  '高抗性子集变化也算变化',
+  isMonsterTraitsChanged(
+    { phaseLabel: '3.1 第 1 期', weakness: '火', resistance: '冰', resistanceHigh: '' },
+    { weakness: '火', resistance: '冰', resistanceHigh: '冰' },
+  ) === true,
+)
+
+console.log('[3c] listMonsterAppearanceVersions：按 Boss 名（跨房间）汇总出现过的版本')
 const crossRoomPhases = [
   makePhase('2.0', '第 1 期', [makeEnemy({ bossName: '秽息司祭', room: '1' })]),
   makePhase('2.1', '第 1 期', [makeEnemy({ bossName: '秽息司祭', room: '2' })]),

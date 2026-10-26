@@ -53,6 +53,8 @@ const props = withDefaults(
     enableHpCoeffCharts?: boolean
     /** 去掉外框边线 */
     borderless?: boolean
+    /** 需要加底纹标记的期数标签（怪物数据库按弱点/抗性套标注） */
+    markedLabels?: string[]
     /**
      * 整页滚动形态：纵向滚轮交给页面，面板内只保留横向拖拽视口，图表高度改以窗口高度为基准。
      * 默认 false 保持「面板内小视口滚动」的既有形态。
@@ -78,6 +80,7 @@ const props = withDefaults(
     enableScoreHpOverlays: false,
     enableHpCoeffCharts: false,
     borderless: false,
+    markedLabels: () => [],
     pageScroll: false,
   },
 )
@@ -557,6 +560,15 @@ const columnZones = computed(() => {
 
 const hoveredHpPoint = computed(() =>
   hoverIndex.value === null ? null : hpChartPoints.value[hoverIndex.value] ?? null,
+)
+
+/** 需要标记的期数（底纹）：按标签匹配当前点序 */
+const markedLabelSet = computed(() => new Set(props.markedLabels))
+const markedColumnZones = computed(() =>
+  columnZones.value.filter((zone) => {
+    const point = points.value[zone.index]
+    return point ? markedLabelSet.value.has(point.label) : false
+  }),
 )
 
 const hoveredChartPoint = computed(() =>
@@ -1676,6 +1688,16 @@ watch(phaseSearchQuery, () => {
               </g>
 
               <rect
+                v-for="zone in markedColumnZones"
+                :key="`hp-mark-${zone.index}`"
+                :x="zone.x1"
+                y="0"
+                :width="zone.width"
+                :height="chartHeight"
+                class="column-mark"
+              />
+
+              <rect
                 v-for="zone in columnZones"
                 :key="`hp-zone-${zone.index}`"
                 :x="zone.x1"
@@ -1902,6 +1924,16 @@ watch(phaseSearchQuery, () => {
               </g>
 
               <rect
+                v-for="zone in markedColumnZones"
+                :key="`exp-mark-${zone.index}`"
+                :x="zone.x1"
+                y="0"
+                :width="zone.width"
+                :height="chartHeight"
+                class="column-mark"
+              />
+
+              <rect
                 v-for="zone in columnZones"
                 :key="`exp-zone-${zone.index}`"
                 :x="zone.x1"
@@ -2094,6 +2126,16 @@ watch(phaseSearchQuery, () => {
               </g>
 
               <rect
+                v-for="zone in markedColumnZones"
+                :key="`${series.marker.id}-mark-${zone.index}`"
+                :x="zone.x1"
+                y="0"
+                :width="zone.width"
+                :height="chartHeight"
+                class="column-mark"
+              />
+
+              <rect
                 v-for="zone in columnZones"
                 :key="`${series.marker.id}-zone-${zone.index}`"
                 :x="zone.x1"
@@ -2231,6 +2273,16 @@ watch(phaseSearchQuery, () => {
                   {{ formatCoeffPercent(tick) }}
                 </text>
               </g>
+
+              <rect
+                v-for="zone in markedColumnZones"
+                :key="`coeff-mark-${zone.index}`"
+                :x="zone.x1"
+                y="0"
+                :width="zone.width"
+                :height="chartHeight"
+                class="column-mark"
+              />
 
               <rect
                 v-for="zone in columnZones"
@@ -2961,6 +3013,12 @@ html[data-theme='dark'] .y-axis-title-hp {
 .column-hit {
   fill: transparent;
   cursor: inherit;
+}
+
+/* 按弱点/抗性套标记的期数底纹（不拦截指针） */
+.column-mark {
+  fill: color-mix(in srgb, #4a90d9 12%, transparent);
+  pointer-events: none;
 }
 
 .column-hit--clickable {
