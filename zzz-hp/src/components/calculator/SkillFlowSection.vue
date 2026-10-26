@@ -4236,10 +4236,13 @@ const showcaseTitle = computed(() => {
 </template>
 
 <style scoped>
-/* 详情里的事件元素：解析结果的轻提示 */
+/* 详情里的事件元素：解析结果提示。
+   不要用 --calc-text 的浅色回退（浅色主题下没有该变量 → 回退近白，直接看不见），
+   跟随 .agent-row label 已确定的次要文字色即可，深浅主题都读得清。 */
 .detail-element-hint {
-  font-size: 0.82rem;
-  color: color-mix(in srgb, var(--calc-text, #e8ecf4) 62%, transparent);
+  font-size: 0.78rem;
+  color: inherit;
+  opacity: 0.95;
   margin-left: 0.35rem;
 }
 
