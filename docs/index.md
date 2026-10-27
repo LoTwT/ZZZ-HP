@@ -83,6 +83,7 @@
 ## 规划与维护
 
 - [未来规划](../future-roadmap.md)：尚未落地的功能方向和后续设计。
+- [求解链路性能实施 Plan](./plans/solve-chain-performance-plan.md)：配套 Spec 的执行顺序、依赖与回退点（步骤间关系，非结果形态）。
 - [维护清单](../TODO-FOR-OWNER.md)：需要所有者确认的事项、遗留验证和长期结构债。
 
 ## 参考资料
