@@ -155,6 +155,7 @@ export function collectRemielSelfRestrictedContributionsFromSources(
       if (!isEffectEnabled(effect, ctx.buffSelection)) continue
       if (!effectMatchesContext(effect, skillCtx)) continue
       if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
+      if (effect.applyProfession?.trim() && effect.applyProfession.trim() !== String(ctx.agents.find(agent => agent.id === selfAgentId)?.profession ?? '').trim()) continue
 
       const stacks =
         rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
@@ -232,6 +233,7 @@ export function collectRemielSelfRestrictedContributions(
     if (!isEffectEnabled(effect, ctx.buffSelection)) continue
     if (!effectMatchesContext(effect, skillCtx)) continue
     if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
+    if (effect.applyProfession?.trim() && effect.applyProfession.trim() !== String(ctx.agents.find(agent => agent.id === selfAgentId)?.profession ?? '').trim()) continue
 
     const stacks =
       rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
