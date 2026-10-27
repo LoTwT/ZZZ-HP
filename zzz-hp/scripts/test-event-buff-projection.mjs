@@ -18,9 +18,16 @@ import { collectAllBuffEffects, computeFinalPanel } from '../src/utils/panelBuff
 import {
   projectEventEffectRecords,
   resolveConfigurationParameters,
+  evaluateAffixCounts,
+  clearAffixEvalCache,
+  withAffixLibraryExtraGains,
   resolveEventBuffPreviewInputs,
 } from '../src/utils/optimalAffixAlloc.ts'
 import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
+import { createEmptyAffixCounts } from '../src/types/calculatorPanel.ts'
+import { entryRollsToEvalInput, gainTarget } from '../src/utils/affixLibrary.ts'
+import { resolveSkillFlowPanelSource } from '../src/utils/skillFlowPanelSource.ts'
+import { AFFIX_VALUE_PER_COUNT } from '../src/utils/affixPanelCalc.ts'
 import { clearHitEvalCache } from '../src/utils/hitEvalCache.ts'
 
 let passed = 0
@@ -418,41 +425,42 @@ console.log('== K4 配置参数路径（未启用也能解析；基数与折算�
 }
 
 console.log('')
-console.log('== K11 三来源（config / allocation / sweep）进入同一事件求值 ==')
-{
-  for (const mode of ['config', 'allocation', 'sweep']) {
-    const effect = createEmptyBuffEffect({
-      id: 'src-fixed',
-      stat: 'dmgBonus',
-      value: 25,
-      kind: 'fixed',
-      enabledDefault: true,
-      applyTarget: 'team',
-      applyProfession: '支援',
-    })
-    const fixture = eventFixture({
-      mode: 'extra-team',
-      damageType: 'anomaly',
-      effects: [effect],
-      agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
-    })
+console.log('== K11 real candidate generation and source selection ==')
+for (const mode of ['ordinary', 'extra-team']) {
+  for (const sourceMode of ['config', 'allocation', 'sweep']) {
+    const effect = createEmptyBuffEffect({ id: 'source-convert', kind: 'convert', stat: 'dmgBonus', enabledDefault: true, applyTarget: 'team',
+      convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null } })
+    const fixture = eventFixture({ mode, damageType: 'direct', effects: [effect] })
+    const counts = createEmptyAffixCounts()
+    counts.atkFlat = sourceMode === 'allocation' ? 1000 / 19 : 2000 / 19
+    const generated = entryRollsToEvalInput([{ id: 'candidate-gain', label: 'candidate', target: gainTarget('dmgBonus'), perRoll: 10 }], { 'candidate-gain': sourceMode === 'allocation' ? 1 : 2 })
+    clearAffixEvalCache()
+    const candidate = evaluateAffixCounts(fixture.context, counts, undefined, { ...AFFIX_VALUE_PER_COUNT, atkFlat: 19 }, generated.extraGains)
+    const resolved = resolveSkillFlowPanelSource({ mode: sourceMode, currentSignature: 'current', options: sourceMode === 'config' ? {} : {
+      [sourceMode]: { mode: sourceMode, signature: 'current', mainExternal: candidate.external, extraGains: generated.extraGains, baseDamageSource: 'atk' },
+    } })
+    const context = withAffixLibraryExtraGains(fixture.context, resolved.extraGains ?? [])
     const hit = fixture.hits[0]
-    hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
-    const effectId = fixture.items.find((item) => item.effect.id.endsWith('src-fixed')).effect.id
-    const numeric = evaluateSkillFlowHit(fixture.context, null, hit)
-    const detailed = evaluateSkillFlowHit(fixture.context, null, hit, true)
-    const summary = projectEventEffectRecords(detailed.effectRecords ?? [])[effectId]
-    check(`K11 ${mode}｜事件求值与详情同源（总伤 4545）`,
-      near(numeric.total, 4545) && near(detailed.total, 4545), `${numeric.total}/${detailed.total}`)
-    check(`K11 ${mode}｜实际受益者仍是 strength 提供者、金额 25`,
-      summary?.state === 'single' && near(summary.amount, 25) && summary.recipients[0]?.slotIndex === 1,
-      JSON.stringify(summary && { state: summary.state, amount: summary.amount }))
-    check(`K11 ${mode}｜记录身份含该模式的视图键`,
-      (detailed.effectRecords ?? []).every((record) => record.viewKey.includes('powerProviderPanel') || record.viewKey.includes('ownerPanel')))
+    const detailed = evaluateSkillFlowHit(context, resolved.mainExternal, hit, true)
+    const numeric = evaluateSkillFlowHit(context, resolved.mainExternal, hit, false)
+    const id = fixture.items[0].effect.id
+    const preview = resolveEventBuffPreviewInputs(context, resolved.mainExternal, hit, 0, detailed)
+    const expectedBase = sourceMode === 'config' ? 1000 : sourceMode === 'allocation' ? 2000 : 3000
+    const expectedGain = sourceMode === 'config' ? 0 : sourceMode === 'allocation' ? 10 : 20
+    check(mode + '/' + sourceMode + ' actual candidate panel', near(detailed.external.atk, expectedBase), String(detailed.external.atk))
+    check(mode + '/' + sourceMode + ' paired candidate gains', near(detailed.finalPanel.dmgBonus, expectedBase / 10 + expectedGain), String(detailed.finalPanel.dmgBonus))
+    check(mode + '/' + sourceMode + ' configuration and contribution use selected panel',
+      near(preview.configurationParameters[id]?.convertBase?.value, expectedBase) && near(preview.effectAmounts[id], expectedBase / 10))
+    check(mode + '/' + sourceMode + ' numeric equals detailed total', near(numeric.total, detailed.total))
+    if (sourceMode !== 'config') {
+      const stale = resolveSkillFlowPanelSource({ mode: sourceMode, currentSignature: 'changed', options: {
+        [sourceMode]: { mode: sourceMode, signature: 'current', mainExternal: candidate.external, extraGains: generated.extraGains, baseDamageSource: 'atk' },
+      } })
+      check(mode + '/' + sourceMode + ' stale candidate clears both inputs', !stale.active && stale.mainExternal === null && stale.extraGains === null)
+    }
   }
 }
 
-console.log('')
 console.log('== K4 真实 SFC 输入模型（行级弹窗读共享参数） ==')
 {
   const { bindVueFunctions } = await import('./_vueSetupHarness.mjs')
@@ -669,7 +677,7 @@ console.log('== K6 详情实际采用：乘区角色由记录决定（不按伤�
   const release = buildUsage('anomalyRelease')
   // 触发者 === 持有者时面板是同一个对象，按 owner 记（不伪造第二份归属）
   const bonusRoleFields = release
-    .filter((usage) => usage.usedView === 'anomalyTriggerPanel' || usage.usedView === 'ownerPanel')
+    .filter((usage) => usage.usedView === 'anomalyTriggerPanel' || usage.usedView === 'ownerPanel' || usage.usedView === 'releaseMult')
     .map((usage) => String(usage.field))
   check('K6 异放：类型增伤/倍率/暴击都标在触发者（或同一份 owner）视图上',
     bonusRoleFields.includes('anomalyReleaseDmgBonus') &&

@@ -420,7 +420,9 @@ function getConfigurationParametersForSlot(
   /** 行级例外（组 + 成员合并后的那一行）；缺省 = 全局口径（行级例外恒为 null） */
   rowOverride?: FlowBuffOverride | null,
 ): Record<string, ResolvedEffectParameters> {
-  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: rowOverride ?? null }
+  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: rowOverride
+    ? { ...rowOverride, disabledEffectIds: [], disabledBlockIds: [] }
+    : null }
   const parameters: Record<string, ResolvedEffectParameters> = {}
   for (const item of collectAllBuffEffects(context)) {
     parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
@@ -1083,7 +1085,8 @@ defineExpose({
     void hitCalcGlobalSignature.value
     const hit = props.hits?.find((item) => item.id === hitId)
     return hit
-      ? resolveSkillFlowCalculationDetail(skillFlowCalculationContext.value, skillFlowMainExternal.value, hit)
+      ? resolveSkillFlowCalculationDetail(skillFlowCalculationContext.value, skillFlowMainExternal.value, hit,
+        hitEvalCacheKey(buildHitEvalFingerprint(hit), internHitEvalContext(hitCalcGlobalSignature.value), skillFlowMainExternal.value, true))
       : null
   },
   getSnapshot,

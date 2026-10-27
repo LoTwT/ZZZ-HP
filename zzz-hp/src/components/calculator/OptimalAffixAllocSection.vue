@@ -3464,7 +3464,8 @@ defineExpose({
       ? (props.skillFlowSourceExtraGains ?? [])
       : []
     const context = withAffixLibraryExtraGains(evalCtx.value, allocatedGains)
-    return resolveSkillFlowCalculationDetail(context, external, hit)
+    return resolveSkillFlowCalculationDetail(context, external, hit,
+      hitEvalCacheKey(buildHitEvalFingerprint(hit), internHitEvalContext(skillFlowContextFingerprint.value), external, true))
   },
   buffBreakdown: computed(() => displayEval.value?.breakdown ?? null),
   displayEval,

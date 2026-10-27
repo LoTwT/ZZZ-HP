@@ -2,27 +2,11 @@ import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import {
-  isEffectEnabled,
-  effectMatchesContext,
-  effectMatchesElement,
-  resolveConvertValue,
-  resolveEffectBaseValue,
-} from '@/utils/buffEffect'
-import {
-  applyBuffModsToPanel,
-  collectAllBuffEffects,
-  collectPanelBuffMods,
-  collectPanelBuffModSources,
   computeFinalPanel,
-  panelToConvertAttrValues,
-  rowBuffSelectionOverlay,
   type ComputeFinalPanelOptions,
   type PanelBuffBreakdown,
   type PanelCalcContext,
 } from '@/utils/panelBuffCalc'
-import { compileCollectedBuffs } from '@/utils/effectCompiler'
-import { effectInstanceToBuffEffect } from '@/utils/effectAdapters'
-import type { EffectInstance } from '@/types/effectSpec'
 import {
   computeMutationZone,
   resolveLuminousEquivalentElement,
@@ -55,33 +39,6 @@ export function computeRemielSelfInCombatPanel(
 function formatSignedContribution(value: number) {
   if (value > 0) return `+${value}`
   return String(value)
-}
-
-function remielAgentPrefix(slotIndex: number) {
-  return `agent-${slotIndex}-`
-}
-
-function remielFourPiecePrefix(slotIndex: number) {
-  return `drive-disc-${slotIndex}-4set`
-}
-
-function remielWenginePrefix(slotIndex: number) {
-  return `wengine-${slotIndex}-`
-}
-
-function isRemielSelfAtkConvert(instance: EffectInstance, slotIndex: number) {
-  return (
-    instance.sourceKey.startsWith(remielAgentPrefix(slotIndex)) &&
-    instance.stat === 'atk' &&
-    (instance.operation === 'convert' || instance.buffKind === 'convert')
-  )
-}
-
-function isRemielSelfMasterySource(sourceKey: string, slotIndex: number) {
-  const fourPiece = remielFourPiecePrefix(slotIndex)
-  const isFourPiece = sourceKey.startsWith(fourPiece) && !sourceKey.includes('-4set-2pc')
-  const isWengine = sourceKey.startsWith(remielWenginePrefix(slotIndex))
-  return { isFourPiece, isWengine, match: isFourPiece || isWengine }
 }
 
 /**
@@ -118,156 +75,37 @@ export function collectRemielSelfRestrictedContributionsFromSources(
   ctx: PanelCalcContext,
   remielSlotIndex: number,
 ): RemielSelfRestrictedContributions {
-  const restrictedCtx: PanelCalcContext = {
-    ...ctx,
-    mainSlotIndex: remielSlotIndex,
-    restrictToSlotIndex: remielSlotIndex,
-    excludeBangboo: true,
-  }
-
-  const interimMods = collectPanelBuffMods({ ...restrictedCtx, skipConvert: true })
-  const interimPanel = applyBuffModsToPanel(externalPanel, interimMods)
-  const panelSourceValues = {
-    external: panelToConvertAttrValues(externalPanel),
-    final: panelToConvertAttrValues(interimPanel),
-  }
-  const sources = collectPanelBuffModSources({
-    ...restrictedCtx,
-    skipConvert: false,
-    panelSourceValues,
-  })
-
-  const skillCtx = ctx.skillContext
-  const rowValues = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
-  // 等级转模来源：效果所属角色 = 蕾米自己（本函数只收集本槽贡献）
-  const selfAgentId = ctx.teamSlots[remielSlotIndex]?.agentId
-  const selfTalentLevels = selfAgentId
-    ? (ctx.skillTalentLevelsByAgent?.[selfAgentId] ?? null)
-    : null
-
-  let atkConvert = 0
-  let masteryBonus = 0
-  const atkItems: string[] = []
-  const masteryItems: string[] = []
-
-  for (const source of sources) {
-    for (const effect of source.effects ?? []) {
-      if (!isEffectEnabled(effect, ctx.buffSelection)) continue
-      if (!effectMatchesContext(effect, skillCtx)) continue
-      if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
-      if (effect.applyProfession?.trim() && effect.applyProfession.trim() !== String(ctx.agents.find(agent => agent.id === selfAgentId)?.profession ?? '').trim()) continue
-
-      const stacks =
-        rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
-      const convertOverride = rowValues?.convertInputs?.[effect.id] ?? ctx.buffSelection?.convertInputs?.[effect.id]
-
-      if (
-        source.key.startsWith(remielAgentPrefix(remielSlotIndex)) &&
-        effect.kind === 'convert' &&
-        effect.stat === 'atk'
-      ) {
-        const value = resolveConvertValue(effect, {}, convertOverride, panelSourceValues, selfTalentLevels)
-        if (!value) continue
-        atkConvert += value
-        atkItems.push(`${source.label} 攻击力转模 ${formatSignedContribution(value)}`)
-        continue
-      }
-
-      const masterySource = isRemielSelfMasterySource(source.key, remielSlotIndex)
-      if (!masterySource.match || effect.stat !== 'mastery') continue
-
-      const value =
-        effect.kind === 'convert'
-          ? resolveConvertValue(effect, {}, convertOverride, panelSourceValues, selfTalentLevels)
-          : resolveEffectBaseValue(effect, stacks)
-      if (!value) continue
-      masteryBonus += value
-      const kindLabel = masterySource.isFourPiece ? '四件套全局精通' : '音擎全局精通'
-      masteryItems.push(`${source.label} ${kindLabel} ${formatSignedContribution(value)}`)
-    }
-  }
-
-  return finishRestrictedContributions(
-    externalPanel,
-    atkConvert,
-    masteryBonus,
-    atkItems,
-    masteryItems,
-  )
+  return collectRemielSelfRestrictedContributions(externalPanel, ctx, remielSlotIndex)
 }
 
 export function collectRemielSelfRestrictedContributions(
   externalPanel: PanelStats,
   ctx: PanelCalcContext,
   remielSlotIndex: number,
+  options?: ComputeFinalPanelOptions,
 ): RemielSelfRestrictedContributions {
   const restrictedCtx: PanelCalcContext = {
     ...ctx,
     mainSlotIndex: remielSlotIndex,
     restrictToSlotIndex: remielSlotIndex,
     excludeBangboo: true,
+    effectSourcePolicy: 'remiel-self-base',
   }
-
-  const interimMods = collectPanelBuffMods({ ...restrictedCtx, skipConvert: true })
-  const interimPanel = applyBuffModsToPanel(externalPanel, interimMods)
-  const panelSourceValues = {
-    external: panelToConvertAttrValues(externalPanel),
-    final: panelToConvertAttrValues(interimPanel),
-  }
-  const plan = compileCollectedBuffs(collectAllBuffEffects(restrictedCtx))
-  const skillCtx = ctx.skillContext
-  const rowValues = rowBuffSelectionOverlay(ctx.rowBuffOverride, ctx.buffSelection)
-  // 等级转模来源：效果所属角色 = 蕾米自己（与上游那条路径同口径；2026-09-17 合并时发现本路径漏传）
-  const selfAgentId = ctx.teamSlots[remielSlotIndex]?.agentId
-  const selfTalentLevels = selfAgentId
-    ? (ctx.skillTalentLevelsByAgent?.[selfAgentId] ?? null)
-    : null
-
-  let atkConvert = 0
-  let masteryBonus = 0
+  const parentTrace = options?.trace ?? ctx.trace
+  const trace = parentTrace?.resolveView?.(externalPanel, restrictedCtx, 'radianceSelfPanel', 'remiel-self-radiance') ?? parentTrace
+  const breakdown = computeFinalPanel(externalPanel, restrictedCtx, trace ? { trace } : undefined)
+  trace?.bindInput?.('remielSelfRadianceCalc', 'inCombatAtk', trace.viewKey)
+  trace?.bindInput?.('remielSelfRadianceCalc', 'inCombatMastery', trace.viewKey)
   const atkItems: string[] = []
   const masteryItems: string[] = []
-
-  for (const instance of plan.instances) {
-    const effect = effectInstanceToBuffEffect(instance)
-    if (!isEffectEnabled(effect, ctx.buffSelection)) continue
-    if (!effectMatchesContext(effect, skillCtx)) continue
-    if (skillCtx && !effectMatchesElement(effect, skillCtx.element)) continue
-    if (effect.applyProfession?.trim() && effect.applyProfession.trim() !== String(ctx.agents.find(agent => agent.id === selfAgentId)?.profession ?? '').trim()) continue
-
-    const stacks =
-      rowValues?.stacksByEffectId?.[effect.id] ?? ctx.buffSelection?.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
-    const convertOverride = rowValues?.convertInputs?.[effect.id] ?? ctx.buffSelection?.convertInputs?.[effect.id]
-    const label = instance.displayName ?? instance.sourceKey
-
-    if (isRemielSelfAtkConvert(instance, remielSlotIndex)) {
-      const value = resolveConvertValue(effect, {}, convertOverride, panelSourceValues, selfTalentLevels)
-      if (!value) continue
-      atkConvert += value
-      atkItems.push(`${label} 攻击力转模 ${formatSignedContribution(value)}`)
-      continue
+  for (const source of breakdown.sources) {
+    if (source.mods.atk) atkItems.push(source.label + ' 攻击力转模 ' + formatSignedContribution(source.mods.atk))
+    if (source.mods.mastery) {
+      const kindLabel = source.key.startsWith('drive-disc-') ? '四件套全局精通' : '音擎全局精通'
+      masteryItems.push(source.label + ' ' + kindLabel + ' ' + formatSignedContribution(source.mods.mastery))
     }
-
-    const masterySource = isRemielSelfMasterySource(instance.sourceKey, remielSlotIndex)
-    if (!masterySource.match || instance.stat !== 'mastery') continue
-
-    const value =
-      effect.kind === 'convert'
-        ? resolveConvertValue(effect, {}, convertOverride, panelSourceValues, selfTalentLevels)
-        : resolveEffectBaseValue(effect, stacks)
-    if (!value) continue
-    masteryBonus += value
-    const kindLabel = masterySource.isFourPiece ? '四件套全局精通' : '音擎全局精通'
-    masteryItems.push(`${label} ${kindLabel} ${formatSignedContribution(value)}`)
   }
-
-  return finishRestrictedContributions(
-    externalPanel,
-    atkConvert,
-    masteryBonus,
-    atkItems,
-    masteryItems,
-  )
+  return finishRestrictedContributions(externalPanel, breakdown.totalMods.atk, breakdown.totalMods.mastery, atkItems, masteryItems)
 }
 
 export function computeRemielSelfRestrictedAtkAndMastery(
@@ -331,6 +169,7 @@ export function resolveRemielSelfRadianceCalcInput(options: {
   remielSlotIndex: number
   agentLevel: number
   isMb: boolean
+  trace?: ComputeFinalPanelOptions['trace']
 }): RemielSelfRadianceCalcInput {
   const restrictedCtx: PanelCalcContext = {
     ...options.panelCtx,
@@ -338,11 +177,17 @@ export function resolveRemielSelfRadianceCalcInput(options: {
     restrictToSlotIndex: options.remielSlotIndex,
     excludeBangboo: true,
   }
+  const trace = options.trace ?? options.panelCtx.trace
+  const restrictedTrace = trace?.resolveView?.(options.externalPanel, restrictedCtx, 'radianceSelfPanel', 'remiel-self-radiance')
   const breakdown = computeRemielSelfInCombatPanel(
     options.externalPanel,
     options.panelCtx,
     options.remielSlotIndex,
+    restrictedTrace ? { trace: restrictedTrace } : undefined,
   )
+  for (const field of ['penRate', 'pen', 'radianceResPen'] as const) {
+    restrictedTrace?.bindInput?.('remielSelfRadianceCalc', field, restrictedTrace.viewKey)
+  }
   // 异化系数：蕾米最终局内面板（含队友/邦布等），与页级 luminous 异化同源口径。
   // scope=mutation 仅在 anomaly 上下文生效，缺省或直伤上下文时强制 anomaly。
   const baseSkillCtx = options.panelCtx.skillContext
@@ -356,15 +201,19 @@ export function resolveRemielSelfRadianceCalcInput(options: {
     isFollowUp: baseSkillCtx?.isFollowUp ?? false,
     anomalySubKind: baseSkillCtx?.anomalySubKind ?? 'radiance',
   }
-  const finalMutationPanel = computeFinalPanel(options.externalPanel, {
+  const mutationContext: PanelCalcContext = {
     ...options.panelCtx,
     mainSlotIndex: options.remielSlotIndex,
     skillContext: mutationSkillContext,
-  }).finalPanel
+  }
+  const mutationTrace = trace?.resolveView?.(options.externalPanel, mutationContext, 'mutationPanel', 'default')
+  const finalMutationPanel = computeFinalPanel(options.externalPanel, mutationContext,
+    mutationTrace ? { trace: mutationTrace } : undefined).finalPanel
+  mutationTrace?.bindInput?.('remielSelfRadianceCalc', 'mutationZone', mutationTrace.viewKey)
   const stats = extractRemielSelfInCombatStats(
     breakdown,
     options.externalPanel,
-    restrictedCtx,
+    { ...restrictedCtx, trace },
     options.remielSlotIndex,
     finalMutationPanel,
   )
@@ -374,10 +223,14 @@ export function resolveRemielSelfRadianceCalcInput(options: {
    * 否则蕾米自身耀变的抗性区吃不到队友抗性穿透（用户口径 2026-09-16）。
    * 其余字段（攻击/精通/穿透/耀变抗穿等）仍取本槽受限面板（上方 stats）。
    */
-  const fullPanelResPen = computeFinalPanel(options.externalPanel, {
+  const fullContext: PanelCalcContext = {
     ...options.panelCtx,
     mainSlotIndex: options.remielSlotIndex,
-  }).finalPanel.resPen
+  }
+  const fullTrace = trace?.resolveView?.(options.externalPanel, fullContext, 'powerProviderPanel', 'default')
+  const fullPanelResPen = computeFinalPanel(options.externalPanel, fullContext,
+    fullTrace ? { trace: fullTrace } : undefined).finalPanel.resPen
+  fullTrace?.bindInput?.('remielSelfRadianceCalc', 'resPen', fullTrace.viewKey)
   return {
     agentLevel: options.agentLevel,
     inCombatAtk: stats.inCombatAtk,

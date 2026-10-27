@@ -35,13 +35,9 @@ import {
   collectBlockEntriesFromPack,
   collectEffectsFromPack,
   countTeamProfession,
-  effectMatchesContext,
-  effectMatchesElement,
   effectMatchesTeamProfessionGate,
-  effectTargetsSkill,
   expandBuffOverrideToEffectIds,
   flatModsToEffects,
-  getEffectSkillTargets,
   isEffectEnabled,
   resolveBuffEffectParameters,
   resolveEffectsToMods,
@@ -575,6 +571,7 @@ const PANEL_STAT_ATTR_KEYS: PanelStatAttrKey[] = [
 export type PanelSourceValues = {
   external?: Partial<Record<CharacterAttrKey, number>>
   final?: Partial<Record<CharacterAttrKey, number>>
+  viewKey?: string
 }
 
 export interface PanelCalcContext {
@@ -635,6 +632,8 @@ export interface PanelCalcContext {
   environmentBuffs?: EnvironmentBuffEntry[]
   /** 跳过邦布 Buff（默认随 restrictToSlotIndex 启用） */
   excludeBangboo?: boolean
+  /** 本人耀变基础的既有来源资格；共同条件仍交给效果判定循环。 */
+  effectSourcePolicy?: 'remiel-self-base'
   /**
    * 按需追踪（Spec §2.2 第 2 项）：设置后 `computePanelStages` 把同一份 trace 透传给
    * 正式包解析，逐效果回调贡献；不设置时不生成任何记录。
@@ -644,6 +643,7 @@ export interface PanelCalcContext {
   traceStage?: BuffEffectContribution['stage']
   /** 追踪时的前置排除映射（行级禁用 / 来源政策排除），由候选判定方给出 */
   traceExcluded?: Readonly<Record<string, 'disabled' | 'source-excluded'>>
+  traceIdentities?: ReadonlyMap<string, CollectedEffect>
 }
 
 /** 从增益 sourceKey 解析队伍槽位索引（agent / 音擎 / 驱动盘） */
@@ -797,20 +797,25 @@ function buildPanelSourceValuesForSlot(
      * （那些路径的 skipConvert 为 false，源值照旧从地图取）。
      */
     panelSourceValuesBySlot: undefined,
-    // 源值探针不是「某个视图的正式求值」：切断追踪，避免同一候选在探针里被记录第二遍
+    // 转模来源先算非转模快照；来源资格不反向限制用来折算的基数。
+    effectSourcePolicy: undefined,
     trace: undefined,
     traceExcluded: undefined,
     traceStage: undefined,
   }
+  const sourceTrace = ctx.trace?.resolveView?.(externalPanel, slotCtx, 'convertSourcePanel', ctx.trace.policy)
+  if (sourceTrace) slotCtx.trace = sourceTrace
   const baseAnomalyControl = resolveBaseAnomalyControl(slotCtx)
   const baseEnergyRegen = resolveBaseEnergyRegen(slotCtx)
-  const interimMods = collectPanelBuffMods(slotCtx)
-  const interimPanel = applyBuffModsToPanel(externalPanel, interimMods, {
+  const snapshot = sourceTrace ? resolvePreConvertSnapshot(externalPanel, slotCtx) : undefined
+  const interimMods = snapshot?.mods ?? collectPanelBuffMods(slotCtx)
+  const interimPanel = snapshot?.preConvertPanel ?? applyBuffModsToPanel(externalPanel, interimMods, {
     baseAnomalyControl,
     baseEnergyRegen,
   })
   const extras = resolveConvertAttrExtras(slotIndex, ctx)
   return {
+    ...(sourceTrace ? { viewKey: sourceTrace.viewKey } : {}),
     external: panelToConvertAttrValues(externalPanel, { ...extras, pierceMod: 0 }),
     final: panelToConvertAttrValues(interimPanel, {
       ...extras,
@@ -1133,6 +1138,7 @@ export interface PanelBuffBreakdown {
   combatMods: CombatBuffMods
   finalPanel: PanelStats
   sources: BuffModSource[]
+  effectContributions?: BuffEffectContribution[]
 }
 
 /** 一条效果在本次判定里的终态（计算链路收敛 Spec §3.1）。 */
@@ -1167,6 +1173,7 @@ export interface ResolvedEffectParameters {
     value: number
     source: 'manual' | 'external' | 'final' | 'skillLevel' | 'default'
     stage: 'manual' | 'external' | 'preConvert' | 'skillLevel'
+    sourceViewKey?: string
   }
 }
 
@@ -1184,6 +1191,7 @@ export interface BuffEffectContribution extends ResolvedEffectRecord {
   sourceKey: string
   blockId: string
   providerSlot: number | null
+  providerName?: string
   sourceSlot: number | null
   beneficiarySlot: number
   policy: PanelViewPolicyId
@@ -1210,7 +1218,7 @@ export type EventEffectUseView =
 
 export interface DamageInputUsage {
   inputKey: Exclude<keyof DamageCalcInput, 'onInputUsed' | 'eventDamageType' | 'eventCritMode'>
-  field: keyof PanelStats | keyof CombatBuffMods | keyof RemielSelfRadianceCalcInput
+  field: keyof PanelStats | BuffStatKey | keyof RemielSelfRadianceCalcInput
   resultKey: keyof DamageCalcResult
   usedZones: DamageZoneId[]
 }
@@ -1271,7 +1279,24 @@ export interface ComputeFinalPanelOptions {
     viewKey: string
     policy: PanelViewPolicyId
     onContribution: (item: BuffEffectContribution) => void
+    resolveView?: (
+      external: PanelStats,
+      context: PanelCalcContext,
+      usedView: EventEffectUseView,
+      policy?: PanelViewPolicyId,
+    ) => NonNullable<ComputeFinalPanelOptions['trace']>
+    preConvertCache?: Map<string, PanelPreConvertSnapshot>
+    panelCache?: Map<string, PanelBuffBreakdown>
+    bindInput?: (inputKey: DamageInputUsage['inputKey'], field: DamageInputUsage['field'], viewKey: string) => void
   }
+}
+
+export interface PanelPreConvertSnapshot {
+  externalPanel: PanelStats
+  preConvertPanel: PanelStats
+  mods: BuffStatModifiers
+  sources: BuffModSource[]
+  effectContributions?: BuffEffectContribution[]
 }
 
 /** 唯一编排：局外 → 转模前 → 最终。`computeFinalPanel` / `runPanelPipeline` 都走这里。 */
@@ -1379,13 +1404,6 @@ function zeroSourceValuesFor(effects: readonly BuffEffect[]): PanelSourceValues 
   return { external: { ...zero }, final: { ...zero } }
 }
 
-/** 从收集期效果 id 的 `来源::块::效果` 结构解析来源身份（额外 Buff 无此前缀） */
-function parseEffectIdentity(effectId: string): { sourceKey: string; blockId: string } {
-  const parts = effectId.split('::')
-  if (parts.length < 3) return { sourceKey: '', blockId: '' }
-  return { sourceKey: parts[0] ?? '', blockId: parts[1] ?? '' }
-}
-
 function sourceOptionsForCollectedEffect(
   item: CollectedEffect,
   ctx: PanelCalcContext,
@@ -1437,6 +1455,10 @@ export function collectEventCandidateEffects(ctx: PanelCalcContext): {
   for (const entry of build.entries) {
     if (!entry.applicableSlots.includes(ctx.mainSlotIndex)) continue
     const sameSlotView = entry.providerSlot === ctx.mainSlotIndex ? entry : applyTeammateView(entry)
+    if (!isEffectSourceAllowed(entry, ctx.mainSlotIndex, ctx.effectSourcePolicy)) {
+      excluded.push({ item: sameSlotView, reason: 'source-excluded' })
+      continue
+    }
     if (restrict != null) {
       if (entry.providerSlot != null && entry.providerSlot !== restrict) {
         excluded.push({ item: sameSlotView, reason: 'source-excluded' })
@@ -1538,19 +1560,22 @@ function resolvePackMods(
     // 只有带追踪时才分配记录对象；数值路径完全不受影响
     onEffectResolved: trace
       ? (record) => {
-          // 来源身份优先用收集器给的；缺失时回落到效果 id 自带的 `来源::块::效果` 结构，
-          // 不能留空 —— sourceKey+blockId 是记录身份的一部分（Spec §3.2 第 3 项）
-          const identity = parseEffectIdentity(record.effectId)
+          // 来源身份来自收集器的规范条目，不能由运行期效果 id 猜测。
+          const identity = ctx.traceIdentities?.get(record.effectId)
           trace.onContribution({
             ...record,
             viewKey: trace.viewKey,
             policy: trace.policy,
-            sourceKey: traceSource?.sourceKey ?? identity.sourceKey,
-            blockId: traceSource?.blockId ?? identity.blockId,
-            providerSlot: traceSource?.providerSlot ?? null,
+            sourceKey: identity?.sourceKey ?? traceSource?.sourceKey ?? '',
+            blockId: identity?.blockId ?? traceSource?.blockId ?? '',
+            providerSlot: identity?.providerSlot ?? traceSource?.providerSlot ?? null,
+            providerName: identity?.providerName,
             sourceSlot: sourceSlotIndex ?? null,
             beneficiarySlot: ctx.mainSlotIndex,
             stage,
+            ...(record.convertBase?.stage === 'preConvert' && panelSourceValues?.viewKey
+              ? { convertBase: { ...record.convertBase, sourceViewKey: panelSourceValues.viewKey } }
+              : {}),
           })
         }
       : undefined,
@@ -1572,8 +1597,9 @@ export function resolveCollectedEffectParameters(
   const isExtraPack = item.effect.extraGain === true
   const selection = isExtraPack ? null : ctx.buffSelection
   const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
-  let panelSourceValues = ctx.panelSourceValues
-  if (sourceSlotIndex != null && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
+  const sourceAvailable = sourceSlotIndex != null && Boolean(ctx.teamSlots[sourceSlotIndex]?.agentId)
+  let panelSourceValues = isExtraPack && !sourceAvailable ? zeroSourceValuesFor([item.effect]) : ctx.panelSourceValues
+  if (sourceAvailable && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
     panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
   }
   const slotAgentId = sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
@@ -2221,17 +2247,35 @@ export function isEntryDisabledByRowOverride(
  * 四条筛规则都照抄现状语义（施工规格 §4）：适用槽位集合 / 2 件套的「只在当主角时」/
  * `restrictToSlotIndex`（无主条目里**场地保留、邦布排除**）/ `excludeBangboo`（按 `bangboo` 前缀）。
  */
+function isEffectSourceAllowed(
+  item: CollectedEffect,
+  slotIndex: number,
+  policy: PanelCalcContext['effectSourcePolicy'],
+): boolean {
+  if (policy !== 'remiel-self-base') return true
+  if (item.effect.stat === 'atk') {
+    return item.effect.kind === 'convert' && item.sourceKey.startsWith(`agent-${slotIndex}-`)
+  }
+  if (item.effect.stat === 'mastery') {
+    return item.sourceKey.startsWith(`wengine-${slotIndex}-`) ||
+      (item.sourceKey.startsWith(`drive-disc-${slotIndex}-4set`) && !item.sourceKey.includes('-4set-2pc'))
+  }
+  return false
+}
+
 export function selectEntriesForSlot(input: {
   build: BuffBuild
   slotIndex: number
   rowBuffOverride?: FlowBuffOverride | null
   restrictToSlotIndex?: number | null
   excludeBangboo?: boolean
+  effectSourcePolicy?: PanelCalcContext['effectSourcePolicy']
 }): CollectedEffect[] {
   const restrict = input.restrictToSlotIndex ?? null
   const out: CollectedEffect[] = []
   for (const entry of input.build.entries) {
     if (!entry.applicableSlots.includes(input.slotIndex)) continue
+    if (!isEffectSourceAllowed(entry, input.slotIndex, input.effectSourcePolicy)) continue
     if (restrict != null) {
       if (entry.providerSlot != null && entry.providerSlot !== restrict) continue
       if (entry.sourceKey.startsWith('bangboo')) continue
@@ -2260,6 +2304,7 @@ export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] 
     rowBuffOverride: ctx.rowBuffOverride ?? null,
     restrictToSlotIndex: ctx.restrictToSlotIndex ?? null,
     excludeBangboo: ctx.excludeBangboo ?? false,
+    effectSourcePolicy: ctx.effectSourcePolicy,
   })
 }
 
@@ -2502,6 +2547,7 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
     bangbooKey,
     String(ctx.mainSlotIndex),
     String(ctx.restrictToSlotIndex ?? ''),
+    ctx.effectSourcePolicy ?? '',
     stringifyKeyPart(ctx.extraGains ?? null),
     stringifyKeyPart(ctx.buffSelection ?? null),
     stringifyKeyPart(ctx.skillContext ?? null),
@@ -2669,6 +2715,7 @@ function makeCatalogEntryFromSources(
 }
 
 export function collectPanelBuffModSources(ctx: PanelCalcContext): BuffModSource[] {
+  if (ctx.trace) return collectPanelBuffSourcesTraced(ctx)
   // 行级例外已并入缓存键（`rowBuffOverrideKey`）：同一例外命中缓存，不同例外各自成键，
   // 因此这里**不再**需要绕开目录缓存。
   const key = buildBuffCatalogKey(ctx)
@@ -2824,9 +2871,18 @@ export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
  * 前置排除的候选按包键并入同一判定循环，由 `excludedByEffectId` 短路报告状态。
  */
 function collectPanelBuffModsTraced(ctx: PanelCalcContext): BuffStatModifiers {
+  return mergeModsFromSources(collectPanelBuffSourcesTraced(ctx))
+}
+
+function collectPanelBuffSourcesTraced(ctx: PanelCalcContext): BuffModSource[] {
   const excludedByGroupKey = new Map<string, { effects: BuffEffect[]; slotIndex: number | null }>()
   const excludedMap: Record<string, 'disabled' | 'source-excluded'> = {}
-  for (const entry of collectEventCandidateEffects(ctx).excluded) {
+  const candidates = collectEventCandidateEffects(ctx)
+  const traceIdentities = new Map([
+    ...candidates.items.map(item => [item.effect.id, item] as const),
+    ...candidates.excluded.map(({ item }) => [item.effect.id, item] as const),
+  ])
+  for (const entry of candidates.excluded) {
     const groupKey = entry.item.sourceKey.startsWith('bangboo')
       ? 'bangboo'
       : `${entry.item.sourceKey}-${entry.item.blockId}`
@@ -2839,12 +2895,12 @@ function collectPanelBuffModsTraced(ctx: PanelCalcContext): BuffStatModifiers {
       })
     excludedMap[entry.item.effect.id] = entry.reason
   }
-  const ctxForResolve: PanelCalcContext = { ...ctx, traceExcluded: excludedMap }
+  const ctxForResolve: PanelCalcContext = { ...ctx, traceExcluded: excludedMap, traceIdentities }
   const sources = collectPanelBuffModSourcesUncached(ctxForResolve, {
     keepEmpty: true,
     excludedByGroupKey,
   })
-  return mergeModsFromSources(sources)
+  return sources
 }
 
 export function applyBuffModsToPanel(
@@ -3008,13 +3064,6 @@ const RELEASE_MULT_STATS = new Set<BuffStatKey>([
   'anomalyReleaseMultFactor',
 ])
 
-function effectMatchesReleaseMultElement(effect: BuffEffect, triggerElement?: string): boolean {
-  const filter = effect.elementFilter
-  if (!filter || filter === 'all') return true
-  if (!triggerElement) return false
-  return filter.includes(triggerElement)
-}
-
 /** 异放结算上下文：子类固定异放，元素参数由事件的共享解析入口提供。 */
 function buildReleaseMultSkillContext(
   ctx: PanelCalcContext,
@@ -3030,108 +3079,165 @@ function buildReleaseMultSkillContext(
   }
 }
 
-function collectReleaseMultEntries(
-  ctx: PanelCalcContext,
-  skillCtx: SkillCalcContext,
-  triggerElement: string | undefined,
-  options?: { requireSkillTarget?: boolean },
-): CollectedEffect[] {
-  const collected = collectAllBuffEffects({ ...ctx, skillContext: skillCtx })
-  const releaseMultEntries: CollectedEffect[] = []
-  for (const item of collected) {
-    const effect = item.effect
-    if (!RELEASE_MULT_STATS.has(effect.stat)) continue
-    // 行级增量必须限定到本招式：只用 anomalyRelease 作用域会让同角色的多个异放块互相串味。
-    // 无招式限定（skillTargets 为空）的通用转模对每条异放都生效，不因「没有目标」被丢掉。
-    if (options?.requireSkillTarget) {
-      const targets = getEffectSkillTargets(effect)
-      if (targets.length && !effectTargetsSkill(effect, skillCtx)) continue
-    }
-    if (!isEffectEnabled(effect, ctx.buffSelection)) continue
-    if (!effectMatchesContext(effect, skillCtx)) continue
-    if (!effectMatchesReleaseMultElement(effect, triggerElement)) continue
-    if (!effectMatchesElement(effect, triggerElement)) continue
-    if (effect.teamProfession?.trim()) {
-      const count = countTeamProfession(ctx.teamSlots, ctx.agents, effect.teamProfession.trim())
-      if (!effectMatchesTeamProfessionGate(effect, count)) continue
-    }
-    releaseMultEntries.push(item)
-  }
-  return releaseMultEntries
-}
-
-function resolveReleaseMultMods(
-  entries: CollectedEffect[],
-  ctx: PanelCalcContext,
-  skillCtx: SkillCalcContext,
-  triggerElement?: string,
-): BuffStatModifiers {
-  // 保留来源条目：额外 Buff 的来源槽位独立于 providerSlot，不能把它们并成无主组。
+function resolveReleaseMultMods(ctx: PanelCalcContext, skillCtx: SkillCalcContext, onlyConvert = false): { mods: BuffStatModifiers; convertMods: BuffStatModifiers } {
+  const candidates = collectEventCandidateEffects({ ...ctx, skillContext: skillCtx })
+  const qualifies = (item: CollectedEffect) => RELEASE_MULT_STATS.has(item.effect.stat) && (!onlyConvert || item.effect.kind === 'convert')
+  const items = candidates.items.filter(qualifies)
+  const excluded = candidates.excluded.filter(({ item }) => qualifies(item))
+  const all = ctx.trace ? [...items, ...excluded.map(entry => entry.item)] : items
   const bySource = new Map<string, CollectedEffect[]>()
-  for (const item of entries) {
-    const key = `${item.sourceKey}-${item.blockId}`
-    const list = bySource.get(key)
-    if (list) list.push(item)
+  for (const item of all) {
+    const key = item.sourceKey + '-' + item.blockId
+    const group = bySource.get(key)
+    if (group) group.push(item)
     else bySource.set(key, [item])
   }
-  let mods = createEmptyBuffStatModifiers()
-  for (const items of bySource.values()) {
-    const first = items[0]!
-    const effects = items.map((item) => item.effect)
-    const providerSlot = first.providerSlot
-    mods = mergeBuffStatModifiers(
-      mods,
-      resolvePackModsViaEffectSpec(
-        effects,
-        providerSlot == null || providerSlot === ctx.mainSlotIndex,
-        { ...ctx, skillContext: { ...skillCtx, element: triggerElement } },
-        providerSlot ?? undefined,
-        sourceOptionsForCollectedEffect(first, ctx, effects),
-      ),
-    )
+  const resolveContext: PanelCalcContext = { ...ctx, skillContext: skillCtx,
+    traceIdentities: new Map(all.map(item => [item.effect.id, item])),
+    traceExcluded: Object.fromEntries(excluded.map(({item,reason}) => [item.effect.id,reason])),
   }
-  return mods
+  let mods = createEmptyBuffStatModifiers()
+  let convertMods = createEmptyBuffStatModifiers()
+  for (const group of bySource.values()) for (const convert of [false, true]) {
+    const selected = group.filter(item => (item.effect.kind === 'convert') === convert)
+    if (!selected.length) continue
+    const allowed = selected.filter(item => !resolveContext.traceExcluded?.[item.effect.id])
+    const effects = allowed.map(item => item.effect)
+    const first = selected[0]!
+    const sourceOptions = { ...sourceOptionsForCollectedEffect(first, resolveContext, effects),
+      traceExcludedEffects: selected.filter(item => resolveContext.traceExcluded?.[item.effect.id]).map(item => item.effect),
+    }
+    const resolve = effects.length ? resolvePackModsViaEffectSpec : resolvePackMods
+    const result = resolve(effects, first.providerSlot == null || first.providerSlot === ctx.mainSlotIndex,
+      resolveContext, first.providerSlot ?? undefined, sourceOptions)
+    mods = mergeBuffStatModifiers(mods, result)
+    if (convert) convertMods = mergeBuffStatModifiers(convertMods, result)
+  }
+  return { mods, convertMods }
 }
 
-/**
- * 按异放结算上下文汇总异放倍率 / 倍率乘算修正，写到给定局外面板上。
- * 调用方应传入触发者面板（非主 C、非强度提供者）。
- */
+export function resolveAnomalyReleaseMultEvaluation(
+  externalPanel: PanelStats,
+  ctx: PanelCalcContext,
+  triggerElement?: string,
+): { fields: Pick<PanelStats, 'anomalyReleaseMult' | 'anomalyReleaseMultFactor'>; convertMods: BuffStatModifiers } {
+  const skillCtx = buildReleaseMultSkillContext(ctx, triggerElement)
+  const { mods, convertMods } = resolveReleaseMultMods(ctx, skillCtx)
+  return {
+    fields: {
+      anomalyReleaseMult: externalPanel.anomalyReleaseMult + mods.anomalyReleaseMult,
+      anomalyReleaseMultFactor: combineMultFactorPercent(externalPanel.anomalyReleaseMultFactor, mods.anomalyReleaseMultFactor),
+    },
+    convertMods,
+  }
+}
+
 export function resolveAnomalyReleaseMultFields(
   externalPanel: PanelStats,
   ctx: PanelCalcContext,
   triggerElement?: string,
 ): Pick<PanelStats, 'anomalyReleaseMult' | 'anomalyReleaseMultFactor'> {
-  const skillCtx = buildReleaseMultSkillContext(ctx, triggerElement)
-  const mods = resolveReleaseMultMods(
-    collectReleaseMultEntries(ctx, skillCtx, triggerElement),
-    ctx,
-    skillCtx,
-    triggerElement,
-  )
-
-  return {
-    anomalyReleaseMult: externalPanel.anomalyReleaseMult + mods.anomalyReleaseMult,
-    anomalyReleaseMultFactor: combineMultFactorPercent(
-      externalPanel.anomalyReleaseMultFactor,
-      mods.anomalyReleaseMultFactor,
-    ),
-  }
+  return resolveAnomalyReleaseMultEvaluation(externalPanel, ctx, triggerElement).fields
 }
 
-/**
- * 行级异放倍率覆盖（招式自带基础倍率）之外要补的「技能等级转模」增量。
- * 只取 `kind === 'convert'` 且限定到本招式的效果；固定值视为与招式基础倍率重复，不计。
- */
-export function resolveAnomalyReleaseSkillConvertMods(
+export function resolveAnomalyReleaseSkillConvertMods(ctx: PanelCalcContext, triggerElement?: string): BuffStatModifiers {
+  return resolveReleaseMultMods(ctx, buildReleaseMultSkillContext(ctx, triggerElement), true).convertMods
+}
+
+function resolvePreConvertSnapshot(externalPanel: PanelStats, ctx: PanelCalcContext): PanelPreConvertSnapshot {
+  const trace = ctx.trace
+  const cached = trace?.preConvertCache?.get(trace.viewKey)
+  if (cached) return cached
+  const effectContributions: BuffEffectContribution[] = []
+  const sources = collectPanelBuffModSources({
+    ...ctx,
+    trace: trace ? { ...trace, onContribution(item) { effectContributions.push(item); trace.onContribution(item) } } : undefined,
+    skipConvert: true,
+    panelSourceValuesBySlot: undefined,
+  })
+  const mods = mergeModsFromSources(sources)
+  if (trace) {
+    const numericContext = { ...ctx, skipConvert: true }
+    rememberBuffCatalogEntry(buildBuffCatalogKey(numericContext), makeCatalogEntryFromSources(sources, numericContext))
+  }
+  const snapshot = {
+    externalPanel,
+    preConvertPanel: applyBuffModsToPanel(externalPanel, mods, {
+      baseAnomalyControl: resolveBaseAnomalyControl(ctx),
+      baseEnergyRegen: resolveBaseEnergyRegen(ctx),
+    }),
+    mods,
+    sources,
+    ...(trace ? { effectContributions } : {}),
+  }
+  trace?.preConvertCache?.set(trace.viewKey, snapshot)
+  return snapshot
+}
+
+/** 同一份正式阶段结果同时供数值、来源说明与转模依赖读取。 */
+function computeTracedPanelStages(
+  rawExternalPanel: PanelStats,
   ctx: PanelCalcContext,
-  triggerElement?: string,
-): BuffStatModifiers {
-  const skillCtx = buildReleaseMultSkillContext(ctx, triggerElement)
-  const entries = collectReleaseMultEntries(ctx, skillCtx, triggerElement, {
-    requireSkillTarget: true,
-  }).filter((item) => item.effect.kind === 'convert')
-  return resolveReleaseMultMods(entries, ctx, skillCtx, triggerElement)
+  options?: ComputeFinalPanelOptions,
+): PanelStages {
+  const externalPanel = fillPanelStatsDefaults(rawExternalPanel)
+  const parentTrace = (options?.trace ?? ctx.trace)!
+  const trace = parentTrace.resolveView?.(externalPanel, ctx, 'ownerPanel', parentTrace.policy) ?? parentTrace
+  const contributions: BuffEffectContribution[] = []
+  const sourceCtx: PanelCalcContext = { ...ctx, trace: {
+    ...trace,
+    onContribution(item) { contributions.push(item); trace.onContribution(item) },
+  } }
+  const pre = resolvePreConvertSnapshot(externalPanel, sourceCtx)
+  if (!contributions.length) contributions.push(...pre.effectContributions ?? [])
+  // 命中阶段缓存时原始记录已留在事件收集器；局部快照仍保留该阶段的身份。
+  const panelSourceValuesBySlot = buildPanelSourceValuesBySlotMap(sourceCtx, externalPanel)
+  const extras = resolveConvertAttrExtras(ctx.mainSlotIndex, ctx)
+  const fullCtx: PanelCalcContext = {
+    ...sourceCtx,
+    skipConvert: false,
+    panelSourceValuesBySlot,
+    panelSourceValues: {
+      external: panelToConvertAttrValues(externalPanel, { ...extras, pierceMod: 0 }),
+      final: panelToConvertAttrValues(pre.preConvertPanel, { ...extras, pierceMod: pre.mods.pierce }),
+      viewKey: trace.viewKey,
+    },
+  }
+  const candidates = collectEventCandidateEffects(fullCtx)
+  fullCtx.traceIdentities = new Map([
+    ...candidates.items.map(item => [item.effect.id, item] as const),
+    ...candidates.excluded.map(({ item }) => [item.effect.id, item] as const),
+  ])
+  fullCtx.traceExcluded = Object.fromEntries(candidates.excluded.map(({ item, reason }) => [item.effect.id, reason]))
+  const sources = pre.sources.map(source => {
+    const effects = (source.effects ?? []).filter(effect => effect.kind === 'convert')
+    const excluded = source.sourceOptions?.traceExcludedEffects?.filter(effect => effect.kind === 'convert') ?? []
+    if (!effects.length && !excluded.length) return source
+    const item = fullCtx.traceIdentities?.get((effects[0] ?? excluded[0])!.id)
+    const providerSlot = item?.providerSlot ?? undefined
+    const resolve = effects.length ? resolvePackModsViaEffectSpec : resolvePackMods
+    const mods = resolve(effects, providerSlot == null || providerSlot === ctx.mainSlotIndex, fullCtx, providerSlot,
+      { ...source.sourceOptions, traceExcludedEffects: excluded })
+    return { ...source, mods: mergeBuffStatModifiers(source.mods, mods) }
+  })
+  const totalMods = mergeModsFromSources(sources)
+  const finalPanel = applyBuffModsToPanel(externalPanel, totalMods, {
+    baseAnomalyControl: resolveBaseAnomalyControl(ctx),
+    baseEnergyRegen: resolveBaseEnergyRegen(ctx),
+  })
+  const combatMods = extractCombatMods(totalMods)
+  applyFengYuSharpenCritMods(combatMods, fullCtx)
+  return {
+    externalPanel,
+    preConvertPanel: pre.preConvertPanel,
+    finalBreakdown: {
+      totalMods,
+      combatMods,
+      finalPanel: { ...finalPanel, sharpenCritDmgBonus: combatMods.sharpenCritDmgBonus },
+      sources,
+      effectContributions: contributions,
+    },
+  }
 }
 
 export function computePanelStages(
@@ -3139,6 +3245,7 @@ export function computePanelStages(
   ctx: PanelCalcContext,
   options?: ComputeFinalPanelOptions,
 ): PanelStages {
+  if (options?.trace ?? ctx.trace) return computeTracedPanelStages(rawExternalPanel, ctx, options)
   const externalPanel = fillPanelStatsDefaults(rawExternalPanel)
   const includeDetails = options?.includeDetails !== false
   const liveIndex = resolveLiveExternalSlotIndex(ctx)
@@ -3223,7 +3330,13 @@ export function computeFinalPanel(
   ctx: PanelCalcContext,
   options?: ComputeFinalPanelOptions,
 ): PanelBuffBreakdown {
-  return computePanelStages(rawExternalPanel, ctx, options).finalBreakdown
+  const parentTrace = options?.trace ?? ctx.trace
+  const trace = parentTrace?.resolveView?.(fillPanelStatsDefaults(rawExternalPanel), ctx, 'ownerPanel', parentTrace.policy) ?? parentTrace
+  const cached = trace?.panelCache?.get(trace.viewKey)
+  if (cached) return cached
+  const result = computePanelStages(rawExternalPanel, ctx, trace ? { ...options, trace } : options).finalBreakdown
+  trace?.panelCache?.set(trace.viewKey, result)
+  return result
 }
 
 export function buildDefaultBuffSelection(

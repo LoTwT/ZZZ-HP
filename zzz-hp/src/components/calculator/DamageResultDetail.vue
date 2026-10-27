@@ -368,6 +368,17 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const panel = useProducerPanel ? props.producerFinalPanel! : ownerPanel
   const external = useProducerPanel ? props.producerExternalPanel! : ownerExternal
   const sources = useProducerPanel ? props.producerSources! : ownerSources
+  const resistanceUsage = props.damageInputUsages?.find(usage =>
+    usage.field === 'resPen' && usage.resultKey === 'resistanceMultiplier' && usage.usedView !== 'convertSourcePanel')
+  const resistanceView = resistanceUsage?.usedView === 'anomalyTriggerPanel'
+    ? { panel: props.bonusFinalPanel ?? ownerPanel, external: props.bonusExternalPanel ?? ownerExternal, sources: props.bonusSources ?? ownerSources }
+    : resistanceUsage?.usedView === 'powerProviderPanel'
+      ? { panel: props.producerFinalPanel ?? ownerPanel, external: props.producerExternalPanel ?? ownerExternal, sources: props.producerSources ?? ownerSources }
+      : resistanceUsage?.usedView === 'radianceSelfPanel'
+        ? { panel: props.remielSelfFinalPanel ?? ownerPanel, external: props.remielSelfExternalPanel ?? ownerExternal, sources: props.remielSelfSources ?? ownerSources }
+        : resistanceUsage
+          ? { panel: ownerPanel, external: ownerExternal, sources: ownerSources }
+          : { panel, external, sources }
 
   /** 某视图实际被采用的字段（Spec §2.5：详情只读实际采用，不再按伤害子类推断） */
   const usageFieldsOn = (view: string) =>
@@ -444,7 +455,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
   const remielPanelForSelf = props.remielSelfFinalPanel ?? (remielSelfActive ? props.producerFinalPanel ?? panel : panel)
   const remielSourcesForSelf = props.remielSelfSources ?? []
   const remielResPenTotal =
-    (remielPanelForSelf.resPen ?? 0) + (remielPanelForSelf.radianceResPen ?? 0)
+    (resistanceView.panel.resPen ?? 0) + (remielPanelForSelf.radianceResPen ?? 0)
   const remielEnemyRes =
     remielSelfActive && p.remielSelfResistanceElement
       ? resolveEnemyResistanceForElement(
@@ -588,15 +599,15 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         },
         ...buildStatSourceGroups({
           keys: ['resPen'],
-          externalPanel: external,
-          sources,
-          finalValues: { resPen: panel.resPen },
+          externalPanel: resistanceView.external,
+          sources: resistanceView.sources,
+          finalValues: { resPen: resistanceView.panel.resPen },
         }),
       ],
-      `抗性区 1 - ${formatFormulaNumber(p.enemyResistance)} + ${formatFormulaNumber(panel.resPen, 2)}% = ${formatFormulaNumber(p.resistanceMultiplier)}`,
+      `抗性区 1 - ${formatFormulaNumber(p.enemyResistance)} + ${formatFormulaNumber(resistanceView.panel.resPen, 2)}% = ${formatFormulaNumber(p.resistanceMultiplier)}`,
       buildResistanceZoneProcessItems({
         enemyResistance: p.enemyResistance,
-        resPen: panel.resPen,
+        resPen: resistanceView.panel.resPen,
         zone: p.resistanceMultiplier,
       }),
     ),
@@ -611,8 +622,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
             props.show === 'anomaly'
               ? ['vulnerable', 'anomalyVulnerable', 'dmgReduction', 'anomalyDmgReduction']
               : ['vulnerable', 'directVulnerable', 'dmgReduction', 'directDmgReduction'],
-          externalPanel: external,
-          sources,
+          externalPanel: ownerExternal,
+          sources: ownerSources,
           externalKeyMap: {
             vulnerable: null,
             directVulnerable: null,
@@ -628,7 +639,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       buildEnemyCombatProcessItems({
         baseLabel: '易伤基础',
         baseValue: enemy.vulnerableMultiplier,
-        sources,
+        sources: ownerSources,
         buffKeys:
           props.show === 'anomaly'
             ? ['vulnerable', 'anomalyVulnerable']
@@ -649,8 +660,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         },
         ...buildStatSourceGroups({
           keys: ['vulnerable', 'directVulnerable', 'dmgReduction', 'directDmgReduction'],
-          externalPanel: external,
-          sources,
+          externalPanel: ownerExternal,
+          sources: ownerSources,
           externalKeyMap: {
             vulnerable: null,
             directVulnerable: null,
@@ -664,7 +675,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       buildEnemyCombatProcessItems({
         baseLabel: '易伤基础',
         baseValue: enemy.vulnerableMultiplier,
-        sources,
+        sources: ownerSources,
         buffKeys: ['vulnerable', 'directVulnerable'],
         subtractKeys: ['dmgReduction', 'directDmgReduction'],
         finalValue: p.directVulnerableMultiplier,
@@ -679,8 +690,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         },
         ...buildStatSourceGroups({
           keys: ['vulnerable', 'anomalyVulnerable', 'dmgReduction', 'anomalyDmgReduction'],
-          externalPanel: external,
-          sources,
+          externalPanel: ownerExternal,
+          sources: ownerSources,
           externalKeyMap: {
             vulnerable: null,
             anomalyVulnerable: null,
@@ -694,7 +705,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       buildEnemyCombatProcessItems({
         baseLabel: '易伤基础',
         baseValue: enemy.vulnerableMultiplier,
-        sources,
+        sources: ownerSources,
         buffKeys: ['vulnerable', 'anomalyVulnerable'],
         subtractKeys: ['dmgReduction', 'anomalyDmgReduction'],
         finalValue: p.anomalyVulnerableMultiplier,
@@ -709,8 +720,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         },
         ...buildStatSourceGroups({
           keys: ['globalStaggerVulnerable', 'staggerVulnerable', 'staggerVulnerableOnly'],
-          externalPanel: external,
-          sources,
+          externalPanel: ownerExternal,
+          sources: ownerSources,
           externalKeyMap: {
             globalStaggerVulnerable: null,
             staggerVulnerable: null,
@@ -723,7 +734,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       buildEnemyCombatProcessItems({
         baseLabel: '失衡易伤基础',
         baseValue: enemy.staggerMultiplier,
-        sources,
+        sources: ownerSources,
         buffKeys: ['globalStaggerVulnerable', 'staggerVulnerable', 'staggerVulnerableOnly'],
         finalValue: p.staggerMultiplier,
         resultLabel: '失衡易伤区',
@@ -798,8 +809,8 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
         },
         ...buildStatSourceGroups({
           keys: ['special'],
-          externalPanel: external,
-          sources,
+          externalPanel: ownerExternal,
+          sources: ownerSources,
           externalKeyMap: { special: null },
           showAdditiveProcess: false,
         }),
@@ -808,7 +819,7 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
       buildEnemyCombatProcessItems({
         baseLabel: '特殊乘区基础',
         baseValue: enemy.specialMultiplier,
-        sources,
+        sources: ownerSources,
         buffKey: 'special',
         finalValue: p.specialMultiplier,
         resultLabel: '特殊乘区',
@@ -1547,11 +1558,16 @@ const valueTips = computed<Record<ValueTipsKey, StatSourceGroup[]>>(() => {
               ],
             },
             ...buildStatSourceGroups({
-              keys: ['resPen', 'radianceResPen'],
+              keys: ['resPen'],
+              externalPanel: resistanceView.external,
+              sources: resistanceView.sources,
+              finalValues: { resPen: resistanceView.panel.resPen },
+            }),
+            ...buildStatSourceGroups({
+              keys: ['radianceResPen'],
               externalPanel: remielExt,
               sources: remielSourcesForSelf,
               finalValues: {
-                resPen: remielPanelForSelf.resPen,
                 radianceResPen: remielPanelForSelf.radianceResPen,
               },
             }),

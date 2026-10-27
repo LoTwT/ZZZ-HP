@@ -79,8 +79,7 @@ import {
   hasExternalPanelForSlot,
   parseSourceKeySlotIndex,
   resolveCollectedEffectSourceSlot,
-  resolveAnomalyReleaseMultFields,
-  resolveAnomalyReleaseSkillConvertMods,
+  resolveAnomalyReleaseMultEvaluation,
   type BuffSelectionState,
   type MultiSlotBuffSelection,
   type PanelCalcContext,
@@ -100,6 +99,7 @@ import {
   type EventEffectUseView,
   type PanelStageTrace,
   type ResolvedEffectParameters,
+  type PanelPreConvertSnapshot,
 } from '@/utils/panelBuffCalc'
 import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
 import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
@@ -646,7 +646,7 @@ function buildPanelContextForSlot(
   slotIndex: number,
   externalForSlot: PanelStats,
   mainExternalPanel: PanelStats,
-  event?: { skillContext: SkillCalcContext; rowBuffOverride: ResolvedHit['buffOverride'] },
+  event?: { skillContext: SkillCalcContext; rowBuffOverride: ResolvedHit['buffOverride']; deferSourceValues?: boolean },
 ): PanelCalcContext {
   const base: PanelCalcContext = {
     ...ctx.panelContext,
@@ -674,7 +674,7 @@ function buildPanelContextForSlot(
   const panelSourceValuesBySlot = buildPanelSourceValuesBySlotMap(base, externalForSlot)
   return {
     ...base,
-    panelSourceValues: panelSourceValuesBySlot.get(slotIndex),
+    panelSourceValues: event?.deferSourceValues ? undefined : panelSourceValuesBySlot.get(slotIndex),
     panelSourceValuesBySlot,
   }
 }
@@ -685,6 +685,7 @@ export function buildEventPanelContext(
   mainExternal: PanelStats | null,
   hit: ResolvedHit,
   slotIndex: number,
+  deferSourceValues = false,
 ): PanelCalcContext {
   const mainId = ctx.panelContext.teamSlots[ctx.panelContext.mainSlotIndex]?.agentId
   const mainPanel = mainExternal ?? (mainId ? ctx.panelContext.activeSlotPanels?.[mainId] : undefined) ?? createDefaultExternalPanel()
@@ -693,6 +694,7 @@ export function buildEventPanelContext(
   return buildPanelContextForSlot(ctx, slotIndex, external, mainPanel, {
     skillContext: buildSkillContextFromHit(hit, resolveEventElement(hit, ctx.panelContext.agents)),
     rowBuffOverride: hit.buffOverride ?? null,
+    deferSourceValues,
   })
 }
 
@@ -725,23 +727,28 @@ function buildEventViewKey(parts: {
   agentId: string
   element?: string | null
   external: PanelStats | null | undefined
+  context?: PanelCalcContext
 }): string {
   return [
     parts.policy,
-    parts.useView,
     `slot:${parts.slotIndex}`,
     `agent:${parts.agentId || ''}`,
     `elem:${parts.element ?? ''}`,
     `panel:${hashPanelForView(parts.external)}`,
+    `context:${JSON.stringify([parts.context?.skillContext, parts.context?.restrictToSlotIndex, parts.context?.excludeBangboo, parts.context?.effectSourcePolicy, parts.context?.traceStage, parts.context?.buffSelection, parts.context?.rowBuffOverride])}`,
   ].join('|')
 }
 
-function createEventTraceCollector() {
+function createEventTraceCollector(ctx: OptimalEvalContext, mainPanel: PanelStats, hit: ResolvedHit) {
   const views: EventTraceView[] = []
   const usages: EventDamageInputUsage[] = []
-  return {
+  const preConvertCache = new Map<string, PanelPreConvertSnapshot>()
+  const panelCache = new Map<string, OptimalPanelBreakdown>()
+  const boundInputs = new Map<string, { viewKey: string; usedView: EventEffectUseView }>()
+  const collector = {
     views,
     usages,
+    boundInputs,
     view(parts: {
       useView: EventEffectUseView
       slotIndex: number
@@ -749,8 +756,10 @@ function createEventTraceCollector() {
       policy: PanelViewPolicyId
       element?: string | null
       external: PanelStats | null | undefined
+      context?: PanelCalcContext
     }) {
-      const viewKey = buildEventViewKey(parts)
+      const context = parts.context ?? buildEventPanelContext(ctx, mainPanel, hit, parts.slotIndex, true)
+      const viewKey = buildEventViewKey({ ...parts, context })
       const existing = views.find((item) => item.viewKey === viewKey)
       const view: EventTraceView = existing ?? {
         useView: parts.useView,
@@ -767,6 +776,19 @@ function createEventTraceCollector() {
           viewKey,
           policy: parts.policy,
           onContribution: (item: BuffEffectContribution) => view.contributions.push(item),
+          preConvertCache,
+          panelCache,
+          resolveView: (external, context, usedView, policy = parts.policy) => collector.view({
+            external, context,
+            useView: usedView,
+            slotIndex: context.mainSlotIndex,
+            agentId: context.teamSlots[context.mainSlotIndex]?.agentId ?? '',
+            policy,
+            element: context.skillContext?.element,
+          }).options.trace!,
+          bindInput: (inputKey, field, targetViewKey) => {
+            boundInputs.set(`${inputKey}:${field}`, { viewKey: targetViewKey, usedView: parts.useView })
+          },
         },
       }
       return {
@@ -784,6 +806,7 @@ function createEventTraceCollector() {
       }
     },
   }
+  return collector
 }
 
 /** 同一身份只保留最终阶段那一条：转模取 convert，固定值取 preConvert，跳过态让位。 */
@@ -813,7 +836,7 @@ function formatSlotLabel(
 
 /** 效果属性 → 它真正会改到的面板字段（只用于判断「这条贡献是否被本事件采用」，不改数值） */
 const STAT_TO_PANEL_FIELDS: Record<string, string[]> = {
-  atk: ['atk'],
+  atk: ['atk', 'inCombatAtk'],
   atkPercent: ['atk'],
   inCombatAtkPercent: ['atk'],
   hp: ['hp'],
@@ -824,19 +847,33 @@ const STAT_TO_PANEL_FIELDS: Record<string, string[]> = {
   inCombatDefPercent: ['def'],
   dmgBonus: ['dmgBonus'],
   skillDmgBonus: ['dmgBonus'],
-  pierceDmgBonus: ['dmgBonus'],
+  externalAtkPercent: ['atk'],
+  externalHpPercent: ['hp'],
+  externalDefPercent: ['def'],
+  mastery: ['mastery', 'inCombatMastery'],
+  mutationCoeff: ['mutationCoeff', 'mutationZone'],
+  mutationCoeffFactor: ['mutationCoeffFactor', 'mutationZone'],
+  skillMultiplierBonus: ['directDmgMult'],
+  anomalyControlPercent: ['anomalyControl'],
+  energyRegenFlat: ['energyRegen'],
 }
 
 /**
  * 这条贡献的属性是否可能进入该字段。
  * 其它键与面板字段同名（critRate/critDmg/mastery/penRate/pen/resPen/reduceDefense/
- * anomalyDmgBonus/anomalyMult/anomalyCrit*…）；对不上时保守保留这条真实读值，
- * 不凭空切断依赖（详情宁可多给一条，也不漏掉实际用到的项）。
+ * anomalyDmgBonus/anomalyMult/anomalyCrit*…）；不同名且无显式映射时不登记采用。
  */
 function recordUsesField(stat: string, field: string): boolean {
   const mapped = STAT_TO_PANEL_FIELDS[stat]
   if (mapped) return mapped.includes(field)
-  return true
+  return stat === field
+}
+
+function recordFeedsConvertBase(stat: string, field: string): boolean {
+  // panelToConvertAttrValues 的贯穿力由生命、攻击与固定贯穿力共同构成。
+  return field === 'pierce'
+    ? recordUsesField(stat, 'hp') || recordUsesField(stat, 'atk') || stat === 'pierce'
+    : recordUsesField(stat, field)
 }
 function buildEventEffectRecords(
   ctx: OptimalEvalContext,
@@ -855,7 +892,7 @@ function buildEventEffectRecords(
       viewKey: view.viewKey,
       slotIndex: view.slotIndex,
       policy: view.policy,
-      contributions: finalContributions,
+      contributions: view.contributions,
     })
     const viewUsages = trace.usages.filter((usage) => usage.viewKey === view.viewKey)
     const beneficiary = formatSlotLabel(ctx, view.slotIndex)
@@ -863,7 +900,10 @@ function buildEventEffectRecords(
       contribution.status === 'applied' || contribution.status === 'zero'
     for (const contribution of finalContributions) {
       // 未生效/被排除的候选不登记采用（否则详情会把非生效项当贡献解释）
-      const contributionRecords = appliedStatus(contribution)
+      const overriddenField = contribution.stat === 'skillMultiplierBonus' ? 'directDmgMult' : contribution.stat
+      const overwritten = hit.multOverrides?.[overriddenField as keyof NonNullable<ResolvedHit['multOverrides']>] != null
+      const skillReleaseIncrement = contribution.stat === 'anomalyReleaseMult' && contribution.convertBase != null && contribution.stage === 'releaseMult'
+      const contributionRecords = appliedStatus(contribution) && (!overwritten || skillReleaseIncrement)
         ? viewUsages.filter((usage) => recordUsesField(contribution.stat, String(usage.field)))
         : []
       const providerSlot = contribution.providerSlot ?? contribution.sourceSlot
@@ -874,7 +914,7 @@ function buildEventEffectRecords(
       effectRecords.push({
         ...contribution,
         eventId: hit.id,
-        providerName: provider.name,
+        providerName: contribution.providerName ?? provider.name,
         beneficiaryAgentId: beneficiary.agentId,
         beneficiaryName: beneficiary.name,
         beneficiaryLabel: beneficiary.label,
@@ -885,6 +925,34 @@ function buildEventEffectRecords(
         usedZones: [...new Set(contributionRecords.flatMap((usage) => usage.usedZones))],
       })
     }
+  }
+  // 转模读取非转模快照：只给真正进入本事件的转模建立来源依赖。
+  for (const record of effectRecords) {
+    const base = record.convertBase
+    if (!record.usedInputs.length || base?.stage !== 'preConvert' || !base.sourceViewKey) continue
+    for (const source of effectRecords) {
+      if (source.viewKey !== base.sourceViewKey || source.stage !== 'preConvert' ||
+          (source.status !== 'applied' && source.status !== 'zero') ||
+          !recordFeedsConvertBase(source.stat, base.from)) continue
+      for (const used of record.usedInputs) {
+        const dependency: EventDamageInputUsage = {
+          ...used,
+          field: base.from as DamageInputUsage['field'],
+          viewKey: source.viewKey,
+          slotIndex: source.beneficiarySlot,
+          policy: source.policy,
+          usedView: 'convertSourcePanel',
+        }
+        if (!source.usedInputs.some(item => item.usedView === dependency.usedView && item.field === dependency.field && item.resultKey === dependency.resultKey)) {
+          source.usedInputs.push(dependency)
+          trace.usages.push(dependency)
+        }
+      }
+    }
+  }
+  for (const record of effectRecords) {
+    record.usedViews = [...new Set(record.usedInputs.map(item => item.usedView))]
+    record.usedZones = [...new Set(record.usedInputs.flatMap(item => item.usedZones))]
   }
   const sortKey = (record: EventEffectRecord) =>
     [record.eventId, record.beneficiarySlot, record.policy, record.viewKey, record.stage, record.sourceKey, record.blockId, record.effectId].join('|')
@@ -979,23 +1047,22 @@ export function resolveEventBuffPreviewInputs(
   slotIndex: number,
   evaluation?: OptimalEventEvalDetail | null,
 ): ConvertResolveInputs {
+  const snapshot =
+    evaluation === undefined
+      ? evaluateOptimalEventDetail(ctx, mainExternal, hit, { includeDetails: true, requirePanel: true })
+      : evaluation
   const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
   const base = {
     attrDefaults: context.attrValues ?? {},
     panelSourceValues: context.panelSourceValues,
     panelSourceValuesBySlot: Object.fromEntries(context.panelSourceValuesBySlot ?? []),
   }
-  const snapshot =
-    evaluation === undefined
-      ? evaluateOptimalEventDetail(ctx, mainExternal, hit, { includeDetails: true, requirePanel: true })
-      : evaluation
-
   if (!snapshot) {
     // 不可结算：只给共享参数解析出的配置参数（不构造 summary、不冒充 inactive）
     return {
       ...base,
       configurationOnly: true,
-      configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex),
+      configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex, mainExternal),
     }
   }
 
@@ -1014,7 +1081,7 @@ export function resolveEventBuffPreviewInputs(
     ...base,
     effectAmounts,
     effectSummaries,
-    configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex),
+    configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex, mainExternal),
   }
 }
 
@@ -1054,6 +1121,7 @@ function resolveRemielSelfRadianceCalcForOptimal(
   anomalyPowerAgentId: string | null | undefined,
   mainExternal: PanelStats,
   hit: ResolvedHit,
+  trace?: ReturnType<typeof createEventTraceCollector> | null,
 ) {
   const remiel = findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)
   const policy = resolvePanelViewPolicyForRadiance(anomalyPowerAgentId, remiel?.id)
@@ -1062,7 +1130,7 @@ function resolveRemielSelfRadianceCalcForOptimal(
   }
   const external = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainExternal)
   const agent = ctx.panelContext.agents.find((item) => item.id === remiel.id)
-  const baseCtx = buildEventPanelContext(ctx, mainExternal, hit, remiel.slotIndex)
+  const baseCtx = buildEventPanelContext(ctx, mainExternal, hit, remiel.slotIndex, Boolean(trace))
   return policy.resolveRadianceCalcInput({
     teamSlots: ctx.panelContext.teamSlots,
     agents: ctx.panelContext.agents,
@@ -1071,6 +1139,9 @@ function resolveRemielSelfRadianceCalcForOptimal(
     remielSlotIndex: remiel.slotIndex,
     agentLevel: resolveProducerAgentLevel(ctx, remiel.id),
     isMb: agent?.profession === MB_PROFESSION,
+    trace: trace?.view({ useView: 'radianceSelfPanel', external, context: baseCtx,
+      slotIndex: remiel.slotIndex, agentId: remiel.id, element: baseCtx.skillContext?.element,
+      policy: 'remiel-self-radiance' }).options.trace,
   })
 }
 
@@ -1164,7 +1235,7 @@ function resolveLuminousTeamModifiersForOptimal(
   const tSlotIndex = found.slotIndex
   const producerExternal = resolveExternalForAgent(ctx, found.id, tSlotIndex, mainExternal)
   const luminousContext: PanelCalcContext = hit
-    ? buildEventPanelContext(ctx, mainExternal, hit, tSlotIndex)
+    ? buildEventPanelContext(ctx, mainExternal, hit, tSlotIndex, includeDetails)
     : {
         ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
         skillContext: {
@@ -1271,7 +1342,7 @@ export function evaluateOptimalEventDetail(
     mainPanel,
   )
   // 带记录的一侧才建追踪；数值侧（includeDetails=false）不分配任何记录（Spec §3.4 第 1 项）
-  const trace = includeDetails ? createEventTraceCollector() : null
+  const trace = includeDetails ? createEventTraceCollector(ctx, mainPanel, hit) : null
   const ownerView = trace?.view({
     useView: 'ownerPanel',
     slotIndex: ownerSlotIndex,
@@ -1280,7 +1351,7 @@ export function evaluateOptimalEventDetail(
     element: evtPowerElement,
     external: ownerExternal,
   })
-  const evtPanelCtx = buildEventPanelContext(ctx, mainPanel, hit, ownerSlotIndex)
+  const evtPanelCtx = buildEventPanelContext(ctx, mainPanel, hit, ownerSlotIndex, includeDetails)
   const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, ownerView?.options ?? panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
   const panelOverrides = zoneMultResolved.panelOverrides
@@ -1337,7 +1408,7 @@ export function evaluateOptimalEventDetail(
       })
       producerBreakdown = computeFinalPanel(
         tExternal,
-        buildEventPanelContext(ctx, mainPanel, hit, tSlotIndex),
+        buildEventPanelContext(ctx, mainPanel, hit, tSlotIndex, includeDetails),
         producerView?.options ?? panelOpts,
       )
       // 招式倍率覆写：紊乱/乱流落到强度提供者面板（最终倍率区填写不进面板基础字段）
@@ -1435,7 +1506,7 @@ export function evaluateOptimalEventDetail(
       })
       bonusBreakdown = computeFinalPanel(
         trigExternal,
-        buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex),
+        buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex, includeDetails),
         triggerView?.options ?? panelOpts,
       )
       anomalyTriggerPanel = bonusBreakdown.finalPanel
@@ -1465,7 +1536,7 @@ export function evaluateOptimalEventDetail(
           ? ownerExternal
           : resolveExternalForAgent(ctx, triggerId, trigSlotIndex, mainPanel)
       const trigPanelCtx = triggerId === ownerAgentId
-        ? evtPanelCtx : buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex)
+        ? evtPanelCtx : buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex, includeDetails)
       // 异放倍率视图：走同一套倍率合并规则，只是带上追踪（Spec §2.4 第 3 项）
       const releaseView = trace?.view({
         useView: 'releaseMult',
@@ -1474,24 +1545,32 @@ export function evaluateOptimalEventDetail(
         policy: 'default',
         element: evtPowerElement,
         external: trigExternal,
+        context: { ...trigPanelCtx, traceStage: 'releaseMult' },
       })
-      const releaseFields = resolveAnomalyReleaseMultFields(
+      const releaseEvaluation = resolveAnomalyReleaseMultEvaluation(
         trigExternal,
         { ...trigPanelCtx, trace: releaseView?.options.trace, traceStage: 'releaseMult' },
         evtPowerElement,
       )
+      const releaseFields = releaseEvaluation.fields
+      for (const inputKey of ['finalPanel', 'anomalyTriggerPanel'] as const) {
+        releaseView?.options.trace?.bindInput?.(inputKey, 'anomalyReleaseMult', releaseView.viewKey)
+      }
+      if (needReleaseFactor) for (const inputKey of ['finalPanel', 'anomalyTriggerPanel'] as const) {
+        releaseView?.options.trace?.bindInput?.(inputKey, 'anomalyReleaseMultFactor', releaseView.viewKey)
+      }
       // 行级覆盖来自招式基础倍率：固定值与基础倍率重复，只把「技能等级转模」增量补上去。
       // 行级异放倍率也会被写进招式小类（小类非 0 时优先于面板），所以增量要同时补到
       // 小类与面板：倍率区按小类算，结果明细的提示按面板显示。
       const rowConvertMult = needReleaseMult
         ? 0
-        : (resolveAnomalyReleaseSkillConvertMods(trigPanelCtx, evtPowerElement)
-            .anomalyReleaseMult ?? 0)
+        : (releaseEvaluation.convertMods.anomalyReleaseMult ?? 0)
       if (rowConvertMult && effectiveSub) {
         effectiveSub = {
           ...effectiveSub,
           anomalyReleaseMult: effectiveSub.anomalyReleaseMult + rowConvertMult,
         }
+        releaseView?.usage({ inputKey: 'anomalyTriggerPanel', field: 'anomalyReleaseMult', resultKey: 'anomalyReleaseMultZone', usedZones: ['anomalyTypeBonus'] })
       }
       anomalyTriggerPanel = {
         ...anomalyTriggerPanel,
@@ -1538,6 +1617,7 @@ export function evaluateOptimalEventDetail(
     if (inputKey === 'anomalyTriggerPanel') return triggerView ?? ownerView
     if (inputKey === 'remielSelfRadianceCalc') return radianceSelfView ?? ownerView
     if (inputKey === 'mutationZone') return mutationPanelView ?? ownerView
+    if (inputKey === 'remielRadianceResPen') return mutationPanelView ?? ownerView
     return ownerView
   }
 
@@ -1594,6 +1674,7 @@ export function evaluateOptimalEventDetail(
       evtPowerAgentId,
       mainPanel,
       hit,
+      trace,
     ),
     disorderZoneMultOverride: zoneMultResolved.disorderZoneMult,
     disorderZoneMultFactorOverride: zoneMultResolved.disorderZoneMultFactor,
@@ -1630,7 +1711,7 @@ export function evaluateOptimalEventDetail(
   let remielSelfFinalPanel: PanelStats | undefined
   if (includeDetails && result.remielSelfRadianceActive && remiel) {
     const remielExternal = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainPanel)
-    const remielCtx = buildEventPanelContext(ctx, mainPanel, hit, remiel.slotIndex)
+    const remielCtx = buildEventPanelContext(ctx, mainPanel, hit, remiel.slotIndex, includeDetails)
     const restricted = REMIEL_SELF_RADIANCE_VIEW_POLICY.collectRestrictedContributions!(
       remielExternal,
       { ...remielCtx, skillContext: skillCtx },
@@ -1659,7 +1740,13 @@ export function evaluateOptimalEventDetail(
   }
 
   if (trace) {
-    for (const usage of rawUsages) viewOfInputKey(usage.inputKey)?.usage(usage)
+    for (const usage of rawUsages) {
+      const bound = trace.boundInputs.get(`${usage.inputKey}:${usage.field}`)
+      if (bound) {
+        const view = trace.views.find(item => item.viewKey === bound.viewKey)
+        if (view) trace.usages.push({ ...usage, ...bound, slotIndex: view.slotIndex, policy: view.policy })
+      } else viewOfInputKey(usage.inputKey)?.usage(usage)
+    }
   }
   const eventRecords = trace ? buildEventEffectRecords(ctx, hit, trace) : null
 
