@@ -297,12 +297,15 @@ for (const mode of ['ordinary', 'extra-slot']) for (const disabledBy of ['parent
   clearAffixEvalCache()
   for (const manual of [null, '火', '冰', null]) {
     hit.elementOverride = manual
+    // 捕获的上下文不与调用方容器互为别名，明确替换真实评估输入。
+    f.context.hits = f.hits
     const cold = evaluateAffixCountsWithCacheInfo(f.context, counts)
     const hot = evaluateAffixCountsWithCacheInfo(f.context, counts)
     check(`E8 ${manual} affix cache really hit`, hot.cacheHit, true)
     check(`E8 ${manual} affix cache same actual event`, hot.value.eventLines[0].perHit, evaluateSkillFlowHit(f.context, hot.value.external, hit).perHit)
     check(`E8 ${manual} affix hot/cold`, hot.value.result, cold.value.result)
   }
+  f.agents.find(agent => agent.id === 'power').element = '冰'
   f.context.panelContext.agents.find(agent => agent.id === 'power').element = '冰'
   check('E8 auto source role element changes shared parser', resolveEventElement(hit, f.agents), '冰')
   const changed = evaluateAffixCountsWithCacheInfo(f.context, counts)

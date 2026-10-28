@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createBuffCalculationRuntime, type BuffCalculationRuntime } from '@/utils/skillFlowCalculation'
 import {
   computed,
   onActivated,
@@ -57,46 +58,12 @@ import {
 } from '@/utils/calculatorUi'
 import type { DamageCalcResult } from '@/utils/damageCalc'
 import { type DamageEnemyInput } from '@/utils/enemyResistance'
-import {
-  ANOMALY_CONSTRAINTS,
-  BENEFIT_CURVE_MAX_ADDED,
-  DIRECT_CONSTRAINTS,
-  buildOptimalEvalContext,
-  canReuseDirectSweepStructure,
-  computeBenefitCurves,
-  computeDiffAnalysis,
-  computeEventAffixImpact,
-  evaluateAffixCounts,
-  evaluateAffixCountsForSweep,
-  clearAffixEvalCache,
-  withAffixLibraryExtraGains,
-  buildDirectAffixCounts,
-  buildAnomalyAffixCounts,
-  flatStatLabel,
-  outPercentLabel,
-  outPercentFromAffixCounts,
-  sweepAnomalyDamageAsync,
-  sweepDirectDamageAsync,
-  validateAnomalyAlloc,
-  validateDirectAlloc,
-  type AnomalyAllocState,
-  type AnomalySweepPoint,
-  type DirectAllocState,
-  type DirectSweepPoint,
-  type OptimalDamageKind,
-  type OptimalEventAffixImpact,
-  type OptimalEventDamageLine,
-  yieldToMain,
-} from '@/utils/optimalAffixAlloc'
+import { ANOMALY_CONSTRAINTS, BENEFIT_CURVE_MAX_ADDED, DIRECT_CONSTRAINTS, buildOptimalEvalContext, canReuseDirectSweepStructure, computeBenefitCurves, computeDiffAnalysis, computeEventAffixImpact, evaluateAffixCounts, evaluateAffixCountsForSweep, clearAffixEvalCache, buildDirectAffixCounts, buildAnomalyAffixCounts, flatStatLabel, outPercentLabel, outPercentFromAffixCounts, sweepAnomalyDamageAsync, sweepDirectDamageAsync, validateAnomalyAlloc, validateDirectAlloc, type AnomalyAllocState, type AnomalySweepPoint, type DirectAllocState, type DirectSweepPoint, type OptimalDamageKind, type OptimalEventAffixImpact, type OptimalEventDamageLine, yieldToMain } from '@/utils/optimalAffixAlloc'
 import { remapImportedPanelViaEffects } from '@/utils/panelPipeline'
 import EquipPickerModal from '@/components/calculator/EquipPickerModal.vue'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
-import {
-  resolveBuffSelectionForSlot,
-  computeFinalPanel,
-  type ConvertSlotPanels,
-} from '@/utils/panelBuffCalc'
-import { resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
+import { type ConvertSlotPanels } from '@/utils/panelBuffCalc'
+
 
 import {
   DAMAGE_EVENT_CRIT_MODE_OPTIONS,
@@ -105,21 +72,9 @@ import {
 } from '@/utils/damageEvent'
 import { buildGenericPanelSkillContext } from '@/utils/resolvedHit'
 import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
-import {
-  buildSkillFlowHitContextSignature,
-  buildSkillFlowPageSignature,
-  formatAffixCountsSummary,
-  type SkillFlowDisplayOption,
-  type SkillFlowPanelOption,
-} from '@/utils/skillFlowPanelSource'
-import {
-  buildHitEvalFingerprint,
-  hitEvalCacheKey,
-  internHitEvalContext,
-  readHitEvalCache,
-  writeHitEvalCache,
-} from '@/utils/hitEvalCache'
-import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
+import { buildSkillFlowPageSignature, formatAffixCountsSummary, type SkillFlowDisplayOption, type SkillFlowPanelOption } from '@/utils/skillFlowPanelSource'
+import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
+
 
 import {
   computeAffixBenefitSeriesForTable,
@@ -184,6 +139,7 @@ const MB_PROFESSION = '命破'
 const FENGYU_PROFESSION = '锋御'
 
 const props = defineProps<{
+  flowCalculationRuntime?: BuffCalculationRuntime
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
   wengines: WengineBuffDoc[]
@@ -216,7 +172,7 @@ const props = defineProps<{
    * 招式流程「用哪份面板」的覆盖值（三选项的 ②③）。
    *
    * 本模块的招式流程映射优先用它；为 null 时按「角色配置的激活面板 → 柱体推导」取值
-   * （见下方 `skillFlowExternal`）。
+   * （由页级运行期统一提供）。
    */
   skillFlowMainExternalOverride?: PanelStats | null
   /**
@@ -517,19 +473,7 @@ const effectiveAnomalySlotPanels = computed(() => {
 })
 
 /** 每人一份局外（该角色激活那份 / 转模部分面板兜底），供全队转模按来源槽位取值 */
-const slotExternalPanelsMap = computed<Record<number, PanelStats>>(() => {
-  const map: Record<number, PanelStats> = {}
-  props.teamSlots.forEach((slot, index) => {
-    if (!slot.agentId) return
-    map[index] = resolveSlotExternalPanel({
-      slotIndex: index,
-      teamSlots: props.teamSlots,
-      activeSlotPanels: effectiveAnomalySlotPanels.value,
-      convertSlotPanels: props.convertSlotPanels,
-    })
-  })
-  return map
-})
+
 
 const isMb = computed(() => mainAgent.value?.profession === MB_PROFESSION)
 const isFengYu = computed(() => mainAgent.value?.profession === FENGYU_PROFESSION)
@@ -575,8 +519,7 @@ const affixLibraryValuePerCount = computed(() =>
   affixValuePerCountFromEntries(affixLibraryEntries.value),
 )
 
-const evalCtx = computed(() =>
-  buildOptimalEvalContext({
+const analysisContextInput = computed(() => ({
     isMb: isMb.value,    isFengYu: isFengYu.value,
     teamSlots: props.teamSlots,
     agents: props.agents,
@@ -606,7 +549,7 @@ const evalCtx = computed(() =>
     convertSlotPanels: evalConvertSlotPanels.value,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
     hits: props.hits,
-    resolveSubcategory: (id) => skillSubcategories.value.find((item) => item.id === id) ?? null,
+    resolveSubcategory: ((items) => (id: string | null) => items.find(item => item.id === id) ?? null)(skillSubcategories.value),
     skillSubcategories: skillSubcategories.value,
     followUpSkillRules: followUpSkillRules.value,
     environmentBuffs: props.environmentBuffs,
@@ -614,8 +557,9 @@ const evalCtx = computed(() =>
     skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
     // 词条库「每档值」随上下文走：柱图 / 详情 / 收益表 / 基准总伤共用一份，避免分叉
     valuePerCount: affixLibraryValuePerCount.value,
-  }),
-)
+  }))
+
+const evalCtx = computed(() => buildOptimalEvalContext(analysisContextInput.value))
 
 const flatLabel = computed(() => flatStatLabel(isMb.value, isFengYu.value))
 const outLabel = computed(() => outPercentLabel(isMb.value, isFengYu.value))
@@ -628,32 +572,10 @@ const anomalyError = computed(() =>
 )
 
 
-const sweepConfigFingerprint = computed(() =>
-  JSON.stringify({
-    baseDamageSource: baseDamageSource.value,
-    driveDiscMainStats: { ...activeDriveDiscMainStats.value },
-    enemy: enemyInput.value,
-    extraGains: extraGains.value,
-    convert: props.convertSlotPanels ?? {},
-    participants: props.activeSlotPanels ?? {},
-    // 扫掠面板来源（2026-10-05）：初始/导入切换后需重算
-    panelSource: sectionMode.value === 'sweep' ? sweepPanelSource.value : 'imported',
-    damageKind: sweepDamageKind.value,
-    buffSelection: props.buffSelection,
-    slotBuffSelections: props.slotBuffSelections,
-    agents: props.teamSlots.map((slot) => slot.agentId ?? ''),
-    trigger: props.triggerAnomalyAgentId ?? '',
-    hits: (props.hits ?? []).map(
-      (hit) =>
-        `${hit.id}:${hit.skill.id}:${hit.count}:${hit.critMode}:${hit.staggerPhase}` +
-        `:${hit.anomalyPowerAgentId ?? ''}:${hit.triggerAgentId ?? ''}:${hit.anomalySubKind ?? ''}` +
-        `:${JSON.stringify(hit.multOverrides ?? {})}:${JSON.stringify(hit.panelMods ?? {})}`,
-    ),
-    stagger: props.staggerPhase ?? '',
-    bangboo: props.selectedBangbooId ?? '',
-    bangbooRefine: props.bangbooRefine ?? 0,
-  }),
-)
+const sweepConfigFingerprint = computed(() => createBuffCalculationRuntime({
+  contextInput: analysisContextInput.value, externalPanelPolicy: 'analysis', mainExternal: null, sourceExtraGains: [],
+  staggerPhase: props.staggerPhase, globalDamageKind: sweepDamageKind.value ?? 'direct',
+}).signature + JSON.stringify((props.hits ?? []).map(buildHitEvalFingerprint)))
 
 const DIFF_DEBOUNCE_MS = 450
 const DIFF_EVENT_DEBOUNCE_MS = 900
@@ -709,6 +631,7 @@ function startCalculation() {
 }
 
 async function runSweepRecompute() {
+  const resultSignature = panelSourceSignature.value
   if (!sweepCommitted.value || !sweepDamageKind.value) {
     sweepComputing.value = false
     return
@@ -757,6 +680,7 @@ async function runSweepRecompute() {
       if (generation !== sweepGeneration) return
       directPoints.value = []
     }
+    sweepResultSignature.value = resultSignature
     // 扫掠完成后默认选中首柱，保证下方「词条差异计算」有基准分配
     if (selectedIndex.value == null) {
       const points = kind === 'direct' ? directPoints.value : anomalyPoints.value
@@ -1484,23 +1408,6 @@ watch(
 )
 
 /**
- * 招式流程用的局外面板。优先级：
- * ① 页级下发的覆盖值（三选项的 ②③）→ ② 角色配置里的激活面板 → ③ 没录入面板时才落回柱体推导
- * （未扫过且无配置面板 → 空，不算招式总伤）。
- */
-const skillFlowExternal = computed(() => {
-  const override = props.skillFlowMainExternalOverride
-  if (override) return override
-  // ① 角色配置面板：页级已解析的激活面板（与面板侧同一份来源）
-  const mainAgentId = props.teamSlots[mainSlotIndex.value]?.agentId
-  const savedConfigPanel = mainAgentId ? props.activeSlotPanels?.[mainAgentId] : undefined
-  if (savedConfigPanel) return fillPanelStatsDefaults(savedConfigPanel)
-  // 没有录入面板时保留旧行为：只在扫掠过之后按柱体算（未扫过为空）
-  if (!sweepPoints.value.length) return null
-  return analysisEval.value?.external ?? null
-})
-
-/**
  * 与页级同一份字段表算出的上下文签名（`buildSkillFlowPageSignature`）。
  *
  * 用途：上报来源时**带上「这份面板是在什么配置下算出来的」**，页级据此判过期。
@@ -1527,6 +1434,9 @@ const panelSourceSignature = computed(() =>
     skillSubcategoryId: props.skillSubcategoryId,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
     baseDamageSource: baseDamageSource.value,
+    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
+    agentElements: props.agents.map(agent => [agent.id, agent.element]),
+    hits: props.hits,
   }),
 )
 
@@ -1542,7 +1452,7 @@ const panelSourceSignature = computed(() =>
 function emitPanelSourceOptions() {
   const result = affixAllocResult.value
   emit('update:panelSourceOptions', {
-    allocation: affixAllocEval.value?.external
+    allocation: !affixAllocResultStale.value && affixAllocEval.value?.external
       ? buildPanelSourceOption(
           'allocation',
           affixAllocEval.value.external,
@@ -1550,7 +1460,7 @@ function emitPanelSourceOptions() {
           result?.extraGains,
         )
       : null,
-    sweep: selectedEval.value?.external
+    sweep: !sweepNeedsCommit.value && sweepResultSignature.value && selectedEval.value?.external
       ? buildPanelSourceOption(
           'sweep',
           selectedEval.value.external,
@@ -1567,6 +1477,8 @@ function emitPanelSourceOptions() {
  * 这里把词条分析侧**已算好的** external / finalPanel 一并上报（同一份数值，
  * 与词条分析侧「局内（含增益）」结果一致，展示侧不再重复计算）。
  */
+const allocationResultSignature = ref('')
+const sweepResultSignature = ref('')
 type DisplayPanelEvalLike = { external: PanelStats; finalPanel: PanelStats } | null | undefined
 
 function allocationRollsSummary(result: AffixOptimizerResult | null): string {
@@ -1591,12 +1503,13 @@ function buildDisplayPanelSourceOption(
   summary: string,
 ): SkillFlowDisplayOption | null {
   if (!evalResult?.external || !evalResult.finalPanel) return null
+  if (mode === 'allocation' ? affixAllocResultStale.value : sweepNeedsCommit.value || !sweepResultSignature.value) return null
   return {
     mode,
     mainExternal: evalResult.external,
     finalPanel: evalResult.finalPanel,
     label: mode === 'allocation' ? `最优分配（${summary}）` : `当前柱（${summary}）`,
-    signature: panelSourceSignature.value,
+    signature: mode === 'allocation' ? allocationResultSignature.value : sweepResultSignature.value,
   }
 }
 
@@ -1626,7 +1539,7 @@ function buildPanelSourceOption(
     mode,
     mainExternal,
     label: mode === 'allocation' ? `最优分配（${summary}）` : `当前柱（${summary}）`,
-    signature: panelSourceSignature.value,
+    signature: mode === 'allocation' ? allocationResultSignature.value : sweepResultSignature.value,
     baseDamageSource: baseDamageSource.value,
     extraGains: extraGainsForOption,
   }
@@ -1665,36 +1578,12 @@ let pendingSkillFlowEmit = false
  * 这里只负责从**响应式来源**逐字段取值 —— 读 props / ref 才会建立依赖；
  * 若改成从 `evalCtx` 取（深解包后的原始对象），配置变了签名也不变，会命中过期结果。
  */
-const skillFlowContextFingerprint = computed(() =>
-  buildSkillFlowHitContextSignature({
-    agentElements: props.agents.map(agent => [agent.id, agent.element]),
-    enemy: enemyInput.value,
-    extraGains: extraGains.value,
-    sourceExtraGains: props.skillFlowSourceExtraGains,
-    buffSelection: props.buffSelection,
-    slotBuffSelections: props.slotBuffSelections,
-    convertSlotPanels: props.convertSlotPanels,
-    activeSlotPanels: props.activeSlotPanels,
-    environmentBuffIds: (props.environmentBuffs ?? []).map((item) => item.id),
-    bangbooId: props.selectedBangbooId,
-    bangbooRefine: props.bangbooRefine,
-    driveDiscMainStats: activeDriveDiscMainStats.value,
-    baseDamageSource: baseDamageSource.value,
-    damageKind: sweepDamageKind.value,
-    staggerPhase: props.staggerPhase,
-    // 队伍档位（影画 / 精炼 / 装备）与编辑槽位、技能等级：改它们必须换令牌
-    teamSlots: props.teamSlots,
-    mainSlotIndex: mainSlotIndex.value,
-    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
-  }),
-)
+const skillFlowContextFingerprint = computed(() => props.flowCalculationRuntime?.signature ?? '')
 
 const skillFlowHitFingerprint = computed(() => {
   if (!isSectionActive.value) return 'inactive'
-  const external = skillFlowExternal.value
   return JSON.stringify({
     context: skillFlowContextFingerprint.value,
-    external: external ?? null,
     hits: (props.hits ?? []).map(buildHitEvalFingerprint),
     previews: (props.previewHits ?? []).map(buildHitEvalFingerprint),
   })
@@ -1707,35 +1596,11 @@ function recomputeSkillFlowHitMaps() {
   }
   const map: Record<string, number> = {}
   const results: Record<string, DamageCalcResult> = {}
-  const external = skillFlowExternal.value
-  if (!external) {
-    skillFlowHitMapState.value = { map, results }
-    return
-  }
-
-  const ctx = evalCtx.value
-  const allocatedGains = props.skillFlowMainExternalOverride
-    ? (props.skillFlowSourceExtraGains ?? [])
-    : []
-  const flowCtx = withAffixLibraryExtraGains(ctx, allocatedGains)
-  // 与面板计算共用同一张记忆表：键里带「用的是哪份面板」，两组输入各占一行，互不覆盖。
-  // 令牌取自响应式指纹（不能从 ctx 取：ctx 是深解包后的原始对象，读取不建立依赖）。
-  const contextToken = internHitEvalContext(skillFlowContextFingerprint.value)
-
+  const runtime = props.flowCalculationRuntime
+  if (!runtime) { skillFlowHitMapState.value = { map, results }; return }
   const resolveLine = (hit: import('@/utils/resolvedHit').ResolvedHit, usePerHit: boolean) => {
-    const key = hitEvalCacheKey(buildHitEvalFingerprint(hit), contextToken, external, false)
-    let entry = readHitEvalCache(key)
-    if (!entry) {
-      const detail = evaluateSkillFlowHit(flowCtx, external, hit)
-      if (!detail) return
-      entry = {
-        hitId: hit.id,
-        total: detail.total,
-        perHit: detail.perHit,
-        result: detail.result,
-      }
-      writeHitEvalCache(key, entry)
-    }
+    const entry = runtime.getHitNumbers(hit)
+    if (!entry) return
     // 准备招式（预览）走独立键：按单次伤害展示，不进总伤（总伤只汇总流程事件）
     const mapKey = usePerHit ? `preview:${hit.id}` : hit.id
     map[mapKey] = usePerHit ? entry.perHit : entry.total
@@ -2438,8 +2303,12 @@ const comboBaselineReady = computed(() => {
 // 面板展示专用通道同一时机一并上报）
 watch(
   [
-    () => affixAllocEval.value?.external ?? null,
-    () => selectedEval.value?.external ?? null,
+    () => affixAllocEval.value ?? null,
+    () => selectedEval.value ?? null,
+    allocationResultSignature,
+    sweepResultSignature,
+    affixAllocResultStale,
+    sweepNeedsCommit,
     panelSourceSignature,
   ],
   () => {
@@ -2626,6 +2495,7 @@ function scheduleAffixBenefitRecompute() {
 
 /** 词条分配模式：求解最优分配（分帧异步，可中止，带进度） */
 async function runAffixAllocation() {
+  const resultSignature = panelSourceSignature.value
   if (affixAllocLoading.value) return
   if (!affixLibraryEntries.value.length) {
     affixAllocError.value = '词条库为空，请先启用至少一条词条'
@@ -2676,6 +2546,7 @@ async function runAffixAllocation() {
         },
       },
     )
+    allocationResultSignature.value = resultSignature
     affixAllocResultLibrary.value = affixLibraryEntries.value
     affixAllocResultStale.value = false
   } catch (error) {
@@ -2741,6 +2612,7 @@ function toggleGameAffixEntries(entryIds: string[], enabled: boolean) {
 
 /** 游戏专用 4 袋求解，不读用户词条库 */
 async function runGameAffixAllocation() {
+  const resultSignature = panelSourceSignature.value
   if (affixAllocLoading.value) return
   if (!gameAffixSettings.value.enabledIds.length) {
     affixAllocError.value = '请先在「编辑」里勾选至少一条词条'
@@ -2783,6 +2655,7 @@ async function runGameAffixAllocation() {
         },
       },
     )
+    allocationResultSignature.value = resultSignature
     affixAllocResultLibrary.value = gameAffixLibraryEntries.value
     affixAllocResultStale.value = false
   } catch (error) {
@@ -3061,12 +2934,7 @@ const diffWatchFingerprint = computed(() =>
     tab: detailTab.value,
     events: hasEventMode.value ? selectedChartEventIds.value : null,
     mains: { ...activeDriveDiscMainStats.value },
-    agents: props.teamSlots.map((s) => s.agentId ?? ''),
-    hits: (props.hits ?? []).map(
-      (h) =>
-        `${h.id}:${h.skill.id}:${h.count}:${h.critMode}` +
-        `:${h.anomalyPowerAgentId ?? ''}:${h.triggerAgentId ?? ''}:${h.anomalySubKind ?? ''}`,
-    ),
+    configuration: sweepConfigFingerprint.value,
   }),
 )
 
@@ -3088,20 +2956,10 @@ watch(detailTab, (tab) => {
 })
 
 /** 词条分配模式的上下文指纹：招式、主属性、队伍、面板等变化时自动重算收益表 */
-const affixAllocFingerprint = computed(() =>
-  JSON.stringify({
-    mode: sectionMode.value,
-    mains: { ...activeDriveDiscMainStats.value },
-    agents: props.teamSlots.map((s) => s.agentId ?? ''),
-    hits: (props.hits ?? []).map(
-      (h) =>
-        `${h.id}:${h.skill.id}:${h.count}:${h.critMode}` +
-        `:${h.anomalyPowerAgentId ?? ''}:${h.triggerAgentId ?? ''}:${h.anomalySubKind ?? ''}`,
-    ),
-    library: affixLibraryState.value,
-    step: affixBenefitStep.value,
-  }),
-)
+const affixAllocFingerprint = computed(() => JSON.stringify({
+  configuration: sweepConfigFingerprint.value,
+  mode: sectionMode.value, library: affixLibraryState.value, step: affixBenefitStep.value,
+}))
 
 watch(affixAllocFingerprint, () => {
   if (sectionMode.value !== 'allocation') return
@@ -3456,16 +3314,8 @@ watch(
 defineExpose({
   resolveFlowCalculationDetail(hitId: string) {
     if (!isSectionActive.value) return null
-    void skillFlowContextFingerprint.value
-    const hit = props.hits?.find((item) => item.id === hitId)
-    const external = skillFlowExternal.value
-    if (!hit || !external) return null
-    const allocatedGains = props.skillFlowMainExternalOverride
-      ? (props.skillFlowSourceExtraGains ?? [])
-      : []
-    const context = withAffixLibraryExtraGains(evalCtx.value, allocatedGains)
-    return resolveSkillFlowCalculationDetail(context, external, hit,
-      hitEvalCacheKey(buildHitEvalFingerprint(hit), internHitEvalContext(skillFlowContextFingerprint.value), external, true))
+    const hit = props.hits?.find(item => item.id === hitId)
+    return hit ? props.flowCalculationRuntime?.getHitDetail(hit) ?? null : null
   },
   buffBreakdown: computed(() => displayEval.value?.breakdown ?? null),
   displayEval,
@@ -3478,45 +3328,15 @@ defineExpose({
    */
 })
 
-function buildPreviewPanelContext(slotIndex: number) {
-  const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  return {
-    teamSlots: props.teamSlots,
-    agents: props.agents,
-    wengines: props.wengines,
-    bangboo: selectedBangboo.value,
-    bangbooRefine: props.bangbooRefine,
-    mainSlotIndex: slotIndex,
-    liveExternalSlotIndex: mainSlotIndex.value,
-    driveDiscs: props.driveDiscs,
-    extraGains: extraGains.value,
-    skillContext: buildGenericPanelSkillContext({
-      element: agent?.element,
-      staggerPhase: props.staggerPhase ?? 'stagger',
-    }),
-    buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
-    activeSlotPanels: effectiveAnomalySlotPanels.value,
-    convertSlotPanels: props.convertSlotPanels,
-    // 全队转模按来源槽位取局外时要能按槽位找到人；与面板页同一份解析（Spec §2.1）
-    slotExternalPanels: slotExternalPanelsMap.value,
-    environmentBuffs: props.environmentBuffs,
-    // 技能等级转模来源：与其它入口同一响应式来源（C1 之前这里缺这一项）
-    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
-  }
-}
-
 function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats | null {
   const index = slotIndex ?? mainSlotIndex.value
   if (index < 0 || index >= props.teamSlots.length) return null
-  try {
-    return computeFinalPanel(
-      fillPanelStatsDefaults(external),
-      buildPreviewPanelContext(index),
-      { includeDetails: false },
-    ).finalPanel
-  } catch {
-    return null
-  }
+  const agentId = props.teamSlots[index]?.agentId
+  return createBuffCalculationRuntime({ contextInput: { ...analysisContextInput.value,
+    activeSlotPanels: { ...effectiveAnomalySlotPanels.value, ...(agentId ? { [agentId]: fillPanelStatsDefaults(external) } : {}) },
+  }, externalPanelPolicy: 'configured', mainExternal: null, sourceExtraGains: [],
+    staggerPhase: props.staggerPhase, globalDamageKind: props.damageKind,
+  }).getGlobalPanelStages(index).finalBreakdown.finalPanel
 }
 </script>
 

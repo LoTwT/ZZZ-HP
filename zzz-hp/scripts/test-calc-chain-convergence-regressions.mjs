@@ -2,12 +2,14 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { nextTick } from 'vue'
 import { createPinia } from 'pinia'
-import { eventFixture } from './_eventElementHarness.mjs'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import { eventFixture, eventRuntimeInput } from './_eventElementHarness.mjs'
 import { testAgent } from './_effectPipelineHarness.mjs'
 import { mountVueSetup } from './_vueSetupHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
-import { collectAllBuffEffects, invalidateBuffCatalogCache } from '../src/utils/panelBuffCalc.ts'
-import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
+import { collectAllBuffEffects, invalidateBuffCatalogCache, blockKeyOfCollected } from '../src/utils/panelBuffCalc.ts'
+import { buildEventValueTips } from '../src/utils/eventDamageSourceTips.ts'
+import { createBuffCalculationRuntime, evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
 import { resolveEventBuffPreviewInputs, projectEventEffectRecords } from '../src/utils/optimalAffixAlloc.ts'
 import { clearHitEvalCache, hitEvalCacheDebugStats, internHitEvalContext } from '../src/utils/hitEvalCache.ts'
 
@@ -195,7 +197,7 @@ await check('real PanelCalcSection preview and detail share a complete snapshot 
   const imports = await sfcImports(panelUrl)
   const f = eventFixture({ damageType: 'direct', effects: [convert('component')] })
   const slotPanels = Object.fromEntries(Object.entries(f.panels).map(([id, panel]) => [id, { active: 'imported', importedPanel: panel }]))
-  const mounted = mountVueSetup(panelUrl, { imports, plugins: [createPinia()], props: { enemyInput: f.context.enemyInput, agents: f.agents, teamSlots: f.teamSlots, wengines: [], driveDiscs: [], slotPanels, convertSlotPanels: {}, slotBuffSelections: null, skillTalentLevelsByAgent: {}, editedSlotIndex: 0, staggerPhase: 'stagger', damageKind: 'direct', calcMode: 'panel', hits: f.hits, environmentBuffs: [], bangboos: [], selectedBangbooId: 'none', bangbooRefine: 1 } })
+  const mounted = mountVueSetup(panelUrl, { imports, plugins: [createPinia()], props: { flowCalculationRuntime: createBuffCalculationRuntime(eventRuntimeInput(f)), enemyInput: f.context.enemyInput, agents: f.agents, teamSlots: f.teamSlots, wengines: [], driveDiscs: [], slotPanels, convertSlotPanels: {}, slotBuffSelections: null, skillTalentLevelsByAgent: {}, editedSlotIndex: 0, staggerPhase: 'stagger', damageKind: 'direct', calcMode: 'panel', hits: f.hits, environmentBuffs: [], bangboos: [], selectedBangbooId: 'none', bangbooRefine: 1 } })
   try {
     await nextTick()
     clearHitEvalCache()
@@ -219,6 +221,7 @@ await check('real PanelCalcSection preview and detail share a complete snapshot 
     assert.equal(configured[effectId].convertBase.value, 3000)
     assert.equal(configured[effectId].amount, 300)
     mounted.props.skillFlowMainExternalOverride = { ...f.panels.owner, atk: 3000 }
+    mounted.props.flowCalculationRuntime = createBuffCalculationRuntime(eventRuntimeInput(f,{mainExternal:mounted.props.skillFlowMainExternalOverride}))
     await nextTick()
     const changed = mounted.vm.resolveFlowCalculationDetail('reverse-order')
     assert.notEqual(changed.evaluation, c.evaluation)
@@ -240,6 +243,8 @@ await check('real PanelCalcSection preview and detail share a complete snapshot 
     assert.equal(replayed.evaluation.total, firstDetail.evaluation.total)
     assert.equal(mounted.vm.resolveFlowCalculationDetail(hits[0].id).evaluation, replayed.evaluation)
     for (let i = 0; i < 55; i += 1) internHitEvalContext(`takeover-token-${i}`)
+    mounted.props.flowCalculationRuntime = createBuffCalculationRuntime(eventRuntimeInput(f,{mainExternal:mounted.props.skillFlowMainExternalOverride}))
+    await nextTick()
     const afterTokenEviction = mounted.vm.resolveFlowCalculationDetail(hits[0].id)
     assert.notEqual(afterTokenEviction.evaluation, replayed.evaluation)
     assert.equal(afterTokenEviction.evaluation.total, replayed.evaluation.total)
@@ -252,6 +257,7 @@ for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: real detail
   assert.equal(d.result.resistanceMultiplier, 1)
   const url = new URL('../src/components/calculator/DamageResultDetail.vue', import.meta.url)
   const mounted = mountVueSetup(url, { imports: await sfcImports(url), expose: ['valueTips'], props: {
+    sourceTips: buildEventValueTips({evaluation:d,enemyInput:f.context.enemyInput,isMb:false}),
     calcParts: d.result, damageInputUsages: d.damageInputUsages, finalPanel: d.finalPanel, externalPanel: d.external,
     sources: d.breakdown.sources, pierceMod: d.breakdown.totalMods.pierce, piercePower: d.piercePower,
     enemyInput: f.context.enemyInput, isMb: false, show: 'anomaly', anomalySubKind: d.anomalySubKind,
@@ -274,6 +280,7 @@ for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: self-radian
   assert.equal(d.result.remielSelfResistanceMultiplier, 1.25)
   const url = new URL('../src/components/calculator/DamageResultDetail.vue', import.meta.url)
   const mounted = mountVueSetup(url, { imports: await sfcImports(url), expose: ['valueTips'], props: {
+    sourceTips: buildEventValueTips({evaluation:d,enemyInput:f.context.enemyInput,isMb:false}),
     calcParts: d.result, damageInputUsages: d.damageInputUsages, finalPanel: d.finalPanel, externalPanel: d.external,
     sources: d.breakdown.sources, pierceMod: d.breakdown.totalMods.pierce, piercePower: d.piercePower,
     enemyInput: f.context.enemyInput, isMb: false, show: 'anomaly', anomalySubKind: d.anomalySubKind,
@@ -284,6 +291,125 @@ for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: self-radian
   try { assert.ok(JSON.stringify(mounted.vm.valueTips.remielSelfResistanceMultiplier).includes('25')) }
   finally { mounted.unmount() }
 })
+
+for (const mode of ['ordinary', 'extra-slot', 'extra-team']) {
+  const build = () => eventFixture({ mode, damageType: 'direct', effects: [
+    fixed('config-source', 'atk', 500),
+    convert('config-derived', { convert: { from: 'atk', panelSource: 'final', ratioPercent: 10, initialBase: 0, cap: null } }),
+  ] })
+  await check(`${mode}: disabling a source preserves actual configuration inputs, including block overrides`, () => {
+    const f = build()
+    const items = collectAllBuffEffects(f.context.panelContext)
+    const source = items.find(i => i.effect.id.endsWith('config-source'))
+    const derived = items.find(i => i.effect.id.endsWith('config-derived'))
+    for (const override of [null, { disabledEffectIds: [source.effect.id] }, { disabledBlockIds: [blockKeyOfCollected(source)] }, { disabledEffectIds: [derived.effect.id] }]) {
+      const hit = { ...f.hits[0], multOverrides: { directDmgMult: 100 }, buffOverride: override }
+      const d = evaluateSkillFlowHit(f.context, null, hit, true)
+      const p = resolveEventBuffPreviewInputs(f.context, null, hit, 0, d)
+      const sourceOff = override && !override.disabledEffectIds?.includes(derived.effect.id)
+      assert.equal(p.configurationParameters[derived.effect.id].convertBase.value, sourceOff ? 1000 : 1500)
+      assert.equal(p.configurationParameters[derived.effect.id].amount, sourceOff ? 100 : 150)
+      assert.ok(p.configurationParameters[source.effect.id])
+      assert.equal(p.effectAmounts[derived.effect.id], override?.disabledEffectIds?.includes(derived.effect.id) ? 0 : sourceOff ? 100 : 150)
+    }
+  })
+  await check(`${mode}: real global configuration and row modal share the effective source snapshot`, async () => {
+    const f = build()
+    const items = collectAllBuffEffects(f.context.panelContext)
+    const source = items.find(i => i.effect.id.endsWith('config-source'))
+    const derived = items.find(i => i.effect.id.endsWith('config-derived'))
+    const panelUrl = new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url)
+    const slotPanels = Object.fromEntries(Object.entries(f.panels).map(([id, panel]) => [id, { active: 'imported', importedPanel: panel }]))
+    const panel = mountVueSetup(panelUrl, { imports: await sfcImports(panelUrl), plugins: [createPinia()], props: {
+      flowCalculationRuntime: createBuffCalculationRuntime(eventRuntimeInput(f)),
+      enemyInput: f.context.enemyInput, agents: f.agents, teamSlots: f.teamSlots, wengines: [], driveDiscs: [], slotPanels, convertSlotPanels: {}, slotBuffSelections: null,
+      skillTalentLevelsByAgent: {}, editedSlotIndex: 0, staggerPhase: 'stagger', damageKind: 'direct', calcMode: 'panel', hits: f.hits,
+      extraGains: f.extraGains, environmentBuffs: [], bangboos: [], selectedBangbooId: 'none', bangbooRefine: 1,
+    } })
+    let modal
+    try {
+      assert.equal(panel.vm.getConfigurationParametersForSlot(0)[derived.effect.id].convertBase.value, 1500)
+      const override = { disabledEffectIds: [source.effect.id] }
+      assert.equal(panel.vm.getConfigurationParametersForSlot(0, override)[derived.effect.id].convertBase.value, 1000)
+      const modalUrl = new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url)
+      modal = mountVueSetup(modalUrl, { imports: await sfcImports(modalUrl), expose: ['convertBaseModel', 'convertResult', 'restoreGlobal'], props: {
+        open: true, override, effects: items, slotIndex: 0,
+        convertResolveInputs(slot, rowOverride) {
+          return panel.vm.getEventBuffPreviewInputs(slot, f.hits[0], rowOverride)
+        },
+      } })
+      assert.equal(modal.vm.convertBaseModel(derived), 1000)
+      assert.equal(modal.vm.convertResult(derived), 100)
+      modal.vm.restoreGlobal()
+      await nextTick()
+      assert.equal(modal.vm.convertBaseModel(derived), 1500)
+      assert.equal(modal.vm.convertResult(derived), 150)
+    } finally { modal?.unmount(); panel.unmount(); clearHitEvalCache() }
+  })
+}
+
+for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: real optimal sweep section shares numeric/detail inputs, attached gains and candidate invalidation`, async () => {
+  const f = eventFixture({ mode, damageType: 'direct', effects: [fixed('optimal-shared', 'dmgBonus', 25)] })
+  const attached = eventFixture({ mode: 'extra-team', damageType: 'direct', effects: [fixed('optimal-attached', 'dmgBonus', 10)] }).extraGains
+  invalidateBuffCatalogCache()
+  const url = new URL('../src/components/calculator/OptimalAffixAllocSection.vue', import.meta.url)
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
+  await router.push('/?mode=sweep')
+  const mounted = mountVueSetup(url, { imports: await sfcImports(url), plugins: [createPinia(), router], expose: ['recomputeSkillFlowHitMaps', 'skillFlowHitMapState'], props: {
+    enemyInput: f.context.enemyInput, baseDamageSource: 'atk', active: true, damageKind: 'direct', agents: f.agents, teamSlots: f.teamSlots,
+    wengines: [], driveDiscs: [], bangboos: [], selectedBangbooId: 'none', bangbooRefine: 1,
+    activeSlotPanels: f.panels, editedSlotIndex: 0, hits: f.hits, extraGains: f.extraGains, slotBuffSelections: null,
+    flowCalculationRuntime: createBuffCalculationRuntime(eventRuntimeInput(f,{mainExternal:{ ...f.panels.owner, atk:3000 },sourceExtraGains:attached})),
+    skillFlowMainExternalOverride: { ...f.panels.owner, atk: 3000 }, skillFlowSourceExtraGains: attached,
+  } })
+  try {
+    await nextTick()
+    clearHitEvalCache()
+    mounted.vm.recomputeSkillFlowHitMaps()
+    const id = f.hits[0].id
+    const first = mounted.vm.resolveFlowCalculationDetail(id)
+    assert.equal(first.evaluation.external.atk, 3000)
+    assert.equal(first.evaluation.finalPanel.dmgBonus, 35)
+    assert.equal(mounted.vm.skillFlowHitMapState.map[id], first.evaluation.total)
+    assert.deepEqual(mounted.vm.skillFlowHitMapState.results[id], first.evaluation.result)
+    assert.equal(mounted.vm.resolveFlowCalculationDetail(id).evaluation, first.evaluation)
+    mounted.props.skillFlowMainExternalOverride = { ...f.panels.owner, atk: 4000 }
+    mounted.props.skillFlowSourceExtraGains = []
+    mounted.props.flowCalculationRuntime = createBuffCalculationRuntime(eventRuntimeInput(f,{mainExternal:mounted.props.skillFlowMainExternalOverride}))
+    await nextTick()
+    mounted.vm.recomputeSkillFlowHitMaps()
+    const changed = mounted.vm.resolveFlowCalculationDetail(id)
+    assert.notEqual(changed.evaluation, first.evaluation)
+    assert.equal(changed.evaluation.external.atk, 4000)
+    assert.equal(changed.evaluation.finalPanel.dmgBonus, 25)
+    assert.equal(mounted.vm.skillFlowHitMapState.map[id], changed.evaluation.total)
+    assert.deepEqual(mounted.vm.skillFlowHitMapState.results[id], changed.evaluation.result)
+  } finally { mounted.unmount(); clearHitEvalCache() }
+})
+
+const pairedEventResults = new Map()
+for (const mode of ['ordinary', 'extra-team']) for (const damageType of ['direct', 'sharpen', 'anomaly', 'anomalyRelease', 'disorder', 'turbulence', 'radiance']) {
+  await check(`${mode}: actual ${damageType} event matrix preserves numeric/detail/parity and adoption`, () => {
+    for (const stat of ['atk','def','hp','penRate','pen','resPen','mastery','dmgBonus','critRate','critDmg','anomalyDmgBonus','anomalyMult','anomalyCritRate','anomalyCritDmg','anomalyReleaseMult','anomalyReleaseMultFactor','disorderBaseMult','disorderCompMult','anomalyDuration','turbulenceBaseMult','turbulenceCompMult','radianceMult','mutationCoeff','directDmgMult','pierce','pierceDmgBonus','settlementDmgMult','sharpenDmgBonus','sharpenCritDmgBonus']) {
+      const f = eventFixture({ mode, damageType, effects: [fixed('matrix', stat, 50)], agents: [
+        testAgent('owner', { element: damageType === 'radiance' ? '流明' : damageType === 'turbulence' ? '风' : '电' }), testAgent('power'),
+      ] })
+      const id = idIn(f, 'matrix')
+      const hit = { ...f.hits[0], multOverrides: { directDmgMult: 100, anomalyMult: 100, anomalyReleaseMult: 100, radianceMult: 100 } }
+      const d = evaluateSkillFlowHit(f.context, null, hit, true)
+      const n = evaluateSkillFlowHit(f.context, null, hit, false)
+      const off = evaluateSkillFlowHit(f.context, null, { ...hit, buffOverride: { disabledEffectIds: [id] } }, true)
+      assert.ok(d && n && off, `${damageType}/${stat} must be a calculable event`)
+      assert.deepEqual(d.finalPanel, n.finalPanel, stat)
+      assert.deepEqual(d.breakdown.totalMods, n.breakdown.totalMods, stat)
+      assert.equal(d.total, n.total, stat)
+      if (d.total !== off.total) assert.notEqual(projectEventEffectRecords(d.effectRecords)[id].state, 'inactive', stat)
+      const key = `${damageType}/${stat}`
+      if (mode === 'ordinary') pairedEventResults.set(key, d.result)
+      else assert.deepEqual(d.result, pairedEventResults.get(key), `ordinary/extra ${key}`)
+    }
+  })
+}
 
 console.log(`Results: ${passed} passed, ${failed} failed`)
 if (failed) process.exitCode = 1

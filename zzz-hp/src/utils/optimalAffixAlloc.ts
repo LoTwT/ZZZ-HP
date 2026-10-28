@@ -55,13 +55,15 @@ import {
 } from '@/utils/damageEvent'
 import {
   buildSkillContextFromHit,
+  buildGenericPanelSkillContext,
   resolveEventElement,
   getHitSkipReason,
   skillNeedsDualAgents,
   applyHitPanelMods,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
-import { deepUnwrapReactive } from '@/utils/reactiveUnwrap'
+import { snapshotCalculationInput } from '@/utils/reactiveUnwrap'
+import { toRaw } from 'vue'
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
@@ -85,6 +87,7 @@ import {
   type PanelCalcContext,
   type ConvertResolveInputs,
   resolveBuffSelectionForSlot,
+  resolvePanelBuffSelectionForSlot,
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotMap,
   collectEventCandidateEffects,
@@ -100,6 +103,8 @@ import {
   type PanelStageTrace,
   type ResolvedEffectParameters,
   type PanelPreConvertSnapshot,
+  type EventViewSnapshot,
+  buffMasterDataVersion,
 } from '@/utils/panelBuffCalc'
 import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
 import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
@@ -171,6 +176,7 @@ export interface OptimalEventEvalDetail {
   effectRecords?: EventEffectRecord[]
   panelStageTraces?: PanelStageTrace[]
   damageInputUsages?: EventDamageInputUsage[]
+  viewSnapshots?: Readonly<Record<string, EventViewSnapshot>>
   displayName: string
   kind: DamageEventKind
   perHit: number
@@ -653,9 +659,7 @@ function buildPanelContextForSlot(
     mainSlotIndex: slotIndex,
     mainExternalPanel: mainExternalPanel,
     extraGains: ctx.extraGains,
-    buffSelection: ctx.slotBuffSelections
-      ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex)
-      : ctx.panelContext.buffSelection,
+    buffSelection: resolvePanelBuffSelectionForSlot(ctx.panelContext, slotIndex),
     // 转模基数与面板页同一份解析（Spec §2.1）：主槽用敌方等级、其余用角色等级，
     // 转模部分面板自带的 level 优先。
     attrValues: resolveSlotAttrValues({
@@ -698,6 +702,29 @@ export function buildEventPanelContext(
   })
 }
 
+/** 全局通用视图与事件视图共用槽位/来源装配，行级状态不进入全局。 */
+export function buildGlobalPanelContext(
+  ctx: OptimalEvalContext,
+  mainExternal: PanelStats | null,
+  slotIndex: number,
+): PanelCalcContext {
+  const mainIndex = ctx.panelContext.mainSlotIndex
+  const mainPanel = mainExternal ?? ctx.panelContext.slotExternalPanels?.[mainIndex] ?? createDefaultExternalPanel()
+  const agentId = ctx.panelContext.teamSlots[slotIndex]?.agentId ?? ''
+  const external = resolveExternalForAgent(ctx, agentId, slotIndex, mainPanel)
+  const skill = ctx.panelContext.skillContext
+  const base = buildPanelContextForSlot(ctx, slotIndex, external, mainPanel, {
+    rowBuffOverride: null,
+    deferSourceValues: true,
+    skillContext: buildGenericPanelSkillContext({
+      element: ctx.panelContext.agents.find(agent => agent.id === agentId)?.element,
+      damageKind: skill?.damageKind ?? 'direct',
+      staggerPhase: skill?.staggerPhase ?? 'stagger',
+    }),
+  })
+  return base
+}
+
 /**
  * 事件视图与逐效果记录（计算链路收敛 Spec §3.3）。
  *
@@ -706,6 +733,8 @@ export function buildEventPanelContext(
  * 实际采用标注，**不重新匹配或折算**。
  */
 interface EventTraceView {
+  convertValues?: import('@/utils/panelBuffCalc').PanelSourceValues
+  external: PanelStats
   useView: EventEffectUseView
   viewKey: string
   slotIndex: number
@@ -735,7 +764,7 @@ function buildEventViewKey(parts: {
     `agent:${parts.agentId || ''}`,
     `elem:${parts.element ?? ''}`,
     `panel:${hashPanelForView(parts.external)}`,
-    `context:${JSON.stringify([parts.context?.skillContext, parts.context?.restrictToSlotIndex, parts.context?.excludeBangboo, parts.context?.effectSourcePolicy, parts.context?.traceStage, parts.context?.buffSelection, parts.context?.rowBuffOverride])}`,
+    `context:${JSON.stringify([parts.context?.skillContext, parts.context?.restrictToSlotIndex, parts.context?.excludeBangboo, parts.context?.effectSourcePolicy, parts.context?.traceStage, parts.context?.buffSelection, parts.context?.rowBuffOverride, Boolean(parts.context?.skipConvert)])}`,
   ].join('|')
 }
 
@@ -749,6 +778,19 @@ function createEventTraceCollector(ctx: OptimalEvalContext, mainPanel: PanelStat
     views,
     usages,
     boundInputs,
+    snapshots(): Record<string, EventViewSnapshot> {
+      return Object.fromEntries(views.map(view => {
+        const final = panelCache.get(view.viewKey)
+        const pre = preConvertCache.get(view.viewKey)
+        const agentId = ctx.panelContext.teamSlots[view.slotIndex]?.agentId ?? ''
+        const agentName = ctx.panelContext.agents.find(agent => agent.id === agentId)?.name ?? agentId
+        return [view.viewKey, { agentName, viewKey: view.viewKey, slotIndex: view.slotIndex, policy: view.policy,
+          externalPanel: view.external, panel: final?.finalPanel ?? pre?.preConvertPanel ?? view.external,
+          sources: final?.sources ?? pre?.sources ?? [],
+          convertValues: view.convertValues,
+        }]
+      }))
+    },
     view(parts: {
       useView: EventEffectUseView
       slotIndex: number
@@ -762,6 +804,7 @@ function createEventTraceCollector(ctx: OptimalEvalContext, mainPanel: PanelStat
       const viewKey = buildEventViewKey({ ...parts, context })
       const existing = views.find((item) => item.viewKey === viewKey)
       const view: EventTraceView = existing ?? {
+        external: parts.external!,
         useView: parts.useView,
         viewKey,
         slotIndex: parts.slotIndex,
@@ -773,6 +816,7 @@ function createEventTraceCollector(ctx: OptimalEvalContext, mainPanel: PanelStat
       const options: ComputeFinalPanelOptions = {
         includeDetails: true,
         trace: {
+          onSourceValues: values => { view.convertValues = values },
           viewKey,
           policy: parts.policy,
           onContribution: (item: BuffEffectContribution) => view.contributions.push(item),
@@ -1051,7 +1095,13 @@ export function resolveEventBuffPreviewInputs(
     evaluation === undefined
       ? evaluateOptimalEventDetail(ctx, mainExternal, hit, { includeDetails: true, requirePanel: true })
       : evaluation
-  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
+  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex, true)
+  // 使用正式来源阶段的原值，组合属性和阶段身份也不在配置侧重建。
+  for (const view of Object.values(snapshot?.viewSnapshots ?? {})) {
+    if (view.policy === 'default' && view.convertValues) {
+      context.panelSourceValuesBySlot!.set(view.slotIndex, view.convertValues)
+    }
+  }
   const base = {
     attrDefaults: context.attrValues ?? {},
     panelSourceValues: context.panelSourceValues,
@@ -1061,8 +1111,9 @@ export function resolveEventBuffPreviewInputs(
     // 不可结算：只给共享参数解析出的配置参数（不构造 summary、不冒充 inactive）
     return {
       ...base,
+      contextKind: 'unavailable',
       configurationOnly: true,
-      configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex, mainExternal),
+      configurationParameters: resolveContextConfigurationParameters(ctx, context, slotIndex),
     }
   }
 
@@ -1074,14 +1125,17 @@ export function resolveEventBuffPreviewInputs(
     else if (summary.state === 'inactive') effectAmounts[effectId] = 0
   }
   // 未进入本次求值视图的候选（未启用/未匹配且没有记录）沿用既有「非生效显示位」= 0
-  for (const item of collectAllBuffEffects({ ...context, rowBuffOverride: null })) {
+  const candidates = collectEventCandidateEffects(context)
+  for (const item of [...candidates.items, ...candidates.excluded.map(entry => entry.item)]) {
     effectAmounts[item.effect.id] ??= 0
   }
   return {
     ...base,
+    contextKind: 'event',
+    configurationOnly: false,
     effectAmounts,
     effectSummaries,
-    configurationParameters: resolveConfigurationParameters(ctx, hit, slotIndex, mainExternal),
+    configurationParameters: resolveContextConfigurationParameters(ctx, context, slotIndex),
   }
 }
 
@@ -1095,22 +1149,49 @@ export function resolveConfigurationParameters(
   slotIndex: number,
   mainExternal: PanelStats | null = null,
 ): Record<string, ResolvedEffectParameters> {
-  /**
-   * 配置预览要的是「这条效果被配置成什么」，所以**不能**因为本行禁用就没有参数：
-   * 去掉禁用集合、保留行级的层数/基数覆盖（Spec §5.1 第 1–2 项）。
-   */
-  const configOverlay = hit.buffOverride
-    ? { ...hit.buffOverride, disabledEffectIds: [], disabledBlockIds: [] }
-    : null
   const context = buildEventPanelContext(
     ctx,
     mainExternal,
-    { ...hit, buffOverride: configOverlay },
+    hit,
     slotIndex,
   )
+  return resolveContextConfigurationParameters(ctx, context, slotIndex)
+}
+
+/** 目录候选与生效状态分离；查询禁用条目不重启来源，合并表覆盖所有受益槽位。 */
+export function resolveContextConfigurationParameters(
+  ctx: OptimalEvalContext,
+  query: PanelCalcContext,
+  slotIndex: number,
+): Record<string, ResolvedEffectParameters> {
+  const contexts = new Map<number, PanelCalcContext>([[slotIndex, query]])
+  function forSlot(index: number) {
+    let context = contexts.get(index)
+    if (!context) {
+      const main = query.mainExternalPanel ?? ctx.panelContext.slotExternalPanels![ctx.panelContext.mainSlotIndex]!
+      const external = resolveExternalForAgent(ctx, ctx.panelContext.teamSlots[index]?.agentId ?? '', index, main)
+      context = buildPanelContextForSlot(ctx, index, external, main, {
+        skillContext: query.skillContext!.generic
+          ? buildGenericPanelSkillContext({ ...query.skillContext, element: ctx.panelContext.agents.find(a => a.id === ctx.panelContext.teamSlots[index]?.agentId)?.element })
+          : query.skillContext!,
+        rowBuffOverride: query.rowBuffOverride,
+        deferSourceValues: true,
+      })
+      if (!query.skillContext?.generic) context.panelSourceValuesBySlot = query.panelSourceValuesBySlot
+      contexts.set(index, context)
+    }
+    return context
+  }
   const parameters: Record<string, ResolvedEffectParameters> = {}
-  for (const item of collectAllBuffEffects(context)) {
-    parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
+  for (let index = 0; index < ctx.panelContext.teamSlots.length; index++) {
+    if (!ctx.panelContext.teamSlots[index]?.agentId) continue
+    const context = forSlot(index)
+    const candidates = collectEventCandidateEffects(context)
+    for (const item of [...candidates.items, ...candidates.excluded.map(entry => entry.item)]) {
+      const beneficiary = item.applicableSlots?.length === 1 ? item.applicableSlots[0]! : slotIndex
+      if (index !== beneficiary) continue
+      parameters[item.effect.id] = resolveCollectedEffectParameters(item, forSlot(beneficiary))
+    }
   }
   return parameters
 }
@@ -1621,6 +1702,7 @@ export function evaluateOptimalEventDetail(
     return ownerView
   }
 
+  const remielSelfRadianceCalc = resolveRemielSelfRadianceCalcForOptimal(ctx, evtPowerAgentId, mainPanel, hit, trace)
   const result = computeDamageResult({
     eventDamageType: damageType,
     eventCritMode: hit.critMode,
@@ -1669,13 +1751,7 @@ export function evaluateOptimalEventDetail(
       : resolveProducerAgentLevel(ctx, ownerAgentId),
     mutationZone: luminousMods.mutationZone,
     remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
-    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForOptimal(
-      ctx,
-      evtPowerAgentId,
-      mainPanel,
-      hit,
-      trace,
-    ),
+    remielSelfRadianceCalc,
     disorderZoneMultOverride: zoneMultResolved.disorderZoneMult,
     disorderZoneMultFactorOverride: zoneMultResolved.disorderZoneMultFactor,
     turbulenceZoneMultOverride: zoneMultResolved.turbulenceZoneMult,
@@ -1749,6 +1825,25 @@ export function evaluateOptimalEventDetail(
     }
   }
   const eventRecords = trace ? buildEventEffectRecords(ctx, hit, trace) : null
+  const viewSnapshots = trace?.snapshots()
+  if (trace && viewSnapshots) {
+    // 绑定正式输入的覆盖后字段；视图其他字段保持该政策的原快照，不拼接别人的面板。
+    for (const usage of trace.usages) {
+      // 间接依赖沿用下游结果键，但属于来源自己的视图，不是下游伤害输入的别名。
+      if (usage.usedView === 'convertSourcePanel') continue
+      const view = viewSnapshots[usage.viewKey]!
+      const field = usage.field === 'inCombatAtk' ? 'atk' : usage.field === 'inCombatMastery' ? 'mastery' : usage.field
+      const panel = usage.inputKey === 'triggerFinalPanel' ? evtTriggerFinalPanel
+        : usage.inputKey === 'anomalyTriggerPanel' ? anomalyTriggerPanel
+          : usage.inputKey === 'finalPanel' ? evtFinalPanel : null
+      const value = usage.inputKey === 'remielSelfRadianceCalc'
+        ? remielSelfRadianceCalc?.[usage.field as keyof NonNullable<typeof remielSelfRadianceCalc>]
+        : panel?.[field as keyof PanelStats]
+      if (typeof value === 'number' && field in view.panel) {
+        view.panel = { ...view.panel, [field]: value }
+      }
+    }
+  }
 
   return {
     eventElement: evtPowerElement,
@@ -1766,6 +1861,7 @@ export function evaluateOptimalEventDetail(
           effectRecords: eventRecords.effectRecords,
           panelStageTraces: eventRecords.panelStageTraces,
           damageInputUsages: eventRecords.damageInputUsages,
+          viewSnapshots,
         }
       : {}),
     finalPanel: evtFinalPanel,
@@ -2207,6 +2303,7 @@ function affixEvalContextSignature(ctx: OptimalEvalContext): string {
 function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
   const events = ctx.hits?.map(buildHitEvalFingerprint).join(';') ?? ''
   return [
+    ctx.panelContext.masterDataVersion ?? buffMasterDataVersion(ctx.panelContext),
     ctx.mainAgentId ?? '',
     ctx.mainAgentElement ?? '',
     ctx.isMb ? '1' : '0',
@@ -3373,7 +3470,14 @@ export function buildOptimalEvalContext(input: {
   // 深解包响应式代理：引擎会对这批数据做海量属性读取，走 Proxy 陷阱会慢 3 倍以上
   // （实测 16.4ms → 5.3ms/次评估，见 reactiveUnwrap.ts）。只换引用不改值，
   // 写入仍走响应式链路，因此不会造成「面板改了但计算不更新」。
-  deepUnwrapReactive(input)
+  // 版本化主数据只读共享；可变配置先隔离，不能在页面容器中就地解包代理。
+  const masterDataVersion = buffMasterDataVersion(input)
+  const { agents, wengines, driveDiscs, bangboo, ...configuration } = input
+  input = {
+    ...snapshotCalculationInput(configuration),
+    agents: agents.map(agent => ({ ...toRaw(agent), element: agent.element })),
+    wengines: toRaw(wengines), driveDiscs: toRaw(driveDiscs), bangboo: toRaw(bangboo),
+  }
 
   const mainSlot = input.teamSlots[input.mainSlotIndex]!
   const mainAgent = input.agents.find((a) => a.id === mainSlot.agentId)
@@ -3411,6 +3515,7 @@ export function buildOptimalEvalContext(input: {
     driveDiscMainStats: input.driveDiscMainStats,
     driveDiscs: input.driveDiscs,
     panelContext: {
+      masterDataVersion,
       teamSlots: input.teamSlots,
       agents: input.agents,
       wengines: input.wengines,
@@ -3421,6 +3526,9 @@ export function buildOptimalEvalContext(input: {
       driveDiscs: input.driveDiscs,
       skillContext: input.skillContext,
       buffSelection: input.buffSelection,
+      slotBuffSelections: input.slotBuffSelections,
+      resolvedSlotBuffSelections: input.slotBuffSelections ? Object.fromEntries(input.teamSlots.flatMap((slot, index) =>
+        slot.agentId ? [[index, resolveBuffSelectionForSlot(input.slotBuffSelections, index)]] : [])) : undefined,
       activeSlotPanels: input.activeSlotPanels,
       convertSlotPanels: input.convertSlotPanels,
       skillTalentLevelsByAgent: input.skillTalentLevelsByAgent,

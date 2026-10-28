@@ -88,3 +88,15 @@ export function bindVueFunctions(url, names, bindings) {
   }).outputText
   return new Function(...Object.keys(bindings), `${code}\nreturn { ${names.join(',')} };`)(...Object.values(bindings))
 }
+
+/** 为真实 setup 加载生产依赖；仅视图子组件由内存渲染器省略。 */
+export async function loadVueSetupImports(url) {
+  const imports = {}
+  const source = parse(readFileSync(url, 'utf8')).descriptor.scriptSetup.content
+  for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
+    const key = match[1]
+    if (key === 'vue' || key.endsWith('.vue') || key in imports) continue
+    imports[key] = key.startsWith('@/') ? await import(new URL(`../src/${key.slice(2)}.ts`, import.meta.url).href) : await import(key)
+  }
+  return imports
+}

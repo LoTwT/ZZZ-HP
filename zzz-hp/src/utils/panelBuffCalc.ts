@@ -1,4 +1,5 @@
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
+import { toRaw } from 'vue'
 import {
   isSkillConvertFromKey,
   type SkillTalentLevels,
@@ -124,6 +125,7 @@ export function availableBuffGroupTabs(
  * 局内增益选择器与本行增益例外弹窗共用这一份形状（页面按槽位现给，见 `SkillBuffOverrideModal`）。
  */
 export interface ConvertResolveInputs {
+  contextKind: 'global' | 'group' | 'event' | 'unavailable'
   effectAmounts?: Record<string, number>
   /**
    * 逐效果投影（计算链路收敛 Spec §2.2 第 2 项 / §3.5）：按 effect id 给出
@@ -134,7 +136,7 @@ export interface ConvertResolveInputs {
    * 配置参数（Spec §5.1）：全局选择器 / 组配置 / 不可结算事件的**待选配置**，
    * 与实际贡献分离，不进入 `effectAmounts`，不参与结算。
    */
-  configurationParameters?: Record<string, ResolvedEffectParameters>
+  configurationParameters: Record<string, ResolvedEffectParameters>
   configurationOnly?: boolean
   attrDefaults: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
@@ -348,6 +350,12 @@ export function resolveBuffSelectionForSlot(
     convertInputs: { ...multi.team.convertInputs, ...self.convertInputs },
     manualTouchedIds: { ...multi.team.manualTouchedIds, ...self.manualTouchedIds },
   }
+}
+
+/** 捕获的配置复用已合并输入；未捕获的低层调用保留现有实时解析。 */
+export function resolvePanelBuffSelectionForSlot(ctx: PanelCalcContext, slotIndex: number): BuffSelectionState | null {
+  if (ctx.resolvedSlotBuffSelections) return ctx.resolvedSlotBuffSelections[slotIndex] ?? null
+  return ctx.slotBuffSelections ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex) : ctx.buffSelection ?? null
 }
 
 export function setBuffEffectEnabled(
@@ -575,6 +583,7 @@ export type PanelSourceValues = {
 }
 
 export interface PanelCalcContext {
+  masterDataVersion?: string
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
   wengines: WengineBuffDoc[]
@@ -601,6 +610,8 @@ export interface PanelCalcContext {
   extraGains?: ExtraBuffGain[]
   skillContext?: SkillCalcContext | null
   buffSelection?: BuffSelectionState | null
+  slotBuffSelections?: MultiSlotBuffSelection | null
+  resolvedSlotBuffSelections?: Readonly<Record<number, BuffSelectionState | null>>
   attrValues?: Partial<Record<CharacterAttrKey, number>>
   panelSourceValues?: PanelSourceValues
   /** 本次结算的主 C 槽位下标（调用方传的是编队「编辑中」槽位）；见下方 `resolveExternalPanelForSlot` */
@@ -778,6 +789,7 @@ function buildPanelSourceValuesForSlot(
   const slotCtx: PanelCalcContext = {
     ...ctx,
     mainSlotIndex: slotIndex,
+    buffSelection: resolvePanelBuffSelectionForSlot(ctx, slotIndex),
     mainExternalPanel: externalPanel,
     skipConvert: true,
     /**
@@ -814,7 +826,7 @@ function buildPanelSourceValuesForSlot(
     baseEnergyRegen,
   })
   const extras = resolveConvertAttrExtras(slotIndex, ctx)
-  return {
+  const values: PanelSourceValues = {
     ...(sourceTrace ? { viewKey: sourceTrace.viewKey } : {}),
     external: panelToConvertAttrValues(externalPanel, { ...extras, pierceMod: 0 }),
     final: panelToConvertAttrValues(interimPanel, {
@@ -822,6 +834,8 @@ function buildPanelSourceValuesForSlot(
       pierceMod: interimMods.pierce,
     }),
   }
+  sourceTrace?.onSourceValues?.(values)
+  return values
 }
 
 /**
@@ -1230,6 +1244,18 @@ export interface EventDamageInputUsage extends DamageInputUsage {
   usedView: EventEffectUseView
 }
 
+/** 正式求值已采用的面板视图；仅完整详情保存，不作为另一条计算链。 */
+export interface EventViewSnapshot {
+  agentName: string
+  viewKey: string
+  slotIndex: number
+  policy: PanelViewPolicyId
+  externalPanel: PanelStats
+  panel: PanelStats
+  sources: readonly BuffModSource[]
+  convertValues?: PanelSourceValues
+}
+
 /** 事件级的最终贡献记录：每条候选在最终面板视图里的实际结果。 */
 export interface EventEffectRecord extends BuffEffectContribution {
   eventId: string
@@ -1276,6 +1302,7 @@ export interface ComputeFinalPanelOptions {
    * 不设置时不分配任何记录（数值快路径零开销）。
    */
   trace?: {
+    onSourceValues?: (values: PanelSourceValues) => void
     viewKey: string
     policy: PanelViewPolicyId
     onContribution: (item: BuffEffectContribution) => void
@@ -1301,6 +1328,7 @@ export interface PanelPreConvertSnapshot {
 
 /** 唯一编排：局外 → 转模前 → 最终。`computeFinalPanel` / `runPanelPipeline` 都走这里。 */
 export interface PanelStages {
+  panelSourceValuesBySlot: ReadonlyMap<number, PanelSourceValues>
   externalPanel: PanelStats
   preConvertPanel: PanelStats
   finalBreakdown: PanelBuffBreakdown
@@ -1440,6 +1468,7 @@ export function collectEventCandidateEffects(ctx: PanelCalcContext): {
   excluded: Array<{ item: CollectedEffect; reason: 'disabled' | 'source-excluded' }>
 } {
   const build = buildBuffCatalog({
+    masterDataVersion: ctx.masterDataVersion,
     teamSlots: ctx.teamSlots,
     agents: ctx.agents,
     wengines: ctx.wengines,
@@ -1500,6 +1529,29 @@ export function resolveCollectedEffectPanelSourceValues(
   return inputs.panelSourceValues
 }
 
+/** 正式运算与只读配置共用有效参数输入，启用/匹配只在运算循环处理。 */
+function resolveEffectParameterInputs(
+  ctx: PanelCalcContext,
+  sourceSlotIndex: number | null | undefined,
+  extraGainPack: boolean,
+  panelSourceValuesOverride?: PanelSourceValues,
+  needsPanelSourceValues = true,
+) {
+  const selection = extraGainPack ? null : ctx.buffSelection
+  const overlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
+  const agentId = sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
+  return {
+    stacksByEffectId: overlay?.stacksByEffectId ?? selection?.stacksByEffectId,
+    convertInputs: overlay?.convertInputs ?? selection?.convertInputs,
+    attrValues: ctx.attrValues,
+    panelSourceValues: needsPanelSourceValues
+      ? panelSourceValuesOverride ??
+        (sourceSlotIndex != null ? ctx.panelSourceValuesBySlot?.get(sourceSlotIndex) : undefined) ?? ctx.panelSourceValues
+      : undefined,
+    skillTalentLevels: agentId ? ctx.skillTalentLevelsByAgent?.[agentId] : undefined,
+  }
+}
+
 function resolvePackMods(
   effects: BuffEffect[],
   isMain: boolean,
@@ -1509,12 +1561,10 @@ function resolvePackMods(
 ): BuffStatModifiers {
   const skillCtx = ctx.skillContext ?? defaultSkillContext('direct')
   const sourceSlotIndex = sourceOptions?.sourceSlotIndex ?? slotIndex
-  let panelSourceValues = ctx.panelSourceValues
-  if (sourceOptions?.panelSourceValuesOverride) {
-    panelSourceValues = sourceOptions.panelSourceValuesOverride
-  } else if (sourceSlotIndex != null && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
-    panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
-  }
+  const parameters = resolveEffectParameterInputs(ctx, sourceSlotIndex,
+    sourceOptions?.extraGainPack === true, sourceOptions?.panelSourceValuesOverride,
+    !ctx.skipConvert && effects.some(effect => effect.kind === 'convert'))
+  const panelSourceValues = parameters.panelSourceValues
   const slotElement =
     slotIndex != null
       ? ctx.agents.find((item) => item.id === ctx.teamSlots[slotIndex]?.agentId)?.element
@@ -1522,13 +1572,6 @@ function resolvePackMods(
   const beneficiaryProfession = ctx.agents.find(
     (item) => item.id === ctx.teamSlots[ctx.mainSlotIndex]?.agentId,
   )?.profession
-  // 技能等级转模：取「效果来源角色」的等级（self/team 效果都由来源槽位提供）
-  const slotAgentId =
-    sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
-  // 行级层数/转模覆盖：行级优先合并到全局勾选状态上（无覆盖时原样）
-  const isExtraPack = sourceOptions?.extraGainPack === true
-  const selection = isExtraPack ? null : ctx.buffSelection
-  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
   const trace = ctx.trace
   const stage: BuffEffectContribution['stage'] =
     ctx.traceStage ?? (ctx.skipConvert ? 'preConvert' : 'convert')
@@ -1543,16 +1586,11 @@ function resolvePackMods(
     element: isMain ? skillCtx.element : slotElement,
     beneficiaryElement: resolveBeneficiaryElement(ctx),
     beneficiaryProfession,
-    // 额外 Buff 不吃选择器的层数/转模输入，只吃**本行**覆盖（Spec §5.1 第 6 项）
-    stacksByEffectId: isExtraPack
-      ? rowOverlay?.stacksByEffectId
-      : (rowOverlay?.stacksByEffectId ?? ctx.buffSelection?.stacksByEffectId),
-    convertInputs: isExtraPack
-      ? rowOverlay?.convertInputs
-      : (rowOverlay?.convertInputs ?? ctx.buffSelection?.convertInputs),
-    attrValues: ctx.attrValues,
+    stacksByEffectId: parameters.stacksByEffectId,
+    convertInputs: parameters.convertInputs,
+    attrValues: parameters.attrValues,
     panelSourceValues,
-    skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
+    skillTalentLevels: parameters.skillTalentLevels,
     skipConvert: ctx.skipConvert,
     selection: ctx.buffSelection,
     resolveTeamProfessionCount: resolveTeamProfessionCountOption(ctx),
@@ -1592,30 +1630,17 @@ export function resolveCollectedEffectParameters(
   item: CollectedEffect,
   ctx: PanelCalcContext,
 ): ResolvedEffectParameters {
-  const providerSlot = item.providerSlot ?? null
-  const sourceSlotIndex = resolveCollectedEffectSourceSlot(item) ?? providerSlot
+  const sourceSlotIndex = resolveCollectedEffectSourceSlot(item) ?? item.providerSlot
   const isExtraPack = item.effect.extraGain === true
-  const selection = isExtraPack ? null : ctx.buffSelection
-  const rowOverlay = rowBuffSelectionOverlay(ctx.rowBuffOverride, selection)
   const sourceAvailable = sourceSlotIndex != null && Boolean(ctx.teamSlots[sourceSlotIndex]?.agentId)
-  let panelSourceValues = isExtraPack && !sourceAvailable ? zeroSourceValuesFor([item.effect]) : ctx.panelSourceValues
-  if (sourceAvailable && ctx.panelSourceValuesBySlot?.has(sourceSlotIndex)) {
-    panelSourceValues = ctx.panelSourceValuesBySlot.get(sourceSlotIndex)
-  }
-  const slotAgentId = sourceSlotIndex != null ? ctx.teamSlots[sourceSlotIndex]?.agentId : undefined
+  const parameters = resolveEffectParameterInputs(ctx, sourceSlotIndex, isExtraPack,
+    isExtraPack && !sourceAvailable ? zeroSourceValuesFor([item.effect]) : undefined)
   return resolveBuffEffectParameters(item.effect, {
-    stacks: isExtraPack
-      ? rowOverlay?.stacksByEffectId?.[item.effect.id]
-      : (rowOverlay?.stacksByEffectId?.[item.effect.id] ??
-        ctx.buffSelection?.stacksByEffectId?.[item.effect.id]),
-    overrideBase: isExtraPack
-      ? (rowOverlay?.convertInputs?.[item.effect.id] ?? null)
-      : (rowOverlay?.convertInputs?.[item.effect.id] ??
-        ctx.buffSelection?.convertInputs?.[item.effect.id] ??
-        null),
-    attrValues: ctx.attrValues,
-    panelSourceValues,
-    skillTalentLevels: slotAgentId ? ctx.skillTalentLevelsByAgent?.[slotAgentId] : undefined,
+    stacks: parameters.stacksByEffectId?.[item.effect.id],
+    overrideBase: parameters.convertInputs?.[item.effect.id] ?? null,
+    attrValues: parameters.attrValues,
+    panelSourceValues: parameters.panelSourceValues,
+    skillTalentLevels: parameters.skillTalentLevels,
   })
 }
 
@@ -2092,6 +2117,7 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
 
 /** 构建层输入：纯配置（不含任何运行期输入） */
 export interface BuffBuildConfig {
+  masterDataVersion?: string
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
   wengines: WengineBuffDoc[]
@@ -2111,10 +2137,22 @@ export interface BuffBuild {
 }
 
 const buffBuildCache = new Map<string, BuffBuild>()
+const masterDataVersions = new WeakMap<object, number>()
+let masterDataVersionSequence = 0
+export function buffMasterDataVersion(input: Pick<BuffBuildConfig, 'agents' | 'wengines' | 'driveDiscs' | 'bangboo'>): string {
+  return [input.agents, input.wengines, input.driveDiscs, input.bangboo].map(value => {
+    if (!value) return 0
+    const raw = toRaw(value)
+    let version = masterDataVersions.get(raw)
+    if (version == null) { version = ++masterDataVersionSequence; masterDataVersions.set(raw, version) }
+    return version
+  }).join(',')
+}
 
 /** 构建层键：**只含配置**（不得含主角 / 勾选 / 招式上下文 / 行级例外 / 两个开关） */
 function buildBuffConfigKey(config: BuffBuildConfig): string {
   return [
+    config.masterDataVersion ?? buffMasterDataVersion(config),
     teamSlotsKey(config.teamSlots),
     `${config.bangboo?.id ?? ''},${config.bangbooRefine}`,
     environmentBuffsKey(config.environmentBuffs ?? []),
@@ -2291,6 +2329,7 @@ export function selectEntriesForSlot(input: {
 export function collectAllBuffEffects(ctx: PanelCalcContext): CollectedEffect[] {
   return selectEntriesForSlot({
     build: buildBuffCatalog({
+      masterDataVersion: ctx.masterDataVersion,
       teamSlots: ctx.teamSlots,
       agents: ctx.agents,
       wengines: ctx.wengines,
@@ -2543,6 +2582,7 @@ function buildBuffCatalogKey(ctx: PanelCalcContext): string {
   const bangbooKey = `${ctx.bangboo?.id ?? ''},${ctx.bangbooRefine},${ctx.excludeBangboo ? 1 : 0}`
   const envKey = environmentBuffsKey(ctx.environmentBuffs ?? [])
   return [
+    ctx.masterDataVersion ?? buffMasterDataVersion(ctx),
     slotsKey,
     bangbooKey,
     String(ctx.mainSlotIndex),
@@ -3204,6 +3244,7 @@ function computeTracedPanelStages(
     },
   }
   const candidates = collectEventCandidateEffects(fullCtx)
+  panelSourceValuesBySlot.set(ctx.mainSlotIndex, fullCtx.panelSourceValues!)
   fullCtx.traceIdentities = new Map([
     ...candidates.items.map(item => [item.effect.id, item] as const),
     ...candidates.excluded.map(({ item }) => [item.effect.id, item] as const),
@@ -3230,6 +3271,7 @@ function computeTracedPanelStages(
   return {
     externalPanel,
     preConvertPanel: pre.preConvertPanel,
+    panelSourceValuesBySlot,
     finalBreakdown: {
       totalMods,
       combatMods,
@@ -3301,6 +3343,7 @@ export function computePanelStages(
     },
   }
   const totalSources = includeDetails ? collectPanelBuffModSources(fullCtx) : []
+  panelSourceValuesBySlot.set(ctx.mainSlotIndex, fullCtx.panelSourceValues!)
   const totalMods = includeDetails
     ? mergeModsFromSources(totalSources)
     : collectPanelBuffMods(fullCtx)
@@ -3313,6 +3356,7 @@ export function computePanelStages(
   return {
     externalPanel,
     preConvertPanel,
+    panelSourceValuesBySlot,
     finalBreakdown: {
       totalMods,
       combatMods,

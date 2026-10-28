@@ -1,5 +1,21 @@
 import { isProxy, toRaw } from 'vue'
 
+/** 采集可变配置的响应式依赖并隔离容器；不在调用方对象内替换代理引用。 */
+export function snapshotCalculationInput<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+  if (value === null || typeof value !== 'object') return value
+  if (seen.has(value)) return seen.get(value) as T
+  const raw = toRaw(value)
+  const proto = Object.getPrototypeOf(raw)
+  if (!Array.isArray(raw) && proto !== Object.prototype && proto !== null) return raw
+  // 先创建完整对象形状，再替换子容器；逐个新增大量字段会让 V8 将面板/hit 转为慢属性表。
+  const copy: Record<string, unknown> | unknown[] = Array.isArray(raw) ? [] : { ...value } as Record<string, unknown>
+  seen.set(value, copy)
+  for (const key of Object.keys(value)) {
+    ;(copy as Record<string, unknown>)[key] = snapshotCalculationInput((value as Record<string, unknown>)[key], seen)
+  }
+  return copy as T
+}
+
 /**
  * 深解包 Vue 响应式代理：把代理换成它背后的普通对象，**不改变任何数据**。
  *

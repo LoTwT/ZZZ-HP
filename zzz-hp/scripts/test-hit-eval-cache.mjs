@@ -12,9 +12,9 @@ import ts from 'typescript'
 import { parse } from '@vue/compiler-sfc'
 import { computed, reactive, ref } from 'vue'
 import { FRONTEND_ROOT } from './_paths.mjs'
-import { eventFixture } from './_eventElementHarness.mjs'
+import { eventFixture, eventRuntimeInput } from './_eventElementHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
-import { evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
+import { createBuffCalculationRuntime, evaluateSkillFlowHit } from '../src/utils/skillFlowCalculation.ts'
 import { skillTalentLevelBoundsForRank } from '../src/utils/skillTalentLevels.ts'
 import { buildSkillFlowHitContextSignature } from '../src/utils/skillFlowPanelSource.ts'
 import {
@@ -196,7 +196,17 @@ function buildPanelSignatureRunner() {
     ts.transpileModule(`const value = ${declaration.initializer.getText(ast)};`, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText + '\nreturn value;'
-  return (bindings) => new Function(...Object.keys(bindings), body)(...Object.values(bindings))
+  return (bindings) => {
+    const runtime = computed(() => createBuffCalculationRuntime(eventRuntimeInput(bindings.fixture, {
+      contextInput: { teamSlots:bindings.props.teamSlots, agents:bindings.props.agents,
+        skillTalentLevelsByAgent:bindings.props.skillTalentLevelsByAgent,
+        extraGains:bindings.extraGains.value, environmentBuffs:bindings.props.environmentBuffs ?? [],
+        bangbooRefine:bindings.props.bangbooRefine, activeSlotPanels:bindings.resolvedActiveSlotPanels.value,
+      }, mainExternal:bindings.externalPanel, globalDamageKind:bindings.props.damageKind, staggerPhase:bindings.props.staggerPhase,
+    })))
+    Object.defineProperty(bindings.props,'flowCalculationRuntime',{get:()=>runtime.value,configurable:true})
+    return new Function(...Object.keys(bindings), body)(...Object.values(bindings))
+  }
 }
 
 console.log('== K17：来源角色技能等级 → 上下文身份（真实 Panel 签名 + 生产缓存） ==')
@@ -245,6 +255,7 @@ console.log('== K17：来源角色技能等级 → 上下文身份（真实 Pane
       skillTalentLevelsByAgent: levels,
     })
     const bindings = {
+      fixture,
       computed,
       props,
       resolveActivePanel: () => null,
@@ -347,6 +358,7 @@ console.log('== K12：逐轴失效（真实 Panel 签名 + 生产键） ==')
     const extraGains = ref(fixture.extraGains)
     const externalPanel = reactive({ ...fixture.panels.owner })
     const bindings = {
+      fixture,
       computed,
       props,
       resolveActivePanel: () => null,
@@ -411,9 +423,9 @@ console.log('== K12：逐轴失效（真实 Panel 签名 + 生产键） ==')
     )
 
     // 7) 计算方式 / 招式类别
-    props.calcMode = 'mb'
-    check('K12 改计算方式 → 签名变化', signature.value !== baselineSignature)
-    props.calcMode = 'panel'
+    props.damageKind = 'anomaly'
+    check('K12 改伤害类别 → 签名变化', signature.value !== baselineSignature)
+    props.damageKind = 'direct'
 
     check('K12 全部复原后签名回到基线', signature.value === baselineSignature)
   }

@@ -7,10 +7,11 @@
  *
  * 运行：npx vite-node scripts/test-panel-signature-interaction.mjs
  */
-import { nextTick, reactive } from 'vue'
+import { nextTick, reactive, computed } from 'vue'
 import { createPinia } from 'pinia'
 import { mountVueSetup } from './_vueSetupHarness.mjs'
-import { eventFixture } from './_eventElementHarness.mjs'
+import { eventFixture, eventRuntimeInput } from './_eventElementHarness.mjs'
+import { createBuffCalculationRuntime } from '../src/utils/skillFlowCalculation.ts'
 import { testAgent } from './_effectPipelineHarness.mjs'
 import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
 import {
@@ -88,6 +89,7 @@ const hit = fixture.hits[0]
  */
 const levels = reactive({ power: { basic: 8 } })
 
+const parentRuntime = computed(() => createBuffCalculationRuntime(eventRuntimeInput(fixture,{contextInput:{skillTalentLevelsByAgent:levels}})))
 let mounted = null
 try {
   mounted = mountVueSetup(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), {
@@ -95,6 +97,7 @@ try {
     plugins: [createPinia()],
     expose: ['hitCalcGlobalSignature'],
     props: {
+      get flowCalculationRuntime() { return parentRuntime.value },
       agents: fixture.agents,
       teamSlots: fixture.teamSlots,
       wengines: [],

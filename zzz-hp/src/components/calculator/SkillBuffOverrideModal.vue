@@ -25,7 +25,7 @@ import {
   blockKeyOfCollected,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatBuffEffectResultText, resolveEffectBaseValue } from '@/utils/buffEffect'
+import { formatBuffEffectResultText } from '@/utils/buffEffect'
 import {
   effectRecipientNote as buildEffectRecipientNote,
   flowBuffOverrideExceptionCount,
@@ -175,11 +175,7 @@ function isStackable(effect: BuffEffect): boolean {
 }
 
 /** 本行生效层数 = 行级覆盖 ?? 继承全局 ?? defaultStacks */
-function stacksModel(effect: BuffEffect): number {
-  const overridden = effectiveOverride.value?.stacksByEffectId?.[effect.id]
-  if (overridden != null) return overridden
-  return (!effect.extraGain ? props.globalStacksFor?.(effect) : undefined) ?? effect.defaultStacks ?? 1
-}
+function stacksModel(effect: BuffEffect) { return resolveInputs.value?.configurationParameters[effect.id]?.stacks }
 
 function setStacks(effect: BuffEffect, value: number) {
   const next = { ...override.value?.stacksByEffectId }
@@ -199,17 +195,7 @@ function isConvertBaseEditable(item: CollectedEffect): boolean {
  * 本行当前生效的转模基数：
  * 本层覆盖 ?? 父组（组行）覆盖 ?? 继承全局手填 ?? 面板/默认 —— 与结算的合并顺序一致。
  */
-function convertBaseModel(item: CollectedEffect): number {
-  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
-  if (overridden != null) return overridden
-  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
-  if (inherited != null) return inherited
-  // 共享参数解析给出的「真用的基数」（Spec §5.1 第 5–6 项）：输入框读基数，结果文本读折算值。
-  // 界面不再自己选面板/查等级表；调用方没给参数时只退回配置里写死的 defaultBase。
-  const shared = resolveInputs.value?.configurationParameters?.[item.effect.id]
-  if (shared?.convertBase) return shared.convertBase.value
-  return item.effect.convert?.defaultBase ?? 0
-}
+function convertBaseModel(item: CollectedEffect) { return resolveInputs.value?.configurationParameters[item.effect.id]?.convertBase?.value }
 
 function setConvertInput(effect: BuffEffect, value: number) {
   const next = { ...override.value?.convertInputsByEffectId }
@@ -263,11 +249,13 @@ function statLabel(stat: string): string {
 }
 
 /** 转模折算值：只读共享参数（Spec §5.1 第 5–6 项），不再自行推导 */
-function convertResult(item: CollectedEffect): number {
-  const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
-  if (summary?.amount != null) return summary.amount
-  if (resolveInputs.value?.effectAmounts) return resolveInputs.value.effectAmounts[item.effect.id] ?? 0
-  return resolveInputs.value?.configurationParameters?.[item.effect.id]?.amount ?? 0
+
+function convertResult(item: CollectedEffect) {
+  const inputs = resolveInputs.value
+  if (inputs?.contextKind === 'event') {
+    return inputs.effectSummaries?.[item.effect.id]?.amount ?? inputs.effectAmounts?.[item.effect.id]
+  }
+  return inputs?.configurationParameters[item.effect.id]?.amount
 }
 function effectRecipientNote(item: CollectedEffect): string {
   const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
@@ -276,22 +264,16 @@ function effectRecipientNote(item: CollectedEffect): string {
 
 function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
-  let amountText: string
-  if (resolveInputs.value?.configurationOnly) return `${statLabel(effect.stat)}（整组配置；数值见成员）`
-  const summary = resolveInputs.value?.effectSummaries?.[effect.id]
-  if (summary) {
-    // 实际贡献只读投影：multiple 不显示伪造单值（Spec §5.2 第 1 项）
-    if (summary.state === 'multiple') return `${statLabel(effect.stat)}（多受益角色，见来源）`
-    amountText = formatCalcSigned(summary.amount ?? 0)
-  } else if (resolveInputs.value?.effectAmounts) {
-    amountText = formatCalcSigned(resolveInputs.value.effectAmounts[effect.id] ?? 0)
-  } else if (isStackable(effect)) {
-    amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
-  } else if (effect.kind === 'convert') {
-    amountText = formatCalcSigned(convertResult(item))
-  } else {
-    amountText = formatCalcSigned(Number(effect.value) || 0)
-  }
+  const inputs = resolveInputs.value
+  if (!inputs) return statLabel(effect.stat) + ' —'
+  if (inputs.contextKind === 'group') return statLabel(effect.stat) + '（整组配置；数值见成员）'
+  if (inputs.contextKind === 'unavailable') return statLabel(effect.stat) + '（配置参数；当前事件不可结算）'
+  const summary = inputs.effectSummaries?.[effect.id]
+  if (summary?.state === 'multiple') return statLabel(effect.stat) + '（多受益角色，见来源）'
+  const amount = effect.kind === 'convert' ? convertResult(item)
+    : inputs.contextKind === 'event' ? summary ? summary.amount ?? 0 : inputs.effectAmounts?.[effect.id]
+      : inputs.configurationParameters[effect.id]?.amount
+  const amountText = amount == null ? '—' : formatCalcSigned(amount)
   return formatBuffEffectResultText(effect, amountText, {
     statLabelFn: statLabel,
     skillSubcategories: props.skillSubcategories,
@@ -403,7 +385,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                   <label v-if="isStackable(item.effect)" class="bo-effect-control" @click.stop>
                     <span>层数</span>
                     <NumberStepper
-                      :model-value="stacksModel(item.effect)"
+                      v-if="stacksModel(item.effect) != null"
+                      :model-value="stacksModel(item.effect)!"
                       :min="0"
                       :max="item.effect.maxStacks ?? 99"
                       :step="0.01"
@@ -411,17 +394,20 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                       :disabled="isEffectOff(item.effect.id)"
                       @update:model-value="setStacks(item.effect, $event)"
                     />
+                    <span v-else>—</span>
                   </label>
                   <label v-else-if="isConvertBaseEditable(item)" class="bo-effect-control" @click.stop>
                     <span>基数</span>
                     <NumberStepper
-                      :model-value="convertBaseModel(item)"
+                      v-if="convertBaseModel(item) != null"
+                      :model-value="convertBaseModel(item)!"
                       :min="0"
                       :max="999999"
                       :step="10"
                       :disabled="isEffectOff(item.effect.id)"
                       @update:model-value="setConvertInput(item.effect, $event)"
                     />
+                    <span v-else>—</span>
                   </label>
                   <button
                     v-if="hasEffectOverride(item.effect)"

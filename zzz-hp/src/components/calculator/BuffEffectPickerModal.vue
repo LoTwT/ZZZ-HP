@@ -11,19 +11,7 @@ import type {
   PanelSourceValues,
   ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
-import {
-  availableBuffGroupTabs,
-  getBuffEffectConvertInput,
-  getBuffEffectEnabled,
-  getBuffEffectStacks,
-  isEnvironmentBuffGroup,
-  isEnvironmentBuffSourceKey,
-  resolveEnvironmentBlockItemEnabled,
-  setBuffEffectConvertInput,
-  setBuffEffectEnabled,
-  setBuffEffectStacks,
-  isTeamBuffApplyTarget,
-} from '@/utils/panelBuffCalc'
+import { availableBuffGroupTabs, getBuffEffectConvertInput, getBuffEffectEnabled, isEnvironmentBuffGroup, isEnvironmentBuffSourceKey, resolveEnvironmentBlockItemEnabled, setBuffEffectConvertInput, setBuffEffectEnabled, setBuffEffectStacks, isTeamBuffApplyTarget } from '@/utils/panelBuffCalc'
 import { formatBuffEffectResultText, formatApplySituationLabel } from '@/utils/buffEffect'
 
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
@@ -133,15 +121,7 @@ function setEnabled(
   )
 }
 
-function stacksModel(item: CollectedEffect, fallback: number) {
-  return getBuffEffectStacks(
-    multiSelection.value,
-    viewSlotIndex.value,
-    item.effect.id,
-    item.effect.applyTarget,
-    fallback,
-  )
-}
+function stacksModel(item: CollectedEffect) { return props.configurationParameters?.[item.effect.id]?.stacks }
 
 function setStacks(item: CollectedEffect, value: number) {
   setBuffEffectStacks(
@@ -158,15 +138,10 @@ function setStacks(item: CollectedEffect, value: number) {
  *
  * 改造前这里自己按 `panelSource` 选面板、按技能等级查表、按 `defaultBase` 回落 —— 同一件事在
  * 选择器、行级弹窗、结算三处各写一遍。面板/等级/默认值的解析已收进
- * `resolveCollectedEffectParameters`，这里只剩「取哪个数」。调用方没给参数时退回配置里
- * 写死的 `defaultBase`（**不读面板、不查等级表**）。
+ * `resolveCollectedEffectParameters`，这里只读共享有效参数。调用方未给参数时显示未解析占位，
+ * 不自行读取默认基数、面板或技能等级。
  */
-function convertBase(item: CollectedEffect): number {
-  if (!item.effect.convert) return 0
-  const shared = props.configurationParameters?.[item.effect.id]
-  if (shared?.convertBase) return shared.convertBase.value
-  return item.effect.convert.defaultBase ?? 0
-}
+function convertBase(item: CollectedEffect) { return props.configurationParameters?.[item.effect.id]?.convertBase?.value }
 function hasConvertOverride(item: CollectedEffect) {
   return (
     getBuffEffectConvertInput(
@@ -178,18 +153,10 @@ function hasConvertOverride(item: CollectedEffect) {
   )
 }
 
-function convertOverrideModel(item: CollectedEffect) {
-  const saved = getBuffEffectConvertInput(
-    multiSelection.value,
-    viewSlotIndex.value,
-    item.effect.id,
-    item.effect.applyTarget,
-  )
-  if (saved != null) return saved
-  return convertBase(item)
-}
+function convertOverrideModel(item: CollectedEffect) { return convertBase(item) }
 
-function setConvert(item: CollectedEffect, value: number) {
+function setConvert(item: CollectedEffect, value: number | undefined) {
+  if (value == null) return
   setBuffEffectConvertInput(
     multiSelection.value,
     viewSlotIndex.value,
@@ -202,12 +169,14 @@ function setConvert(item: CollectedEffect, value: number) {
 function clearConvertOverride(item: CollectedEffect) {
   const id = item.effect.id
   if (isManualConvert(item)) {
+    const base = convertBase(item)
+    if (base == null) return
     setBuffEffectConvertInput(
       multiSelection.value,
       viewSlotIndex.value,
       id,
       item.effect.applyTarget,
-      convertBase(item),
+      base,
     )
     return
   }
@@ -221,10 +190,10 @@ function clearConvertOverride(item: CollectedEffect) {
  * 转模折算值（Spec §5.1 第 5–6 项）：**只读共享参数解析的 `amount`**。
  *
  * 改造前这里自己读面板/等级表再算一遍 —— 那正是「界面算 150、结算按 100」这类分叉的来源。
- * 没有共享参数时返回 0（显示为未解析），不再自行推导。
+ * 没有共享参数时返回 undefined，由格式化函数显示未解析占位。
  */
-function convertResult(item: CollectedEffect): number {
-  return props.configurationParameters?.[item.effect.id]?.amount ?? 0
+function convertResult(item: CollectedEffect) {
+  return props.configurationParameters?.[item.effect.id]?.amount
 }
 function blockNameText(item: CollectedEffect) {
   return item.blockName?.trim() || '增益'
@@ -238,22 +207,13 @@ function noteText(item: CollectedEffect) {
   return item.blockNote?.trim() || ''
 }
 
-function formatSigned(value: number) {
-  return formatCalcSigned(value)
+function formatSigned(value: number | undefined) {
+  return value == null ? '—' : formatCalcSigned(value)
 }
 
 /** 参考站效果行：招式前缀 + 属性名 + 数值（叠层按当前层数出总值、转模出解析值）；非全局作用情况紧随 [强攻] 之后 */
 function effectResultText(item: CollectedEffect) {
-  let amountText = ''
-  if (item.effect.kind === 'stacked' || item.effect.stackable) {
-    const stacks = stacksModel(item, item.effect.defaultStacks ?? 1)
-    const per = item.effect.valuePerStack ?? 0
-    amountText = formatSigned(per * stacks)
-  } else if (item.effect.kind === 'convert') {
-    amountText = formatSigned(convertResult(item))
-  } else {
-    amountText = formatSigned(Number(item.effect.value) || 0)
-  }
+  const amountText = formatSigned(props.configurationParameters?.[item.effect.id]?.amount)
   return formatBuffEffectResultText(item.effect, amountText, {
     statLabelFn: (stat) => statLabel(stat),
     skillSubcategories: props.skillSubcategories,
@@ -548,7 +508,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                 >
                   <span>层数</span>
                   <NumberStepper
-                    :model-value="stacksModel(item, item.effect.defaultStacks ?? 1)"
+                    v-if="stacksModel(item) != null"
+                    :model-value="stacksModel(item)!"
                     :min="0"
                     :max="item.effect.maxStacks ?? 99"
                     :step="0.01"
@@ -556,6 +517,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     :disabled="!isEnabled(item)"
                     @update:model-value="setStacks(item, $event)"
                   />
+                  <span v-else>—</span>
                 </label>
                 <label
                   v-else-if="isConvert(item) && item.effect.convert"
@@ -570,13 +532,15 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     v-if="isManualConvert(item) || hasConvertOverride(item)"
                   >
                     <NumberStepper
-                      :model-value="convertOverrideModel(item)"
+                      v-if="convertOverrideModel(item) != null"
+                      :model-value="convertOverrideModel(item)!"
                       :min="0"
                       :max="999999"
                       :step="isManualConvert(item) && item.effect.convert.from === 'level' ? 1 : 10"
                       :disabled="!isEnabled(item)"
                       @update:model-value="setConvert(item, $event)"
                     />
+                    <span v-else>—</span>
                     <button
                       v-if="!isManualConvert(item)"
                       type="button"

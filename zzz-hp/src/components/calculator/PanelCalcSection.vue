@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createBuffCalculationRuntime, type BuffCalculationRuntime } from '@/utils/skillFlowCalculation'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { type ExtraBuffGain } from '@/types/extraBuff'
@@ -16,19 +17,7 @@ import type {
   WengineBuffDoc,
 } from '@/types/calculator'
 import type { DamageCalcPanelSnapshot, DamageCalcSchemePanelSnapshot, FlowBuffOverride } from '@/types/damageCalcHistory'
-import {
-  applyAgentBaseToPanelStats,
-  createDefaultExternalPanel,
-  createEmptyAffixCounts,
-  createEmptyAffixDriveDiscMainStats,
-  createEmptyExternalPanel,
-  createExternalPanelFromAgentBase,
-  fillPanelStatsDefaults,
-  type AffixCounts,
-  type AffixDriveDiscMainStats,
-  type PanelCalcMode,
-  type PanelStats,
-} from '@/types/calculatorPanel'
+import { applyAgentBaseToPanelStats, createDefaultExternalPanel, createEmptyAffixCounts, createEmptyAffixDriveDiscMainStats, createExternalPanelFromAgentBase, fillPanelStatsDefaults, type AffixCounts, type AffixDriveDiscMainStats, type PanelCalcMode, type PanelStats } from '@/types/calculatorPanel'
 import {
   panelOfSource,
   resolveActivePanel,
@@ -38,28 +27,10 @@ import {
   createEmptyBuffStatModifiers,
   createEmptyRefinementMods,
 } from '@/utils/calculatorUi'
-import {
-  applyConvertPartialToExternalPanel,
-  buildPanelSourceValuesBySlotRecord,
-  computeFinalPanel,
+import { applyConvertPartialToExternalPanel, resolveBuffSelectionForSlot, type ConvertSlotPanels, type MultiSlotBuffSelection, type ResolvedEffectParameters } from '@/utils/panelBuffCalc'
+import { resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
 
-  collectAllBuffEffects,
-  panelToConvertAttrValues,
-  resolveBuffSelectionForSlot,
-  resolveAnomalyReleaseMultFields,
-  resolveCollectedEffectParameters,
-
-  type ConvertSlotPanels,
-  type MultiSlotBuffSelection,
-  type ResolvedEffectParameters,
-} from '@/utils/panelBuffCalc'
-import { resolveSlotAttrValues, resolveSlotExternalPanel } from '@/utils/panelSourceResolution'
-import { buildSkillFlowHitContextSignature } from '@/utils/skillFlowPanelSource'
-import {
-
-
-  type DamageCalcResult,
-} from '@/utils/damageCalc'
+import type { DamageCalcResult } from '@/utils/damageCalc'
 import {
   normalizeDamageEnemyInput,
   type DamageEnemyInput,
@@ -68,43 +39,15 @@ import {
   DAMAGE_EVENT_KIND_OPTIONS,
   disorderLabelFromResult,
 } from '@/utils/damageEvent'
-import {
-  buildGenericPanelSkillContext,
+import { type HitLine, type ResolvedHit } from '@/utils/resolvedHit'
 
-  type HitLine,
-  type ResolvedHit,
-} from '@/utils/resolvedHit'
-import {
-  buildOptimalEvalContext,
-  withAffixLibraryExtraGains,
-} from '@/utils/optimalAffixAlloc'
-import {
-  buildHitEvalFingerprint,
-  hitEvalCacheKey,
-  internHitEvalContext,
-  readHitEvalCache,
-  writeHitEvalCache,
-  type HitEvalCacheEntry,
-} from '@/utils/hitEvalCache'
-import { resolveEventBuffPreviewInputs } from '@/utils/optimalAffixAlloc'
-import { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
+import { type HitEvalCacheEntry } from '@/utils/hitEvalCache'
+
 import {
   normalizeExtraGains,
   serializeExtraGains,
 } from '@/utils/extraBuffCalc'
-import {
 
-
-
-
-} from '@/utils/remielUtils'
-import {
-
-} from '@/utils/remielSelfRadiancePanel'
-
-import {
-
-} from '@/utils/anomalyFormulaDisplay'
 import { useCalculatorBuffStore } from '@/stores/calculatorBuffs'
 
 const MB_PROFESSION = '命破'
@@ -121,6 +64,8 @@ const emptyBangboo: BangbooBuffDoc = {
 }
 
 const props = defineProps<{
+  flowCalculationRuntime?: BuffCalculationRuntime
+  configurationCalculationRuntime?: BuffCalculationRuntime
   teamSlots: TeamSlot[]
   agents: AgentBuffDoc[]
   wengines: WengineBuffDoc[]
@@ -256,10 +201,7 @@ function loadAffixFromCurrentSlot() {
   applyAffixState(undefined)
 }
 
-
-
 const enemyInput = defineModel<DamageEnemyInput>('enemyInput', { required: true })
-
 
 /** 当前正在编辑的编队槽位（点选代理人卡片） */
 const mainSlotIndex = computed(() => {
@@ -276,7 +218,6 @@ const mainAgent = computed(() =>
 
 const { skillSubcategories, followUpSkillRules } = storeToRefs(useCalculatorBuffStore())
 
-
 /**
  * 每个角色**激活那份**局外面板 —— 计算链路唯一的取面板入口。
  * 来源（面板导入 / 词条导入）到这里就解析完了，下游不再区分。
@@ -288,23 +229,6 @@ const resolvedActiveSlotPanels = computed<Record<string, PanelStats>>(() => {
     if (panel) map[agentId] = panel
   }
   return map
-})
-
-/**
- * 编辑中那个人的局外面板 —— 显示与计算唯一的取面板入口。
- *
- * 只读**激活那份**（面板导入 / 词条导入同等对待），不看「面板导入 / 词条导入」两个 tab，
- * 也不问来历。改造前这里按 `calcMode === 'affix'` 分流（词条模式读现推值、面板模式读
- * live 编辑器），于是那两个 tab 会**悄悄改掉算进去的面板**——实测同一份激活面板下，
- * 只因为 tab 停在「面板导入」而不是「词条导入」，局内攻击就从 3883 变成 6136
- * （2026-09-11 复现，见 `dev-docs/affix-calc-manual.md` §2）。
- */
-const effectiveExternalPanel = computed<PanelStats>(() => {
-  const id = mainAgent.value?.id
-  const active = id ? resolveActivePanel(props.slotPanels?.[id]) : undefined
-  if (active) return active
-  // 该角色没有面板记录 → 空面板：没有面板就不出伤害（不再拿 live 编辑器/占位面板顶替）
-  return createEmptyExternalPanel()
 })
 
 const isAffixMode = computed(() => props.calcMode === 'affix')
@@ -339,7 +263,7 @@ const effectiveBaseDamageSource = computed<BaseDamageSource>(() => {
 })
 
 const convertAttrDefaults = computed<Partial<Record<CharacterAttrKey, number>>>(() =>
-  panelToConvertAttrValues(effectiveExternalPanel.value, { level: 60, pierceMod: 0 }),
+  globalCalculationRuntime.value.getConfigurationInputs(mainSlotIndex.value, 'global').attrDefaults,
 )
 
 /**
@@ -372,78 +296,16 @@ const slotExternalPanelsMap = computed<Record<number, PanelStats>>(() => {
   return map
 })
 
-
-function resolveBuffMatchElementForSlot(slotIndex: number): string | undefined {
-  const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  return agent?.element
-}
-
-
-function buildSkillContextForSlot(slotIndex: number) {
-  const agent = props.agents.find((item) => item.id === props.teamSlots[slotIndex]?.agentId)
-  return buildGenericPanelSkillContext({
-    element: resolveBuffMatchElementForSlot(slotIndex) ?? agent?.element ?? mainAgent.value?.element,
-    staggerPhase: props.staggerPhase ?? 'stagger',
-  })
-}
-
-function buildPanelCalcContextForSlot(slotIndex: number) {
-  return {
-    teamSlots: props.teamSlots,
-    agents: props.agents,
-    wengines: props.wengines,
-    bangboo: selectedBangboo.value,
-    bangbooRefine: props.bangbooRefine,
-    mainSlotIndex: slotIndex,
-    liveExternalSlotIndex: mainSlotIndex.value,
-    driveDiscs: props.driveDiscs,
-    extraGains: extraGains.value,
-    skillContext: buildSkillContextForSlot(slotIndex),
-    buffSelection: resolveBuffSelectionForSlot(props.slotBuffSelections, slotIndex),
-    // 已解析的激活面板（每人一份）：引擎侧不再知道「来源」这回事
-    activeSlotPanels: resolvedActiveSlotPanels.value,
-    convertSlotPanels: props.convertSlotPanels,
-    slotExternalPanels: slotExternalPanelsMap.value,
-    mainExternalPanel: resolveExternalPanelForSlotIndex(mainSlotIndex.value),
-    attrValues: getAttrDefaultsForSlot(slotIndex),
-    environmentBuffs: props.environmentBuffs,
-    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
-  }
-}
-
 /**
  * 全局选择器要的待选配置参数（Spec §2.3 第 6 项 / §5.1 第 1 项）：
  * 用全局 PanelCalcContext（行级例外恒为 null）解析，不产出任何实际贡献。
  */
-function getConfigurationParametersForSlot(
-  slotIndex: number,
-  /** 行级例外（组 + 成员合并后的那一行）；缺省 = 全局口径（行级例外恒为 null） */
-  rowOverride?: FlowBuffOverride | null,
-): Record<string, ResolvedEffectParameters> {
-  const context = { ...buildPanelCalcContextForSlot(slotIndex), rowBuffOverride: rowOverride
-    ? { ...rowOverride, disabledEffectIds: [], disabledBlockIds: [] }
-    : null }
-  const parameters: Record<string, ResolvedEffectParameters> = {}
-  for (const item of collectAllBuffEffects(context)) {
-    parameters[item.effect.id] = resolveCollectedEffectParameters(item, context)
-  }
-  return parameters
+function getConfigurationParametersForSlot(slotIndex: number, rowOverride?: FlowBuffOverride | null): Record<string, ResolvedEffectParameters> {
+  return globalCalculationRuntime.value.getConfigurationInputs(slotIndex, rowOverride ? 'group' : 'global', rowOverride).configurationParameters
 }
 
 function getAttrDefaultsForSlot(slotIndex: number) {
-  return resolveSlotAttrValues({
-    slotIndex,
-    mainSlotIndex: mainSlotIndex.value,
-    teamSlots: props.teamSlots,
-    external: resolveExternalPanelForSlotIndex(slotIndex),
-    convertSlotPanels: props.convertSlotPanels,
-    // 主槽按敌方等级取基数，其余按角色等级；没有角色时 60（既有回落，保持不动）
-    agentLevelBySlot: (index) => {
-      const agentId = props.teamSlots[index]?.agentId
-      if (index === mainSlotIndex.value) return enemyInput.value.level
-      return agentId ? resolveAgentLevel(agentId) : 60
-    },
-  })
+  return globalCalculationRuntime.value.getConfigurationInputs(slotIndex, 'global').attrDefaults
 }
 
 function getPanelSourceValuesForSlot(slotIndex: number) {
@@ -457,44 +319,13 @@ function getPanelSourceValuesBySlot(
   hit?: ResolvedHit,
 ) {
   if (hit) return getEventBuffPreviewInputs(slotIndex, hit, rowOverride).panelSourceValuesBySlot ?? {}
-  const context = buildPanelCalcContextForSlot(slotIndex)
-  return buildPanelSourceValuesBySlotRecord(
-    { ...context, rowBuffOverride: rowOverride, skillContext: skillContext ?? context.skillContext },
-    resolveExternalPanelForSlotIndex(slotIndex),
-  )
+  void skillContext
+  return globalCalculationRuntime.value.getConfigurationInputs(slotIndex, rowOverride ? 'group' : 'global', rowOverride).panelSourceValuesBySlot ?? {}
 }
 
-
-const eventBuffPreviewCache = new Map<string, ReturnType<typeof resolveEventBuffPreviewInputs>>()
-
 function getEventBuffPreviewInputs(slotIndex: number, hit: ResolvedHit, rowOverride?: FlowBuffOverride | null) {
-  const effectiveHit = { ...hit, buffOverride: rowOverride === undefined ? hit.buffOverride : rowOverride }
-  const key = `${slotIndex}|${hitEvalCacheKey(
-    buildHitEvalFingerprint(effectiveHit), internHitEvalContext(hitCalcGlobalSignature.value),
-    skillFlowMainExternal.value, true,
-  )}`
-  const cached = eventBuffPreviewCache.get(key)
-  if (cached) return cached
-  // 共享带记录结果：预览与详情共用同一份 detail 条目（Spec §2.3 第 3 项 / §3.4 第 3 项）。
-  // 冷态允许一次正式重放并写回；热态命中，不再按效果逐条重算。
-  const detail = resolveSkillFlowCalculationDetail(
-    skillFlowCalculationContext.value,
-    skillFlowMainExternal.value,
-    effectiveHit,
-    hitEvalCacheKey(
-      buildHitEvalFingerprint(effectiveHit),
-      internHitEvalContext(hitCalcGlobalSignature.value),
-      skillFlowMainExternal.value,
-      true,
-    ),
-  )
-  const inputs = resolveEventBuffPreviewInputs(
-    skillFlowCalculationContext.value, skillFlowMainExternal.value,
-    effectiveHit, slotIndex, detail?.evaluation ?? null,
-  )
-  if (eventBuffPreviewCache.size >= 128) eventBuffPreviewCache.delete(eventBuffPreviewCache.keys().next().value!)
-  eventBuffPreviewCache.set(key, inputs)
-  return inputs
+  return props.flowCalculationRuntime?.getHitBuffPreview(slotIndex, hit, rowOverride)
+    ?? { contextKind: 'unavailable' as const, configurationOnly: true, configurationParameters: {}, attrDefaults: {} }
 }
 
 /**
@@ -509,105 +340,16 @@ function applyAgentBaseToExternalPanel(base: PanelStats | AgentBuffDoc['basePane
 }
 
 
-const triggerAgent = computed(() =>
-  props.agents.find((item) => item.id === props.triggerAnomalyAgentId),
-)
 
-function resolveAgentLevel(agentId: string | null | undefined): number {
-  if (!agentId || agentId === mainAgent.value?.id) {
-    return enemyInput.value.level
-  }
-  const saved = props.convertSlotPanels?.[agentId]?.level
-  return typeof saved === 'number' && saved >= 1 ? saved : 60
-}
-
-
-const needsTriggerPanel = computed(() => {
-  const sub = props.anomalySubKind
-  return (
-    props.damageKind === 'anomaly' &&
-    (sub === 'turbulence' ||
-      sub === 'anomalyRelease' ||
-      sub === 'disorder' ||
-      sub === 'radiance')
-  )
-})
-
-/** 异放/乱流/耀变时伤害属性跟随触发角色；否则用当前编辑角色（流明不作等价属性替换，等价属性仅用于抗性区） */
-const damageElement = computed(() => {
-  if (needsTriggerPanel.value && triggerAgent.value?.element) {
-    return triggerAgent.value.element
-  }
-  return mainAgent.value?.element
-})
-
-/** 追踪转模局外面板深层变更，确保局内增益展示重算 */
-const convertSlotPanelsSignature = computed(() =>
-  JSON.stringify(props.convertSlotPanels ?? {}),
-)
 
 const slotBuffSelectionsSignature = computed(() =>
   JSON.stringify(props.slotBuffSelections ?? {}),
 )
 
-const panelBreakdown = computed(() => {
-  void convertSlotPanelsSignature.value
-  void slotBuffSelectionsSignature.value
-  return computeFinalPanel(
-    effectiveExternalPanel.value,
-    buildPanelCalcContextForSlot(mainSlotIndex.value),
-  )
-})
+const panelBreakdown = computed(() => globalCalculationRuntime.value.getGlobalPanelStages(mainSlotIndex.value).finalBreakdown)
 
-const finalPanel = computed(() => {
-  const panel = { ...panelBreakdown.value.finalPanel }
-  if (
-    !props.hits?.length &&
-    props.damageKind === 'anomaly' &&
-    (props.anomalySubKind ?? 'anomaly') === 'anomalyRelease'
-  ) {
-    const fields = resolveAnomalyReleaseMultFields(
-      effectiveExternalPanel.value,
-      {
-        ...buildPanelCalcContextForSlot(mainSlotIndex.value),
-        skillContext: {
-          ...buildSkillContextForSlot(mainSlotIndex.value),
-          damageKind: 'anomaly',
-          anomalySubKind: 'anomalyRelease',
-          element: damageElement.value,
-        },
-      },
-      damageElement.value ?? undefined,
-    )
-    panel.anomalyReleaseMult = fields.anomalyReleaseMult
-    panel.anomalyReleaseMultFactor = fields.anomalyReleaseMultFactor
-  }
-  return panel
-})
-
-const convertPanelSourceValues = computed(() => ({
-  external: panelToConvertAttrValues(effectiveExternalPanel.value, { level: 60, pierceMod: 0 }),
-  final: panelToConvertAttrValues(finalPanel.value, {
-    level: 60,
-    pierceMod: panelBreakdown.value.totalMods.pierce,
-  }),
-}))
-
-const panelSourceValuesBySlot = computed(() => {
-  void convertSlotPanelsSignature.value
-  void slotBuffSelectionsSignature.value
-  return buildPanelSourceValuesBySlotRecord(
-    buildPanelCalcContextForSlot(mainSlotIndex.value),
-    effectiveExternalPanel.value,
-  )
-})
-
-
-
-
-
-
-
+const convertPanelSourceValues = computed(() => globalCalculationRuntime.value.getGlobalPanelSources(mainSlotIndex.value)[mainSlotIndex.value])
+const panelSourceValuesBySlot = computed(() => globalCalculationRuntime.value.getGlobalPanelSources(mainSlotIndex.value))
 
 /** 导入确认后：刷新 live 面板编辑器 —— 面板页编辑的是「面板导入」那份，故按该来源取数 */
 function syncLivePanelFromCommitted() {
@@ -708,12 +450,7 @@ watch(
   { immediate: true },
 )
 
-
-
-
 /**
-
-
 
 /**
  * 面板计算链路用的统一评估上下文（`计算方式 = 面板导入 / 词条导入`）。
@@ -721,8 +458,7 @@ watch(
  * 招式伤害只认「上下文 + 当前编辑角色的局外面板」，「面板从哪来」由 `skillFlowMainExternal` 决定 ——
  * 这条链路与最优词条分配链路共用同一段招式计算，见 `dev-docs/affix-calc-manual.md` §4（计算链路统一·步骤①~④）。
  */
-const skillFlowEvalCtx = computed(() =>
-  buildOptimalEvalContext({
+const calculationContextInput = computed(() => ({
     isMb: isMbMainAgent.value,
     isFengYu: isFengYuMainAgent.value,
     teamSlots: props.teamSlots,
@@ -742,79 +478,20 @@ const skillFlowEvalCtx = computed(() =>
     convertSlotPanels: props.convertSlotPanels,
     // 非当前编辑槽位沿用本组件那份解析（激活面板 → 转模部分面板 → 空面板），
     // 与改造前逐位一致（引擎默认解析的回落不同，不能让它接管）
-    slotExternalPanels: slotExternalPanelsMap.value,
     hits: props.hits,
     triggerAnomalyAgentId: props.triggerAnomalyAgentId,
-    resolveSubcategory: (id) => skillSubcategories.value.find((item) => item.id === id) ?? null,
+    resolveSubcategory: ((items) => (id: string | null) => items.find(item => item.id === id) ?? null)(skillSubcategories.value),
     skillSubcategories: skillSubcategories.value,
     followUpSkillRules: followUpSkillRules.value,
     environmentBuffs: props.environmentBuffs,
     skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
-  }),
-)
+  }))
 
-/**
- * 主 C 局外面板：默认取角色配置里那份激活面板；
- * 选了「词条分析」两态时用页级下发的覆盖值（同一份数值两个消费者共用）。
- */
-const skillFlowMainExternal = computed(
-  () => props.skillFlowMainExternalOverride ?? resolveExternalPanelForSlotIndex(mainSlotIndex.value),
-)
-
-const skillFlowCalculationContext = computed(() =>
-  withAffixLibraryExtraGains(
-    skillFlowEvalCtx.value,
-    props.skillFlowMainExternalOverride ? (props.skillFlowSourceExtraGains ?? []) : [],
-  ),
-)
-
-
-/**
- * 「配置变了没」的指纹：**必须从响应式来源直接读**。
- *
- * 教训（2026-09-11 实测）：先前用 `buildHitEvalContextSignature(ctx)` 直接从上下文取，
- * 但上下文里的对象是深解包后的**原始对象**（不经过响应式代理），读它**不会**建立依赖 ——
- * 于是改了敌方防御等参数后这个 computed 不重算、键不变、命中旧结果，界面数字纹丝不动。
- * 所以这里保留按响应式来源逐项读取的写法（改造前即如此），键里的「用的是哪份面板」
- * 另有 `mainExternal` 承担。
- */
-const hitCalcGlobalSignature = computed(() =>
-  // 身份字段表单点维护（`buildSkillFlowHitContextSignature`）：与词条页同一份，
-  // 任何影响命中结果的输入都在表里（含技能等级、影画、精炼、行级例外、主槽面板）。
-  buildSkillFlowHitContextSignature({
-    baseDamageSource: baseDamageSource.value,
-    agentElements: props.agents.map((agent) => [agent.id, agent.element]),
-    teamSlots: props.teamSlots,
-    bangbooId: props.selectedBangbooId,
-    bangbooRefine: props.bangbooRefine,
-    driveDiscMainStats: affixDriveDiscMainStats,
-    mainSlotIndex: props.editedSlotIndex,
-    skillTalentLevelsByAgent: props.skillTalentLevelsByAgent,
-    buffSelection: slotBuffSelectionsSignature.value,
-    slotBuffSelections: slotBuffSelectionsSignature.value,
-    convertSlotPanels: convertSlotPanelsSignature.value,
-    activeSlotPanels: resolvedActiveSlotPanels.value,
-    environmentBuffIds: (props.environmentBuffs ?? []).map((item) => item.id),
-    extraGains: extraGains.value,
-    sourceExtraGains: props.skillFlowSourceExtraGains,
-    enemy: enemyInput.value,
-    damageKind: props.damageKind ?? null,
-    staggerPhase: props.staggerPhase,
-    calcMode: props.calcMode,
-    triggerAnomalyAgentId: props.triggerAnomalyAgentId ?? null,
-    anomalySubKind: props.anomalySubKind ?? null,
-    skillCategoryId: props.skillCategoryId ?? null,
-    skillSubcategoryId: props.skillSubcategoryId ?? null,
-    mainExternalPanel: externalPanel,
-    slotExternalPanels: props.teamSlots.map((slot, index) =>
-      index === props.editedSlotIndex
-        ? ''
-        : JSON.stringify(resolveActivePanel(props.slotPanels?.[slot.agentId]) ?? null),
-    ),
-    affixCounts,
-    rowBuffOverride: null,
-  }),
-)
+const globalCalculationRuntime = computed(() => props.configurationCalculationRuntime ?? createBuffCalculationRuntime({
+  contextInput: calculationContextInput.value, externalPanelPolicy: 'configured', mainExternal: null, sourceExtraGains: [],
+  staggerPhase: props.staggerPhase, globalDamageKind: props.damageKind,
+}))
+const hitCalcGlobalSignature = computed(() => props.flowCalculationRuntime?.signature ?? '')
 /** 准备招式的单次预览行（只用于上报，不参与流程总伤） */
 const previewHitLineById: Record<string, HitLine> = {}
 
@@ -847,38 +524,11 @@ function syncHitSummary(
   options?: { usePerHit?: boolean },
 ) {
   const list = hits ?? []
-  const contextToken = internHitEvalContext(hitCalcGlobalSignature.value)
   const lines: HitLine[] = []
   let grandTotal = 0
 
   for (const hit of list) {
-    const key = hitEvalCacheKey(
-      buildHitEvalFingerprint(hit),
-      contextToken,
-      skillFlowMainExternal.value,
-      false,
-    )
-    let entry = readHitEvalCache(key)
-    if (!entry) {
-      try {
-        const detail = evaluateSkillFlowHit(
-          skillFlowCalculationContext.value,
-          skillFlowMainExternal.value,
-          hit,
-        )
-        if (detail) {
-          entry = {
-            hitId: hit.id,
-            perHit: detail.perHit,
-            total: detail.total,
-            result: detail.result,
-          }
-          writeHitEvalCache(key, entry)
-        }
-      } catch (error) {
-        console.error('[syncHitSummary] skip hit due to calc error', hit.skill?.name, error)
-      }
-    }
+    const entry = props.flowCalculationRuntime?.getHitNumbers(hit)
     if (!entry) continue
 
     const line = buildHitLine(hit, entry, resolveOwnerName)
@@ -963,36 +613,6 @@ onUnmounted(() => {
   }
 })
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const teamSummary = computed(() =>
   props.teamSlots
     .map((slot, index) => {
@@ -1070,10 +690,12 @@ function previewFinalPanel(external: PanelStats, slotIndex?: number): PanelStats
   const index = slotIndex ?? mainSlotIndex.value
   if (index < 0 || index >= props.teamSlots.length) return null
   try {
-    return computeFinalPanel(
-      fillPanelStatsDefaults(external),
-      buildPanelCalcContextForSlot(index),
-    ).finalPanel
+    const agentId = props.teamSlots[index]?.agentId
+    const activeSlotPanels = { ...resolvedActiveSlotPanels.value, ...(agentId ? { [agentId]: fillPanelStatsDefaults(external) } : {}) }
+    return createBuffCalculationRuntime({ contextInput: { ...calculationContextInput.value, activeSlotPanels },
+      externalPanelPolicy: 'configured', mainExternal: null, sourceExtraGains: [], staggerPhase: props.staggerPhase,
+      globalDamageKind: props.damageKind,
+    }).getGlobalPanelStages(index).finalBreakdown.finalPanel
   } catch {
     return null
   }
@@ -1084,10 +706,7 @@ defineExpose({
     if (props.calcSuspended || !damageCalcEnabled.value) return null
     void hitCalcGlobalSignature.value
     const hit = props.hits?.find((item) => item.id === hitId)
-    return hit
-      ? resolveSkillFlowCalculationDetail(skillFlowCalculationContext.value, skillFlowMainExternal.value, hit,
-        hitEvalCacheKey(buildHitEvalFingerprint(hit), internHitEvalContext(hitCalcGlobalSignature.value), skillFlowMainExternal.value, true))
-      : null
+    return hit ? props.flowCalculationRuntime?.getHitDetail(hit) ?? null : null
   },
   getSnapshot,
   loadSnapshot,
@@ -1121,8 +740,8 @@ defineExpose({
       if (!slot.agentId) return null
       const external = resolveExternalPanelForSlotIndex(index)
       try {
-        const breakdown = computeFinalPanel(external, buildPanelCalcContextForSlot(index))
-        return { external, final: breakdown.finalPanel }
+        const stages = globalCalculationRuntime.value.getGlobalPanelStages(index)
+        return { external: stages.externalPanel, final: stages.finalBreakdown.finalPanel }
       } catch {
         return { external, final: null }
       }

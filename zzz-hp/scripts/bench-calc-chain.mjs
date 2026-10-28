@@ -169,7 +169,7 @@ async function loadInstrumented(probe) {
   const server = await createServer({
     configFile: path.join(FRONTEND_ROOT, 'vite.config.ts'),
     root: FRONTEND_ROOT,
-    server: { middlewareMode: true, hmr: false, watch: null },
+    server: { middlewareMode: true, hmr: false, ws: false, watch: null },
     appType: 'custom',
     logLevel: 'error',
     plugins: [plugin],
@@ -178,6 +178,7 @@ async function loadInstrumented(probe) {
   const optimalAffixAlloc = await server.ssrLoadModule('/src/utils/optimalAffixAlloc.ts')
   const hitEvalCache = await server.ssrLoadModule('/src/utils/hitEvalCache.ts')
   const buffEffect = await server.ssrLoadModule('/src/utils/buffEffect.ts')
+  const panelBuffCalc = await server.ssrLoadModule('/src/utils/panelBuffCalc.ts')
   // 候选评估/扫掠要的工厂与缓存清理
   const calculatorPanel = await server.ssrLoadModule('/src/types/calculatorPanel.ts')
   const affixOptimizer = await server.ssrLoadModule('/src/utils/affixOptimizer.ts')
@@ -199,7 +200,7 @@ async function loadInstrumented(probe) {
       skillFlowCalculation,
       optimalAffixAlloc,
       hitEvalCache,
-      buffEffect,
+      buffEffect, panelBuffCalc,
       harness,
       pipelineHarness,
       calculatorPanel,
@@ -252,6 +253,7 @@ async function mountEventComponent(loading, item) {
   const f = item.fixture
   const slotPanels = Object.fromEntries(Object.entries(f.panels).map(([id, panel]) => [id, { active: 'imported', importedPanel: panel }]))
   return mountVueSetup(new URL(`file:///${file.replaceAll('\\', '/')}`), { imports, plugins: [createPinia()], props: {
+    flowCalculationRuntime: loading.modules.skillFlowCalculation.createBuffCalculationRuntime(loading.modules.harness.eventRuntimeInput(f)),
     enemyInput: f.context.enemyInput, agents: f.agents, teamSlots: f.teamSlots,
     wengines: [], driveDiscs: [], slotPanels, convertSlotPanels: {}, slotBuffSelections: null,
     skillTalentLevelsByAgent: f.context.panelContext.skillTalentLevelsByAgent,
@@ -271,6 +273,12 @@ async function runMeasurements(rounds, warmup) {
   const { buildHitEvalFingerprint, hitEvalCacheKey, internHitEvalContext } =
     loading.modules.hitEvalCache
 
+  const prepareColdPath = () => {
+    if (warmup !== 0) return
+    loading.modules.panelBuffCalc.invalidateBuffCatalogCache()
+    clearAffixEvalCache()
+    loading.modules.hitEvalCache.clearHitEvalCache()
+  }
   const results = []
   let fixedInput = null
   const schemePath = resolveSchemePath(flag('scheme', undefined))
@@ -306,6 +314,7 @@ async function runMeasurements(rounds, warmup) {
     'fixed-sweep': () => evaluateAffixCountsForSweep(fixedContext, createEmptyAffixCounts(), { dmgBonus: 10 }),
     'fixed-solve': () => loading.modules.affixOptimizer.solveOptimalAffixAllocationAsync({ ctx: fixedContext, entries, maxTotalRolls: budget, candidateWidthMode: 'auto', manualCandidateWidth: 8 }),
   })) {
+    prepareColdPath()
     for (let i = 0; i < warmup; i += 1) { clearAffixEvalCache(); await run() }
     const samples = [], counts = [], values = []
     for (let i = 0; i < rounds; i += 1) {
@@ -340,6 +349,8 @@ async function runMeasurements(rounds, warmup) {
           { dmgBonus: seed % 3 },
         ),
     })) {
+      prepareColdPath()
+      for(let i=0;i<warmup;i++){clearAffixEvalCache();run(1)}
       const samples = []
       const counts = []
       for (let i = 0; i < Math.max(1, rounds); i += 1) {
@@ -387,6 +398,7 @@ async function runMeasurements(rounds, warmup) {
       loading.modules.hitEvalCache.clearHitEvalCache()
       if (name.startsWith('component-')) item.component = await mountEventComponent(loading, item)
       item.panel = mode === 'ordinary' ? item.context.panelContext.activeSlotPanels?.owner : item.context.panelContext.activeSlotPanels?.owner
+      prepareColdPath()
       for (let i = 0; i < warmup; i += 1) run(item)
       const samples = []
       const counts = []
@@ -413,6 +425,7 @@ async function runMeasurements(rounds, warmup) {
             (_, i) => ({ ...item.hit, id: `${name}-${round}-${i}` }))
           component.props.hits = hits
           component.props.skillFlowMainExternalOverride = null
+          component.props.flowCalculationRuntime = loading.modules.skillFlowCalculation.createBuffCalculationRuntime(loading.modules.harness.eventRuntimeInput(item.fixture))
           await nextTick()
           loading.modules.hitEvalCache.clearHitEvalCache()
           if (name === 'numeric-then-preview') evaluateSkillFlowHit(item.context, null, hits[0], false)
@@ -421,6 +434,7 @@ async function runMeasurements(rounds, warmup) {
             for (let i = 1; i < hits.length; i += 1) component.vm.getEventBuffPreviewInputs(0, hits[i], null)
             if (name === 'configuration-changed') {
               component.props.skillFlowMainExternalOverride = { ...item.fixture.panels.owner, atk: 3000 + round }
+              component.props.flowCalculationRuntime = loading.modules.skillFlowCalculation.createBuffCalculationRuntime(loading.modules.harness.eventRuntimeInput(item.fixture,{mainExternal:component.props.skillFlowMainExternalOverride}))
               await nextTick()
             }
           }

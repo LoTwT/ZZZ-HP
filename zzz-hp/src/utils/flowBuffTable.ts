@@ -17,17 +17,16 @@
  */
 import type { SkillGroup } from '@/types/calculator'
 import type { FlowBuffOverride, FlowEntry } from '@/types/damageCalcHistory'
-import { isEffectEnabled, formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
+import { isEffectEnabled, formatBuffEffectResultText } from '@/utils/buffEffect'
 import {
   blockKeyOfCollected,
   getBuffEffectStacks,
   resolveCollectedEffectSourceSlot,
-  resolveCollectedEffectPanelSourceValues,
   type BuffSelectionState,
   type CollectedEffect,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import type { EventEffectSummary } from '@/utils/panelBuffCalc'
+import type { ConvertResolveInputs, EffectParameterInputs, ResolvedEffectParameters, EventEffectSummary } from '@/utils/panelBuffCalc'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 
 export interface FlowBuffTableRow {
@@ -129,14 +128,15 @@ function effectSummary(item: CollectedEffect): string {
  * 每条增益在界面上的显示文本（`+123 攻击力（数值）` 这种）。
  *
  * 与局内 Buff 勾选器**同一套取值口径**（否则转模效果会显示成 0）：
- * - `convert`（转模）→ `resolveConvertValue(...)` 算出来的值
- * - `stacked`（叠层）→ 层数 × 每层
- * - 其它 → `effect.value`
+ * - 配置用途读取共享 configurationParameters.amount；
+ * - 事件用途读取正式 effectSummaries / effectAmounts；
+ * - 本文件只格式化数值，不解析默认值、层数或转模。
  *
- * 跨槽位的效果（比如队友提供、作用到别人身上的）取值要走
- * `panelSourceValuesBySlot[该效果所属槽位]`，不能用当前槽位那一份。
+ * 跨槽位来源由共享参数/正式记录的生产者解析，本文件不重新选择来源面板。
  */
 export interface FlowBuffEffectTextOptions {
+  configurationParameters?: Record<string, ResolvedEffectParameters>
+  contextKind?: ConvertResolveInputs['contextKind']
   effectAmounts?: Record<string, number>
   /**
    * 逐效果投影（与 `ConvertResolveInputs.effectSummaries` 同名同义，Spec §2.3 第 2 项）。
@@ -150,15 +150,15 @@ export interface FlowBuffEffectTextOptions {
   slotIndex: number
   /** 槽位 → 角色 id（技能等级转模按效果所属角色取） */
   agentIdBySlot?: (string | null | undefined)[]
-  attrDefaults?: Parameters<typeof resolveConvertValue>[1]
-  panelSourceValues?: Parameters<typeof resolveConvertValue>[3]
-  panelSourceValuesBySlot?: Record<number, Parameters<typeof resolveConvertValue>[3]>
+  attrDefaults?: EffectParameterInputs['attrValues']
+  panelSourceValues?: EffectParameterInputs['panelSourceValues']
+  panelSourceValuesBySlot?: Record<number, EffectParameterInputs['panelSourceValues']>
   /**
    * 全局（「选择局内 Buff」）手填的转模基数，按效果 id 取；缺省/返回 undefined = 按面板或默认值。
-   * 与结算同一份输入：结算把 `BuffSelectionState.convertInputs` 作为覆盖值传给 `resolveConvertValue`。
+   * 与结算同一份输入：结算把 `BuffSelectionState.convertInputs` 作为覆盖值传给共同参数解析。
    */
   convertInputFor?: (effect: CollectedEffect['effect']) => number | undefined
-  skillTalentLevelsByAgent?: Record<string, Parameters<typeof resolveConvertValue>[4]>
+  skillTalentLevelsByAgent?: Record<string, EffectParameterInputs['skillTalentLevels']>
   skillSubcategories?: NonNullable<
     Parameters<typeof formatBuffEffectResultText>[2]
   >['skillSubcategories']
@@ -241,54 +241,16 @@ export function buildFlowBuffEffectText(
   rowOverride?: FlowBuffOverride | null,
 ): string {
   const effect = item.effect
-  const sourceSlot = resolveCollectedEffectSourceSlot(item)
-  if (options.configurationOnly) return `${effectSummary({ ...item, effect: { ...effect, value: 0 } })}（整组配置；数值见成员）`
-  // 有逐效果投影时以它为准（Spec §2.3/§5.2）：multiple 不显示伪造单值
+  void rowOverride
+  const kind = options.contextKind
+  if (kind === 'group') return summaryStatLabelFn(effect.stat) + '（整组配置；数值见成员）'
+  if (kind === 'unavailable') return summaryStatLabelFn(effect.stat) + '（配置参数；当前事件不可结算）'
   const summary = options.effectSummaries?.[effect.id]
-  if (summary) {
-    if (summary.state === 'multiple') return `${summaryStatLabel(summary)}（多受益角色，见来源）`
-    const summaryAmount = summary.amount ?? 0
-    return formatBuffEffectResultText(effect, formatCalcSigned(summaryAmount), {
-      statLabelFn: summaryStatLabelFn,
-      skillSubcategories: options.skillSubcategories,
-      applySituation: true,
-    })
-  }
-  let amount = 0
-  if (options.effectAmounts) {
-    amount = options.effectAmounts[effect.id] ?? 0
-  } else if (effect.kind === 'stacked' || effect.stackable) {
-    // ⚠️ 与局内 Buff 勾选器同一套调用：getBuffEffectStacks(全队勾选对象, 槽位, 效果 id, 作用目标, 兜底值)。
-    // 这个 computed 在**渲染期**跑，形状不对就退回默认层数、绝不抛
-    // —— 2026-09-22 踩过：这里一抛，整个伤害页的交互（含方案库按钮）全挂。
-    const rowStacks = rowOverride?.stacksByEffectId?.[effect.id]
-    const multi = options.selection as Parameters<typeof getBuffEffectStacks>[0] | null | undefined
-    const stacks =
-      rowStacks ??
-      (multi && (multi as { bySlot?: unknown }).bySlot && !effect.extraGain
-        ? getBuffEffectStacks(
-            multi,
-            options.slotIndex,
-            effect.id,
-            effect.applyTarget,
-            effect.defaultStacks ?? 1,
-          )
-        : (effect.defaultStacks ?? 1))
-    amount = resolveEffectBaseValue(effect, stacks)
-  } else if (effect.kind === 'convert') {
-    const panelSourceValues = resolveCollectedEffectPanelSourceValues(item, options)
-    const agentId = sourceSlot != null ? options.agentIdBySlot?.[sourceSlot] : null
-    amount = resolveConvertValue(
-      effect,
-      options.attrDefaults ?? {},
-      rowOverride?.convertInputsByEffectId?.[effect.id] ??
-        (!effect.extraGain ? options.convertInputFor?.(effect) : undefined) ?? null,
-      panelSourceValues,
-      agentId ? (options.skillTalentLevelsByAgent?.[agentId] ?? null) : null,
-    )
-  } else {
-    amount = Number(effect.value) || 0
-  }
+  if (summary?.state === 'multiple') return summaryStatLabel(summary) + '（多受益角色，见来源）'
+  const amount = kind === 'global' ? options.configurationParameters?.[effect.id]?.amount
+    : summary ? summary.amount ?? 0 : options.effectAmounts?.[effect.id]
+  if (amount == null) return summaryStatLabelFn(effect.stat) + ' —'
+
   // 与「行详情 / 覆盖弹窗 / 面板显示」统一：4 位四舍五入 + 千分位
   // （原先直接拼字符串，会把 2.0999999999999996 这种浮点噪声原样露出来）
   const amountText = formatCalcSigned(amount)
