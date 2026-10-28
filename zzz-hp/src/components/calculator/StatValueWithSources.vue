@@ -1,10 +1,5 @@
 <script setup lang="ts">
-/**
- * 数值 + 组成明细浮层。
- * 交互规则统一在 composables/useInfoTipPopover，外观在 assets/infoTip.css；
- * 这里只负责「数值怎么显示」与「明细怎么排版」。
- */
-import { useInfoTipPopover } from '@/composables/useInfoTipPopover'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import type { StatSourceGroup } from '@/utils/statSourceTips'
 
 defineProps<{
@@ -12,67 +7,165 @@ defineProps<{
   groups: StatSourceGroup[]
 }>()
 
-const {
-  triggerRef,
-  tipRef,
-  visible,
-  tipStyle,
-  below,
-  show,
-  scheduleHide,
-  onTipEnter,
-  onTipLeave,
-  onTriggerClick,
-} = useInfoTipPopover()
+const triggerRef = ref<HTMLElement | null>(null)
+const tipRef = ref<HTMLElement | null>(null)
+const tipVisible = ref(false)
+const tipStyle = ref<Record<string, string>>({})
+let hideTipTimer: ReturnType<typeof setTimeout> | null = null
+let pointerOverTip = false
 
-const isClient = typeof window !== 'undefined'
+function getTipWidth() {
+  if (window.innerWidth <= 768) {
+    return Math.min(360, window.innerWidth - 24)
+  }
+  return Math.min(560, Math.max(320, window.innerWidth * 0.88))
+}
+
+async function updateTipPosition() {
+  const el = triggerRef.value
+  if (!el) return
+  await nextTick()
+
+  const rect = el.getBoundingClientRect()
+  const tipWidth = getTipWidth()
+  const margin = 12
+  const sidebarReserve = window.innerWidth <= 768 ? margin : 232
+
+  let left = rect.left + rect.width / 2 - tipWidth / 2
+  left = Math.max(left, sidebarReserve, margin)
+  left = Math.min(left, window.innerWidth - tipWidth - margin)
+
+  const top = Math.max(margin, rect.top - 8)
+
+  tipStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${tipWidth}px`,
+    transform: 'translateY(-100%)',
+  }
+}
+
+function onShow() {
+  clearHideTipTimer()
+  tipVisible.value = true
+  updateTipPosition()
+}
+
+function clearHideTipTimer() {
+  if (hideTipTimer == null) return
+  clearTimeout(hideTipTimer)
+  hideTipTimer = null
+}
+
+function onHide() {
+  clearHideTipTimer()
+  pointerOverTip = false
+  tipVisible.value = false
+}
+
+function scheduleHideTip() {
+  clearHideTipTimer()
+  hideTipTimer = setTimeout(() => {
+    hideTipTimer = null
+    if (!pointerOverTip) onHide()
+  }, 220)
+}
+
+function onTipMouseEnter() {
+  pointerOverTip = true
+  clearHideTipTimer()
+}
+
+function onTipMouseLeave() {
+  pointerOverTip = false
+  scheduleHideTip()
+}
+
+function onToggle() {
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+  if (tipVisible.value) onHide()
+  else onShow()
+}
+
+function onDocumentPointerDown(event: Event) {
+  if (!tipVisible.value) return
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (triggerRef.value?.contains(target)) return
+  if (tipRef.value?.contains(target)) return
+  onHide()
+}
+
+function onScrollOrResize() {
+  if (!tipVisible.value) return
+  updateTipPosition()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('scroll', onScrollOrResize, true)
+  window.addEventListener('resize', onScrollOrResize)
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
+}
+
+onBeforeUnmount(() => {
+  clearHideTipTimer()
+  if (typeof window === 'undefined') return
+  window.removeEventListener('scroll', onScrollOrResize, true)
+  window.removeEventListener('resize', onScrollOrResize)
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+})
 </script>
 
 <template>
   <span
-    v-if="isClient"
     ref="triggerRef"
     class="stat-value"
     tabindex="0"
-    @mouseenter="show"
-    @mouseleave="scheduleHide"
-    @focusin="show"
-    @focusout="scheduleHide"
-    @click="onTriggerClick"
+    @mouseenter="onShow"
+    @mouseleave="scheduleHideTip"
+    @focus="onShow"
+    @blur="scheduleHideTip"
+    @click="onToggle"
   >
     <strong>{{ value }}</strong>
     <Teleport to="body">
       <div
-        v-if="visible"
+        v-if="tipVisible && groups.length"
         ref="tipRef"
-        class="info-tip stat-value-tip"
-        :class="{ 'info-tip--below': below }"
+        class="stat-value-tip"
         :style="tipStyle"
         role="tooltip"
-        @mouseenter="onTipEnter"
-        @mouseleave="onTipLeave"
+        @mouseenter="onTipMouseEnter"
+        @mouseleave="onTipMouseLeave"
       >
-        <template v-if="groups.length">
-          <p class="tip-title">数值组成</p>
-          <div class="tip-groups">
-            <article
-              v-for="(group, index) in groups"
-              :key="`${group.label}-${index}`"
-              class="tip-group"
-              :class="{ 'tip-group--full': group.fullWidth }"
-            >
-              <p class="tip-label">{{ group.label }}</p>
-              <ul class="tip-items" :class="{ 'tip-items--process': group.fullWidth }">
-                <li v-for="item in group.items" :key="item">{{ item }}</li>
-              </ul>
-            </article>
-          </div>
-        </template>
-        <p v-else class="tip-empty">暂无组成明细</p>
+        <p class="tip-title">数值组成</p>
+        <div class="tip-groups">
+          <article
+            v-for="(group, index) in groups"
+            :key="`${group.label}-${index}`"
+            class="tip-group"
+            :class="{ 'tip-group--full': group.fullWidth }"
+          >
+            <p class="tip-label">{{ group.label }}</p>
+            <ul class="tip-items" :class="{ 'tip-items--process': group.fullWidth }">
+              <li v-for="item in group.items" :key="item">{{ item }}</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+      <div
+        v-else-if="tipVisible"
+        ref="tipRef"
+        class="stat-value-tip tip-empty"
+        :style="tipStyle"
+        role="tooltip"
+        @mouseenter="onTipMouseEnter"
+        @mouseleave="onTipMouseLeave"
+      >
+        暂无组成明细
       </div>
     </Teleport>
   </span>
-  <span v-else class="stat-value"><strong>{{ value }}</strong></span>
 </template>
 
 <style scoped>
@@ -86,42 +179,72 @@ const isClient = typeof window !== 'undefined'
 .stat-value > strong {
   border-bottom: 1px dotted color-mix(in srgb, #e8d4a8 70%, transparent);
 }
-
-.stat-value:focus-visible {
-  outline: 1px solid var(--calc-accent, #c9a55c);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
 </style>
 
 <style>
-/* 明细排版（外壳底色 / 边框 / 箭头由 assets/infoTip.css 提供） */
-[data-theme='light'] .stat-value > strong {
-  border-bottom-color: color-mix(in srgb, #9f7d3f 70%, transparent);
+.stat-value-tip {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 320px;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #3a414c;
+  border-radius: 8px;
+  background: #151920;
+  color: #d5dae4;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: normal;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  user-select: text;
+  overflow: visible;
 }
 
-.info-tip .tip-title {
+.stat-value-tip::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.stat-value-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 6px solid transparent;
+  border-top-color: #3a414c;
+  transform: translateX(-50%);
+}
+
+.stat-value-tip .tip-title {
   margin: 0;
-  font-size: 14px;
-  color: #e8d4a8;
+  font-size: 0.8rem;
+  color: #d5dae4;
   font-weight: 600;
 }
 
-.info-tip .tip-groups {
+.stat-value-tip .tip-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem 1rem;
 }
 
-.info-tip .tip-group {
+.stat-value-tip .tip-group {
   min-width: 0;
 }
 
-.info-tip .tip-group--full {
+.stat-value-tip .tip-group--full {
   grid-column: 1 / -1;
 }
 
-.info-tip .tip-items--process li:last-child {
+.stat-value-tip .tip-items--process li:last-child {
   margin-top: 0.15rem;
   padding-top: 0.25rem;
   border-top: 1px solid #2d323a;
@@ -129,13 +252,13 @@ const isClient = typeof window !== 'undefined'
   font-weight: 600;
 }
 
-.info-tip .tip-label {
+.stat-value-tip .tip-label {
   margin: 0 0 0.3rem;
-  font-size: 13px;
-  color: #d4b06a;
+  font-size: 0.76rem;
+  color: #c9a55c;
 }
 
-.info-tip .tip-items {
+.stat-value-tip .tip-items {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -143,39 +266,23 @@ const isClient = typeof window !== 'undefined'
   gap: 0.2rem;
 }
 
-.info-tip .tip-items li {
-  color: #c3ccd8;
+.stat-value-tip .tip-items li {
+  color: #b7c0cd;
   word-break: break-word;
 }
 
-.info-tip .tip-empty {
-  margin: 0;
-  color: #8b949f;
-}
-
-[data-theme='light'] .info-tip .tip-title {
-  color: #16324a;
-}
-
-[data-theme='light'] .info-tip .tip-label {
-  color: #9f7d3f;
-}
-
-[data-theme='light'] .info-tip .tip-items li {
-  color: #4d6a80;
-}
-
-[data-theme='light'] .info-tip .tip-items--process li:last-child {
-  border-top-color: #d5e4f0;
-  color: #16324a;
-}
-
-[data-theme='light'] .info-tip .tip-empty {
-  color: #6d8598;
+.stat-value-tip.tip-empty {
+  color: #7a828f;
+  min-width: 180px;
+  width: auto;
 }
 
 @media (max-width: 768px) {
-  .info-tip .tip-groups {
+  .stat-value-tip {
+    min-width: 0;
+  }
+
+  .stat-value-tip .tip-groups {
     grid-template-columns: 1fr;
   }
 }

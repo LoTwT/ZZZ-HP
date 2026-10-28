@@ -4015,22 +4015,21 @@ const showcaseTitle = computed(() => {
             </div>
             <div v-else-if="detailSkill" class="skill-detail-body">
               <!-- 事件元素：用户 2026-10-26 移到详情里选，流程行上不再占位 -->
-              <div v-if="detailFlowRow && !flowIsGroup(detailFlowRow)" class="agent-row">
-                <label>
-                  <span>事件元素</span>
-                  <select
-                    :value="detailFlowRow.elementOverride ?? ''"
-                    @change="
-                      setFlowElement(detailFlowRow!.id, ($event.target as HTMLSelectElement).value)
-                    "
-                  >
-                    <option value="">自动</option>
-                    <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">
-                      {{ element }}
-                    </option>
-                  </select>
-                  <span class="detail-element-hint">{{ eventElementLabel(detailFlowRow) }}</span>
-                </label>
+              <div v-if="detailFlowRow && !flowIsGroup(detailFlowRow)" class="detail-element-row">
+                <span class="detail-element-label">事件元素</span>
+                <select
+                  class="detail-element-select"
+                  :value="detailFlowRow.elementOverride ?? ''"
+                  @change="
+                    setFlowElement(detailFlowRow!.id, ($event.target as HTMLSelectElement).value)
+                  "
+                >
+                  <option value="">自动</option>
+                  <option v-for="element in AGENT_ELEMENTS" :key="element" :value="element">
+                    {{ element }}
+                  </option>
+                </select>
+                <span class="detail-element-hint">{{ eventElementLabel(detailFlowRow) }}</span>
               </div>
               <p v-if="detailSkipReason" class="warn-hint">{{ detailSkipReason }}</p>
               <template v-if="detailPrepared && skillNeedsDualAgents(detailSkill.damageType)">
@@ -4425,14 +4424,41 @@ const showcaseTitle = computed(() => {
 </template>
 
 <style scoped>
-/* 详情里的事件元素：解析结果提示。
-   不要用 --calc-text 的浅色回退（浅色主题下没有该变量 → 回退近白，直接看不见），
-   跟随 .agent-row label 已确定的次要文字色即可，深浅主题都读得清。 */
+/* 详情里的事件元素：单行紧凑组合（标签 + 下拉 + 解析结果）。
+   下拉不依赖 --calc-input-bg —— 该变量只在 .calculator-page.theme-light 下定义，
+   弹窗 Teleport 到 body 后取不到，暗夜模式会变成无底色。 */
+.detail-element-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.detail-element-label {
+  font-size: 0.7rem;
+  color: #9aa3b0;
+}
+.detail-element-select {
+  border: 1px solid #2d323a;
+  border-radius: 6px;
+  background: #0f1217;
+  color: #e8edf5;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.78rem;
+  min-width: 7em;
+}
 .detail-element-hint {
   font-size: 0.78rem;
   color: inherit;
   opacity: 0.95;
-  margin-left: 0.35rem;
+}
+:global([data-theme='light']) .detail-element-label {
+  color: #667085;
+}
+:global([data-theme='light']) .detail-element-select {
+  border-color: #d5dae3;
+  background: #ffffff;
+  color: #1c212a;
 }
 
 .sf-agent-tabs {
@@ -5849,6 +5875,9 @@ const showcaseTitle = computed(() => {
 
 <style scoped>
 .sf-event-element { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; font-size: 0.78rem; }
-.sf-event-element select { color: inherit; background: var(--calc-input-bg, transparent); border: 1px solid currentColor; border-radius: 5px; padding: 0.15rem 0.3rem; }
+/* 明暗两套都自己给底色：弹窗 Teleport 到 body，--calc-input-bg 只在
+   .calculator-page.theme-light 下定义，取不到会变成无底色。 */
+.sf-event-element select { color: inherit; background: #0f1217; border: 1px solid #2d323a; border-radius: 5px; padding: 0.15rem 0.3rem; }
+:global([data-theme='light']) .sf-event-element select { background: #ffffff; border-color: #d5dae3; color: #1c212a; }
 .sf-event-element span { opacity: 0.75; }
 </style>
