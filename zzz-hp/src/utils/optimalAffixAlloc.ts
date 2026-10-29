@@ -109,7 +109,7 @@ import {
 import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
 import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
 import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
-import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
+import { buildHitEvalFingerprintReused, resetHitEvalFingerprintReuseState } from '@/utils/hitEvalCache'
 
 /** 扫掠 / 流程总伤只要面板数字，不拼「增益来自哪」明细 */
 const PANEL_NUMBERS_ONLY = { includeDetails: false } as const
@@ -2284,24 +2284,103 @@ function serializeMultiSlotBuffSelection(
  * 前提：调用方不得**就地修改** `ctx` 的字段（当前全项目已核对：无此用法；
  * `buildOptimalEvalContext` 每次返回新对象，页面侧 `evalCtx` 是 computed）。
  * 若将来出现就地修改，需在改完显式调用 `clearAffixEvalCache()`。
+ *
+ * 复核判据（2026-10-29 本次优化）：记忆项不再拿整批事件指纹拼大字符串来比对，
+ * 而是比「逐条指纹（同一份字符串实例，O(1) 引用比较）」+「各槽角色 id / 元素」。
+ * 指纹本身由 `buildHitEvalFingerprintReused` 按**真实内容**复用（就地改 `count`、
+ * `buffOverride.disabledEffectIds`、`multOverrides`、`elementOverride` 都会换指纹），
+ * 因此这里的比对强度不低于改造前逐字比较整串 `JSON.stringify`，只是不再重复构造那串正文。
  */
-const affixCtxSignatureCache = new WeakMap<OptimalEvalContext, { eventState: string; signature: string }>()
+interface AffixCtxEventIdentity {
+  /** 逐条事件指纹（复用层返回的同一份字符串实例） */
+  fingerprints: string[]
+  /** 事件状态判断的另一半：各槽位角色 id 与角色元素 */
+  teamElements: string
+  /** 完整上下文签名 */
+  signature: string
+}
 
+let affixCtxSignatureCache = new WeakMap<OptimalEvalContext, AffixCtxEventIdentity>()
+
+/**
+ * 上下文身份链的调试计数（**只数真实执行路径**，不含计时）。
+ *
+ * 用途：回归要证明「同批事件指纹只生成一次」「换候选不重生成」——
+ * 这只能从真实身份链的计数观察，常量或 mock 都不算证据。
+ * `builtFingerprints` / `reusedFingerprints` 由复用层逐条回报；
+ * `serializations` 的真实序列化次数见 `hitFingerprintReuseDebugStats()`。
+ */
+const affixEventIdentityDebug = {
+  /** 上下文身份查询次数（= `affixEvalContextSignature` 调用次数） */
+  batches: 0,
+  /** 该批中按内容重建的事件指纹条数 */
+  builtFingerprints: 0,
+  /** 该批中直接复用已生成事件指纹的条数 */
+  reusedFingerprints: 0,
+  /** 完整上下文签名构造次数 */
+  signatureComputes: 0,
+}
+
+export function affixEventIdentityDebugStats(): {
+  batches: number
+  builtFingerprints: number
+  reusedFingerprints: number
+  signatureComputes: number
+} {
+  return { ...affixEventIdentityDebug }
+}
+
+export function resetAffixEventIdentityDebugStats(): void {
+  affixEventIdentityDebug.batches = 0
+  affixEventIdentityDebug.builtFingerprints = 0
+  affixEventIdentityDebug.reusedFingerprints = 0
+  affixEventIdentityDebug.signatureComputes = 0
+}
+
+/**
+ * 上下文身份查询：**一批事件指纹只生成一次**，供「事件状态判断」与「完整签名构造」共用。
+ *
+ * 改造前这里会 `ctx.hits.map(buildHitEvalFingerprint)` 一次做状态判断，
+ * 未命中时 `computeAffixEvalContextSignature` 里又整批再来一次 —— 同一次查询生成两遍，
+ * 每个候选都要付两遍（Spec §4.2 第 1、2 项要消除的正是这两处）。
+ */
 function affixEvalContextSignature(ctx: OptimalEvalContext): string {
-  const eventState = JSON.stringify([
-    ctx.hits?.map(buildHitEvalFingerprint),
+  affixEventIdentityDebug.batches += 1
+  const hits = ctx.hits ?? []
+  const fingerprints: string[] = new Array(hits.length)
+  for (let index = 0; index < hits.length; index += 1) {
+    const reused = buildHitEvalFingerprintReused(hits[index]!)
+    if (reused.reused) affixEventIdentityDebug.reusedFingerprints += 1
+    else affixEventIdentityDebug.builtFingerprints += 1
+    fingerprints[index] = reused.fingerprint
+  }
+  const teamElements = JSON.stringify(
     ctx.panelContext.teamSlots.map(slot => [slot.agentId,
       ctx.panelContext.agents.find(agent => agent.id === slot.agentId)?.element]),
-  ])
+  )
   const memo = affixCtxSignatureCache.get(ctx)
-  if (memo?.eventState === eventState) return memo.signature
-  const signature = computeAffixEvalContextSignature(ctx)
-  affixCtxSignatureCache.set(ctx, { eventState, signature })
+  if (memo && memo.teamElements === teamElements && sameEventFingerprints(memo.fingerprints, fingerprints)) {
+    return memo.signature
+  }
+  const signature = computeAffixEvalContextSignature(ctx, fingerprints)
+  affixEventIdentityDebug.signatureComputes += 1
+  affixCtxSignatureCache.set(ctx, { fingerprints, teamElements, signature })
   return signature
 }
 
-function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
-  const events = ctx.hits?.map(buildHitEvalFingerprint).join(';') ?? ''
+/** 逐条比指纹：复用层返回同一份字符串实例，内容没变就是 O(1) 引用比较 */
+function sameEventFingerprints(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
+function computeAffixEvalContextSignature(ctx: OptimalEvalContext, fingerprints: string[]): string {
+  // 与改造前 `ctx.hits?.map(buildHitEvalFingerprint).join(';') ?? ''` 逐位等价：
+  // 指纹由调用方（`affixEvalContextSignature`）按真实内容生成并传入，这里不再生成第二遍。
+  const events = fingerprints.join(';')
   return [
     ctx.panelContext.masterDataVersion ?? buffMasterDataVersion(ctx.panelContext),
     ctx.mainAgentId ?? '',
@@ -2441,6 +2520,15 @@ export function clearAffixEvalCache() {
   affixEvalCacheCtxSig = ''
   affixEvalCacheCtxSeq += 1
   affixEvalCacheCtxKey = `c${affixEvalCacheCtxSeq}`
+  /**
+   * 本次新增的事件身份复用状态一并丢弃（Spec §4.2 第 4 项）。
+   *
+   * 丢弃是**保守收口**：复用状态本身按真实内容校验，判断不出过期值；
+   * 但清理语义要求「清理后不再提供旧身份」，所以连同按 ctx 记忆的签名一起重来，
+   * 调用方不需要为此多做任何手工清理。
+   */
+  affixCtxSignatureCache = new WeakMap<OptimalEvalContext, AffixCtxEventIdentity>()
+  resetHitEvalFingerprintReuseState()
 }
 
 function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixedParts {

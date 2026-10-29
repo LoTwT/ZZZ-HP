@@ -60,6 +60,8 @@ export function clearHitEvalCache(): void {
   hitEvalCache.clear()
   hitEvalCacheStats.hits = 0
   hitEvalCacheStats.misses = 0
+  // 指纹复用状态与这张表同生命周期（Spec §4.2 第 4/5 项：清理后不得再提供过期身份）
+  resetHitEvalFingerprintReuseState()
 }
 
 /** 供测试脚本与排查用：当前条目数 / 命中次数 / 未命中次数 */
@@ -97,13 +99,35 @@ function stableJson(value: unknown): string {
 }
 
 /**
- * 单条招式的指纹：只要这些字段有一个变了，这条招式的伤害就可能不同。
+ * 指纹复用的调试计数（**只数真实执行路径**，不含计时）。
  *
- * 取两份旧指纹（面板侧 `buildResolvedHitSignature` 与最优侧 `hitFingerprint`）的**并集**：
- * 两份原本逐字相同，只差 `anomalySubKind`（它由 `damageType` 推出，属冗余字段，仍然带上）。
+ * 为什么需要：词条评估的上下文身份链要回答「这一批事件指纹是不是又重算了一遍」，
+ * 只能靠真实序列化次数观察 —— 常量、预设计数或 mock 都不算证据。
+ * 与 `hitEvalCacheDebugStats` 同性质，只供测试与排查读取。
  */
-export function buildHitEvalFingerprint(hit: ResolvedHit): string {
-  return stableJson({
+const hitFingerprintDebug = { serializations: 0, reuses: 0, externalBuilds: 0 }
+
+/** 复用层真实重建指纹的次数 / 复用次数 / 纯函数入口被调用的次数 */
+export function hitFingerprintReuseDebugStats(): {
+  serializations: number
+  reuses: number
+  externalBuilds: number
+} {
+  return { ...hitFingerprintDebug }
+}
+
+export function resetHitFingerprintDebugStats(): void {
+  hitFingerprintDebug.serializations = 0
+  hitFingerprintDebug.reuses = 0
+  hitFingerprintDebug.externalBuilds = 0
+}
+
+/**
+ * 指纹读取的字段集合 —— **唯一来源**：`buildHitEvalFingerprint`（纯函数）与
+ * `buildHitEvalFingerprintReused`（跨候选复用）都从这里取，避免两张字段表各自漂移。
+ */
+function hitEvalFingerprintFields(hit: ResolvedHit): Record<string, unknown> {
+  return {
     id: hit.id,
     // 行级增益例外：只影响本行结算 —— 必须进指纹，否则两行会互相命中对方的缓存
     buffOverride: hit.buffOverride ?? null,
@@ -126,7 +150,140 @@ export function buildHitEvalFingerprint(hit: ResolvedHit): string {
     buffAnchorId: hit.skill.buffAnchorId,
     multOverrides: hit.multOverrides,
     panelMods: hit.panelMods,
-  })
+  }
+}
+
+/**
+ * 单条招式的指纹：只要这些字段有一个变了，这条招式的伤害就可能不同。
+ *
+ * 取两份旧指纹（面板侧 `buildResolvedHitSignature` 与最优侧 `hitFingerprint`）的**并集**：
+ * 两份原本逐字相同，只差 `anomalySubKind`（它由 `damageType` 推出，属冗余字段，仍然带上）。
+ */
+export function buildHitEvalFingerprint(hit: ResolvedHit): string {
+  hitFingerprintDebug.externalBuilds += 1
+  return stableJson(hitEvalFingerprintFields(hit))
+}
+
+/**
+ * 逐条招式的事件指纹复用状态（A：跨词条候选复用）。
+ *
+ * ## 为什么需要
+ * 词条求解会对**同一个 `ctx`** 反复评估成百上千个候选词条。上下文身份里含「整批事件指纹」，
+ * 而事件内容在这批候选之间完全不变 —— 每评估一个候选就把同一批指纹重算一遍，纯属浪费。
+ *
+ * ## 为什么不能只比对象引用
+ * `ctx.hits`、`hit`、`hit.buffOverride` 都可能在**引用不变**的情况下被就地修改
+ * （如 `hit.count = 2`、`buffOverride.disabledEffectIds.push(id)`、
+ * `multOverrides.directDmgMult = 200`、`elementOverride = '火'`）。
+ * 「引用没变」不等于「内容没变」，资格判定与缓存键都会因此读到过期结果。
+ *
+ * ## 做法：内容级校验 + 序列化结果复用
+ * 每条指纹旁边存一份**深拷贝内容快照**（就地修改打不到它），每次询问按内容深比较：
+ * - 内容一致 → 直接返回上次生成的指纹字符串（不重新序列化）；
+ * - 内容有任何差异 → 按当前真实内容重新生成并刷新快照。
+ *
+ * 比较范围与指纹字段表**完全一致**（同一份 `hitEvalFingerprintFields`），因此识别强度不低于指纹本身；
+ * 快照是深拷贝，所以数组 / 对象嵌套字段的就地修改同样会被识别。
+ */
+interface HitFingerprintReuseEntry {
+  /** 生成指纹时的字段内容快照（深拷贝） */
+  snapshot: Record<string, unknown>
+  fingerprint: string
+}
+
+let hitFingerprintReuseState = new WeakMap<ResolvedHit, HitFingerprintReuseEntry>()
+
+export interface HitFingerprintReuseResult {
+  fingerprint: string
+  /** 本次是否直接复用了已生成指纹（false = 按当前内容重建） */
+  reused: boolean
+}
+
+/**
+ * 取一条招式的指纹，**按真实内容**复用上一次生成结果。
+ *
+ * 纯函数语义不变：相同内容必得相同指纹；内容变了必得新指纹。
+ * 与 `buildHitEvalFingerprint` 的唯一差别是不重复做序列化。
+ */
+export function buildHitEvalFingerprintReused(hit: ResolvedHit): HitFingerprintReuseResult {
+  const fields = hitEvalFingerprintFields(hit)
+  const memo = hitFingerprintReuseState.get(hit)
+  if (memo && sameJsonContent(fields, memo.snapshot)) {
+    hitFingerprintDebug.reuses += 1
+    return { fingerprint: memo.fingerprint, reused: true }
+  }
+  const fingerprint = stableJson(fields)
+  hitFingerprintDebug.serializations += 1
+  hitFingerprintReuseState.set(hit, { snapshot: cloneJsonContent(fields) as Record<string, unknown>, fingerprint })
+  return { fingerprint, reused: false }
+}
+
+/**
+ * 丢弃全部指纹复用状态。
+ *
+ * 调用点：`clearHitEvalCache()`（本模块既有清理入口）与
+ * `clearAffixEvalCache()`（词条评估既有清理入口，Spec §4.2 第 4 项要求清理后不得再提供过期身份）。
+ * 复用状态本身按内容校验，丢弃只是保守收口，不改变任何结果。
+ */
+export function resetHitEvalFingerprintReuseState(): void {
+  hitFingerprintReuseState = new WeakMap<ResolvedHit, HitFingerprintReuseEntry>()
+}
+
+function isPlainJsonContainer(value: unknown): value is Record<string, unknown> | unknown[] {
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return true
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * 内容深比较（不构造字符串）。
+ *
+ * 比 `stableJson` 等价更**严格**：`undefined` 自成一档、对象键集合必须一致、
+ * 非纯对象（Map / 类实例等）一律判为「不同」。
+ * 严格只会导致「多重建一次指纹」，绝不会漏掉变化 —— 这正是 Spec §4.2 第 3 项要的方向。
+ */
+function sameJsonContent(a: unknown, b: unknown): boolean {
+  /**
+   * 非纯对象（Map / Set / 类实例…）不进入「引用相同即相等」的快路：
+   * 它们的内容无法用字段遍历核对，快照也只能留引用 —— 一律判为「不同」，
+   * 于是每次都按真实内容重建指纹。宁可多算一次，不能读到过期身份。
+   */
+  if (typeof a === 'object' && a !== null && !isPlainJsonContainer(a)) return false
+  if (typeof b === 'object' && b !== null && !isPlainJsonContainer(b)) return false
+  if (a === b) return true
+  // NaN 只可能来自数值字段；按内容相等处理，避免每次都判成变化
+  if (typeof a === 'number' && typeof b === 'number') return Number.isNaN(a) && Number.isNaN(b)
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  const aIsArray = Array.isArray(a)
+  if (aIsArray !== Array.isArray(b)) return false
+  if (aIsArray) {
+    const left = a as unknown[]
+    const right = b as unknown[]
+    if (left.length !== right.length) return false
+    for (let index = 0; index < left.length; index += 1) {
+      if (!sameJsonContent(left[index], right[index])) return false
+    }
+    return true
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const leftKeys = Object.keys(left)
+  if (leftKeys.length !== Object.keys(right).length) return false
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!sameJsonContent(left[key], right[key])) return false
+  }
+  return true
+}
+
+/** 内容快照：深拷贝纯容器；非纯对象原样留下（比较时必判不同 → 每次重建，绝不stale） */
+function cloneJsonContent(value: unknown): unknown {
+  if (!isPlainJsonContainer(value)) return value
+  if (Array.isArray(value)) return value.map(cloneJsonContent)
+  const copy: Record<string, unknown> = {}
+  for (const key of Object.keys(value)) copy[key] = cloneJsonContent((value as Record<string, unknown>)[key])
+  return copy
 }
 
 /**
