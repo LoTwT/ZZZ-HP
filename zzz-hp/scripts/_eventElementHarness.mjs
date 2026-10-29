@@ -46,3 +46,20 @@ export function r5Fixture(mode, damageType = 'anomalyRelease', options = {}) {
       convert: { from: 'atk', panelSource: 'final', ratioPercent: 10, initialBase: 0, cap: null } }),
   ], ...options })
 }
+
+/** 父级运行期的真实输入形状；与夹具共享数据，不复制求值或来源选择算法。 */
+export function eventRuntimeInput(f, changes = {}) {
+  const panel = f.context.panelContext
+  return { contextInput: {
+    isMb: f.context.isMb, isFengYu: f.context.isFengYu,
+    teamSlots: f.teamSlots, agents: f.agents, wengines: panel.wengines, driveDiscs: panel.driveDiscs,
+    bangboo: panel.bangboo, bangbooRefine: panel.bangbooRefine, mainSlotIndex: panel.mainSlotIndex,
+    driveDiscMainStats: f.context.driveDiscMainStats, enemyInput: f.context.enemyInput,
+    baseDamageSource: f.context.baseDamageSource, activeSlotPanels: f.panels, extraGains: f.extraGains, hits: f.hits,
+    skillTalentLevelsByAgent: panel.skillTalentLevelsByAgent, slotBuffSelections: f.context.slotBuffSelections,
+    environmentBuffs: panel.environmentBuffs,
+    ...changes.contextInput,
+  }, externalPanelPolicy: changes.externalPanelPolicy ?? 'configured', mainExternal: changes.mainExternal ?? null,
+    sourceExtraGains: changes.sourceExtraGains ?? [], staggerPhase: changes.staggerPhase,
+    globalDamageKind: changes.globalDamageKind }
+}

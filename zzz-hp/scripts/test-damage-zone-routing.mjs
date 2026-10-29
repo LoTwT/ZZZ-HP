@@ -274,6 +274,32 @@ console.log('\n[5] PanelViewPolicy 蕾米收集器走 EffectPlan，与来源遍�
     Math.abs(viaPlan.inCombatMastery - 250) < 1e-6,
     `${viaPlan.inCombatMastery}`,
   )
+
+  // K6：本人耀变受限视图接入共享求值后，逐效果记录必须**只**来自合格来源
+  const contributions = []
+  const traced = REMIEL_SELF_RADIANCE_VIEW_POLICY.computeInCombatPanel(panel, ctx, 0, {
+    includeDetails: true,
+    trace: {
+      viewKey: 'radiance-fixture',
+      policy: 'remiel-self-radiance',
+      onContribution: (item) => contributions.push(item),
+    },
+  })
+  check('K6 本人耀变视图产出逐效果记录', contributions.length > 0, String(contributions.length))
+  check('K6 记录的视图身份带本人耀变政策',
+    contributions.every((item) => item.viewKey === 'radiance-fixture' && item.policy === 'remiel-self-radiance'))
+  const applied = contributions.filter((item) => item.status === 'applied' || item.status === 'zero')
+  check('K6 生效记录只含蕾米自身来源（不含邦布/队友队伍效果）',
+    applied.length > 0 &&
+      applied.every((item) => item.sourceKey.startsWith('agent-0-') || item.sourceKey.startsWith('wengine-0-') || item.sourceKey.startsWith('drive-disc-0-')),
+    [...new Set(applied.map((item) => item.sourceKey))].join(','))
+  check('K6 被政策排除的来源有状态记录（不是悄悄消失）',
+    contributions.some((item) => item.status === 'source-excluded'),
+    [...new Set(contributions.map((item) => item.status))].join(','))
+  check('K6 受限面板数值与记录一致（攻击 2100）', Math.abs(traced.finalPanel.atk - 2100) < 1e-6, String(traced.finalPanel.atk))
+  const noTraceContributions = []
+  REMIEL_SELF_RADIANCE_VIEW_POLICY.computeInCombatPanel(panel, ctx, 0, { includeDetails: false })
+  check('K6 不传 trace 时不产生记录', noTraceContributions.length === 0)
 }
 
 console.log('\n[6] 蕾米真方案按名字钉（不算总伤：T9 自建招式可能缺）')

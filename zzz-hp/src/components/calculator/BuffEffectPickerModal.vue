@@ -9,28 +9,13 @@ import type {
   CollectedEffect,
   MultiSlotBuffSelection,
   PanelSourceValues,
+  ResolvedEffectParameters,
 } from '@/utils/panelBuffCalc'
-import {
-  availableBuffGroupTabs,
-  getBuffEffectConvertInput,
-  getBuffEffectEnabled,
-  getBuffEffectStacks,
-  isEnvironmentBuffGroup,
-  isEnvironmentBuffSourceKey,
-  resolveCollectedEffectSourceSlot,
-  resolveEnvironmentBlockItemEnabled,
-  setBuffEffectConvertInput,
-  setBuffEffectEnabled,
-  setBuffEffectStacks,
-  isTeamBuffApplyTarget,
-} from '@/utils/panelBuffCalc'
-import { formatBuffEffectResultText, formatApplySituationLabel, resolveConvertValue } from '@/utils/buffEffect'
-import {
-  isSkillConvertFromKey,
-  SKILL_CONVERT_FROM_TO_TALENT_KEY,
-  type SkillTalentLevels,
-} from '@/utils/skillTalentLevels'
+import { availableBuffGroupTabs, getBuffEffectConvertInput, getBuffEffectEnabled, isEnvironmentBuffGroup, isEnvironmentBuffSourceKey, resolveEnvironmentBlockItemEnabled, setBuffEffectConvertInput, setBuffEffectEnabled, setBuffEffectStacks, isTeamBuffApplyTarget } from '@/utils/panelBuffCalc'
+import { formatBuffEffectResultText, formatApplySituationLabel } from '@/utils/buffEffect'
+
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
+import type { SkillTalentLevels } from '@/utils/skillTalentLevels'
 import { buffStatFieldLabel, BUFF_STAT_FIELDS } from '@/utils/calculatorUi'
 import { CONVERT_FROM_OPTIONS } from '@/types/calculator'
 
@@ -51,15 +36,12 @@ const props = defineProps<{
   agents?: Array<{ id: string; profession?: string | null }>
   /** 技能等级转模来源：按角色 id 的五大类技能等级 */
   skillTalentLevelsByAgent?: Record<string, Partial<SkillTalentLevels> | null>
+  /**
+   * 共享效果参数解析结果（Spec §2.3 第 6 项 / §5.1）：按显式查看槽位的全局上下文解析。
+   * 提供时基数与折算值都读它 —— 未启用的效果同样能显示待选参数，且与结算同一套算法。
+   */
+  configurationParameters?: Record<string, ResolvedEffectParameters>
 }>()
-
-function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  if (slotIndex != null && props.panelSourceValuesBySlot?.[slotIndex]) {
-    return props.panelSourceValuesBySlot[slotIndex]
-  }
-  return props.panelSourceValues
-}
 
 const open = defineModel<boolean>('open', { default: false })
 const multiSelection = defineModel<MultiSlotBuffSelection>('multiSelection', { required: true })
@@ -139,15 +121,7 @@ function setEnabled(
   )
 }
 
-function stacksModel(item: CollectedEffect, fallback: number) {
-  return getBuffEffectStacks(
-    multiSelection.value,
-    viewSlotIndex.value,
-    item.effect.id,
-    item.effect.applyTarget,
-    fallback,
-  )
-}
+function stacksModel(item: CollectedEffect) { return props.configurationParameters?.[item.effect.id]?.stacks }
 
 function setStacks(item: CollectedEffect, value: number) {
   setBuffEffectStacks(
@@ -159,44 +133,15 @@ function setStacks(item: CollectedEffect, value: number) {
   )
 }
 
-function convertLiveBase(item: CollectedEffect) {
-  const convert = item.effect.convert
-  if (!convert) return 0
-  if (convert.panelSource === 'manual') {
-    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
-      ? convert.defaultBase
-      : 0
-  }
-  if (convert.defaultBase != null && Number.isFinite(convert.defaultBase)) {
-    return convert.defaultBase
-  }
-  // 技能等级转模：取来源角色的对应大类技能等级
-  if (isSkillConvertFromKey(convert.from)) {
-    const levels = skillTalentLevelsForItem(item)
-    return levels?.[SKILL_CONVERT_FROM_TO_TALENT_KEY[convert.from]] ?? 0
-  }
-  const source = convert.panelSource ?? 'external'
-  const panelSources = panelSourceValuesForEffect(item)
-  const map =
-    (source === 'final' || source === 'external'
-      ? panelSources?.[source]
-      : undefined) ??
-    props.attrDefaults ??
-    {}
-  return map[convert.from] ?? props.attrDefaults?.[convert.from] ?? 0
-}
-
-/** 技能等级转模的来源角色等级表：按效果来源槽位取对应角色的五大类等级 */
-function skillTalentLevelsForItem(
-  item: CollectedEffect,
-): Partial<SkillTalentLevels> | null {
-  const convert = item.effect.convert
-  if (!convert || !isSkillConvertFromKey(convert.from)) return null
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
-  return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
-}
-
+/**
+ * 转模基数（Spec §5.1 第 5–6 项 / §2.3 第 6 项）：**只读共享参数解析的 `convertBase`**。
+ *
+ * 改造前这里自己按 `panelSource` 选面板、按技能等级查表、按 `defaultBase` 回落 —— 同一件事在
+ * 选择器、行级弹窗、结算三处各写一遍。面板/等级/默认值的解析已收进
+ * `resolveCollectedEffectParameters`，这里只读共享有效参数。调用方未给参数时显示未解析占位，
+ * 不自行读取默认基数、面板或技能等级。
+ */
+function convertBase(item: CollectedEffect) { return props.configurationParameters?.[item.effect.id]?.convertBase?.value }
 function hasConvertOverride(item: CollectedEffect) {
   return (
     getBuffEffectConvertInput(
@@ -208,18 +153,10 @@ function hasConvertOverride(item: CollectedEffect) {
   )
 }
 
-function convertOverrideModel(item: CollectedEffect) {
-  const saved = getBuffEffectConvertInput(
-    multiSelection.value,
-    viewSlotIndex.value,
-    item.effect.id,
-    item.effect.applyTarget,
-  )
-  if (saved != null) return saved
-  return convertLiveBase(item)
-}
+function convertOverrideModel(item: CollectedEffect) { return convertBase(item) }
 
-function setConvert(item: CollectedEffect, value: number) {
+function setConvert(item: CollectedEffect, value: number | undefined) {
+  if (value == null) return
   setBuffEffectConvertInput(
     multiSelection.value,
     viewSlotIndex.value,
@@ -232,12 +169,14 @@ function setConvert(item: CollectedEffect, value: number) {
 function clearConvertOverride(item: CollectedEffect) {
   const id = item.effect.id
   if (isManualConvert(item)) {
+    const base = convertBase(item)
+    if (base == null) return
     setBuffEffectConvertInput(
       multiSelection.value,
       viewSlotIndex.value,
       id,
       item.effect.applyTarget,
-      convertLiveBase(item),
+      base,
     )
     return
   }
@@ -247,33 +186,15 @@ function clearConvertOverride(item: CollectedEffect) {
   if (store) delete store.convertInputs[id]
 }
 
+/**
+ * 转模折算值（Spec §5.1 第 5–6 项）：**只读共享参数解析的 `amount`**。
+ *
+ * 改造前这里自己读面板/等级表再算一遍 —— 那正是「界面算 150、结算按 100」这类分叉的来源。
+ * 没有共享参数时返回 undefined，由格式化函数显示未解析占位。
+ */
 function convertResult(item: CollectedEffect) {
-  const convert = item.effect.convert
-  const id = item.effect.id
-  const source = convert?.panelSource ?? 'external'
-  const saved = getBuffEffectConvertInput(
-    multiSelection.value,
-    viewSlotIndex.value,
-    id,
-    item.effect.applyTarget,
-  )
-  let override: number | null | undefined
-  if (source === 'manual') {
-    override = saved ?? convert?.defaultBase ?? 0
-  } else {
-    // 非自行设置：有手填基数就按它算（与结算同一份数据），没有就按面板/默认
-    override = saved ?? null
-  }
-  return resolveConvertValue(
-    item.effect,
-    props.attrDefaults ?? {},
-    override,
-    panelSourceValuesForEffect(item),
-    // 技能等级转模来源等级表（此前缺失导致等级转模显示 0）
-    skillTalentLevelsForItem(item),
-  )
+  return props.configurationParameters?.[item.effect.id]?.amount
 }
-
 function blockNameText(item: CollectedEffect) {
   return item.blockName?.trim() || '增益'
 }
@@ -286,22 +207,13 @@ function noteText(item: CollectedEffect) {
   return item.blockNote?.trim() || ''
 }
 
-function formatSigned(value: number) {
-  return formatCalcSigned(value)
+function formatSigned(value: number | undefined) {
+  return value == null ? '—' : formatCalcSigned(value)
 }
 
 /** 参考站效果行：招式前缀 + 属性名 + 数值（叠层按当前层数出总值、转模出解析值）；非全局作用情况紧随 [强攻] 之后 */
 function effectResultText(item: CollectedEffect) {
-  let amountText = ''
-  if (item.effect.kind === 'stacked' || item.effect.stackable) {
-    const stacks = stacksModel(item, item.effect.defaultStacks ?? 1)
-    const per = item.effect.valuePerStack ?? 0
-    amountText = formatSigned(per * stacks)
-  } else if (item.effect.kind === 'convert') {
-    amountText = formatSigned(convertResult(item))
-  } else {
-    amountText = formatSigned(Number(item.effect.value) || 0)
-  }
+  const amountText = formatSigned(props.configurationParameters?.[item.effect.id]?.amount)
   return formatBuffEffectResultText(item.effect, amountText, {
     statLabelFn: (stat) => statLabel(stat),
     skillSubcategories: props.skillSubcategories,
@@ -596,7 +508,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                 >
                   <span>层数</span>
                   <NumberStepper
-                    :model-value="stacksModel(item, item.effect.defaultStacks ?? 1)"
+                    v-if="stacksModel(item) != null"
+                    :model-value="stacksModel(item)!"
                     :min="0"
                     :max="item.effect.maxStacks ?? 99"
                     :step="0.01"
@@ -604,6 +517,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     :disabled="!isEnabled(item)"
                     @update:model-value="setStacks(item, $event)"
                   />
+                  <span v-else>—</span>
                 </label>
                 <label
                   v-else-if="isConvert(item) && item.effect.convert"
@@ -618,13 +532,15 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     v-if="isManualConvert(item) || hasConvertOverride(item)"
                   >
                     <NumberStepper
-                      :model-value="convertOverrideModel(item)"
+                      v-if="convertOverrideModel(item) != null"
+                      :model-value="convertOverrideModel(item)!"
                       :min="0"
                       :max="999999"
                       :step="isManualConvert(item) && item.effect.convert.from === 'level' ? 1 : 10"
                       :disabled="!isEnabled(item)"
                       @update:model-value="setConvert(item, $event)"
                     />
+                    <span v-else>—</span>
                     <button
                       v-if="!isManualConvert(item)"
                       type="button"
@@ -647,7 +563,7 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(close)
                     type="button"
                     class="convert-clear"
                     :disabled="!isEnabled(item)"
-                    @click="setConvert(item, convertLiveBase(item))"
+                    @click="setConvert(item, convertBase(item))"
                   >
                     覆盖
                   </button>

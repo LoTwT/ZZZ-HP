@@ -55,13 +55,15 @@ import {
 } from '@/utils/damageEvent'
 import {
   buildSkillContextFromHit,
+  buildGenericPanelSkillContext,
   resolveEventElement,
   getHitSkipReason,
   skillNeedsDualAgents,
   applyHitPanelMods,
   type ResolvedHit,
 } from '@/utils/resolvedHit'
-import { deepUnwrapReactive } from '@/utils/reactiveUnwrap'
+import { snapshotCalculationInput } from '@/utils/reactiveUnwrap'
+import { toRaw } from 'vue'
 import {
   computeMutationZone,
   findLuminousAgentInTeam,
@@ -79,19 +81,35 @@ import {
   hasExternalPanelForSlot,
   parseSourceKeySlotIndex,
   resolveCollectedEffectSourceSlot,
-  resolveAnomalyReleaseMultFields,
-  resolveAnomalyReleaseSkillConvertMods,
+  resolveAnomalyReleaseMultEvaluation,
   type BuffSelectionState,
   type MultiSlotBuffSelection,
   type PanelCalcContext,
   type ConvertResolveInputs,
-  resolveCollectedEffectAmount,
   resolveBuffSelectionForSlot,
+  resolvePanelBuffSelectionForSlot,
   panelToConvertAttrValues,
   buildPanelSourceValuesBySlotMap,
+  collectEventCandidateEffects,
+  resolveCollectedEffectParameters,
+  type BuffEffectContribution,
+  type ComputeFinalPanelOptions,
+  type DamageInputUsage,
+  type EventDamageInputUsage,
+  type EventEffectRecord,
+  type EventEffectRecipient,
+  type EventEffectSummary,
+  type EventEffectUseView,
+  type PanelStageTrace,
+  type ResolvedEffectParameters,
+  type PanelPreConvertSnapshot,
+  type EventViewSnapshot,
+  buffMasterDataVersion,
 } from '@/utils/panelBuffCalc'
+import type { PanelViewPolicyId } from '@/utils/panelViewPolicy'
+import { resolveSlotAttrValues } from '@/utils/panelSourceResolution'
 import { formatAnomalyFormulaAgentLabel } from '@/utils/anomalyFormulaDisplay'
-import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
+import { buildHitEvalFingerprintReused, resetHitEvalFingerprintReuseState } from '@/utils/hitEvalCache'
 
 /** 扫掠 / 流程总伤只要面板数字，不拼「增益来自哪」明细 */
 const PANEL_NUMBERS_ONLY = { includeDetails: false } as const
@@ -151,6 +169,14 @@ export interface OptimalEventEvalDetail {
   eventElement: AgentElement | undefined
   hit: ResolvedHit
   eventId: string
+  /**
+   * 逐效果记录与实际采用（计算链路收敛 Spec §2.2 第 3 项）：只在带记录求值
+   * （includeDetails 为 true）时填充，无效果时为空数组；数值模式不生成。
+   */
+  effectRecords?: EventEffectRecord[]
+  panelStageTraces?: PanelStageTrace[]
+  damageInputUsages?: EventDamageInputUsage[]
+  viewSnapshots?: Readonly<Record<string, EventViewSnapshot>>
   displayName: string
   kind: DamageEventKind
   perHit: number
@@ -626,27 +652,33 @@ function buildPanelContextForSlot(
   slotIndex: number,
   externalForSlot: PanelStats,
   mainExternalPanel: PanelStats,
-  event?: { skillContext: SkillCalcContext; rowBuffOverride: ResolvedHit['buffOverride'] },
+  event?: { skillContext: SkillCalcContext; rowBuffOverride: ResolvedHit['buffOverride']; deferSourceValues?: boolean },
 ): PanelCalcContext {
-  const level =
-    slotIndex === ctx.panelContext.mainSlotIndex
-      ? ctx.enemyInput.level
-      : resolveProducerAgentLevel(ctx, ctx.panelContext.teamSlots[slotIndex]?.agentId)
   const base: PanelCalcContext = {
     ...ctx.panelContext,
     mainSlotIndex: slotIndex,
     mainExternalPanel: mainExternalPanel,
     extraGains: ctx.extraGains,
-    buffSelection: ctx.slotBuffSelections
-      ? resolveBuffSelectionForSlot(ctx.slotBuffSelections, slotIndex)
-      : ctx.panelContext.buffSelection,
-    attrValues: panelToConvertAttrValues(externalForSlot, { level, pierceMod: 0 }),
+    buffSelection: resolvePanelBuffSelectionForSlot(ctx.panelContext, slotIndex),
+    // 转模基数与面板页同一份解析（Spec §2.1）：主槽用敌方等级、其余用角色等级，
+    // 转模部分面板自带的 level 优先。
+    attrValues: resolveSlotAttrValues({
+      slotIndex,
+      mainSlotIndex: ctx.panelContext.mainSlotIndex,
+      teamSlots: ctx.panelContext.teamSlots,
+      external: externalForSlot,
+      convertSlotPanels: ctx.panelContext.convertSlotPanels,
+      agentLevelBySlot: (index) =>
+        index === ctx.panelContext.mainSlotIndex
+          ? ctx.enemyInput.level
+          : resolveProducerAgentLevel(ctx, ctx.panelContext.teamSlots[index]?.agentId),
+    }),
     ...event,
   }
   const panelSourceValuesBySlot = buildPanelSourceValuesBySlotMap(base, externalForSlot)
   return {
     ...base,
-    panelSourceValues: panelSourceValuesBySlot.get(slotIndex),
+    panelSourceValues: event?.deferSourceValues ? undefined : panelSourceValuesBySlot.get(slotIndex),
     panelSourceValuesBySlot,
   }
 }
@@ -657,6 +689,7 @@ export function buildEventPanelContext(
   mainExternal: PanelStats | null,
   hit: ResolvedHit,
   slotIndex: number,
+  deferSourceValues = false,
 ): PanelCalcContext {
   const mainId = ctx.panelContext.teamSlots[ctx.panelContext.mainSlotIndex]?.agentId
   const mainPanel = mainExternal ?? (mainId ? ctx.panelContext.activeSlotPanels?.[mainId] : undefined) ?? createDefaultExternalPanel()
@@ -665,38 +698,502 @@ export function buildEventPanelContext(
   return buildPanelContextForSlot(ctx, slotIndex, external, mainPanel, {
     skillContext: buildSkillContextFromHit(hit, resolveEventElement(hit, ctx.panelContext.agents)),
     rowBuffOverride: hit.buffOverride ?? null,
+    deferSourceValues,
   })
 }
 
+/** 全局通用视图与事件视图共用槽位/来源装配，行级状态不进入全局。 */
+export function buildGlobalPanelContext(
+  ctx: OptimalEvalContext,
+  mainExternal: PanelStats | null,
+  slotIndex: number,
+): PanelCalcContext {
+  const mainIndex = ctx.panelContext.mainSlotIndex
+  const mainPanel = mainExternal ?? ctx.panelContext.slotExternalPanels?.[mainIndex] ?? createDefaultExternalPanel()
+  const agentId = ctx.panelContext.teamSlots[slotIndex]?.agentId ?? ''
+  const external = resolveExternalForAgent(ctx, agentId, slotIndex, mainPanel)
+  const skill = ctx.panelContext.skillContext
+  const base = buildPanelContextForSlot(ctx, slotIndex, external, mainPanel, {
+    rowBuffOverride: null,
+    deferSourceValues: true,
+    skillContext: buildGenericPanelSkillContext({
+      element: ctx.panelContext.agents.find(agent => agent.id === agentId)?.element,
+      damageKind: skill?.damageKind ?? 'direct',
+      staggerPhase: skill?.staggerPhase ?? 'stagger',
+    }),
+  })
+  return base
+}
+
+/**
+ * 事件视图与逐效果记录（计算链路收敛 Spec §3.3）。
+ *
+ * 一次事件求值会算若干张面板：持有者、异常强度提供者、异常类触发者、（S3 起的）本人耀变等。
+ * 每张面板 = 一个 viewKey；同一 viewKey 的贡献由正式求值回调产出，这里只做归并、排序与
+ * 实际采用标注，**不重新匹配或折算**。
+ */
+interface EventTraceView {
+  convertValues?: import('@/utils/panelBuffCalc').PanelSourceValues
+  external: PanelStats
+  useView: EventEffectUseView
+  viewKey: string
+  slotIndex: number
+  agentId: string
+  policy: PanelViewPolicyId
+  contributions: BuffEffectContribution[]
+}
+
+function hashPanelForView(panel: PanelStats | null | undefined): string {
+  if (!panel) return 'null'
+  return JSON.stringify(panel)
+}
+
+/** viewKey 由完整有效输入与政策派生（不是槽位号/政策名的别名，Spec §3.2 第 4 项）。 */
+function buildEventViewKey(parts: {
+  policy: PanelViewPolicyId
+  useView: EventEffectUseView
+  slotIndex: number
+  agentId: string
+  element?: string | null
+  external: PanelStats | null | undefined
+  context?: PanelCalcContext
+}): string {
+  return [
+    parts.policy,
+    `slot:${parts.slotIndex}`,
+    `agent:${parts.agentId || ''}`,
+    `elem:${parts.element ?? ''}`,
+    `panel:${hashPanelForView(parts.external)}`,
+    `context:${JSON.stringify([parts.context?.skillContext, parts.context?.restrictToSlotIndex, parts.context?.excludeBangboo, parts.context?.effectSourcePolicy, parts.context?.traceStage, parts.context?.buffSelection, parts.context?.rowBuffOverride, Boolean(parts.context?.skipConvert)])}`,
+  ].join('|')
+}
+
+function createEventTraceCollector(ctx: OptimalEvalContext, mainPanel: PanelStats, hit: ResolvedHit) {
+  const views: EventTraceView[] = []
+  const usages: EventDamageInputUsage[] = []
+  const preConvertCache = new Map<string, PanelPreConvertSnapshot>()
+  const panelCache = new Map<string, OptimalPanelBreakdown>()
+  const boundInputs = new Map<string, { viewKey: string; usedView: EventEffectUseView }>()
+  const collector = {
+    views,
+    usages,
+    boundInputs,
+    snapshots(): Record<string, EventViewSnapshot> {
+      return Object.fromEntries(views.map(view => {
+        const final = panelCache.get(view.viewKey)
+        const pre = preConvertCache.get(view.viewKey)
+        const agentId = ctx.panelContext.teamSlots[view.slotIndex]?.agentId ?? ''
+        const agentName = ctx.panelContext.agents.find(agent => agent.id === agentId)?.name ?? agentId
+        return [view.viewKey, { agentName, viewKey: view.viewKey, slotIndex: view.slotIndex, policy: view.policy,
+          externalPanel: view.external, panel: final?.finalPanel ?? pre?.preConvertPanel ?? view.external,
+          sources: final?.sources ?? pre?.sources ?? [],
+          convertValues: view.convertValues,
+        }]
+      }))
+    },
+    view(parts: {
+      useView: EventEffectUseView
+      slotIndex: number
+      agentId: string
+      policy: PanelViewPolicyId
+      element?: string | null
+      external: PanelStats | null | undefined
+      context?: PanelCalcContext
+    }) {
+      const context = parts.context ?? buildEventPanelContext(ctx, mainPanel, hit, parts.slotIndex, true)
+      const viewKey = buildEventViewKey({ ...parts, context })
+      const existing = views.find((item) => item.viewKey === viewKey)
+      const view: EventTraceView = existing ?? {
+        external: parts.external!,
+        useView: parts.useView,
+        viewKey,
+        slotIndex: parts.slotIndex,
+        agentId: parts.agentId,
+        policy: parts.policy,
+        contributions: [],
+      }
+      if (!existing) views.push(view)
+      const options: ComputeFinalPanelOptions = {
+        includeDetails: true,
+        trace: {
+          onSourceValues: values => { view.convertValues = values },
+          viewKey,
+          policy: parts.policy,
+          onContribution: (item: BuffEffectContribution) => view.contributions.push(item),
+          preConvertCache,
+          panelCache,
+          resolveView: (external, context, usedView, policy = parts.policy) => collector.view({
+            external, context,
+            useView: usedView,
+            slotIndex: context.mainSlotIndex,
+            agentId: context.teamSlots[context.mainSlotIndex]?.agentId ?? '',
+            policy,
+            element: context.skillContext?.element,
+          }).options.trace!,
+          bindInput: (inputKey, field, targetViewKey) => {
+            boundInputs.set(`${inputKey}:${field}`, { viewKey: targetViewKey, usedView: parts.useView })
+          },
+        },
+      }
+      return {
+        viewKey,
+        options,
+        usage: (usage: DamageInputUsage) => {
+          usages.push({
+            ...usage,
+            viewKey,
+            slotIndex: parts.slotIndex,
+            policy: parts.policy,
+            usedView: parts.useView,
+          })
+        },
+      }
+    },
+  }
+  return collector
+}
+
+/** 同一身份只保留最终阶段那一条：转模取 convert，固定值取 preConvert，跳过态让位。 */
+function pickFinalContributions(contributions: BuffEffectContribution[]): BuffEffectContribution[] {
+  const byIdentity = new Map<string, BuffEffectContribution>()
+  const rank = (entry: BuffEffectContribution) =>
+    entry.status === 'convert-skipped' ? -1 : entry.stage === 'convert' ? 2 : 1
+  for (const item of contributions) {
+    const identity = [item.viewKey, item.sourceKey, item.blockId, item.effectId].join('|')
+    const current = byIdentity.get(identity)
+    if (!current || rank(item) > rank(current)) byIdentity.set(identity, item)
+  }
+  return [...byIdentity.values()]
+}
+
+function formatSlotLabel(
+  ctx: OptimalEvalContext,
+  slotIndex: number,
+): { label: string; agentId: string; name: string } {
+  const agentId = ctx.panelContext.teamSlots[slotIndex]?.agentId ?? ''
+  const agent = agentId ? ctx.panelContext.agents.find((item) => item.id === agentId) : undefined
+  const name = agent?.name ?? ''
+  const profession = agent?.profession ?? ''
+  const label = name ? (profession ? `${profession}·${name}` : name) : `槽位${slotIndex + 1}`
+  return { label, agentId, name }
+}
+
+/** 效果属性 → 它真正会改到的面板字段（只用于判断「这条贡献是否被本事件采用」，不改数值） */
+const STAT_TO_PANEL_FIELDS: Record<string, string[]> = {
+  atk: ['atk', 'inCombatAtk'],
+  atkPercent: ['atk'],
+  inCombatAtkPercent: ['atk'],
+  hp: ['hp'],
+  hpPercent: ['hp'],
+  inCombatHpPercent: ['hp'],
+  def: ['def'],
+  defPercent: ['def'],
+  inCombatDefPercent: ['def'],
+  dmgBonus: ['dmgBonus'],
+  skillDmgBonus: ['dmgBonus'],
+  externalAtkPercent: ['atk'],
+  externalHpPercent: ['hp'],
+  externalDefPercent: ['def'],
+  mastery: ['mastery', 'inCombatMastery'],
+  mutationCoeff: ['mutationCoeff', 'mutationZone'],
+  mutationCoeffFactor: ['mutationCoeffFactor', 'mutationZone'],
+  skillMultiplierBonus: ['directDmgMult'],
+  anomalyControlPercent: ['anomalyControl'],
+  energyRegenFlat: ['energyRegen'],
+}
+
+/**
+ * 这条贡献的属性是否可能进入该字段。
+ * 其它键与面板字段同名（critRate/critDmg/mastery/penRate/pen/resPen/reduceDefense/
+ * anomalyDmgBonus/anomalyMult/anomalyCrit*…）；不同名且无显式映射时不登记采用。
+ */
+function recordUsesField(stat: string, field: string): boolean {
+  const mapped = STAT_TO_PANEL_FIELDS[stat]
+  if (mapped) return mapped.includes(field)
+  return stat === field
+}
+
+function recordFeedsConvertBase(stat: string, field: string): boolean {
+  // panelToConvertAttrValues 的贯穿力由生命、攻击与固定贯穿力共同构成。
+  return field === 'pierce'
+    ? recordUsesField(stat, 'hp') || recordUsesField(stat, 'atk') || stat === 'pierce'
+    : recordUsesField(stat, field)
+}
+function buildEventEffectRecords(
+  ctx: OptimalEvalContext,
+  hit: ResolvedHit,
+  trace: ReturnType<typeof createEventTraceCollector>,
+): {
+  effectRecords: EventEffectRecord[]
+  panelStageTraces: PanelStageTrace[]
+  damageInputUsages: EventDamageInputUsage[]
+} {
+  const effectRecords: EventEffectRecord[] = []
+  const panelStageTraces: PanelStageTrace[] = []
+  for (const view of trace.views) {
+    const finalContributions = pickFinalContributions(view.contributions)
+    panelStageTraces.push({
+      viewKey: view.viewKey,
+      slotIndex: view.slotIndex,
+      policy: view.policy,
+      contributions: view.contributions,
+    })
+    const viewUsages = trace.usages.filter((usage) => usage.viewKey === view.viewKey)
+    const beneficiary = formatSlotLabel(ctx, view.slotIndex)
+    const appliedStatus = (contribution: BuffEffectContribution) =>
+      contribution.status === 'applied' || contribution.status === 'zero'
+    for (const contribution of finalContributions) {
+      // 未生效/被排除的候选不登记采用（否则详情会把非生效项当贡献解释）
+      const overriddenField = contribution.stat === 'skillMultiplierBonus' ? 'directDmgMult' : contribution.stat
+      const overwritten = hit.multOverrides?.[overriddenField as keyof NonNullable<ResolvedHit['multOverrides']>] != null
+      const skillReleaseIncrement = contribution.stat === 'anomalyReleaseMult' && contribution.convertBase != null && contribution.stage === 'releaseMult'
+      const contributionRecords = appliedStatus(contribution) && (!overwritten || skillReleaseIncrement)
+        ? viewUsages.filter((usage) => recordUsesField(contribution.stat, String(usage.field)))
+        : []
+      const providerSlot = contribution.providerSlot ?? contribution.sourceSlot
+      const provider =
+        providerSlot != null && providerSlot >= 0
+          ? formatSlotLabel(ctx, providerSlot)
+          : { label: '', agentId: '', name: '' }
+      effectRecords.push({
+        ...contribution,
+        eventId: hit.id,
+        providerName: contribution.providerName ?? provider.name,
+        beneficiaryAgentId: beneficiary.agentId,
+        beneficiaryName: beneficiary.name,
+        beneficiaryLabel: beneficiary.label,
+        // 采用关系按视图绑定：这张面板的字段没被本事件采用，就没有使用项；
+        // 未生效/被排除的候选也不登记采用（否则详情会把非生效项当贡献解释）
+        usedInputs: contributionRecords,
+        usedViews: [...new Set(contributionRecords.map((usage) => usage.usedView))],
+        usedZones: [...new Set(contributionRecords.flatMap((usage) => usage.usedZones))],
+      })
+    }
+  }
+  // 转模读取非转模快照：只给真正进入本事件的转模建立来源依赖。
+  for (const record of effectRecords) {
+    const base = record.convertBase
+    if (!record.usedInputs.length || base?.stage !== 'preConvert' || !base.sourceViewKey) continue
+    for (const source of effectRecords) {
+      if (source.viewKey !== base.sourceViewKey || source.stage !== 'preConvert' ||
+          (source.status !== 'applied' && source.status !== 'zero') ||
+          !recordFeedsConvertBase(source.stat, base.from)) continue
+      for (const used of record.usedInputs) {
+        const dependency: EventDamageInputUsage = {
+          ...used,
+          field: base.from as DamageInputUsage['field'],
+          viewKey: source.viewKey,
+          slotIndex: source.beneficiarySlot,
+          policy: source.policy,
+          usedView: 'convertSourcePanel',
+        }
+        if (!source.usedInputs.some(item => item.usedView === dependency.usedView && item.field === dependency.field && item.resultKey === dependency.resultKey)) {
+          source.usedInputs.push(dependency)
+          trace.usages.push(dependency)
+        }
+      }
+    }
+  }
+  for (const record of effectRecords) {
+    record.usedViews = [...new Set(record.usedInputs.map(item => item.usedView))]
+    record.usedZones = [...new Set(record.usedInputs.flatMap(item => item.usedZones))]
+  }
+  const sortKey = (record: EventEffectRecord) =>
+    [record.eventId, record.beneficiarySlot, record.policy, record.viewKey, record.stage, record.sourceKey, record.blockId, record.effectId].join('|')
+  effectRecords.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+  return { effectRecords, panelStageTraces, damageInputUsages: trace.usages }
+}
+
+/**
+ * 事件投影（Spec §2.3 第 1 项 / §3.5）：按 effect id 归并。
+ * `recipients` 只留**被本事件实际采用**的项（`usedInputs` 非空）；`candidates` 保留全部已求值视图。
+ */
+export function projectEventEffectRecords(
+  records: EventEffectRecord[],
+): Record<string, EventEffectSummary> {
+  const byEffect = new Map<string, EventEffectRecord[]>()
+  for (const record of records) {
+    const list = byEffect.get(record.effectId)
+    if (list) list.push(record)
+    else byEffect.set(record.effectId, [record])
+  }
+  const out: Record<string, EventEffectSummary> = {}
+  for (const [effectId, candidates] of byEffect) {
+    const recipients: EventEffectRecipient[] = candidates
+      .filter(
+        (record) =>
+          (record.status === 'applied' || record.status === 'zero') && record.usedInputs.length > 0,
+      )
+      .map((record) => ({
+        viewKey: record.viewKey,
+        slotIndex: record.beneficiarySlot,
+        agentId: record.beneficiaryAgentId,
+        label: record.beneficiaryLabel,
+        policy: record.policy,
+        stage: record.stage,
+        amount: record.amount,
+        status: record.status === 'zero' ? 'zero' : 'applied',
+        usedViews: record.usedViews,
+        usedZones: record.usedZones,
+      }))
+    recipients.sort((a, b) =>
+      [a.slotIndex, a.policy, a.viewKey, a.stage].join('|').localeCompare(
+        [b.slotIndex, b.policy, b.viewKey, b.stage].join('|'),
+      ),
+    )
+    const first = candidates[0]
+    if (!first) continue
+    const firstRecipient = recipients[0]
+    let state: EventEffectSummary['state'] = 'inactive'
+    let amount: number | undefined
+    if (recipients.length === 1 && firstRecipient) {
+      state = 'single'
+      amount = firstRecipient.amount
+    } else if (recipients.length > 1 && firstRecipient) {
+      const sameAmount = recipients.every(
+        (item) => Math.abs(item.amount - firstRecipient.amount) <= 1e-6,
+      )
+      if (sameAmount) {
+        state = 'same'
+        amount = firstRecipient.amount
+      } else {
+        state = 'multiple'
+      }
+    }
+    out[effectId] = {
+      effectId,
+      stat: first.stat,
+      sourceKey: first.sourceKey,
+      blockId: first.blockId,
+      providerName: first.providerName,
+      candidates,
+      recipients,
+      state,
+      amount,
+    }
+  }
+  return out
+}
+
+/**
+ * 事件增益预览（Spec §2.2 第 4 项 / §2.3）。
+ *
+ * 改造要点：**不再**为每个参与者重新求值、更不再「按 effect id 先到先得」把多受益角色压成
+ * 一个数（C2 缺陷的产生机制）。现在只读正式事件求值的逐效果记录：
+ * - `evaluation` 有值 → 只投影该快照；
+ * - 省略 → 通过正式事件入口取一份带记录的结果（冷态允许一次正式重放，由调用方缓存）；
+ * - 显式 `null` → 该事件不可结算，只给配置参数，不伪造实际金额。
+ */
 export function resolveEventBuffPreviewInputs(
   ctx: OptimalEvalContext,
   mainExternal: PanelStats | null,
   hit: ResolvedHit,
   slotIndex: number,
+  evaluation?: OptimalEventEvalDetail | null,
 ): ConvertResolveInputs {
-  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex)
-  const effectAmounts: Record<string, number> = {}
-  const participantIds = skillNeedsDualAgents(hit.skill.damageType)
-    ? [hit.ownerAgentId, hit.anomalyPowerAgentId, hit.triggerAgentId] : [hit.ownerAgentId]
-  for (const agentId of new Set(participantIds)) {
-    const beneficiarySlot = ctx.panelContext.teamSlots.findIndex(slot => slot.agentId === agentId)
-    if (beneficiarySlot < 0) continue
-    const beneficiaryContext = beneficiarySlot === slotIndex ? context
-      : buildEventPanelContext(ctx, mainExternal, hit, beneficiarySlot)
-    for (const item of collectAllBuffEffects(beneficiaryContext)) {
-      if (!(item.effect.id in effectAmounts)) effectAmounts[item.effect.id] = resolveCollectedEffectAmount(item, beneficiaryContext)
+  const snapshot =
+    evaluation === undefined
+      ? evaluateOptimalEventDetail(ctx, mainExternal, hit, { includeDetails: true, requirePanel: true })
+      : evaluation
+  const context = buildEventPanelContext(ctx, mainExternal, hit, slotIndex, true)
+  // 使用正式来源阶段的原值，组合属性和阶段身份也不在配置侧重建。
+  for (const view of Object.values(snapshot?.viewSnapshots ?? {})) {
+    if (view.policy === 'default' && view.convertValues) {
+      context.panelSourceValuesBySlot!.set(view.slotIndex, view.convertValues)
     }
   }
-  // Include disabled/nonmatching candidates explicitly as zero, rather than falling back to config values.
-  for (const item of collectAllBuffEffects({ ...context, rowBuffOverride: null })) {
-    effectAmounts[item.effect.id] ??= 0
-  }
-  return {
+  const base = {
     attrDefaults: context.attrValues ?? {},
     panelSourceValues: context.panelSourceValues,
     panelSourceValuesBySlot: Object.fromEntries(context.panelSourceValuesBySlot ?? []),
-    effectAmounts,
   }
+  if (!snapshot) {
+    // 不可结算：只给共享参数解析出的配置参数（不构造 summary、不冒充 inactive）
+    return {
+      ...base,
+      contextKind: 'unavailable',
+      configurationOnly: true,
+      configurationParameters: resolveContextConfigurationParameters(ctx, context, slotIndex),
+    }
+  }
+
+  const effectSummaries = projectEventEffectRecords(snapshot.effectRecords ?? [])
+  // 兼容投影：保留旧字段，但只从 recipients 的真值推出（Spec §3.5）
+  const effectAmounts: Record<string, number> = {}
+  for (const [effectId, summary] of Object.entries(effectSummaries)) {
+    if (summary.amount != null) effectAmounts[effectId] = summary.amount
+    else if (summary.state === 'inactive') effectAmounts[effectId] = 0
+  }
+  // 未进入本次求值视图的候选（未启用/未匹配且没有记录）沿用既有「非生效显示位」= 0
+  const candidates = collectEventCandidateEffects(context)
+  for (const item of [...candidates.items, ...candidates.excluded.map(entry => entry.item)]) {
+    effectAmounts[item.effect.id] ??= 0
+  }
+  return {
+    ...base,
+    contextKind: 'event',
+    configurationOnly: false,
+    effectAmounts,
+    effectSummaries,
+    configurationParameters: resolveContextConfigurationParameters(ctx, context, slotIndex),
+  }
+}
+
+/**
+ * 配置参数（Spec §5.1）：按显式查看槽位的上下文解析待选层数/基数/折算值。
+ * 与实际贡献分开：不进 `effectAmounts`，也不参与结算。
+ */
+export function resolveConfigurationParameters(
+  ctx: OptimalEvalContext,
+  hit: ResolvedHit,
+  slotIndex: number,
+  mainExternal: PanelStats | null = null,
+): Record<string, ResolvedEffectParameters> {
+  const context = buildEventPanelContext(
+    ctx,
+    mainExternal,
+    hit,
+    slotIndex,
+  )
+  return resolveContextConfigurationParameters(ctx, context, slotIndex)
+}
+
+/** 目录候选与生效状态分离；查询禁用条目不重启来源，合并表覆盖所有受益槽位。 */
+export function resolveContextConfigurationParameters(
+  ctx: OptimalEvalContext,
+  query: PanelCalcContext,
+  slotIndex: number,
+): Record<string, ResolvedEffectParameters> {
+  const contexts = new Map<number, PanelCalcContext>([[slotIndex, query]])
+  function forSlot(index: number) {
+    let context = contexts.get(index)
+    if (!context) {
+      const main = query.mainExternalPanel ?? ctx.panelContext.slotExternalPanels![ctx.panelContext.mainSlotIndex]!
+      const external = resolveExternalForAgent(ctx, ctx.panelContext.teamSlots[index]?.agentId ?? '', index, main)
+      context = buildPanelContextForSlot(ctx, index, external, main, {
+        skillContext: query.skillContext!.generic
+          ? buildGenericPanelSkillContext({ ...query.skillContext, element: ctx.panelContext.agents.find(a => a.id === ctx.panelContext.teamSlots[index]?.agentId)?.element })
+          : query.skillContext!,
+        rowBuffOverride: query.rowBuffOverride,
+        deferSourceValues: true,
+      })
+      if (!query.skillContext?.generic) context.panelSourceValuesBySlot = query.panelSourceValuesBySlot
+      contexts.set(index, context)
+    }
+    return context
+  }
+  const parameters: Record<string, ResolvedEffectParameters> = {}
+  for (let index = 0; index < ctx.panelContext.teamSlots.length; index++) {
+    if (!ctx.panelContext.teamSlots[index]?.agentId) continue
+    const context = forSlot(index)
+    const candidates = collectEventCandidateEffects(context)
+    for (const item of [...candidates.items, ...candidates.excluded.map(entry => entry.item)]) {
+      const beneficiary = item.applicableSlots?.length === 1 ? item.applicableSlots[0]! : slotIndex
+      if (index !== beneficiary) continue
+      parameters[item.effect.id] = resolveCollectedEffectParameters(item, forSlot(beneficiary))
+    }
+  }
+  return parameters
 }
 
 
@@ -705,6 +1202,7 @@ function resolveRemielSelfRadianceCalcForOptimal(
   anomalyPowerAgentId: string | null | undefined,
   mainExternal: PanelStats,
   hit: ResolvedHit,
+  trace?: ReturnType<typeof createEventTraceCollector> | null,
 ) {
   const remiel = findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)
   const policy = resolvePanelViewPolicyForRadiance(anomalyPowerAgentId, remiel?.id)
@@ -713,7 +1211,7 @@ function resolveRemielSelfRadianceCalcForOptimal(
   }
   const external = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainExternal)
   const agent = ctx.panelContext.agents.find((item) => item.id === remiel.id)
-  const baseCtx = buildEventPanelContext(ctx, mainExternal, hit, remiel.slotIndex)
+  const baseCtx = buildEventPanelContext(ctx, mainExternal, hit, remiel.slotIndex, Boolean(trace))
   return policy.resolveRadianceCalcInput({
     teamSlots: ctx.panelContext.teamSlots,
     agents: ctx.panelContext.agents,
@@ -722,6 +1220,9 @@ function resolveRemielSelfRadianceCalcForOptimal(
     remielSlotIndex: remiel.slotIndex,
     agentLevel: resolveProducerAgentLevel(ctx, remiel.id),
     isMb: agent?.profession === MB_PROFESSION,
+    trace: trace?.view({ useView: 'radianceSelfPanel', external, context: baseCtx,
+      slotIndex: remiel.slotIndex, agentId: remiel.id, element: baseCtx.skillContext?.element,
+      policy: 'remiel-self-radiance' }).options.trace,
   })
 }
 
@@ -800,6 +1301,8 @@ function resolveLuminousTeamModifiersForOptimal(
   mainExternal: PanelStats,
   includeDetails = true,
   hit?: ResolvedHit,
+  /** 追踪工厂（团队异化视图，Spec §2.4 第 1 项）：拿到真实来源面板后再建视图身份 */
+  traceFor?: (external: PanelStats) => ComputeFinalPanelOptions,
 ): {
   mutationZone: number
   radianceResPen: number
@@ -813,7 +1316,7 @@ function resolveLuminousTeamModifiersForOptimal(
   const tSlotIndex = found.slotIndex
   const producerExternal = resolveExternalForAgent(ctx, found.id, tSlotIndex, mainExternal)
   const luminousContext: PanelCalcContext = hit
-    ? buildEventPanelContext(ctx, mainExternal, hit, tSlotIndex)
+    ? buildEventPanelContext(ctx, mainExternal, hit, tSlotIndex, includeDetails)
     : {
         ...buildPanelContextForSlot(ctx, tSlotIndex, producerExternal, mainExternal),
         skillContext: {
@@ -825,7 +1328,7 @@ function resolveLuminousTeamModifiersForOptimal(
   const breakdown = computeFinalPanel(
     producerExternal,
     luminousContext,
-    includeDetails ? undefined : PANEL_NUMBERS_ONLY,
+    traceFor ? traceFor(producerExternal) : includeDetails ? undefined : PANEL_NUMBERS_ONLY,
   )
   const panel = breakdown.finalPanel
   const agent = ctx.panelContext.agents.find((item) => item.id === found.id)
@@ -919,8 +1422,18 @@ export function evaluateOptimalEventDetail(
     ownerSlotIndex,
     mainPanel,
   )
-  const evtPanelCtx = buildEventPanelContext(ctx, mainPanel, hit, ownerSlotIndex)
-  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, panelOpts)
+  // 带记录的一侧才建追踪；数值侧（includeDetails=false）不分配任何记录（Spec §3.4 第 1 项）
+  const trace = includeDetails ? createEventTraceCollector(ctx, mainPanel, hit) : null
+  const ownerView = trace?.view({
+    useView: 'ownerPanel',
+    slotIndex: ownerSlotIndex,
+    agentId: ownerAgentId,
+    policy: 'default',
+    element: evtPowerElement,
+    external: ownerExternal,
+  })
+  const evtPanelCtx = buildEventPanelContext(ctx, mainPanel, hit, ownerSlotIndex, includeDetails)
+  const evtBreakdown = computeFinalPanel(ownerExternal, evtPanelCtx, ownerView?.options ?? panelOpts)
   const zoneMultResolved = splitSkillZoneMultOverrides(damageType, hit.multOverrides)
   const panelOverrides = zoneMultResolved.panelOverrides
   const evtFinalPanel = applyHitPanelMods(
@@ -938,6 +1451,9 @@ export function evaluateOptimalEventDetail(
   let evtTriggerPierce: number | undefined
   let producerBreakdown: OptimalPanelBreakdown | undefined
   let producerExternalPanel: PanelStats | undefined
+  let producerView: ReturnType<NonNullable<typeof trace>['view']> | undefined
+  let mutationPanelView: ReturnType<NonNullable<typeof trace>['view']> | undefined
+  let radianceSelfView: ReturnType<NonNullable<typeof trace>['view']> | undefined
 
   /** 异常强度提供者是否不是主 C（扫掠敏感度等元数据用） */
   const usesNonMainProducer = Boolean(
@@ -959,13 +1475,22 @@ export function evaluateOptimalEventDetail(
       evtTriggerPierce = evtPierce
       producerExternalPanel = ownerExternal
       producerBreakdown = evtBreakdown
+      producerView = ownerView
     } else {
       const tExternal = resolveExternalForAgent(ctx, evtPowerAgentId, tSlotIndex, mainPanel)
       producerExternalPanel = tExternal
+      producerView = trace?.view({
+        useView: 'powerProviderPanel',
+        slotIndex: tSlotIndex,
+        agentId: evtPowerAgentId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: tExternal,
+      })
       producerBreakdown = computeFinalPanel(
         tExternal,
-        buildEventPanelContext(ctx, mainPanel, hit, tSlotIndex),
-        panelOpts,
+        buildEventPanelContext(ctx, mainPanel, hit, tSlotIndex, includeDetails),
+        producerView?.options ?? panelOpts,
       )
       // 招式倍率覆写：紊乱/乱流落到强度提供者面板（最终倍率区填写不进面板基础字段）
       evtTriggerFinalPanel = applyEventMultOverrides(producerBreakdown.finalPanel, {
@@ -1014,12 +1539,31 @@ export function evaluateOptimalEventDetail(
   let effectiveSub =
     sub && panelOverrides ? mergeSkillSubcategoryMultOverrides(sub, panelOverrides) : sub
 
-  const luminousMods = resolveLuminousTeamModifiersForOptimal(ctx, mainPanel, includeDetails, hit)
+  const luminousMods = resolveLuminousTeamModifiersForOptimal(
+    ctx,
+    mainPanel,
+    includeDetails,
+    hit,
+    trace
+      ? (external) =>
+          (mutationPanelView = trace.view({
+            useView: 'mutationPanel',
+            slotIndex:
+              findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)?.slotIndex ??
+              mainSlotIndex,
+            agentId: findLuminousAgentInTeam(ctx.panelContext.teamSlots, ctx.panelContext.agents)?.id ?? '',
+            policy: 'default',
+            element: evtPowerElement,
+            external,
+          })).options
+      : undefined,
+  )
 
   // 属性异常/异放/耀变类型增伤取触发者；紊乱/乱流取持有者；直伤回落 owner
   let anomalyTriggerPanel = evtFinalPanel
   let bonusExternalPanel = ownerExternal
   let bonusBreakdown: OptimalPanelBreakdown = evtBreakdown
+  let triggerView: ReturnType<NonNullable<typeof trace>['view']> | undefined = ownerView
   if (eventNeedsTrigger) {
     if (!hit.triggerAgentId) return null
     if (hit.triggerAgentId !== ownerAgentId) {
@@ -1033,10 +1577,18 @@ export function evaluateOptimalEventDetail(
         trigSlotIndex,
         mainPanel,
       )
+      triggerView = trace?.view({
+        useView: 'anomalyTriggerPanel',
+        slotIndex: trigSlotIndex,
+        agentId: hit.triggerAgentId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: trigExternal,
+      })
       bonusBreakdown = computeFinalPanel(
         trigExternal,
-        buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex),
-        panelOpts,
+        buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex, includeDetails),
+        triggerView?.options ?? panelOpts,
       )
       anomalyTriggerPanel = bonusBreakdown.finalPanel
       bonusExternalPanel = trigExternal
@@ -1065,24 +1617,41 @@ export function evaluateOptimalEventDetail(
           ? ownerExternal
           : resolveExternalForAgent(ctx, triggerId, trigSlotIndex, mainPanel)
       const trigPanelCtx = triggerId === ownerAgentId
-        ? evtPanelCtx : buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex)
-      const releaseFields = resolveAnomalyReleaseMultFields(
+        ? evtPanelCtx : buildEventPanelContext(ctx, mainPanel, hit, trigSlotIndex, includeDetails)
+      // 异放倍率视图：走同一套倍率合并规则，只是带上追踪（Spec §2.4 第 3 项）
+      const releaseView = trace?.view({
+        useView: 'releaseMult',
+        slotIndex: trigSlotIndex,
+        agentId: triggerId,
+        policy: 'default',
+        element: evtPowerElement,
+        external: trigExternal,
+        context: { ...trigPanelCtx, traceStage: 'releaseMult' },
+      })
+      const releaseEvaluation = resolveAnomalyReleaseMultEvaluation(
         trigExternal,
-        trigPanelCtx,
+        { ...trigPanelCtx, trace: releaseView?.options.trace, traceStage: 'releaseMult' },
         evtPowerElement,
       )
+      const releaseFields = releaseEvaluation.fields
+      for (const inputKey of ['finalPanel', 'anomalyTriggerPanel'] as const) {
+        releaseView?.options.trace?.bindInput?.(inputKey, 'anomalyReleaseMult', releaseView.viewKey)
+      }
+      if (needReleaseFactor) for (const inputKey of ['finalPanel', 'anomalyTriggerPanel'] as const) {
+        releaseView?.options.trace?.bindInput?.(inputKey, 'anomalyReleaseMultFactor', releaseView.viewKey)
+      }
       // 行级覆盖来自招式基础倍率：固定值与基础倍率重复，只把「技能等级转模」增量补上去。
       // 行级异放倍率也会被写进招式小类（小类非 0 时优先于面板），所以增量要同时补到
       // 小类与面板：倍率区按小类算，结果明细的提示按面板显示。
       const rowConvertMult = needReleaseMult
         ? 0
-        : (resolveAnomalyReleaseSkillConvertMods(trigPanelCtx, evtPowerElement)
-            .anomalyReleaseMult ?? 0)
+        : (releaseEvaluation.convertMods.anomalyReleaseMult ?? 0)
       if (rowConvertMult && effectiveSub) {
         effectiveSub = {
           ...effectiveSub,
           anomalyReleaseMult: effectiveSub.anomalyReleaseMult + rowConvertMult,
         }
+        releaseView?.usage({ inputKey: 'anomalyTriggerPanel', field: 'anomalyReleaseMult', resultKey: 'anomalyReleaseMultZone', usedZones: ['anomalyTypeBonus'] })
       }
       anomalyTriggerPanel = {
         ...anomalyTriggerPanel,
@@ -1122,8 +1691,22 @@ export function evaluateOptimalEventDetail(
   const triggerAgentDoc = hit.triggerAgentId
     ? ctx.panelContext.agents.find((item) => item.id === hit.triggerAgentId)
     : undefined
+  /** 伤害计算报告上来的「实际采用了哪张面板的哪个字段」，按角色落到对应视图 */
+  const rawUsages: DamageInputUsage[] = []
+  const viewOfInputKey = (inputKey: DamageInputUsage['inputKey']) => {
+    if (inputKey === 'triggerFinalPanel') return producerView ?? ownerView
+    if (inputKey === 'anomalyTriggerPanel') return triggerView ?? ownerView
+    if (inputKey === 'remielSelfRadianceCalc') return radianceSelfView ?? ownerView
+    if (inputKey === 'mutationZone') return mutationPanelView ?? ownerView
+    if (inputKey === 'remielRadianceResPen') return mutationPanelView ?? ownerView
+    return ownerView
+  }
 
+  const remielSelfRadianceCalc = resolveRemielSelfRadianceCalcForOptimal(ctx, evtPowerAgentId, mainPanel, hit, trace)
   const result = computeDamageResult({
+    eventDamageType: damageType,
+    eventCritMode: hit.critMode,
+    onInputUsed: trace ? (usage) => rawUsages.push(usage) : undefined,
     eventElement: evtPowerElement,
     finalPanel: evtFinalPanel,
     anomalyTriggerPanel,
@@ -1168,12 +1751,7 @@ export function evaluateOptimalEventDetail(
       : resolveProducerAgentLevel(ctx, ownerAgentId),
     mutationZone: luminousMods.mutationZone,
     remielRadianceResPen: damageType === 'radiance' ? luminousMods.radianceResPen : 0,
-    remielSelfRadianceCalc: resolveRemielSelfRadianceCalcForOptimal(
-      ctx,
-      evtPowerAgentId,
-      mainPanel,
-      hit,
-    ),
+    remielSelfRadianceCalc,
     disorderZoneMultOverride: zoneMultResolved.disorderZoneMult,
     disorderZoneMultFactorOverride: zoneMultResolved.disorderZoneMultFactor,
     turbulenceZoneMultOverride: zoneMultResolved.turbulenceZoneMult,
@@ -1209,22 +1787,62 @@ export function evaluateOptimalEventDetail(
   let remielSelfFinalPanel: PanelStats | undefined
   if (includeDetails && result.remielSelfRadianceActive && remiel) {
     const remielExternal = resolveExternalForAgent(ctx, remiel.id, remiel.slotIndex, mainPanel)
-    const remielCtx = buildEventPanelContext(ctx, mainPanel, hit, remiel.slotIndex)
+    const remielCtx = buildEventPanelContext(ctx, mainPanel, hit, remiel.slotIndex, includeDetails)
     const restricted = REMIEL_SELF_RADIANCE_VIEW_POLICY.collectRestrictedContributions!(
       remielExternal,
       { ...remielCtx, skillContext: skillCtx },
       remiel.slotIndex,
     )
+    // 本人耀变受限视图：政策不变，只把追踪透传（Spec §2.4 第 1 项）
+    radianceSelfView = trace?.view({
+      useView: 'radianceSelfPanel',
+      slotIndex: remiel.slotIndex,
+      agentId: remiel.id,
+      policy: 'remiel-self-radiance',
+      element: evtPowerElement,
+      external: remielExternal,
+    })
     const selfBreakdown = REMIEL_SELF_RADIANCE_VIEW_POLICY.computeInCombatPanel(
       remielExternal,
       remielCtx,
       remiel.slotIndex,
+      radianceSelfView?.options,
     )
     remielSelfAtkSourceItems = restricted.atkItems
     remielSelfMasterySourceItems = restricted.masteryItems
     remielSelfExternalPanel = remielExternal
     remielSelfSources = selfBreakdown.sources
     remielSelfFinalPanel = selfBreakdown.finalPanel
+  }
+
+  if (trace) {
+    for (const usage of rawUsages) {
+      const bound = trace.boundInputs.get(`${usage.inputKey}:${usage.field}`)
+      if (bound) {
+        const view = trace.views.find(item => item.viewKey === bound.viewKey)
+        if (view) trace.usages.push({ ...usage, ...bound, slotIndex: view.slotIndex, policy: view.policy })
+      } else viewOfInputKey(usage.inputKey)?.usage(usage)
+    }
+  }
+  const eventRecords = trace ? buildEventEffectRecords(ctx, hit, trace) : null
+  const viewSnapshots = trace?.snapshots()
+  if (trace && viewSnapshots) {
+    // 绑定正式输入的覆盖后字段；视图其他字段保持该政策的原快照，不拼接别人的面板。
+    for (const usage of trace.usages) {
+      // 间接依赖沿用下游结果键，但属于来源自己的视图，不是下游伤害输入的别名。
+      if (usage.usedView === 'convertSourcePanel') continue
+      const view = viewSnapshots[usage.viewKey]!
+      const field = usage.field === 'inCombatAtk' ? 'atk' : usage.field === 'inCombatMastery' ? 'mastery' : usage.field
+      const panel = usage.inputKey === 'triggerFinalPanel' ? evtTriggerFinalPanel
+        : usage.inputKey === 'anomalyTriggerPanel' ? anomalyTriggerPanel
+          : usage.inputKey === 'finalPanel' ? evtFinalPanel : null
+      const value = usage.inputKey === 'remielSelfRadianceCalc'
+        ? remielSelfRadianceCalc?.[usage.field as keyof NonNullable<typeof remielSelfRadianceCalc>]
+        : panel?.[field as keyof PanelStats]
+      if (typeof value === 'number' && field in view.panel) {
+        view.panel = { ...view.panel, [field]: value }
+      }
+    }
   }
 
   return {
@@ -1238,6 +1856,14 @@ export function evaluateOptimalEventDetail(
     usesNonMainProducer,
     mainlyProducerDriven,
     result,
+    ...(eventRecords
+      ? {
+          effectRecords: eventRecords.effectRecords,
+          panelStageTraces: eventRecords.panelStageTraces,
+          damageInputUsages: eventRecords.damageInputUsages,
+          viewSnapshots,
+        }
+      : {}),
     finalPanel: evtFinalPanel,
     // 过程明细的「局外面板」必须是招式持有者，不能误用主 C（最优词条）面板
     external: ownerExternal,
@@ -1316,18 +1942,23 @@ function resolveEventLine(
   return line
 }
 
+/**
+ * 事件汇总（计算链路收敛 Spec §2.7 第 1 项 / C8）。
+ *
+ * 这里**只**产出「逐事件行 + 合计」；`globalSummary` 是顺带拿到的**全局面板摘要**
+ * （主槽面板，与具体是哪个事件无关），两者语义不同、不能互相替代：
+ * 把 `globalSummary` 直接当第一条事件的结果会改变分析侧展示含义。
+ */
 function computeEventDamageLines(
   ctx: OptimalEvalContext,
   external: PanelStats,
 ): {
-  grandTotal: number
-  eventLines: OptimalEventDamageLine[]
-  firstResult: DamageCalcResult | null
-  firstBreakdown: OptimalPanelBreakdown | null
+  eventSummary: { grandTotal: number; eventLines: OptimalEventDamageLine[] }
+  globalSummary: { result: DamageCalcResult; breakdown: OptimalPanelBreakdown } | null
 } {
   const hits = ctx.hits ?? []
   if (!hits.length) {
-    return { grandTotal: 0, eventLines: [], firstResult: null, firstBreakdown: null }
+    return { eventSummary: { grandTotal: 0, eventLines: [] }, globalSummary: null }
   }
 
   let grandTotal = 0
@@ -1381,7 +2012,10 @@ function computeEventDamageLines(
     }
   }
 
-  return { grandTotal, eventLines, firstResult, firstBreakdown }
+  return {
+    eventSummary: { grandTotal, eventLines },
+    globalSummary: firstResult && firstBreakdown ? { result: firstResult, breakdown: firstBreakdown } : null,
+  }
 }
 
 function computeEventDamageLinesForSweep(
@@ -1650,25 +2284,105 @@ function serializeMultiSlotBuffSelection(
  * 前提：调用方不得**就地修改** `ctx` 的字段（当前全项目已核对：无此用法；
  * `buildOptimalEvalContext` 每次返回新对象，页面侧 `evalCtx` 是 computed）。
  * 若将来出现就地修改，需在改完显式调用 `clearAffixEvalCache()`。
+ *
+ * 复核判据（2026-10-29 本次优化）：记忆项不再拿整批事件指纹拼大字符串来比对，
+ * 而是比「逐条指纹（同一份字符串实例，O(1) 引用比较）」+「各槽角色 id / 元素」。
+ * 指纹本身由 `buildHitEvalFingerprintReused` 按**真实内容**复用（就地改 `count`、
+ * `buffOverride.disabledEffectIds`、`multOverrides`、`elementOverride` 都会换指纹），
+ * 因此这里的比对强度不低于改造前逐字比较整串 `JSON.stringify`，只是不再重复构造那串正文。
  */
-const affixCtxSignatureCache = new WeakMap<OptimalEvalContext, { eventState: string; signature: string }>()
+interface AffixCtxEventIdentity {
+  /** 逐条事件指纹（复用层返回的同一份字符串实例） */
+  fingerprints: string[]
+  /** 事件状态判断的另一半：各槽位角色 id 与角色元素 */
+  teamElements: string
+  /** 完整上下文签名 */
+  signature: string
+}
 
+let affixCtxSignatureCache = new WeakMap<OptimalEvalContext, AffixCtxEventIdentity>()
+
+/**
+ * 上下文身份链的调试计数（**只数真实执行路径**，不含计时）。
+ *
+ * 用途：回归要证明「同批事件指纹只生成一次」「换候选不重生成」——
+ * 这只能从真实身份链的计数观察，常量或 mock 都不算证据。
+ * `builtFingerprints` / `reusedFingerprints` 由复用层逐条回报；
+ * `serializations` 的真实序列化次数见 `hitFingerprintReuseDebugStats()`。
+ */
+const affixEventIdentityDebug = {
+  /** 上下文身份查询次数（= `affixEvalContextSignature` 调用次数） */
+  batches: 0,
+  /** 该批中按内容重建的事件指纹条数 */
+  builtFingerprints: 0,
+  /** 该批中直接复用已生成事件指纹的条数 */
+  reusedFingerprints: 0,
+  /** 完整上下文签名构造次数 */
+  signatureComputes: 0,
+}
+
+export function affixEventIdentityDebugStats(): {
+  batches: number
+  builtFingerprints: number
+  reusedFingerprints: number
+  signatureComputes: number
+} {
+  return { ...affixEventIdentityDebug }
+}
+
+export function resetAffixEventIdentityDebugStats(): void {
+  affixEventIdentityDebug.batches = 0
+  affixEventIdentityDebug.builtFingerprints = 0
+  affixEventIdentityDebug.reusedFingerprints = 0
+  affixEventIdentityDebug.signatureComputes = 0
+}
+
+/**
+ * 上下文身份查询：**一批事件指纹只生成一次**，供「事件状态判断」与「完整签名构造」共用。
+ *
+ * 改造前这里会 `ctx.hits.map(buildHitEvalFingerprint)` 一次做状态判断，
+ * 未命中时 `computeAffixEvalContextSignature` 里又整批再来一次 —— 同一次查询生成两遍，
+ * 每个候选都要付两遍（Spec §4.2 第 1、2 项要消除的正是这两处）。
+ */
 function affixEvalContextSignature(ctx: OptimalEvalContext): string {
-  const eventState = JSON.stringify([
-    ctx.hits?.map(buildHitEvalFingerprint),
+  affixEventIdentityDebug.batches += 1
+  const hits = ctx.hits ?? []
+  const fingerprints: string[] = new Array(hits.length)
+  for (let index = 0; index < hits.length; index += 1) {
+    const reused = buildHitEvalFingerprintReused(hits[index]!)
+    if (reused.reused) affixEventIdentityDebug.reusedFingerprints += 1
+    else affixEventIdentityDebug.builtFingerprints += 1
+    fingerprints[index] = reused.fingerprint
+  }
+  const teamElements = JSON.stringify(
     ctx.panelContext.teamSlots.map(slot => [slot.agentId,
       ctx.panelContext.agents.find(agent => agent.id === slot.agentId)?.element]),
-  ])
+  )
   const memo = affixCtxSignatureCache.get(ctx)
-  if (memo?.eventState === eventState) return memo.signature
-  const signature = computeAffixEvalContextSignature(ctx)
-  affixCtxSignatureCache.set(ctx, { eventState, signature })
+  if (memo && memo.teamElements === teamElements && sameEventFingerprints(memo.fingerprints, fingerprints)) {
+    return memo.signature
+  }
+  const signature = computeAffixEvalContextSignature(ctx, fingerprints)
+  affixEventIdentityDebug.signatureComputes += 1
+  affixCtxSignatureCache.set(ctx, { fingerprints, teamElements, signature })
   return signature
 }
 
-function computeAffixEvalContextSignature(ctx: OptimalEvalContext): string {
-  const events = ctx.hits?.map(buildHitEvalFingerprint).join(';') ?? ''
+/** 逐条比指纹：复用层返回同一份字符串实例，内容没变就是 O(1) 引用比较 */
+function sameEventFingerprints(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
+function computeAffixEvalContextSignature(ctx: OptimalEvalContext, fingerprints: string[]): string {
+  // 与改造前 `ctx.hits?.map(buildHitEvalFingerprint).join(';') ?? ''` 逐位等价：
+  // 指纹由调用方（`affixEvalContextSignature`）按真实内容生成并传入，这里不再生成第二遍。
+  const events = fingerprints.join(';')
   return [
+    ctx.panelContext.masterDataVersion ?? buffMasterDataVersion(ctx.panelContext),
     ctx.mainAgentId ?? '',
     ctx.mainAgentElement ?? '',
     ctx.isMb ? '1' : '0',
@@ -1806,6 +2520,15 @@ export function clearAffixEvalCache() {
   affixEvalCacheCtxSig = ''
   affixEvalCacheCtxSeq += 1
   affixEvalCacheCtxKey = `c${affixEvalCacheCtxSeq}`
+  /**
+   * 本次新增的事件身份复用状态一并丢弃（Spec §4.2 第 4 项）。
+   *
+   * 丢弃是**保守收口**：复用状态本身按真实内容校验，判断不出过期值；
+   * 但清理语义要求「清理后不再提供旧身份」，所以连同按 ctx 记忆的签名一起重来，
+   * 调用方不需要为此多做任何手工清理。
+   */
+  affixCtxSignatureCache = new WeakMap<OptimalEvalContext, AffixCtxEventIdentity>()
+  resetHitEvalFingerprintReuseState()
 }
 
 function getAffixExternalFixedParts(ctx: OptimalEvalContext): AffixExternalFixedParts {
@@ -1917,12 +2640,11 @@ function evaluateAffixCountsUncached(
   const evalCtx = withAffixLibraryExtraGains(ctx, extraGains)
 
   if (ctx.hits?.length) {
-    const { grandTotal, eventLines, firstResult, firstBreakdown } = computeEventDamageLines(
-      evalCtx,
-      external,
-    )
+    // 事件汇总与全局面板摘要分开取：前者逐事件，后者是主槽面板（Spec §2.7 第 1 项）
+    const { eventSummary, globalSummary } = computeEventDamageLines(evalCtx, external)
+    const { grandTotal, eventLines } = eventSummary
     const breakdown =
-      firstBreakdown ??
+      globalSummary?.breakdown ??
       computeFinalPanel(external, {
         ...buildPanelContextForSlot(evalCtx, evalCtx.panelContext.mainSlotIndex, external, external),
         skillContext: evalCtx.panelContext.skillContext ?? undefined,
@@ -1933,7 +2655,7 @@ function evaluateAffixCountsUncached(
       breakdown.totalMods.pierce,
     )
     const result =
-      firstResult ??
+      globalSummary?.result ??
       computeDamageResult({
         finalPanel: breakdown.finalPanel,
         piercePower,
@@ -2836,7 +3558,14 @@ export function buildOptimalEvalContext(input: {
   // 深解包响应式代理：引擎会对这批数据做海量属性读取，走 Proxy 陷阱会慢 3 倍以上
   // （实测 16.4ms → 5.3ms/次评估，见 reactiveUnwrap.ts）。只换引用不改值，
   // 写入仍走响应式链路，因此不会造成「面板改了但计算不更新」。
-  deepUnwrapReactive(input)
+  // 版本化主数据只读共享；可变配置先隔离，不能在页面容器中就地解包代理。
+  const masterDataVersion = buffMasterDataVersion(input)
+  const { agents, wengines, driveDiscs, bangboo, ...configuration } = input
+  input = {
+    ...snapshotCalculationInput(configuration),
+    agents: agents.map(agent => ({ ...toRaw(agent), element: agent.element })),
+    wengines: toRaw(wengines), driveDiscs: toRaw(driveDiscs), bangboo: toRaw(bangboo),
+  }
 
   const mainSlot = input.teamSlots[input.mainSlotIndex]!
   const mainAgent = input.agents.find((a) => a.id === mainSlot.agentId)
@@ -2874,6 +3603,7 @@ export function buildOptimalEvalContext(input: {
     driveDiscMainStats: input.driveDiscMainStats,
     driveDiscs: input.driveDiscs,
     panelContext: {
+      masterDataVersion,
       teamSlots: input.teamSlots,
       agents: input.agents,
       wengines: input.wengines,
@@ -2884,6 +3614,9 @@ export function buildOptimalEvalContext(input: {
       driveDiscs: input.driveDiscs,
       skillContext: input.skillContext,
       buffSelection: input.buffSelection,
+      slotBuffSelections: input.slotBuffSelections,
+      resolvedSlotBuffSelections: input.slotBuffSelections ? Object.fromEntries(input.teamSlots.flatMap((slot, index) =>
+        slot.agentId ? [[index, resolveBuffSelectionForSlot(input.slotBuffSelections, index)]] : [])) : undefined,
       activeSlotPanels: input.activeSlotPanels,
       convertSlotPanels: input.convertSlotPanels,
       skillTalentLevelsByAgent: input.skillTalentLevelsByAgent,

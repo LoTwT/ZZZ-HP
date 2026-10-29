@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { buildEventValueTips } from '@/utils/eventDamageSourceTips'
 import { computed } from 'vue'
 import DamageResultDetail from '@/components/calculator/DamageResultDetail.vue'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
@@ -6,6 +7,7 @@ import { DAMAGE_EVENT_CRIT_MODE_OPTIONS } from '@/utils/damageEvent'
 import { buildSkillBaseMultNote } from '@/utils/skillTalentLevels'
 
 const props = defineProps<{ calculation: SkillFlowCalculationDetail }>()
+const sourceTips = computed(() => buildEventValueTips(props.calculation))
 const detail = computed(() => props.calculation.evaluation)
 const critModeLabel = computed(() =>
   DAMAGE_EVENT_CRIT_MODE_OPTIONS.find((mode) => mode.id === detail.value.hit.critMode)?.label,
@@ -32,7 +34,9 @@ function formatDamage(value: number) {
     </p>
     <p class="calculation-hint">悬停、聚焦或轻触公式中的数值，可查看计算组成与增益来源。</p>
     <DamageResultDetail
+      :source-tips="sourceTips"
       :calc-parts="detail.result"
+      :damage-input-usages="detail.damageInputUsages"
       :final-panel="detail.finalPanel"
       :external-panel="detail.external"
       :sources="detail.breakdown.sources"

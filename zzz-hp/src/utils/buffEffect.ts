@@ -37,6 +37,13 @@ import {
 } from '@/utils/skillTalentLevels'
 import { formatCalcDecimal, roundCalc } from '@/utils/calcNumberFormat'
 import { normalizeBuffMultFactorDelta } from '@/utils/multFactorPercent'
+// 只作类型导入：记录类型定义在 panelBuffCalc.ts，运行时不得反向依赖（Spec §2.2 第 2 项）
+import type {
+  BuffEffectApplyStatus,
+  EffectParameterInputs,
+  ResolvedEffectParameters,
+  ResolvedEffectRecord,
+} from '@/utils/panelBuffCalc'
 
 const BUFF_STAT_KEYS: BuffStatKey[] = [
   'hp',
@@ -441,30 +448,56 @@ export function resolveConvertValue(
   /** 技能等级转模来源：来源角色的五大类技能等级 */
   skillTalentLevels?: Partial<SkillTalentLevels> | null,
 ): number {
-  if (effect.kind !== 'convert' || !effect.convert) return 0
+  return resolveConvertValueDetail(effect, attrValues, overrideBase, panelSourceValues, skillTalentLevels).amount
+}
+
+/**
+ * `resolveConvertValue` 的明细版：同时给出**实际采用的基数与它的来历**。
+ *
+ * 为什么要有它：配置预览与实际贡献都要求「基数 = 求值真用的那个值」，而这个值此前只能
+ * 在返回值里看到折算结果，界面只能自己再猜一遍基数（C3）。这里不改变任何数值分支，
+ * 只把已有的选择顺序如实标出来（计算链路收敛 Spec §3.2 第 2 项）。
+ */
+export function resolveConvertValueDetail(
+  effect: BuffEffect,
+  attrValues: Partial<Record<CharacterAttrKey, number>>,
+  overrideBase?: number | null,
+  panelSourceValues?: {
+    external?: Partial<Record<CharacterAttrKey, number>>
+    final?: Partial<Record<CharacterAttrKey, number>>
+  },
+  skillTalentLevels?: Partial<SkillTalentLevels> | null,
+): { amount: number; base: number; source: 'manual' | 'external' | 'final' | 'skillLevel' | 'default'; stage: 'manual' | 'external' | 'preConvert' | 'skillLevel' } {
+  if (effect.kind !== 'convert' || !effect.convert) {
+    return { amount: 0, base: 0, source: 'default', stage: 'manual' }
+  }
   const source = effect.convert.panelSource ?? 'external'
   let from: number
+  let baseSource: 'manual' | 'external' | 'final' | 'skillLevel' | 'default' = 'default'
+  let stage: 'manual' | 'external' | 'preConvert' | 'skillLevel' = 'manual'
+  const manualBase =
+    overrideBase != null && Number.isFinite(overrideBase)
+      ? overrideBase
+      : effect.convert.defaultBase != null && Number.isFinite(effect.convert.defaultBase)
+        ? effect.convert.defaultBase
+        : null
   if (isSkillConvertFromKey(effect.convert.from)) {
     // 技能等级来源：等级表取来源角色对应大类等级；manual 仍用输入/默认基础值
     if (source === 'manual') {
-      from =
-        overrideBase != null && Number.isFinite(overrideBase)
-          ? overrideBase
-          : effect.convert.defaultBase != null && Number.isFinite(effect.convert.defaultBase)
-            ? effect.convert.defaultBase
-            : 0
+      from = manualBase ?? 0
+      baseSource = manualBase == null ? 'default' : 'manual'
+      stage = 'manual'
     } else {
       const talentKey = SKILL_CONVERT_FROM_TO_TALENT_KEY[effect.convert.from]
       from = skillTalentLevels?.[talentKey] ?? 0
+      baseSource = 'skillLevel'
+      stage = 'skillLevel'
     }
   } else if (source === 'manual') {
     // 自行设置：不读面板，优先用计算页输入，其次配置的 defaultBase
-    from =
-      overrideBase != null && Number.isFinite(overrideBase)
-        ? overrideBase
-        : effect.convert.defaultBase != null && Number.isFinite(effect.convert.defaultBase)
-          ? effect.convert.defaultBase
-          : 0
+    from = manualBase ?? 0
+    baseSource = manualBase == null ? 'default' : 'manual'
+    stage = 'manual'
   } else {
     const sourceMap =
       panelSourceValues?.[source] ??
@@ -474,6 +507,14 @@ export function resolveConvertValue(
       overrideBase != null && Number.isFinite(overrideBase)
         ? overrideBase
         : (sourceMap[effect.convert.from] ?? attrValues[effect.convert.from] ?? 0)
+    if (overrideBase != null && Number.isFinite(overrideBase)) {
+      baseSource = 'manual'
+      stage = 'manual'
+    } else {
+      baseSource = source === 'final' ? 'final' : 'external'
+      // `final` 这一档在面板阶段里读的是**非转模快照**，不能标成同轮转模之后
+      stage = source === 'final' ? 'preConvert' : 'external'
+    }
   }
   const initialBase =
     effect.convert.initialBase != null && Number.isFinite(effect.convert.initialBase)
@@ -486,12 +527,45 @@ export function resolveConvertValue(
     amount = Math.max(-magnitudeCap, Math.min(amount, magnitudeCap))
   }
   // 转模结果统一到 4 位小数，与界面展示一致
-  return roundCalc(amount)
+  return { amount: roundCalc(amount), base: from, source: baseSource, stage }
+}
+
+/**
+ * 共享效果参数解析（计算链路收敛 Spec §2.2 第 1 项）。
+ *
+ * 只解析「这条效果的有效层数 / 有效基数 / 配置折算值」，**不判定启用、不产出实际贡献、
+ * 不改任何数据**。正式求值在通过条件后调用它；配置预览（选择器、行级弹窗、组配置）也调它，
+ * 因此两者看到的是同一个基数与同一个折算值。
+ */
+export function resolveBuffEffectParameters(
+  effect: BuffEffect,
+  inputs: EffectParameterInputs,
+): ResolvedEffectParameters {
+  const stacks = inputs.stacks ?? effect.defaultStacks ?? 1
+  if (effect.kind === 'convert' && effect.convert) {
+    const detail = resolveConvertValueDetail(
+      effect,
+      inputs.attrValues ?? {},
+      inputs.overrideBase ?? null,
+      inputs.panelSourceValues,
+      inputs.skillTalentLevels,
+    )
+    return {
+      amount: detail.amount,
+      stacks,
+      convertBase: {
+        from: effect.convert.from,
+        value: detail.base,
+        source: detail.source,
+        stage: detail.stage,
+      },
+    }
+  }
+  return { amount: resolveEffectBaseValue(effect, stacks), stacks }
 }
 
 /** 当前结算上下文的第二级伤害类型 */
-function contextDamageType(ctx: SkillCalcContext): BuffDamageType | null {
-  if (ctx.damageKind === 'anomaly') return ctx.anomalySubKind ?? 'anomaly'
+function contextDamageType(ctx: SkillCalcContext): BuffDamageType | null {  if (ctx.damageKind === 'anomaly') return ctx.anomalySubKind ?? 'anomaly'
   return ctx.directSubKind ?? 'normal'
 }
 
@@ -791,56 +865,119 @@ export function resolveEffectsToMods(
     resolveTeamProfessionCount?: (profession: string) => number
     /** 当前结算主槽角色职业（防线 Buff 等 applyProfession 条件） */
     beneficiaryProfession?: string | null
+    /**
+     * 逐效果状态回调（计算链路收敛 Spec §2.2 第 1 项）：**每次判定结束调用一次**，
+     * 不论生效、零值还是被排除。不传时为零开销（不分配记录对象）。
+     */
+    onEffectResolved?: (record: ResolvedEffectRecord) => void
+    /**
+     * 前置排除（行级禁用 / 来源政策排除）：命中时只报告状态，不解析参数、不匹配、不运算。
+     * 由候选集合的判定方给出，避免外层另造记录或把已排除项送回运算。
+     */
+    excludedByEffectId?: Readonly<Record<string, 'disabled' | 'source-excluded'>>
   } = {},
 ): BuffStatModifiers {
   let total = emptyMods()
+  const report = options.onEffectResolved
   for (const effect of effects) {
-    if (options.applyTargets?.length) {
-      if (!options.applyTargets.includes(effect.applyTarget)) continue
-    } else if (options.applyTarget && effect.applyTarget !== options.applyTarget) {
+    const emit = (
+      status: BuffEffectApplyStatus,
+      parameters?: ResolvedEffectParameters,
+      matchElement?: string | null,
+    ) => {
+      if (!report) return
+      report({
+        effectId: effect.id,
+        stat: effect.stat,
+        status,
+        amount: parameters?.amount ?? 0,
+        stacks: parameters?.stacks,
+        convertBase: parameters?.convertBase,
+        matchElement: matchElement ?? null,
+      })
+    }
+    const excluded = options.excludedByEffectId?.[effect.id]
+    if (excluded) {
+      emit(excluded)
       continue
     }
-    if (!isEffectEnabled(effect, options.selection)) continue
-    if (!effectMatchesContext(effect, options.ctx)) continue
+    // 判定顺序与改造前逐条一致：目标 → 启用 → 上下文 → 元素 → 职业人数 → 受益职业 → 阶段
+    if (options.applyTargets?.length) {
+      if (!options.applyTargets.includes(effect.applyTarget)) {
+        emit('target-mismatch')
+        continue
+      }
+    } else if (options.applyTarget && effect.applyTarget !== options.applyTarget) {
+      emit('target-mismatch')
+      continue
+    }
+    if (!isEffectEnabled(effect, options.selection)) {
+      emit('not-enabled')
+      continue
+    }
+    if (!effectMatchesContext(effect, options.ctx)) {
+      emit('context-mismatch')
+      continue
+    }
     const matchElement = options.ctx && !options.ctx.generic
       ? options.ctx.element
       : effect.applyTarget === 'team'
         ? (options.beneficiaryElement ?? options.element ?? options.ctx?.element)
         : (options.element ?? options.ctx?.element)
-    if (!effectMatchesElement(effect, matchElement)) continue
+    if (!effectMatchesElement(effect, matchElement)) {
+      emit('element-mismatch', undefined, matchElement)
+      continue
+    }
     if (effect.teamProfession?.trim()) {
-      if (!options.resolveTeamProfessionCount) continue
+      if (!options.resolveTeamProfessionCount) {
+        emit('team-count-mismatch', undefined, matchElement)
+        continue
+      }
       const count = options.resolveTeamProfessionCount(effect.teamProfession.trim())
-      if (!effectMatchesTeamProfessionGate(effect, count)) continue
+      if (!effectMatchesTeamProfessionGate(effect, count)) {
+        emit('team-count-mismatch', undefined, matchElement)
+        continue
+      }
     }
     if (effect.applyProfession?.trim()) {
       const required = effect.applyProfession.trim()
       const beneficiary = String(options.beneficiaryProfession ?? '').trim()
-      if (beneficiary !== required) continue
+      if (beneficiary !== required) {
+        emit('profession-mismatch', undefined, matchElement)
+        continue
+      }
     }
-    if (options.skipConvert && effect.kind === 'convert') continue
-
-    const stacks =
-      options.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1
-    const amount =
-      effect.kind === 'convert'
-        ? resolveConvertValue(
-            effect,
-            options.attrValues ?? {},
-            options.convertInputs && effect.id in options.convertInputs
-              ? options.convertInputs[effect.id]
-              : null,
-            options.panelSourceValues,
-            options.skillTalentLevels,
-          )
-        : resolveEffectBaseValue(effect, stacks)
-    if (isBuffMultFactorKey(effect.stat)) {
-      if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) continue
-      total = addStat(total, effect.stat, amount)
+    if (options.skipConvert && effect.kind === 'convert') {
+      emit('convert-skipped', undefined, matchElement)
       continue
     }
-    if (!amount) continue
+
+    const parameters = resolveBuffEffectParameters(effect, {
+      stacks: options.stacksByEffectId?.[effect.id] ?? effect.defaultStacks ?? 1,
+      overrideBase:
+        options.convertInputs && effect.id in options.convertInputs
+          ? options.convertInputs[effect.id]
+          : null,
+      attrValues: options.attrValues,
+      panelSourceValues: options.panelSourceValues,
+      skillTalentLevels: options.skillTalentLevels,
+    })
+    const amount = parameters.amount
+    if (isBuffMultFactorKey(effect.stat)) {
+      if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) {
+        emit('zero', parameters, matchElement)
+        continue
+      }
+      total = addStat(total, effect.stat, amount)
+      emit('applied', parameters, matchElement)
+      continue
+    }
+    if (!amount) {
+      emit('zero', parameters, matchElement)
+      continue
+    }
     total = addStat(total, effect.stat, amount)
+    emit('applied', parameters, matchElement)
   }
   return total
 }

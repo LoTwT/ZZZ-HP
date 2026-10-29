@@ -1,4 +1,10 @@
-import type { AnomalyDamageSubKind, BaseDamageSource, SkillSubcategory } from '@/types/calculator'
+import type {
+  AnomalyDamageSubKind,
+  BaseDamageSource,
+  DamageEventCritMode,
+  SkillDamageType,
+  SkillSubcategory,
+} from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
 import { effectiveAnomalyDuration, type AgentElement } from '@/utils/calculatorUi'
 import {
@@ -21,7 +27,10 @@ import {
   pickResPenPanel,
   pickZonePanel,
   type DamageZonePanels,
+  type DamageZoneId,
 } from '@/utils/damageZoneSourcePolicy'
+// 只作类型导入：记录类型定义在 panelBuffCalc.ts，运行时不反向依赖（Spec §2.5 第 2 项）
+import type { DamageInputUsage } from '@/utils/panelBuffCalc'
 
 export type { DamageEnemyInput, EnemyResistanceType }
 
@@ -133,6 +142,17 @@ export interface DamageCalcInput {
   /** 招式填写乱流最终倍率区%（有则直接作为倍率区，不再叠持续时间×补偿） */
   turbulenceZoneMultOverride?: number | null
   turbulenceZoneMultFactorOverride?: number | null
+  /**
+   * 本事件的伤害类型与暴击模式（计算链路收敛 Spec §2.5 第 2 项）。
+   * 只用于给「实际采用了哪些字段」的观察记录标注口径，不改变任何计算分支。
+   */
+  eventDamageType?: SkillDamageType
+  eventCritMode?: DamageEventCritMode
+  /**
+   * 实际采用观察器：与正式计算选择面板/字段的分支**同处**，只报告本事件最终用到的依赖。
+   * 不传时零开销，行为完全不变。
+   */
+  onInputUsed?: (usage: DamageInputUsage) => void
 }
 
 export interface DamageCalcResult {
@@ -599,6 +619,31 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     anomalyTrigger: triggerAgentPanel,
   }
   const routingKind = useTriggerBase ? subKind : 'direct'
+  /**
+   * 实际采用观察器（计算链路收敛 Spec §2.5 第 2 项）：只在**这里**（正式选面板/取字段的地方）
+   * 报告，不重算公式。角色由面板对象identity判定，角色归属仍完全由既有政策决定。
+   */
+  const reportUse = input.onInputUsed
+  const roleInputKey = {
+    owner: 'finalPanel',
+    powerProvider: 'triggerFinalPanel',
+    anomalyTrigger: 'anomalyTriggerPanel',
+  } as const
+  // 同一份面板可能同时充当三个角色（单角色事件）；此时按 owner 记，不伪造第二份归属
+  const roleOfPanel = (target: PanelStats): keyof typeof roleInputKey => {
+    if (target === panel) return 'owner'
+    if (target === triggerPanel) return 'powerProvider'
+    return 'anomalyTrigger'
+  }
+  const markUse = (
+    target: PanelStats,
+    field: keyof PanelStats,
+    resultKey: keyof DamageCalcResult,
+    usedZones: DamageZoneId[] = [],
+  ) => {
+    if (!reportUse) return
+    reportUse({ inputKey: roleInputKey[roleOfPanel(target)], field, resultKey, usedZones })
+  }
   const ownerElement = input.eventElement ?? input.ownerAgentElement ?? input.mainAgentElement
   const ownerResistanceElement =
     (input.eventElement && input.eventElement !== '流明' ? input.eventElement : undefined) ??
@@ -657,8 +702,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       input.triggerAgentElement ??
       ownerResistanceElement)
     : ownerResistanceElement
-  const triggerParts = computeGeneralAndAnomalyBase({
-    panel: anomalyBasePanel,
+  const triggerParts = computeGeneralAndAnomalyBase({    panel: anomalyBasePanel,
     piercePower: useTriggerBase
       ? (input.triggerPiercePower ?? input.piercePower)
       : input.piercePower,
@@ -688,7 +732,6 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     ),
     extraResPen: subKind === 'radiance' ? (input.remielRadianceResPen ?? 0) : 0,
   })
-
   // 有强度提供者时，展示用基础伤害/通用乘区跟异常基础；直伤仍用 mainParts
   const baseParts = useTriggerBase ? triggerParts : mainParts
 
@@ -776,6 +819,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const radianceFullCritZone = 1 + radianceCritDmgRatio
 
   const remielSelf = subKind === 'radiance' ? (input.remielSelfRadianceCalc ?? null) : null
+
   const remielSelfRadianceActive = Boolean(remielSelf)
   /** 展示用：异常路径（含耀变本人）用非直伤易伤区，否则用直伤易伤区 */
   const pathVulnerableMultiplier = remielSelfRadianceActive
@@ -804,6 +848,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfInCombatAtk = remielSelf.inCombatAtk
     remielSelfInCombatMasteryZone = remielSelf.inCombatMastery / 100
     remielSelfMutationZone = remielSelf.mutationZone
+    // 本人耀变的三处替换：基础 / 防御 / 抗性（Spec §2.5 第 4 项）——在这里如实报告，不重算公式
 
     const defenseParts = computeDefenseZone({
       defensePanel: {
@@ -835,6 +880,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const anomalyExpectedFullCrit = anomalyPreCrit * anomalyFullCritZone
 
   // 异放：基础用触发面板；综合增伤加算；综合暴击率/爆伤加算后再乘
+
   const anomalyReleaseDmgBonusZone = 1 + bonusPanel.anomalyReleaseDmgBonus / 100
   const anomalyReleaseCombinedDmgBonusZone =
     1 + (bonusPanel.anomalyReleaseDmgBonus + bonusPanel.anomalyDmgBonus) / 100
@@ -863,6 +909,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
 
   const disorderDmgBonusZone = 1 + bonusPanel.disorderDmgBonus / 100
   const disorderCompMultRatio = multPanel.disorderCompMult / 100
+  // 只有紊乱/乱流才真正采用这组倍率面板（同一份 multPanel 读数在其它子类里只是顺带算出）
+
   const disorderPanelFactor = readFactor(multPanel.disorderBaseMultFactor)
   let disorderBaseMultRatio: number
   let disorderMultFactor: number
@@ -900,6 +948,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceCombinedDmgBonusZone =
     1 + (bonusPanel.turbulenceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
   const turbulenceCompMultRatio = multPanel.turbulenceCompMult / 100
+
   const turbulencePanelFactor = readFactor(multPanel.turbulenceBaseMultFactor)
   let turbulenceBaseMultRatio: number
   let turbulenceMultFactor: number
@@ -931,6 +980,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const turbulenceExpectedFullCrit = turbulencePreCrit * turbulenceFullCritZone
 
   // 耀变综合增伤 = 耀变增伤 + 异常增伤，二者均取异常类触发者面板（含队友赋予的耀变增伤）
+
   const radianceDmgBonusForCombined = bonusPanel.radianceDmgBonus
   const anomalyDmgBonusForCombined = bonusPanel.anomalyDmgBonus
   const radianceCombinedDmgBonusZone =
@@ -958,6 +1008,113 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     mutationMultRaw != null && Number.isFinite(mutationMultRaw) ? mutationMultRaw : 1
   const applyMutation = (value: number) =>
     remielSelfRadianceActive ? value : value * mutationMult
+
+  if (reportUse) {
+    const eventKind = input.eventDamageType ?? (useTriggerBase ? subKind : 'direct')
+    const anomalyEvent = eventKind !== 'direct' && eventKind !== 'sharpen'
+    const selfEvent = eventKind === 'radiance' && remielSelf != null
+    const critMode = input.eventCritMode ?? 'expected'
+    const markCombat = (inputKey: DamageInputUsage['inputKey'], field: DamageInputUsage['field'], resultKey: keyof DamageCalcResult) => {
+      reportUse({ inputKey, field, resultKey, usedZones: [] })
+    }
+    if (!selfEvent) {
+      const basePanel = anomalyEvent ? anomalyBasePanel : panel
+      if (anomalyEvent) {
+        markUse(basePanel, 'atk', 'anomalyBaseExpected', ['baseAtk'])
+        markUse(basePanel, 'mastery', 'masteryZone', ['mastery'])
+      } else if (mainParts.usedBaseSource === 'pierce') {
+        markUse(panel, 'hp', 'baseDamage', ['baseAtk'])
+        markUse(panel, 'atk', 'baseDamage', ['baseAtk'])
+        markCombat('piercePower', 'pierce', 'baseDamage')
+        markCombat('combatPierceDmgBonus', 'pierceDmgBonus', 'pierceDmgMultiplier')
+      } else markUse(panel, mainParts.usedBaseSource, 'baseDamage', ['baseAtk'])
+      markUse(basePanel, 'dmgBonus', 'dmgMultiplier', ['dmgBonus'])
+      const defenseKind = anomalyEvent ? routingKind : 'direct'
+      if (anomalyEvent || !input.isMbMainAgent) {
+        const penPanel = pickZonePanel(zonePanels, 'penRate', defenseKind)
+        markUse(penPanel, 'penRate', 'defenseFactor', ['penRate'])
+        markUse(penPanel, 'pen', 'effectiveDefense', ['pen'])
+        markUse(zonePanels.anomalyTrigger, 'ignoreDefense', 'defenseFactor', ['reduceDefense'])
+        markUse(zonePanels.anomalyTrigger, 'reduceDefense', 'defenseFactor', ['reduceDefense'])
+      }
+      markUse(anomalyEvent ? pickResPenPanel(zonePanels, routingKind, input.anomalyTriggerPanel != null) : panel,
+        'resPen', 'resistanceMultiplier', ['resPen'])
+    } else {
+      for (const field of ['inCombatAtk', 'inCombatMastery', 'mutationZone', 'penRate', 'pen', 'resPen', 'radianceResPen'] as const) {
+        reportUse({ inputKey: 'remielSelfRadianceCalc', field,
+          resultKey: field === 'inCombatAtk' || field === 'inCombatMastery' || field === 'mutationZone'
+            ? 'anomalyBaseExpected' : field === 'resPen' || field === 'radianceResPen' ? 'resistanceMultiplier' : 'defenseFactor',
+          usedZones: field === 'inCombatAtk' ? ['baseAtk'] : field === 'inCombatMastery' ? ['mastery']
+            : field === 'penRate' ? ['penRate'] : field === 'pen' ? ['pen'] : field === 'mutationZone' ? [] : ['resPen'],
+        })
+      }
+      markUse(triggerAgentPanel, 'ignoreDefense', 'defenseFactor', ['reduceDefense'])
+      markUse(triggerAgentPanel, 'reduceDefense', 'defenseFactor', ['reduceDefense'])
+    }
+    markCombat('combatVulnerable', 'vulnerable', 'vulnerableMultiplier')
+    markCombat('combatDmgReduction', 'dmgReduction', 'vulnerableMultiplier')
+    markCombat(anomalyEvent ? 'combatAnomalyVulnerable' : 'combatDirectVulnerable',
+      anomalyEvent ? 'anomalyVulnerable' : 'directVulnerable', 'vulnerableMultiplier')
+    markCombat(anomalyEvent ? 'combatAnomalyDmgReduction' : 'combatDirectDmgReduction',
+      anomalyEvent ? 'anomalyDmgReduction' : 'directDmgReduction', 'vulnerableMultiplier')
+    markCombat('combatGlobalStaggerVulnerable', 'globalStaggerVulnerable', 'staggerMultiplier')
+    if (staggerPhase === 'stagger') {
+      markCombat('combatStaggerVulnerable', 'staggerVulnerable', 'staggerMultiplier')
+      markCombat('combatStaggerVulnerableOnly', 'staggerVulnerableOnly', 'staggerMultiplier')
+    }
+    markCombat('combatSpecial', 'special', 'specialMultiplier')
+    if (!anomalyEvent) {
+      markCombat('combatDmgPenalty', 'dmgPenalty', 'dmgMultiplier')
+      if (useSharpenFormula) {
+        markCombat('combatSharpenDmgBonus', 'sharpenDmgBonus', 'sharpenDmgMultiplier')
+        if (critMode !== 'noCrit') {
+          markUse(panel, 'critRate', 'sharpenCritZone', ['dmgBonus'])
+          markCombat('combatSharpenCritDmgBonus', 'sharpenCritDmgBonus', 'sharpenCritZone')
+        }
+      } else {
+        if (critMode === 'expected') markUse(panel, 'critRate', 'critMultiplier', ['dmgBonus'])
+        if (critMode !== 'noCrit') markUse(panel, 'critDmg', 'critMultiplier', ['dmgBonus'])
+      }
+      if (!input.skillSubcategory?.directDmgMult) markUse(panel, 'directDmgMult', 'directDmgMultZone', ['anomalyTypeBonus'])
+      if (!input.skillSubcategory && !useSharpenFormula) markUse(panel, 'settlementDmgMult', 'settlementDmgMultZone', ['anomalyTypeBonus'])
+      markUse(panel, 'directDmgMultFactor', 'directDmgMultZone', ['anomalyTypeBonus'])
+    } else {
+      if (eventKind === 'anomaly' || eventKind === 'anomalyRelease' || eventKind === 'turbulence' || eventKind === 'radiance') {
+        markUse(bonusPanel, 'anomalyDmgBonus', 'anomalyDmgBonusZone', ['anomalyTypeBonus'])
+      }
+      const prefix = eventKind === 'anomaly' ? 'anomaly' : eventKind
+      const bonusResult = `${prefix}DmgBonusZone` as keyof DamageCalcResult
+      const critResult = `${prefix}CritZone` as keyof DamageCalcResult
+      if (eventKind !== 'anomaly') markUse(bonusPanel, `${prefix}DmgBonus` as keyof PanelStats, eventKind === 'radiance' ? 'radianceCombinedDmgBonusZone' : bonusResult, ['anomalyTypeBonus'])
+      if (critMode === 'expected') markUse(bonusPanel, `${prefix}CritRate` as keyof PanelStats, critResult, ['anomalyCrit'])
+      if (critMode !== 'noCrit') markUse(bonusPanel, `${prefix}CritDmg` as keyof PanelStats, critResult, ['anomalyCrit'])
+      if (eventKind === 'anomaly') {
+        markUse(bonusPanel, 'anomalyMult', 'anomalyMultZone', ['anomalyTypeBonus'])
+        markUse(bonusPanel, 'anomalyMultFactor', 'anomalyMultZone', ['anomalyTypeBonus'])
+      } else if (eventKind === 'anomalyRelease') {
+        if (!input.skillSubcategory?.anomalyReleaseMult) markUse(bonusPanel, 'anomalyReleaseMult', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
+        markUse(bonusPanel, 'anomalyReleaseMultFactor', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
+      } else if (eventKind === 'disorder' || eventKind === 'turbulence') {
+        const overridden = eventKind === 'disorder' ? input.disorderZoneMultOverride != null : input.turbulenceZoneMultOverride != null
+        if (!overridden) {
+          if (eventKind !== 'disorder' || !input.skillSubcategory?.disorderMult) {
+            markUse(multPanel, `${prefix}BaseMult` as keyof PanelStats, `${prefix}BaseMultRatio` as keyof DamageCalcResult, ['anomalyTypeBonus'])
+          }
+          markUse(multPanel, `${prefix}CompMult` as keyof PanelStats, `${prefix}CompMultRatio` as keyof DamageCalcResult, ['anomalyTypeBonus'])
+          const durationPanel = (useTriggerBase ? triggerPanel : panel).anomalyDuration ? (useTriggerBase ? triggerPanel : panel) : bonusPanel
+          markUse(durationPanel, 'anomalyDuration', 'effectiveAnomalyDuration', ['anomalyTypeBonus'])
+        }
+        markUse(multPanel, `${prefix}BaseMultFactor` as keyof PanelStats, `${prefix}MultFactor` as keyof DamageCalcResult, ['anomalyTypeBonus'])
+      } else if (eventKind === 'radiance') {
+        for (const field of ['radianceMult', 'radianceMultFactor'] as const) markUse(bonusPanel, field, 'radianceMultZone', ['anomalyTypeBonus'])
+        if (selfEvent) for (const field of ['specialMult', 'specialMultFactor'] as const) markUse(bonusPanel, field, 'specialMultZone', ['anomalyTypeBonus'])
+        else reportUse({ inputKey: 'remielRadianceResPen', field: 'radianceResPen', resultKey: 'resistanceMultiplier', usedZones: ['resPen'] })
+      }
+      if (!selfEvent) for (const field of ['mutationCoeff', 'mutationCoeffFactor'] as const) {
+        reportUse({ inputKey: 'mutationZone', field, resultKey: 'mutationZone', usedZones: [] })
+      }
+    }
+  }
 
   return {
     baseDamage: round(baseParts.baseDamage, 2),

@@ -2,6 +2,8 @@ import type { PanelStats } from '@/types/calculatorPanel'
 import type { AgentPanelSources } from '@/types/damageCalcHistory'
 import type { BaseDamageSource } from '@/types/calculator'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
+import { buildHitEvalFingerprint } from '@/utils/hitEvalCache'
+import type { ResolvedHit } from '@/utils/resolvedHit'
 import type { ExtraBuffGain } from '@/utils/extraBuffCalc'
 
 /**
@@ -74,6 +76,9 @@ export interface SkillFlowDisplayOption {
  * 且页面加载后不变）；逐条招式的差异由招式指纹承担。
  */
 export function buildSkillFlowPageSignature(input: {
+  skillTalentLevelsByAgent?: SkillFlowHitContextInput['skillTalentLevelsByAgent']
+  agentElements?: SkillFlowHitContextInput['agentElements']
+  hits?: readonly ResolvedHit[]
   teamSlots: TeamSlot[]
   slotPanels?: Record<string, AgentPanelSources>
   activeSlotPanels: Record<string, PanelStats>
@@ -94,36 +99,19 @@ export function buildSkillFlowPageSignature(input: {
   /** 基础伤害来源（页级唯一一份，2026-09-11 起收到页级） */
   baseDamageSource?: string
 }): string {
-  return serializeSignatureFields({
-    v: 1,
-    src: input.baseDamageSource ?? null,
-    main: input.mainSlotIndex,
-    slots: input.teamSlots.map((slot) => [
-      slot.agentId,
-      slot.rank,
-      slot.wengineId,
-      slot.wengineRefine,
-      slot.twoPieceDriveDiscId,
-      slot.fourPieceDriveDiscId,
-    ]),
-    // 来源记录（含各份面板与 4/5/6 主属性）与已解析的激活面板都要进：任一改动都影响结果
-    sources: input.slotPanels ?? null,
-    panels: input.activeSlotPanels,
-    convert: input.convertSlotPanels ?? null,
-    bangboo: [input.selectedBangbooId, input.bangbooRefine],
-    buffs: input.slotBuffSelections ?? null,
-    env: [...input.environmentBuffIds],
-    extra: input.extraGains,
-    enemy: input.enemyInput,
-    stagger: input.staggerPhase ?? null,
-    kind: [
-      input.damageKind ?? null,
-      input.anomalySubKind ?? null,
-      input.skillCategoryId ?? null,
-      input.skillSubcategoryId ?? null,
-      input.triggerAnomalyAgentId ?? null,
-    ],
-  })
+  return buildSkillFlowHitContextSignature({
+    teamSlots: input.teamSlots, mainSlotIndex: input.mainSlotIndex,
+    agentElements: input.agentElements, skillTalentLevelsByAgent: input.skillTalentLevelsByAgent,
+    activeSlotPanels: input.activeSlotPanels, convertSlotPanels: input.convertSlotPanels,
+    slotBuffSelections: input.slotBuffSelections, buffSelection: null,
+    extraGains: input.extraGains, sourceExtraGains: [], enemy: input.enemyInput,
+    environmentBuffIds: input.environmentBuffIds, bangbooId: input.selectedBangbooId,
+    bangbooRefine: input.bangbooRefine, driveDiscMainStats: null,
+    baseDamageSource: input.baseDamageSource ?? '', damageKind: input.damageKind ?? null,
+    staggerPhase: input.staggerPhase, triggerAnomalyAgentId: input.triggerAnomalyAgentId,
+    anomalySubKind: input.anomalySubKind, skillCategoryId: input.skillCategoryId,
+    skillSubcategoryId: input.skillSubcategoryId,
+  }) + serializeSignatureFields({ sources: input.slotPanels ?? null, hits: input.hits?.map(buildHitEvalFingerprint) ?? [] })
 }
 
 /**
@@ -165,6 +153,23 @@ export interface SkillFlowHitContextInput {
   mainSlotIndex: number
   /** 按角色 id 的五大类技能等级：技能等级转模 / 倍率的来源 */
   skillTalentLevelsByAgent: unknown
+  /**
+   * 面板页额外需要的身份字段（Spec §2.6 第 1 项：两个组件从同一字段表派生）。
+   * 缺任一项都会让「配置变了却命中旧结果」，所以宁可多进字段。
+   */
+  calcMode?: string | null
+  triggerAnomalyAgentId?: string | null
+  anomalySubKind?: string | null
+  skillCategoryId?: string | null
+  skillSubcategoryId?: string | null
+  /** 主槽本次实际使用的局外面板（候选面板会替换它） */
+  mainExternalPanel?: unknown
+  /** 各槽位已解析的局外面板（未编辑槽位才有） */
+  slotExternalPanels?: unknown
+  /** 副词条分配（面板页快速调参） */
+  affixCounts?: unknown
+  /** 行级增益例外 */
+  rowBuffOverride?: unknown
 }
 
 /**
@@ -203,6 +208,15 @@ export function buildSkillFlowHitContextSignature(input: SkillFlowHitContextInpu
     main: input.mainSlotIndex,
     levels: input.skillTalentLevelsByAgent ?? null,
     elements: input.agentElements ?? null,
+    // 面板页额外轴（Spec §2.6 第 1 项）：漏一项就是「配置变了仍命中旧值」
+    mode: input.calcMode ?? null,
+    trig: input.triggerAnomalyAgentId ?? null,
+    sub: input.anomalySubKind ?? null,
+    cat: [input.skillCategoryId ?? null, input.skillSubcategoryId ?? null],
+    mainExt: input.mainExternalPanel ?? null,
+    slotExt: input.slotExternalPanels ?? null,
+    affix: input.affixCounts ?? null,
+    row: input.rowBuffOverride ?? null,
   })
 }
 

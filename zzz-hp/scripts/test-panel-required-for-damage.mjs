@@ -108,19 +108,37 @@ check(
   `局内攻击 ${withPanel.finalPanel.atk}`,
 )
 
-// ---- 4. 源码契约：两个解析器都不许再拿「默认面板」当无数据兜底 ----
+// ---- 4. 源码契约：解析器都不许再拿「默认面板」当无数据兜底 ----
+// 2026-10-26（计算链路收敛 S1）：槽位局外面板的「激活 → 转模部分 → 空面板」收敛为
+// `utils/panelSourceResolution.ts` 的单一实现，契约断言跟着落到那份实现上，
+// 同时要求面板组件与引擎入口都委托给它（不再各留一份分支）。
 const stripComments = (src) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 const read = (rel) => fs.readFileSync(path.resolve(rel), 'utf8')
 
 const panelSection = stripComments(read('src/components/calculator/PanelCalcSection.vue'))
+const sharedSource = stripComments(read('src/utils/panelSourceResolution.ts'))
+const sharedResolver = sharedSource.slice(
+  sharedSource.indexOf('export function resolveSlotExternalPanel'),
+  sharedSource.indexOf('export function resolveSlotExternalPanel') + 900,
+)
+check(
+  '面板解析：槽位面板在无数据时给空面板（不给占位毕业面板）',
+  /createEmptyExternalPanel\(\)/.test(sharedResolver) &&
+    !/createDefaultExternalPanel\(\)/.test(sharedResolver),
+)
+check(
+  '面板解析：槽位面板优先读激活面板，其次转模部分面板',
+  /activeSlotPanels\?\.\[agentId\]/.test(sharedResolver) &&
+    /convertSlotPartialToExternalPanel\(partial\)/.test(sharedResolver),
+)
 const slotResolver = panelSection.slice(
   panelSection.indexOf('function resolveExternalPanelForSlotIndex'),
   panelSection.indexOf('function resolveExternalPanelForSlotIndex') + 900,
 )
 check(
-  '面板组件：槽位面板解析在无数据时给空面板（不给占位毕业面板）',
-  /createEmptyExternalPanel\(\)/.test(slotResolver) &&
+  '面板组件：槽位面板解析委托共享实现（不自己判空面板）',
+  /resolveSlotExternalPanel\(/.test(slotResolver) &&
     !/createDefaultExternalPanel\(\)/.test(slotResolver),
 )
 check(
@@ -130,6 +148,12 @@ check(
 check(
   '面板组件：主 C 没面板时有界面提示',
   /mainPanelMissing/.test(panelSection) && /还没有面板/.test(panelSection),
+)
+
+const optimalSource = stripComments(read('src/utils/optimalAffixAlloc.ts'))
+check(
+  '词条引擎：转模基数同样走共享解析（不另写一份等级/基数推导）',
+  /resolveSlotAttrValues\(/.test(optimalSource),
 )
 
 const panelBuff = stripComments(read('src/utils/panelBuffCalc.ts'))

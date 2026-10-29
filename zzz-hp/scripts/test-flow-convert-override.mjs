@@ -17,6 +17,7 @@ import {
   buildBuffCatalog,
   collectAllBuffEffects,
   collectPanelBuffMods,
+  resolveCollectedEffectParameters,
   invalidateBuffCatalogCache,
 } from '../src/utils/panelBuffCalc.ts'
 import { buildFlowBuffEffectText, buildFlowBuffEffectTexts, mergeFlowBuffOverride } from '../src/utils/flowBuffTable.ts'
@@ -80,6 +81,8 @@ function buildCtx(extra = {}) {
 function textOf(ctx, id, convertInputFor) {
   const texts = buildFlowBuffEffectTexts(collectAllBuffEffects(ctx), {
     selection: null,
+    contextKind: 'global',
+    configurationParameters: Object.fromEntries(collectAllBuffEffects(ctx).map(item=>[item.effect.id,resolveCollectedEffectParameters(item,ctx)])),
     slotIndex: 0,
     attrDefaults: { atk: 2000 },
     panelSourceValues: ctx.panelSourceValues,
@@ -195,6 +198,8 @@ console.log('\n[5] G1 单元格按行取事件值（列级说明保留全局）'
   const ctx = buildCtx({ buffSelection: globalSelection })
   const items = collectAllBuffEffects(ctx)
   const textOptions = {
+    contextKind: 'global',
+    configurationParameters: Object.fromEntries(items.map(item=>[item.effect.id,resolveCollectedEffectParameters(item,ctx)])),
     selection: globalSelection,
     slotIndex: 0,
     attrDefaults: { atk: 2000 },
@@ -203,9 +208,8 @@ console.log('\n[5] G1 单元格按行取事件值（列级说明保留全局）'
   }
   const item = items.find((entry) => entry.effect.id === id)
   const columnText = buildFlowBuffEffectTexts(items, textOptions)[id]
-  const rowText = buildFlowBuffEffectText(item, textOptions, {
-    convertInputsByEffectId: { [id]: 5000 },
-  })
+  const rowOverride = {convertInputsByEffectId:{[id]:5000}}
+  const rowText = buildFlowBuffEffectText(item, {...textOptions, contextKind:'event',effectAmounts:{[id]:collectPanelBuffMods({...ctx,rowBuffOverride:rowOverride}).atk}}, rowOverride)
   check('列级说明仍是全局 300', columnText.includes('300'), columnText)
   check('单元格按行取 500', rowText.includes('500'), rowText)
   check('两者不相等（不得用列级冒充事件值）', columnText !== rowText)
@@ -316,11 +320,20 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
   const stacked = imports['@/utils/buffEffect'].createEmptyBuffEffect({ id: 'component-stack', stat: 'atk', kind: 'stacked', valuePerStack: 10, defaultStacks: 2, maxStacks: 5, enabledDefault: true })
   const item = { effect, sourceKey: 'agent-0-0', blockId: 'component-block', blockName: '测', group: '角色', providerSlot: 0, applicableSlots: [0] }
   const parent = { convertInputsByEffectId: { [effect.id]: 5000 }, stacksByEffectId: { [stacked.id]: 4 } }
+  const parametersForDraft = rowOverride => {
+    const ctx=makePanelCtx({rowBuffOverride:rowOverride})
+    return Object.fromEntries([item,{...item,effect:stacked}].map(i=>[i.effect.id,resolveCollectedEffectParameters(i,ctx)]))
+  }
   const mounted = mountVueSetup(new URL('../src/components/calculator/SkillBuffOverrideModal.vue', import.meta.url), {
     imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText', 'restoreEffectInherit'],
     props: { effects: [item], open: true, override: null, parentOverride: parent,
       globalConvertInput: () => 3000, globalStacksFor: () => 2,
-      convertResolveInputs: () => ({ attrDefaults: {} }) },
+      // 真实页面会给的「待选配置参数」：本夹具用共享解析器按草稿 override 现算（不是 UI 自算）
+      convertResolveInputs: (_slotIndex, rowOverride) => ({
+        contextKind: 'global',
+        attrDefaults: {},
+        configurationParameters: parametersForDraft(rowOverride),
+      }) },
   })
   try {
     check('R4 真实组件输入继承父组 5000', mounted.vm.convertBaseModel(item) === 5000)
@@ -339,7 +352,12 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
     imports, expose: ['stacksModel', 'convertBaseModel', 'convertResult', 'effectResultText'],
     props: { effects: [], open: true, override: null, parentOverride: parent,
       globalConvertInput: () => 9000, globalStacksFor: () => 9,
-      convertResolveInputs: () => ({ attrDefaults: {} }) },
+      // 真实页面会给的「待选配置参数」：本夹具用共享解析器按草稿 override 现算（不是 UI 自算）
+      convertResolveInputs: (_slotIndex, rowOverride) => ({
+        contextKind: 'global',
+        attrDefaults: {},
+        configurationParameters: parametersForDraft(rowOverride),
+      }) },
   })
   try {
     const extra = { ...item, effect: { ...effect, extraGain: true } }
@@ -350,12 +368,16 @@ console.log('\n[七类修复 R4–R6] 真实成员组件及预览边界')
     check('R6 真实弹窗摘要按最大层数夹紧', extraMounted.vm.effectResultText({ ...item, effect: { ...stacked, extraGain: true } }) === '攻击力（数值） + 50')
   } finally { extraMounted.unmount() }
   const extraItem = { ...item, effect: { ...effect, extraGain: true }, sourceKey: 'extra-component', extraGainSourceSlot: 1 }
-  check('R2 预览忽略额外 Buff 的选择器残留', buildFlowBuffEffectText(extraItem, { selection: null, slotIndex: 0, convertInputFor: () => 9000 }).replace(/\s+/g, '').includes('+300'))
+  const previewContext=makePanelCtx({buffSelection:{enabledIds:{},stacksByEffectId:{},convertInputs:{[effect.id]:9000}},attrValues:{atk:1000}})
+  const configOptions=i=>({contextKind:'global',selection:null,slotIndex:0,configurationParameters:{[i.effect.id]:resolveCollectedEffectParameters(i,previewContext)}})
+  check('R2 预览忽略额外 Buff 的选择器残留', buildFlowBuffEffectText(extraItem, configOptions(extraItem)).replace(/\s+/g, '').includes('+300'))
   const emptySource = { ...extraItem, effect: { ...extraItem.effect, convert: { ...effect.convert, panelSource: 'external' } } }
-  check('R5 空来源不能回落受益者攻击', buildFlowBuffEffectText(emptySource, { selection: null, slotIndex: 0, attrDefaults: { atk: 1000 }, panelSourceValues: { external: { atk: 1000 } }, panelSourceValuesBySlot: {} }).endsWith(' 0'))
+  check('R5 空来源不能回落受益者攻击', buildFlowBuffEffectText(emptySource, configOptions(emptySource)).endsWith(' 0'))
   for (const [stacks, expected] of [[8, 50], [1.33, 13.3], [0, 0]]) {
     for (const extraGain of [false, true]) {
-      const text = buildFlowBuffEffectText({ ...item, effect: { ...stacked, extraGain } }, { selection: null, slotIndex: 0 }, { stacksByEffectId: { [stacked.id]: stacks } })
+      const stackItem={...item,effect:{...stacked,extraGain}}
+      const ctx=makePanelCtx({rowBuffOverride:{stacksByEffectId:{[stacked.id]:stacks}}})
+      const text = buildFlowBuffEffectText(stackItem,{contextKind:'global',selection:null,slotIndex:0,configurationParameters:{[stacked.id]:resolveCollectedEffectParameters(stackItem,ctx)}})
       // 文本格式已统一到 formatCalcSigned（`+ 50` 带空格），比对时忽略空白
       check(`R6 ${extraGain ? '额外' : '普通'} ${stacks} 层显示 ${expected}`, text.replace(/\s+/g, '').endsWith(`${expected ? '+' : ''}${expected}`), text)
     }
@@ -384,23 +406,30 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
   check('R2 真实默认同步保留普通默认值', state.bySlot[0].convertInputs[normal.id] === 1000)
   check('R2 真实默认同步不写额外 Buff，改默认后也不写', !Object.hasOwn(state.bySlot[0].convertInputs, extra.id))
 
-  const { r5Fixture } = await import('./_eventElementHarness.mjs')
-  const { resolveEventBuffPreviewInputs } = await import('../src/utils/optimalAffixAlloc.ts')
+  const { r5Fixture, eventRuntimeInput } = await import('./_eventElementHarness.mjs')
+  const { resolveEventBuffPreviewInputs, resolveConfigurationParameters } = await import('../src/utils/optimalAffixAlloc.ts')
   const { buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey } = await import('../src/utils/hitEvalCache.ts')
-  const { evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = await import('../src/utils/skillFlowCalculation.ts')
+  const { createBuffCalculationRuntime, evaluateSkillFlowHit, resolveSkillFlowCalculationDetail } = await import('../src/utils/skillFlowCalculation.ts')
   for (const mode of ['ordinary', 'extra-slot']) for (const damageType of ['direct', 'anomalyRelease']) {
     const fixture = r5Fixture(mode, damageType)
     const { context, hits, items, agents } = fixture
     const hit = hits[0], convertItem = items.find(item => item.effect.id.endsWith('convert'))
     const override = hit.buffOverride
+    const runtime=createBuffCalculationRuntime(eventRuntimeInput(fixture))
     const panel = bindVueFunctions(new URL('../src/components/calculator/PanelCalcSection.vue', import.meta.url), ['getEventBuffPreviewInputs'], {
-      resolveEventBuffPreviewInputs, skillFlowCalculationContext: ref(context), skillFlowMainExternal: ref(fixture.panels.owner),
-      buildHitEvalFingerprint, internHitEvalContext, hitEvalCacheKey, hitCalcGlobalSignature: ref('preview-fixture'), eventBuffPreviewCache: new Map(),
+      props:{flowCalculationRuntime:runtime},
     })
+    // 组件对页面暴露的「待选配置参数」入口：本文用**真实的共享解析**按同一份上下文算，
+    // 与 PanelCalcSection.getConfigurationParametersForSlot 同语义（它不是被测对象，是输入供给）
+    panel.getConfigurationParametersForSlot = (slotIndex) => {
+      const shared = resolveConfigurationParameters(context, hit, slotIndex)
+      return shared
+    }
     const page = bindVueFunctions(pageUrl, ['buffConvertResolveInputsForSlot', 'flowBuffEffectTextFor'], {
       hits: ref(hits), agents: ref(agents), buildSkillContextFromHit, resolveEventElement,
       activeSlot: ref(0), collectedEffectsForFlowTable: ref(items), flowBuffTextOptions: ref({ selection: null, slotIndex: 0 }), buildFlowBuffEffectText,
       panelCalcSectionRef: ref(panel),
+      flowCalculationRuntime:ref(runtime),configurationCalculationRuntime:ref(runtime),
     })
     check(`R5 ${mode} ${damageType} 同一有效事件复用预览结果`, panel.getEventBuffPreviewInputs(0, hit, override) === panel.getEventBuffPreviewInputs(0, hit, override))
     const actual = evaluateSkillFlowHit(context, null, hit, true)
@@ -410,7 +439,7 @@ console.log('\n[七类修复 R2/R5] 页面默认同步与事件来源面板的�
     check(`R5 ${mode} ${damageType} 详情与计算同源`, JSON.stringify(actual.result) === JSON.stringify(detailed.result))
     check(`R5 ${mode} ${damageType} 真实页面 A 文本为100`, page.flowBuffEffectTextFor(convertItem.effect.id, override, hit.id).replace(/\s+/g, '').endsWith('+100'))
     check(`R5 ${mode} ${damageType} 真实页面 B 文本为150`, page.flowBuffEffectTextFor(convertItem.effect.id, null, hits[1].id).replace(/\s+/g, '').endsWith('+150'))
-    check(`R5 ${mode} ${damageType} 组头无伪造数值`, page.flowBuffEffectTextFor(convertItem.effect.id, null, 'group-no-hit').includes('数值见成员'))
+    check(`R5 ${mode} ${damageType} 组头无伪造数值`, page.flowBuffEffectTextFor(convertItem.effect.id, {}, null).includes('数值见成员'))
     const imports = {
       '@/utils/panelBuffCalc': core, '@/utils/buffEffect': buff,
       '@/utils/flowBuffTable': await import('../src/utils/flowBuffTable.ts'),

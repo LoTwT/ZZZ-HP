@@ -19,20 +19,19 @@ import BuffRichText from '@/components/calculator/BuffRichText.vue'
 import NumberStepper from '@/components/common/NumberStepper.vue'
 import { useMaskClose } from '@/composables/useMaskClose'
 import type { BuffEffect, SkillSubcategory } from '@/types/calculator'
-import type {
-  CollectedEffect,
-  ConvertResolveInputs,
-  PanelSourceValues,
-} from '@/utils/panelBuffCalc'
+import type { CollectedEffect, ConvertResolveInputs } from '@/utils/panelBuffCalc'
 import {
   availableBuffGroupTabs,
   blockKeyOfCollected,
-  resolveCollectedEffectSourceSlot,
-  resolveCollectedEffectPanelSourceValues,
 } from '@/utils/panelBuffCalc'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
-import { formatBuffEffectResultText, resolveConvertValue, resolveEffectBaseValue } from '@/utils/buffEffect'
-import { flowBuffOverrideExceptionCount, isFlowBuffOverrideEmpty, mergeFlowBuffOverride } from '@/utils/flowBuffTable'
+import { formatBuffEffectResultText } from '@/utils/buffEffect'
+import {
+  effectRecipientNote as buildEffectRecipientNote,
+  flowBuffOverrideExceptionCount,
+  isFlowBuffOverrideEmpty,
+  mergeFlowBuffOverride,
+} from '@/utils/flowBuffTable'
 import { formatCalcSigned } from '@/utils/calcNumberFormat'
 import { isSkillConvertFromKey, type SkillTalentLevels } from '@/utils/skillTalentLevels'
 import type { FlowBuffOverride } from '@/types/damageCalcHistory'
@@ -176,11 +175,7 @@ function isStackable(effect: BuffEffect): boolean {
 }
 
 /** 本行生效层数 = 行级覆盖 ?? 继承全局 ?? defaultStacks */
-function stacksModel(effect: BuffEffect): number {
-  const overridden = effectiveOverride.value?.stacksByEffectId?.[effect.id]
-  if (overridden != null) return overridden
-  return (!effect.extraGain ? props.globalStacksFor?.(effect) : undefined) ?? effect.defaultStacks ?? 1
-}
+function stacksModel(effect: BuffEffect) { return resolveInputs.value?.configurationParameters[effect.id]?.stacks }
 
 function setStacks(effect: BuffEffect, value: number) {
   const next = { ...override.value?.stacksByEffectId }
@@ -200,34 +195,7 @@ function isConvertBaseEditable(item: CollectedEffect): boolean {
  * 本行当前生效的转模基数：
  * 本层覆盖 ?? 父组（组行）覆盖 ?? 继承全局手填 ?? 面板/默认 —— 与结算的合并顺序一致。
  */
-function convertBaseModel(item: CollectedEffect): number {
-  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
-  if (overridden != null) return overridden
-  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
-  if (inherited != null) return inherited
-  return convertLiveBase(item)
-}
-
-/** 未做任何手填时的基数：自行设置取 defaultBase，其余取该效果来源槽位的面板值 */
-function convertLiveBase(item: CollectedEffect): number {
-  const convert = item.effect.convert
-  if (!convert) return 0
-  const inputs = resolveInputs.value
-  const source = convert.panelSource ?? 'external'
-  if (source === 'manual') {
-    return convert.defaultBase != null && Number.isFinite(convert.defaultBase)
-      ? Number(convert.defaultBase)
-      : 0
-  }
-  if (isSkillConvertFromKey(convert.from)) return 0
-  const panelSources = panelSourceValuesForEffect(item)
-  const map =
-    (source === 'final' || source === 'external' ? panelSources?.[source] : undefined) ??
-    inputs?.attrDefaults ??
-    {}
-  const value = map[convert.from] ?? inputs?.attrDefaults?.[convert.from] ?? 0
-  return Number.isFinite(value) ? Number(value) : 0
-}
+function convertBaseModel(item: CollectedEffect) { return resolveInputs.value?.configurationParameters[item.effect.id]?.convertBase?.value }
 
 function setConvertInput(effect: BuffEffect, value: number) {
   const next = { ...override.value?.convertInputsByEffectId }
@@ -280,50 +248,32 @@ function statLabel(stat: string): string {
   return field ? buffStatFieldLabel(field) : stat
 }
 
-/** 转模取值来源的那份面板值（跨槽位的效果走它自己那一槽） */
-function panelSourceValuesForEffect(item: CollectedEffect): PanelSourceValues | undefined {
-  return resolveCollectedEffectPanelSourceValues(item, resolveInputs.value ?? {})
+/** 转模折算值：只读共享参数（Spec §5.1 第 5–6 项），不再自行推导 */
+
+function convertResult(item: CollectedEffect) {
+  const inputs = resolveInputs.value
+  if (inputs?.contextKind === 'event') {
+    return inputs.effectSummaries?.[item.effect.id]?.amount ?? inputs.effectAmounts?.[item.effect.id]
+  }
+  return inputs?.configurationParameters[item.effect.id]?.amount
+}
+function effectRecipientNote(item: CollectedEffect): string {
+  const summary = resolveInputs.value?.effectSummaries?.[item.effect.id]
+  return buildEffectRecipientNote(summary, props.slotIndex ?? 0)
 }
 
-/** 技能等级转模的来源角色等级表（按效果所属槽位取） */
-function skillTalentLevelsForItem(item: CollectedEffect): Partial<SkillTalentLevels> | null {
-  const slotIndex = resolveCollectedEffectSourceSlot(item)
-  const agentId = slotIndex != null ? props.teamSlots?.[slotIndex]?.agentId : undefined
-  return agentId ? (props.skillTalentLevelsByAgent?.[agentId] ?? null) : null
-}
-
-/**
- * 转模解析值（行内显示）：行级覆盖 ?? 继承全局手填 ?? null（= 按面板/默认值）。
- * 与结算同一套取值顺序与同一个 `resolveConvertValue`，保证"这一行显示 = 这一行实际"。
- */
-function convertResult(item: CollectedEffect): number {
-  if (resolveInputs.value?.effectAmounts) return resolveInputs.value.effectAmounts[item.effect.id] ?? 0
-  const overridden = effectiveOverride.value?.convertInputsByEffectId?.[item.effect.id]
-  const inherited = !item.effect.extraGain ? props.globalConvertInput?.(item.effect) : undefined
-  const overrideBase = overridden ?? inherited ?? null
-  return resolveConvertValue(
-    item.effect,
-    resolveInputs.value?.attrDefaults ?? {},
-    overrideBase,
-    panelSourceValuesForEffect(item),
-    skillTalentLevelsForItem(item),
-  )
-}
-
-/** 效果行文案：与局内增益选择器同一个格式化函数 —— 叠层出总值、转模出解析值、非全局标作用情况 */
 function effectResultText(item: CollectedEffect): string {
   const effect = item.effect
-  let amountText: string
-  if (resolveInputs.value?.configurationOnly) return `${statLabel(effect.stat)}（整组配置；数值见成员）`
-  if (resolveInputs.value?.effectAmounts) {
-    amountText = formatCalcSigned(resolveInputs.value.effectAmounts[effect.id] ?? 0)
-  } else if (isStackable(effect)) {
-    amountText = formatCalcSigned(resolveEffectBaseValue(effect, stacksModel(effect)))
-  } else if (effect.kind === 'convert') {
-    amountText = formatCalcSigned(convertResult(item))
-  } else {
-    amountText = formatCalcSigned(Number(effect.value) || 0)
-  }
+  const inputs = resolveInputs.value
+  if (!inputs) return statLabel(effect.stat) + ' —'
+  if (inputs.contextKind === 'group') return statLabel(effect.stat) + '（整组配置；数值见成员）'
+  if (inputs.contextKind === 'unavailable') return statLabel(effect.stat) + '（配置参数；当前事件不可结算）'
+  const summary = inputs.effectSummaries?.[effect.id]
+  if (summary?.state === 'multiple') return statLabel(effect.stat) + '（多受益角色，见来源）'
+  const amount = effect.kind === 'convert' ? convertResult(item)
+    : inputs.contextKind === 'event' ? summary ? summary.amount ?? 0 : inputs.effectAmounts?.[effect.id]
+      : inputs.configurationParameters[effect.id]?.amount
+  const amountText = amount == null ? '—' : formatCalcSigned(amount)
   return formatBuffEffectResultText(effect, amountText, {
     statLabelFn: statLabel,
     skillSubcategories: props.skillSubcategories,
@@ -424,6 +374,9 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                     />
                     <span class="bo-effect-text">
                       <BuffRichText :text="effectResultText(item)" />
+                      <small v-if="effectRecipientNote(item)" class="bo-effect-note">
+                        {{ effectRecipientNote(item) }}
+                      </small>
                     </span>
                   </label>
                   <span v-if="isEffectOffByParent(item.effect.id)" class="bo-tag bo-tag-parent">
@@ -432,7 +385,8 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                   <label v-if="isStackable(item.effect)" class="bo-effect-control" @click.stop>
                     <span>层数</span>
                     <NumberStepper
-                      :model-value="stacksModel(item.effect)"
+                      v-if="stacksModel(item.effect) != null"
+                      :model-value="stacksModel(item.effect)!"
                       :min="0"
                       :max="item.effect.maxStacks ?? 99"
                       :step="0.01"
@@ -440,17 +394,20 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
                       :disabled="isEffectOff(item.effect.id)"
                       @update:model-value="setStacks(item.effect, $event)"
                     />
+                    <span v-else>—</span>
                   </label>
                   <label v-else-if="isConvertBaseEditable(item)" class="bo-effect-control" @click.stop>
                     <span>基数</span>
                     <NumberStepper
-                      :model-value="convertBaseModel(item)"
+                      v-if="convertBaseModel(item) != null"
+                      :model-value="convertBaseModel(item)!"
                       :min="0"
                       :max="999999"
                       :step="10"
                       :disabled="isEffectOff(item.effect.id)"
                       @update:model-value="setConvertInput(item.effect, $event)"
                     />
+                    <span v-else>—</span>
                   </label>
                   <button
                     v-if="hasEffectOverride(item.effect)"
@@ -723,12 +680,21 @@ const { onMaskPointerDown, onMaskClick } = useMaskClose(() => {
   accent-color: #2f7df6;
 }
 .bo-effect-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   min-width: 0;
   font-size: 0.9rem;
   font-weight: 700;
   color: #f2f5fb;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.bo-effect-note {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #9fb0c8;
 }
 .bo-empty {
   margin: 0.6rem 0;

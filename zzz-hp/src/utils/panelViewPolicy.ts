@@ -1,7 +1,12 @@
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type { AgentBuffDoc } from '@/types/calculator'
 import type { PanelStats } from '@/types/calculatorPanel'
-import { computeFinalPanel, type PanelBuffBreakdown, type PanelCalcContext } from '@/utils/panelBuffCalc'
+import {
+  computeFinalPanel,
+  type ComputeFinalPanelOptions,
+  type PanelBuffBreakdown,
+  type PanelCalcContext,
+} from '@/utils/panelBuffCalc'
 import {
   isRemielSelfRadiancePowerProvider,
   type RemielSelfRadianceCalcInput,
@@ -23,6 +28,8 @@ export interface RemielSelfRadianceViewOptions {
   remielSlotIndex: number
   agentLevel: number
   isMb: boolean
+  /** 追踪（Spec §2.4 第 1 项） */
+  trace?: ComputeFinalPanelOptions['trace']
 }
 
 /**
@@ -36,19 +43,22 @@ export interface PanelViewPolicy {
     externalPanel: PanelStats,
     ctx: PanelCalcContext,
     slotIndex: number,
+    /** 追踪选项（Spec §2.4 第 1 项）：与默认政策同一条求值路径，只多一个观察点 */
+    options?: ComputeFinalPanelOptions,
   ) => PanelBuffBreakdown
   collectRestrictedContributions?: (
     externalPanel: PanelStats,
     ctx: PanelCalcContext,
     slotIndex: number,
+    options?: ComputeFinalPanelOptions,
   ) => RemielSelfRestrictedContributions
   resolveRadianceCalcInput?: (options: RemielSelfRadianceViewOptions) => RemielSelfRadianceCalcInput
 }
 
 export const DEFAULT_PANEL_VIEW_POLICY: PanelViewPolicy = {
   id: 'default',
-  computeInCombatPanel(externalPanel, ctx, slotIndex) {
-    return computeFinalPanel(externalPanel, { ...ctx, mainSlotIndex: slotIndex })
+  computeInCombatPanel(externalPanel, ctx, slotIndex, options) {
+    return computeFinalPanel(externalPanel, { ...ctx, mainSlotIndex: slotIndex }, options)
   },
 }
 

@@ -91,28 +91,11 @@ import {
 } from '@/utils/damageCalcHistory'
 import {
   buildFlowBuffEffectText,
+  effectRecipientNote,
   buildFlowBuffEffectTexts,
   type FlowBuffEffectTextOptions,
 } from '@/utils/flowBuffTable'
-import {
-  buildDefaultBuffSelection,
-  collectAllBuffEffects,
-  excludeExtraGainEntries,
-  createEmptyMultiSlotBuffSelection,
-  getBuffEffectConvertInput,
-  getBuffEffectEnabled,
-  isEnvironmentBuffSourceKey,
-  mergeDefaultBuffSelectionIntoMulti,
-  resolveBuffSelectionForSlot,
-  setBuffEffectEnabled,
-  slotHasPanelConvertEffect,
-  syncTeamProfessionAutoEnabled,
-  toTeammateView,
-  type MultiSlotBuffSelection,
-  type ConvertSlotPanels,
-  type ConvertResolveInputs,
-  type BuffSelectionState,
-} from '@/utils/panelBuffCalc'
+import { buildDefaultBuffSelection, collectAllBuffEffects, excludeExtraGainEntries, createEmptyMultiSlotBuffSelection, getBuffEffectEnabled, isEnvironmentBuffSourceKey, mergeDefaultBuffSelectionIntoMulti, resolveBuffSelectionForSlot, setBuffEffectEnabled, slotHasPanelConvertEffect, syncTeamProfessionAutoEnabled, toTeammateView, type MultiSlotBuffSelection, type ConvertSlotPanels, type ConvertResolveInputs, type ResolvedEffectParameters, type BuffSelectionState } from '@/utils/panelBuffCalc'
 import { computeExternalPanelFromTeamSlot } from '@/utils/affixPanelCalc'
 import { MULTI_SLOT_BUFF_SELECTION_KEY } from '@/utils/presetBuffScope'
 import {
@@ -150,7 +133,7 @@ import {
   schemeSlotsHaveContent,
 } from '@/utils/resolvedHit'
 import type { DamageCalcResult } from '@/utils/damageCalc'
-import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
+import { createBuffCalculationRuntime, type SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 
 export interface TeamSlot {
   agentId: string
@@ -168,6 +151,7 @@ const {
   bangboos,
   driveDiscs,
   skillSubcategories,
+  followUpSkillRules,
 } = storeToRefs(calculatorBuffStore)
 
 const teamSlots = reactive<TeamSlot[]>([
@@ -530,6 +514,9 @@ const skillFlowPageSignature = computed(() =>
     skillSubcategoryId: skillSubcategoryId.value,
     triggerAnomalyAgentId: triggerAnomalyAgentId.value,
     baseDamageSource: baseDamageSource.value,
+    skillTalentLevelsByAgent,
+    agentElements: agents.value.map(agent => [agent.id, agent.element]),
+    hits: hits.value,
   }),
 )
 
@@ -875,10 +862,8 @@ const optimalAffixSectionRef = ref<InstanceType<typeof OptimalAffixAllocSection>
 
 /** 详情由当前计算模块提供，沿用流程数字的上下文与面板来源。 */
 function resolveFlowCalculationDetail(hitId: string): SkillFlowCalculationDetail | null {
-  const section = panelCalcMode.value === 'optimal'
-    ? optimalAffixSectionRef.value
-    : panelCalcSectionRef.value
-  return section?.resolveFlowCalculationDetail(hitId) ?? null
+  const hit = hits.value.find(item => item.id === hitId)
+  return hit ? flowCalculationRuntime.value.getHitDetail(hit) : null
 }
 
 const buffSelectionSignature = computed(() => JSON.stringify(multiSlotBuffSelection))
@@ -912,6 +897,33 @@ const selectedBangboo = computed(
     bangboos.value.find((item) => item.id === 'none') ??
     emptyBangboo,
 )
+
+/** 全局配置与实际流程由页级明确选择用途；候选面板与随附增益成对捕获。 */
+const calculationContextInput = computed(() => ({
+  isMb: activeAgent.value?.profession === '命破', isFengYu: activeAgent.value?.profession === '锋御',
+  teamSlots, agents: agents.value, wengines: wengines.value, driveDiscs: driveDiscs.value,
+  bangboo: selectedBangboo.value, bangbooRefine: bangbooRefine.value, mainSlotIndex: mainSlotIndex.value,
+  driveDiscMainStats: { ...createDefaultAffixDriveDiscMainStats(), ...slotPanels[activeSlotData.value.agentId]?.affixDriveDiscMainStats },
+  enemyInput: enemyInput.value,
+  baseDamageSource: activeAgent.value?.profession === '命破' ? 'pierce' as const : activeAgent.value?.profession === '锋御' ? 'def' as const : baseDamageSource.value,
+  extraGains: extraGains.value, slotBuffSelections: multiSlotBuffSelection,
+  buffSelection: resolveBuffSelectionForSlot(multiSlotBuffSelection, mainSlotIndex.value),
+  activeSlotPanels: activeSlotPanels.value, convertSlotPanels, skillTalentLevelsByAgent,
+  hits: hits.value, triggerAnomalyAgentId: triggerAnomalyAgentId.value,
+  resolveSubcategory: ((items) => (id: string | null) => items.find(item => item.id === id) ?? null)(skillSubcategories.value),
+  skillSubcategories: skillSubcategories.value, followUpSkillRules: followUpSkillRules.value,
+  environmentBuffs: activeEnvironmentBuffs.value,
+}))
+const configurationCalculationRuntime = computed(() => createBuffCalculationRuntime({
+  contextInput: calculationContextInput.value, externalPanelPolicy: 'configured', mainExternal: null,
+  sourceExtraGains: [], staggerPhase: staggerPhase.value, globalDamageKind: damageKind.value,
+}))
+const flowCalculationRuntime = computed(() => createBuffCalculationRuntime({
+  contextInput: calculationContextInput.value, externalPanelPolicy: 'configured',
+  mainExternal: skillFlowPanelResolved.value.mainExternal,
+  sourceExtraGains: skillFlowPanelResolved.value.extraGains ?? [],
+  staggerPhase: staggerPhase.value, globalDamageKind: damageKind.value,
+}))
 
 /** 队伍/音擎/驱动盘/邦布配置签名：变化时补默认 Buff，不整表清空勾选 */
 const teamBuffSignature = computed(() =>
@@ -1045,29 +1057,11 @@ const collectedEffectsForFlowTable = computed(() => {
  * **视角固定为当前编辑槽位**（流程属于它），不跟随选择器里切换的查看槽位。
  */
 const flowBuffTextOptions = computed<FlowBuffEffectTextOptions>(() => ({
-  selection: multiSlotBuffSelection,
-  slotIndex: activeSlot.value,
-  agentIdBySlot: teamSlots.map((slot) => slot.agentId),
-  attrDefaults:
-    panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(activeSlot.value) ??
-    panelCalcSectionRef.value?.convertAttrDefaults ??
-    {},
-  panelSourceValues:
-    panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(activeSlot.value) ?? undefined,
-  panelSourceValuesBySlot: panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
-  // 选择器里手填的转模基数也要进表格文本：否则填了以后表格仍按面板显示（与结算不一致）
-  convertInputFor: (effect) =>
-    getBuffEffectConvertInput(
-      multiSlotBuffSelection,
-      activeSlot.value,
-      effect.id,
-      effect.applyTarget,
-    ),
-  skillTalentLevelsByAgent,
+  selection: multiSlotBuffSelection, slotIndex: activeSlot.value,
   skillSubcategories: skillSubcategories.value,
+  ...configurationCalculationRuntime.value.getConfigurationInputs(activeSlot.value, 'global'),
 }))
 
-/** 列级说明：只反映全局（选择器/面板），不含某一行的事件级覆盖 */
 const flowBuffEffectTexts = computed(() =>
   buildFlowBuffEffectTexts(collectedEffectsForFlowTable.value, flowBuffTextOptions.value),
 )
@@ -1085,34 +1079,43 @@ function flowBuffEffectTextFor(
 }
 
 /**
+ * 单元格的来源/受益说明（Spec §2.3 第 4 项）：与数值同参数、同身份，
+ * 显式用这次预览的查看槽位生成，不从事件持有者或页面活动态猜。
+ */
+/** 全局选择器的待选配置参数（共享参数解析，按显式查看槽位） */
+const buffPickerConfigurationParameters = computed<Record<string, ResolvedEffectParameters>>(() =>
+  configurationCalculationRuntime.value.getConfigurationInputs(buffPickerViewSlotIndex.value, 'global').configurationParameters,
+)
+
+function flowBuffRecipientNoteFor(
+  effectId: string,
+  rowOverride: FlowBuffOverride | null,
+  rowKey?: string | null,
+): string | null {
+  const item = collectedEffectsForFlowTable.value.find((entry) => entry.effect.id === effectId)
+  if (!item) return null
+  const inputs = buffConvertResolveInputsForSlot(activeSlot.value, rowOverride, rowKey)
+  const summary = inputs.effectSummaries?.[effectId]
+  if (!summary) return null
+  return effectRecipientNote(summary, activeSlot.value)
+}
+
+/**
  * 本行增益例外弹窗的转模解析输入（属性默认值 / 面板取值 / 全槽位取值表）。
  *
  * 用当前事件与合并后的行级例外构建来源面板；弹窗内修改例外时同样重新求值。
  */
-function buffConvertResolveInputsForSlot(
-  slotIndex: number,
-  rowOverride?: FlowBuffOverride | null,
-  rowKey?: string | null,
-): ConvertResolveInputs {
-  const hit = rowKey ? hits.value.find((item) => item.id === rowKey) : undefined
-  if (rowKey && !hit) return { attrDefaults: {}, configurationOnly: true }
-  if (hit) return panelCalcSectionRef.value?.getEventBuffPreviewInputs?.(slotIndex, hit, rowOverride)
-    ?? { attrDefaults: {}, effectAmounts: {} }
-  const eventSources = panelCalcSectionRef.value?.getPanelSourceValuesBySlot?.(
-    slotIndex,
-    rowOverride,
-  )
-  return {
-    attrDefaults:
-      panelCalcSectionRef.value?.getAttrDefaultsForSlot?.(slotIndex) ??
-      panelCalcSectionRef.value?.convertAttrDefaults ??
-      {},
-    panelSourceValues:
-      eventSources?.[slotIndex] ?? panelCalcSectionRef.value?.getPanelSourceValuesForSlot?.(slotIndex) ??
-      panelCalcSectionRef.value?.convertPanelSourceValues ??
-      undefined,
-    panelSourceValuesBySlot: eventSources ?? panelCalcSectionRef.value?.panelSourceValuesBySlot ?? undefined,
+function buffConvertResolveInputsForSlot(slotIndex: number, rowOverride?: FlowBuffOverride | null, rowKey?: string | null): ConvertResolveInputs {
+  if (rowKey) {
+    const hit = hits.value.find(item => item.id === rowKey) ?? null
+    const groupRow = !hit && schemeSlots.value.some(slot => {
+      const entry = slot.flow.find(item => item.id === rowKey)
+      return entry && slot.prepared.some(prepared => prepared.id === entry.preparedId && prepared.skillGroupId)
+    })
+    if (groupRow) return configurationCalculationRuntime.value.getConfigurationInputs(slotIndex, 'group', rowOverride)
+    return flowCalculationRuntime.value.getHitBuffPreview(slotIndex, hit, rowOverride)
   }
+  return configurationCalculationRuntime.value.getConfigurationInputs(slotIndex, rowOverride !== undefined ? 'group' : 'global', rowOverride)
 }
 
 const mainSlotBuffSelection = computed(() =>
@@ -2407,6 +2410,7 @@ defineExpose({ scrollToSection })
       v-model:multi-selection="multiSlotBuffSelection"
       v-model:view-slot-index="buffPickerViewSlotIndex"
       :effects="collectedEffectsForPicker"
+      :configuration-parameters="buffPickerConfigurationParameters"
       :force-groups="envBuffForceGroups"
       :slot-options="buffPickerSlotOptions"
       :team-slots="teamSlots"
@@ -2444,6 +2448,8 @@ defineExpose({ scrollToSection })
     <PanelCalcSection
       v-show="panelCalcMode !== 'optimal'"
       ref="panelCalcSectionRef"
+      :flow-calculation-runtime="flowCalculationRuntime"
+      :configuration-calculation-runtime="configurationCalculationRuntime"
       :calc-suspended="panelCalcMode === 'optimal'"
       :section-id="panelCalcMode !== 'optimal' ? 'damage-panel' : undefined"
       :team-slots="teamSlots"
@@ -2490,6 +2496,7 @@ defineExpose({ scrollToSection })
         ref="optimalAffixSectionRef"
         id="damage-panel"
         class="damage-anchor"
+        :flow-calculation-runtime="flowCalculationRuntime"
         :active="panelCalcMode === 'optimal'"
         :team-slots="teamSlots"
         :agents="agents"
@@ -2545,6 +2552,7 @@ defineExpose({ scrollToSection })
         :buff-effects="collectedEffectsForFlowTable"
         :buff-effect-texts="flowBuffEffectTexts"
         :buff-effect-text-for="flowBuffEffectTextFor"
+        :buff-effect-note-for="flowBuffRecipientNoteFor"
         :convert-resolve-inputs="buffConvertResolveInputsForSlot"
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"

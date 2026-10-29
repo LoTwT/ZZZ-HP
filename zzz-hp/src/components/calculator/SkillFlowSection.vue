@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { buildEventZoneDisplay } from '@/utils/eventDamageSourceTips'
 import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -6,7 +7,6 @@ import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
 import type {
   AgentBuffDoc,
   BuffEffect,
-  BuffStatKey,
   Skill,
   SkillDamageType,
   SkillGroup,
@@ -46,22 +46,11 @@ import {
 import { AGENT_ELEMENTS } from '@/utils/calculatorUi'
 import { isLuminousAgent } from '@/utils/remielUtils'
 import {
-  buildSkillCalcZoneRows,
   formatSkillMultZoneAsPercent,
   pickSkillMultPercentRatio,
-  skillCalcZoneGroup,
-  skillCalcZoneHint,
   type SkillCalcZoneRow,
 } from '@/utils/skillCalcZones'
-import { buildStatSourceGroups, type StatSourceGroup } from '@/utils/statSourceTips'
-import {
-  buildDefenseZoneFormulaItems,
-  buildRemielSelfAtkTipGroups,
-  buildRemielSelfMasteryTipGroups,
-  buildRemielSpecialLevelZoneProcessItems,
-  buildRemielStandardLevelZoneProcessItems,
-  buildResistanceZoneProcessItems,
-} from '@/utils/zoneSourceTips'
+import type { StatSourceGroup } from '@/utils/statSourceTips'
 import { createCustomSkillId } from '@/utils/skillLibrary'
 import {
   clearSkillNoteOverride,
@@ -154,6 +143,8 @@ const props = defineProps<{
    * 与 `buffEffectTexts`（列级说明）分开：单元格显示"这一行吃多少"，列头说明保留全局口径。
    */
   buffEffectTextFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
+  /** 单元格的来源/受益说明（与数值分开渲染；同参数、同身份） */
+  buffEffectNoteFor?: (effectId: string, rowOverride: FlowBuffOverride | null, rowKey?: string | null) => string | null
   /** 全队 + 各槽位的增益勾选（流程增益表用它判断"全局未启用"） */
   multiBuffSelection?: MultiSlotBuffSelection | null
   /** 本行增益例外弹窗的转模解析输入（按槽位现给 —— 与局内增益选择器同一套口径） */
@@ -397,6 +388,15 @@ function flowBuffCellText(rowKey: string, effectId: string): string | null {
     : null
   const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
   return props.buffEffectTextFor?.(effectId, rowOverride, rowKey) ?? null
+}
+
+/** 单元格说明：显式传查看槽位（就是这次预览的 slotIndex），不从页面活动态猜 */
+function flowBuffCellNote(rowKey: string, effectId: string): string | null {
+  const row = flowBuffTableRows.value.find((item) => item.key === rowKey)
+  if (!row) return null
+  const entry = currentSlot.value?.flow.find((item) => item.id === row.entryId)
+  const rowOverride = entry ? effectiveRowOverride(entry, row?.memberKey ?? null) : null
+  return props.buffEffectNoteFor?.(effectId, rowOverride, rowKey) ?? null
 }
 
 const flowBuffTableSubtitle = computed(() => {  const agentId = props.teamSlots[activeSlotIndex.value]?.agentId
@@ -1497,65 +1497,22 @@ const detailAgentTriggerId = computed(() => {
   return prepared.triggerAgentId ?? ''
 })
 
-/** 计算过程格子：沿用旧版 zone-display 口径（按伤害类型列出实际参与的乘区） */
-const detailZoneRows = computed(() => {
-  const kind = detail.value?.kind
-  if (kind !== 'flow' && kind !== 'flowMember') return []
-  const skill = detailSkill.value
-  const key = detailCalcKey.value
-  if (!skill || !key || detailSkipReason.value) return []
-  const result = props.hitCalcResults?.[key]
-  if (!result) return []
-  // 通用乘区是其它乘区乘出来的合成项，不单独展示
-  return buildSkillCalcZoneRows(result, skill.damageType).filter(
-    (row) => row.label !== '通用乘区',
-  )
+/** 格子、来源和实际角色来自同一正式详情。 */
+const detailZoneDisplay = computed(() => {
+  if (detail.value?.kind !== 'flow' && detail.value?.kind !== 'flowMember') return []
+  const calculation=detailZoneCalc.value
+  return calculation ? buildEventZoneDisplay(calculation) : []
 })
-
-/** 计算过程里实际生效的异常强度提供者 / 触发者（流程行可覆盖准备条目） */
-const detailZoneProviderAgentId = computed(() => {
-  const prepared = detailPrepared.value
-  if (!prepared) return ''
-  const current = detail.value
-  const entry =
-    current && (current.kind === 'flow' || current.kind === 'flowMember') ? detailFlowEntry() : null
-  return entry?.anomalyPowerAgentId?.trim() || prepared.anomalyPowerAgentId?.trim() || ''
-})
-
-const detailZoneTriggerAgentId = computed(() => {
-  const prepared = detailPrepared.value
-  if (!prepared) return ''
-  const current = detail.value
-  const entry =
-    current && (current.kind === 'flow' || current.kind === 'flowMember') ? detailFlowEntry() : null
-  return entry?.triggerAgentId?.trim() || prepared.triggerAgentId?.trim() || ''
-})
-
-/** 两者不同角色时，把格子分成「提供者」「触发者」两框；相同则不拆 */
+const detailZoneRows = computed(() => detailZoneDisplay.value)
 const detailZoneSplit = computed(() => {
-  const producerId = detailZoneProviderAgentId.value
-  const triggerId = detailZoneTriggerAgentId.value
-  if (!producerId || !triggerId || producerId === triggerId) return null
-  const producerRows: SkillCalcZoneRow[] = []
-  const triggerRows: SkillCalcZoneRow[] = []
-  const mixedRows: SkillCalcZoneRow[] = []
-  const resultRows: SkillCalcZoneRow[] = []
-  for (const row of detailZoneRows.value) {
-    const group = skillCalcZoneGroup(row.label)
-    if (group === 'producer') producerRows.push(row)
-    else if (group === 'mixed') mixedRows.push(row)
-    else if (group === 'result') resultRows.push(row)
-    else triggerRows.push(row)
-  }
-  if (!producerRows.length || !triggerRows.length) return null
-  return {
-    producerRows,
-    triggerRows,
-    mixedRows,
-    resultRows,
-    producerName: agentFullName(producerId) || producerId,
-    triggerName: agentFullName(triggerId) || triggerId,
-  }
+  const rows=detailZoneDisplay.value
+  const singles=[...new Set(rows.filter(row=>row.sourceSlots.length===1 && row.sourceLabel!=='最终伤害').map(row=>row.sourceLabel))]
+  if(singles.length<2)return null
+  return {producerName:singles[0]!,triggerName:singles[1]!,
+    producerRows:rows.filter(row=>row.sourceLabel===singles[0]),
+    triggerRows:rows.filter(row=>row.sourceLabel===singles[1]),
+    mixedRows:rows.filter(row=>row.sourceLabel!=='最终伤害'&&!singles.slice(0,2).includes(row.sourceLabel)),
+    resultRows:rows.filter(row=>row.sourceLabel==='最终伤害')}
 })
 
 interface ZoneTipState {
@@ -1577,62 +1534,7 @@ function clearZoneTipHideTimer() {
 }
 
 function zoneTipGroupLabel(label: string): string {
-  const producerId = detailZoneProviderAgentId.value
-  const triggerId = detailZoneTriggerAgentId.value
-  if (!detailZoneSplit.value) {
-    if (producerId && triggerId && producerId === triggerId) {
-      return `异常强度提供者 / 触发者 · ${agentFullName(producerId) || producerId}`
-    }
-    return '通用'
-  }
-  if (label === '异化系数' || label === '异化系数区') {
-    const raw = detailZoneEval.value?.mutationAgentLabel?.trim()
-    const name = raw ? raw.replace(/^异化系数\s*·\s*/, '') : '蕾米埃尔'
-    return `异化系数来源 · ${name}`
-  }
-  const group = skillCalcZoneGroup(label)
-  if (group === 'producer') {
-    return `异常强度提供者 · ${agentFullName(producerId) || producerId}`
-  }
-  if (group === 'trigger') {
-    return `异常类触发者 · ${agentFullName(triggerId) || triggerId}`
-  }
-  if (group === 'mixed') return '共同（提供者 + 触发者）'
-  return '最终伤害'
-}
-
-/** 乘区标签 → 局外/增益来源字段（用于弹窗里的来源明细，与事件详情同源） */
-const ZONE_SOURCE_KEYS: Record<string, BuffStatKey[]> = {
-  // 局内攻击力 / 局内精通区 只出现在蕾米本人耀变链，来源走 buildRemielSelf*TipGroups（特殊口径）
-  面板攻击力: ['atk', 'externalAtkPercent', 'inCombatAtkPercent'],
-  面板防御力: ['def', 'externalDefPercent', 'inCombatDefPercent'],
-  面板贯穿力: ['pierce'],
-  精通区: ['mastery'],
-  抗性区: ['resPen', 'radianceResPen'],
-  易伤区: ['vulnerable', 'dmgReduction'],
-  非直伤易伤区: ['vulnerable', 'anomalyVulnerable', 'dmgReduction', 'anomalyDmgReduction'],
-  直伤易伤区: ['vulnerable', 'directVulnerable', 'dmgReduction', 'directDmgReduction'],
-  失衡易伤区: ['globalStaggerVulnerable', 'staggerVulnerable', 'staggerVulnerableOnly'],
-  特殊乘区: ['special'],
-  特殊倍率乘区: ['specialMult', 'specialMultFactor'],
-  增伤: ['dmgBonus', 'skillDmgBonus'],
-  增伤区: ['dmgBonus', 'skillDmgBonus'],
-  异常增伤区: ['anomalyDmgBonus'],
-  异常倍率区: ['anomalyMult', 'anomalyMultFactor'],
-  异常暴击区: ['anomalyCritRate', 'anomalyCritDmg'],
-  紊乱增伤区: ['disorderDmgBonus'],
-  紊乱暴击区: ['disorderCritRate', 'disorderCritDmg'],
-  乱流综合增伤区: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
-  乱流暴击区: ['turbulenceCritRate', 'turbulenceCritDmg'],
-  异放综合增伤区: ['anomalyReleaseDmgBonus', 'anomalyDmgBonus'],
-  异放倍率区: ['anomalyReleaseMult', 'anomalyReleaseMultFactor'],
-  异放暴击区: ['anomalyReleaseCritRate', 'anomalyReleaseCritDmg'],
-  耀变综合增伤区: ['radianceDmgBonus', 'anomalyDmgBonus'],
-  耀变倍率区: ['radianceMult', 'radianceMultFactor'],
-  耀变暴击区: ['radianceCritRate', 'radianceCritDmg'],
-  暴击区: ['critRate', 'critDmg'],
-  锐爆区: ['critRate', 'sharpenCritDmgBonus'],
-  贯穿增伤区: ['pierceDmgBonus'],
+  return detailZoneDisplay.value.find(row=>row.label===label)?.sourceLabel ?? '事件参数'
 }
 
 const detailZoneCalc = computed(() => {
@@ -1640,9 +1542,6 @@ const detailZoneCalc = computed(() => {
   if (!key) return null
   return props.resolveCalculationDetail?.(key) ?? null
 })
-
-/** 只解析一次详情（含来源）；evaluation 从同一份结果取，避免重复计算 */
-const detailZoneEval = computed(() => detailZoneCalc.value?.evaluation ?? null)
 
 /** 多次结算：在计算过程末尾列出「期望 × 次数 = 合计」。
  *  只读已结算的 hit 结果（与结算同一口径），缺结果时不显示，避免为合计触发完整来源解析 */
@@ -1670,280 +1569,9 @@ function formatDamageNumber(value: number) {
   return Math.round(value).toLocaleString('en-US')
 }
 
-/** 乘区计算式（与事件详情弹窗的口径一致，用当前实际数值拼出） */
-function zoneTipFormula(label: string): string[] {
-  const ev = detailZoneEval.value
-  if (!ev) return []
-  const p = ev.result
-  const role = detailZoneSplit.value ? skillCalcZoneGroup(label) : 'single'
-  const panel =
-    role === 'producer' ? (ev.producerFinalPanel ?? ev.finalPanel) : (ev.bonusFinalPanel ?? ev.finalPanel)
-  const bonus = ev.bonusFinalPanel ?? ev.finalPanel
-  const mult = ev.producerFinalPanel ?? ev.finalPanel
-  const num = (value: number, digits = 4) => formatCalcDecimal(value, digits)
-  const enemy = detailZoneCalc.value?.enemyInput
-  const percent = (value: number, digits = 2) => `${num(value, digits)}%`
-
-  switch (label) {
-    case '面板攻击力':
-      return [`面板攻击力 ${num(panel.atk, 2)}（不含招式倍率，倍率见倍率区）`]
-    case '面板防御力':
-      return [`面板防御力 ${num(panel.def, 2)}（不含招式倍率，倍率见倍率区）`]
-    case '面板贯穿力':
-      return [
-        `贯穿力 ${num(ev.piercePower, 2)}（0.1×生命 + 0.3×攻击 + 贯穿加成；不含招式倍率）`,
-      ]
-    case '基础伤害':
-      if (p.baseDamageSource === 'pierce') {
-        return [`贯穿力 ${num(ev.piercePower, 2)}（0.1×生命 + 0.3×攻击 + 贯穿加成）`]
-      }
-      if (p.baseDamageSource === 'def') return [`面板防御力 ${num(panel.def, 2)}`]
-      return [`面板攻击力 ${num(panel.atk, 2)}`]
-    case '增伤区':
-      return [`1 + 增伤 ${percent(panel.dmgBonus)}（含招式增伤）`]
-    case '防御区': {
-      const penPanel = ev.producerFinalPanel ?? ev.finalPanel
-      const penExternal = ev.producerExternalPanel ?? ev.external
-      const defPanel = ev.defenseTriggerFinalPanel ?? ev.bonusFinalPanel ?? ev.finalPanel
-      return buildDefenseZoneFormulaItems({
-        enemyDefense: enemy?.defense ?? 0,
-        ignoreDefense: defPanel.ignoreDefense,
-        reduceDefense: defPanel.reduceDefense,
-        penRate: penPanel.penRate,
-        pen: penExternal.pen,
-        isMb: detailZoneCalc.value?.isMb,
-        penRateRole: detailZoneSplit.value ? '强度提供者' : undefined,
-        defCutRole: detailZoneSplit.value ? '触发者' : undefined,
-      })
-    }
-    case '抗性区':
-      return buildResistanceZoneProcessItems({
-        enemyResistance: p.enemyResistance,
-        resPen: panel.resPen,
-        zone: p.resistanceMultiplier,
-      })
-    case '失衡易伤区':
-      return [`1 + 失衡易伤（全局与本期加算）`]
-    case '易伤区':
-    case '非直伤易伤区':
-    case '直伤易伤区':
-      return [`1 + 易伤加成（本区已含减伤扣减）`]
-    case '特殊乘区':
-      return [`特殊乘区 = ${num(p.specialMultiplier)}（特殊乘区基础 × 特殊加成）`]
-    case '特殊倍率乘区':
-      return [
-        `max(0, 特殊倍率 ${percent(bonus.specialMult ?? 100)}) × 修正 ${percent(bonus.specialMultFactor ?? 100)}`,
-      ]
-    case '精通区':
-      return [`精通 ${num(panel.mastery, 2)} ÷ 100`]
-    case '特殊等级区':
-      // 与事件详情弹窗同源：本人耀变的双等级区各有一套计算式
-      return buildRemielSpecialLevelZoneProcessItems(
-        p.levelZoneAgentLevel,
-        p.remielSelfSpecialLevelZone,
-      )
-    case '等级区': {
-      const level = Math.max(1, Math.round(p.levelZoneAgentLevel))
-      if (p.remielSelfRadianceActive) {
-        return buildRemielStandardLevelZoneProcessItems(level, p.remielSelfStandardLevelZone)
-      }
-      return buildRemielStandardLevelZoneProcessItems(level, p.levelZone)
-    }
-    case '异化系数':
-    case '异化系数区': {
-      const mutationPanel = ev.mutationFinalPanel ?? ev.producerFinalPanel ?? ev.finalPanel
-      const coeff = Number(mutationPanel.mutationCoeff) || 0
-      const factor = Number(mutationPanel.mutationCoeffFactor) || 100
-      return [
-        `数值由蕾米埃尔的局内面板提供（不是异常强度提供者本人）`,
-        `异化系数 = max(0, 1 + ${num(coeff, 2)}%) × 修正 ${num(factor, 2)}% = ${num(p.mutationZone)}`,
-      ]
-    }
-    case '异常增伤区':
-      return [`1 + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`]
-    case '异常倍率区':
-      return [
-        `max(0, ${percent(bonus.anomalyMult)}) × 修正 ${percent(bonus.anomalyMultFactor ?? 100)}`,
-      ]
-    case '异常暴击区':
-      return [
-        `1 + 异常暴击率 ${percent(bonus.anomalyCritRate)} × 异常爆伤 ${percent(bonus.anomalyCritDmg)}`,
-      ]
-    case '紊乱基础倍率':
-      return [`面板紊乱基础倍率 ${percent(mult.disorderBaseMult)}`]
-    case '异常持续时间':
-      return [`面板 ${num(mult.anomalyDuration, 2)}s → 有效 ${num(p.effectiveAnomalyDuration, 2)}s`]
-    case '紊乱补偿倍率':
-      return [`紊乱补偿倍率 ${percent(mult.disorderCompMult)}`]
-    case '紊乱倍率修正':
-      return [`倍率修正 ×${num(p.disorderMultFactor)}`]
-    case '紊乱倍率区':
-      return [
-        `(基础 ${num(p.disorderBaseMultRatio)} + 有效时间 ${num(p.effectiveAnomalyDuration, 2)} × 补偿 ${num(p.disorderCompMultRatio)}) × 修正 ${num(p.disorderMultFactor)}`,
-      ]
-    case '紊乱增伤区':
-      return [`1 + 紊乱增伤 ${percent(bonus.disorderDmgBonus)}`]
-    case '紊乱暴击区':
-      return [
-        `1 + 紊乱暴击率 ${percent(bonus.disorderCritRate)} × 紊乱爆伤 ${percent(bonus.disorderCritDmg)}`,
-      ]
-    case '乱流基础倍率':
-      return [`面板乱流基础倍率 ${percent(mult.turbulenceBaseMult)}`]
-    case '乱流补偿倍率':
-      return [`乱流补偿倍率 ${percent(mult.turbulenceCompMult)}`]
-    case '乱流倍率修正':
-      return [`倍率修正 ×${num(p.turbulenceMultFactor)}`]
-    case '乱流倍率区':
-      return [
-        `(基础 ${num(p.turbulenceBaseMultRatio)} + 有效时间 ${num(p.effectiveAnomalyDuration, 2)} × 补偿 ${num(p.turbulenceCompMultRatio)}) × 修正 ${num(p.turbulenceMultFactor)}`,
-      ]
-    case '乱流综合增伤区':
-      return [
-        `1 + 乱流增伤 ${percent(bonus.turbulenceDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
-      ]
-    case '乱流暴击区':
-      return [
-        `1 + 乱流暴击率 ${percent(bonus.turbulenceCritRate)} × 乱流爆伤 ${percent(bonus.turbulenceCritDmg)}`,
-      ]
-    case '异放综合增伤区':
-      return [
-        `1 + 异放增伤 ${percent(bonus.anomalyReleaseDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
-      ]
-    case '异放倍率区':
-      return [
-        `max(0, ${percent(bonus.anomalyReleaseMult)}) × 修正 ${percent(bonus.anomalyReleaseMultFactor ?? 100)}`,
-      ]
-    case '异放暴击区':
-      return [
-        `1 + 异放暴击率 ${percent(bonus.anomalyReleaseCritRate)} × 异放爆伤 ${percent(bonus.anomalyReleaseCritDmg)}`,
-      ]
-    case '耀变综合增伤区':
-      return [
-        `1 + 耀变增伤 ${percent(bonus.radianceDmgBonus)} + 异常增伤 ${percent(bonus.anomalyDmgBonus)}`,
-      ]
-    case '耀变倍率区':
-      return [`max(0, ${percent(bonus.radianceMult)}) × 修正 ${percent(bonus.radianceMultFactor ?? 100)}（此处按百分比展示）`]
-    case '耀变暴击区':
-      return [
-        `1 + 耀变暴击率 ${percent(bonus.radianceCritRate)} × 耀变爆伤 ${percent(bonus.radianceCritDmg)}`,
-      ]
-    case '暴击区':
-      return [`1 + 暴击率 ${percent(panel.critRate)} × 暴击伤害 ${percent(panel.critDmg)}`]
-    case '锐爆区':
-      return [
-        `1 + 暴击率 ${percent(panel.critRate)} × 锐爆伤害 ${percent(panel.sharpenCritDmgBonus)}`,
-      ]
-    case '贯穿增伤区':
-      return [`贯穿增伤区 = ${num(p.pierceDmgMultiplier)}（贯穿增伤作为独立乘区）`]
-    case '增伤':
-      return [`1 + 增伤 ${percent(panel.dmgBonus)}`]
-    case '暴击伤害':
-    case '期望伤害':
-    case '不暴击伤害':
-      return [`单次伤害（暴击伤害 / 期望 / 不暴击 三种口径对照）`]
-    default:
-      return []
-  }
-}
-
-/** 按乘区归属挑对应的面板与来源（与 DamageResultDetail 的 panel / bonusPanel 同口径） */
-function zoneTipPanels(label: string) {
-  const ev = detailZoneEval.value
-  if (!ev) return null
-  const role = detailZoneSplit.value ? skillCalcZoneGroup(label) : 'single'
-  let external = ev.external
-  let sources = ev.breakdown?.sources ?? []
-  if (role === 'producer' && ev.producerExternalPanel) {
-    external = ev.producerExternalPanel
-    sources = ev.producerBreakdown?.sources ?? sources
-  } else if (role === 'trigger') {
-    if (
-      (label === '防御区' || label === '抗性区') &&
-      ev.defenseTriggerExternalPanel
-    ) {
-      external = ev.defenseTriggerExternalPanel
-      sources = ev.defenseTriggerBreakdown?.sources ?? sources
-    } else if (ev.bonusExternalPanel) {
-      external = ev.bonusExternalPanel
-      sources = ev.bonusBreakdown?.sources ?? sources
-    }
-  }
-  return { external, sources }
-}
-
-let zoneTipGroupsCache = new Map<string, StatSourceGroup[]>()
-
-watch(detailCalcKey, () => {
-  zoneTipGroupsCache = new Map()
-})
-
-// 结算结果换了（改加成 / 切面板）时来源也会变，缓存必须跟着失效
-watch(
-  () => props.hitCalcResults,
-  () => {
-    zoneTipGroupsCache = new Map()
-  },
-)
-
 function zoneTipGroups(row: SkillCalcZoneRow): StatSourceGroup[] {
-  const role = detailZoneSplit.value ? skillCalcZoneGroup(row.label) : 'single'
-  const cacheKey = `${role}|${row.label}|${row.value}`
-  const cached = zoneTipGroupsCache.get(cacheKey)
-  if (cached) return cached
-  const groups: StatSourceGroup[] = [
-    { label: zoneTipGroupLabel(row.label), items: [skillCalcZoneHint(row.label)] },
-  ]
-  const formula = zoneTipFormula(row.label)
-  if (formula.length) groups.push({ label: '计算式', items: formula, fullWidth: true })
-  groups.push({ label: '当前值', items: [`${row.label} ${row.value}`] })
-  const ev = detailZoneEval.value
-  if ((row.label === '异化系数' || row.label === '异化系数区') && ev?.mutationExternalPanel) {
-    const mutationGroups = buildStatSourceGroups({
-      keys: ['mutationCoeff', 'mutationCoeffFactor'],
-      externalPanel: ev.mutationExternalPanel,
-      sources: ev.mutationSources ?? [],
-      showAdditiveProcess: false,
-    })
-    if (mutationGroups.length) groups.push(...mutationGroups)
-  }
-  // 本人耀变的局内攻/精是特殊口径（局外 + 自身转模 / 全局精通），来源必须与事件详情同源
-  const remielSelfPanelZone =
-    row.label === '局内攻击力' || row.label === '局内精通区'
-  if (remielSelfPanelZone) {
-    if (ev?.remielSelfFinalPanel) {
-      const remielExt = ev.remielSelfExternalPanel ?? ev.producerExternalPanel ?? ev.external
-      const remielFinal = ev.remielSelfFinalPanel ?? ev.producerFinalPanel ?? ev.finalPanel
-      const remielGroups =
-        row.label === '局内攻击力'
-          ? buildRemielSelfAtkTipGroups({
-              externalAtk: remielExt.atk,
-              inCombatAtk: remielFinal.atk,
-              sourceItems: ev.remielSelfAtkSourceItems ?? [],
-              fullPanelAtk: remielFinal.atk,
-            })
-          : buildRemielSelfMasteryTipGroups({
-              externalMastery: remielExt.mastery,
-              inCombatMasteryZone: ev.result.remielSelfInCombatMasteryZone ?? 0,
-              sourceItems: ev.remielSelfMasterySourceItems ?? [],
-              fullPanelMastery: remielFinal.mastery,
-            })
-      if (remielGroups.length) groups.push(...remielGroups)
-    }
-  } else {
-    const keys = ZONE_SOURCE_KEYS[row.label]
-    const panels = zoneTipPanels(row.label)
-    if (keys?.length && panels) {
-      const sourceGroups = buildStatSourceGroups({
-        keys,
-        externalPanel: panels.external,
-        sources: panels.sources,
-        showAdditiveProcess: false,
-      })
-      if (sourceGroups.length) groups.push(...sourceGroups)
-    }
-  }
-  zoneTipGroupsCache.set(cacheKey, groups)
-  return groups
+  const projected=detailZoneDisplay.value.find(item=>item.label===row.label)
+  return projected ? [{label:zoneTipGroupLabel(row.label),items:[row.label+' '+row.value]},...projected.groups] : []
 }
 
 /** 悬停即显示；定位贴着对应格子，并按上下空间自动翻转 */
@@ -3954,6 +3582,7 @@ const showcaseTitle = computed(() => {
               :states="flowBuffTableStates"
               :subtitle="flowBuffTableSubtitle"
               :cell-text="flowBuffCellText"
+              :cell-note="flowBuffCellNote"
               @toggle="toggleFlowBuffCell"
               @set-column="setFlowBuffColumn"
             />
@@ -4516,7 +4145,7 @@ const showcaseTitle = computed(() => {
                 <div class="zone-split">
                   <section class="zone-box zone-box--producer">
                     <header class="zone-box-head">
-                      <span>异常强度提供者</span>
+                      <span>采用面板</span>
                       <strong class="zone-box-name">{{ detailZoneSplit.producerName }}</strong>
                     </header>
                     <div class="zone-display-grid">
@@ -4539,7 +4168,7 @@ const showcaseTitle = computed(() => {
 
                   <section class="zone-box zone-box--trigger">
                     <header class="zone-box-head">
-                      <span>异常类触发者</span>
+                      <span>采用面板</span>
                       <strong class="zone-box-name">{{ detailZoneSplit.triggerName }}</strong>
                     </header>
                     <div class="zone-display-grid">
@@ -4563,7 +4192,7 @@ const showcaseTitle = computed(() => {
 
                 <section v-if="detailZoneSplit.mixedRows.length" class="zone-box zone-box--mixed">
                   <header class="zone-box-head">
-                    <span>共同（提供者 + 触发者）</span>
+                    <span>多个面板 / 事件参数</span>
                   </header>
                   <div class="zone-display-grid">
                     <div
