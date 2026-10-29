@@ -2408,6 +2408,16 @@ type BuffCatalogEntry = {
   packs: BuffCatalogPack[]
   nonConvertModsByPackKey: Record<string, BuffStatModifiers>
   nonConvertMods?: BuffStatModifiers
+  /**
+   * 该目录条目里是否存在**转模运算包**（`pack.convertEffects.length > 0`）。
+   *
+   * 纯结构标记，由 `makeCatalogEntryFromSources` 建条目时按包算一次（包和 `convertEffects`
+   * 在条目建立后不再变），命中路径直接读，省掉每次命中重扫 `packs`。
+   *
+   * 它与「上一次转模算出来是不是 0」**无关**：有转模包就必须照常实时求值，
+   * 不能拿"上次结果 0"当成"本目录没有转模"（Spec §4.3.3）。
+   */
+  hasConvertPacks: boolean
 }
 
 const buffCatalogCache = new Map<string, BuffCatalogEntry>()
@@ -2437,6 +2447,34 @@ export function invalidateBuffCatalogCache() {
 function touchBuffCatalogEntry(key: string, entry: BuffCatalogEntry) {
   buffCatalogCache.delete(key)
   buffCatalogCache.set(key, entry)
+}
+
+/**
+ * 目录缓存/转模收集的**真实执行路径**计数（回归观察用，不属于业务逻辑）。
+ *
+ * 用途只有一个：让 `scripts/test-buff-catalog-empty-convert.mjs` 能断言
+ * 「目录命中且没有转模包时，不再执行空转模收集再全字段空合并」，
+ * 而不是靠 mock 或预设计数证明（Spec §4.3.2 / §6 B1）。
+ *
+ * 不是计时、不是性能测量工具：只在真实调用点上 +1，不记录耗时。
+ */
+export const buffCatalogCacheDebugCounters = {
+  /** `collectConvertOnlyMods` 的真实调用次数（只有存在转模包时才允许增长） */
+  convertCollectCalls: 0,
+  /** 「目录命中 + 条目里一个转模包都没有」的短路次数 */
+  emptyConvertShortCircuits: 0,
+  /** 目录未命中次数（合法冷算：必须照常重算，不得算成重复工作） */
+  catalogMisses: 0,
+  /** 进入正式追踪分支的次数（追踪路径不走跨轮缓存） */
+  tracedCalls: 0,
+}
+
+/** 清零上面的计数（测试用；不影响任何缓存内容） */
+export function resetBuffCatalogCacheDebugCounters() {
+  buffCatalogCacheDebugCounters.convertCollectCalls = 0
+  buffCatalogCacheDebugCounters.emptyConvertShortCircuits = 0
+  buffCatalogCacheDebugCounters.catalogMisses = 0
+  buffCatalogCacheDebugCounters.tracedCalls = 0
 }
 
 function splitConvertEffects(effects: BuffEffect[]) {
@@ -2691,6 +2729,7 @@ function ensureNonConvertMods(entry: BuffCatalogEntry, ctx: PanelCalcContext) {
 }
 
 function collectConvertOnlyMods(packs: BuffCatalogPack[], ctx: PanelCalcContext): BuffStatModifiers {
+  buffCatalogCacheDebugCounters.convertCollectCalls += 1
   let total = createEmptyBuffStatModifiers()
   for (const pack of packs) {
     if (!pack.convertEffects.length) continue
@@ -2741,9 +2780,11 @@ function makeCatalogEntryFromSources(
   sources: BuffModSource[],
   ctx: PanelCalcContext,
 ): BuffCatalogEntry {
+  const packs = packsFromSources(sources)
   const entry: BuffCatalogEntry = {
-    packs: packsFromSources(sources),
+    packs,
     nonConvertModsByPackKey: {},
+    hasConvertPacks: packs.some((pack) => pack.convertEffects.length > 0),
   }
   if (ctx.skipConvert) {
     for (const source of sources) {
@@ -2879,13 +2920,17 @@ function collectPanelBuffModSourcesUncached(
 export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
   // 带追踪时不走跨轮缓存：记录必须来自本次正式运算（缓存的 mods 里没有逐效果身份）。
   // 两边的数值由同一批函数产出，K8 逐属性比对保证相等。
-  if (ctx.trace) return collectPanelBuffModsTraced(ctx)
+  if (ctx.trace) {
+    buffCatalogCacheDebugCounters.tracedCalls += 1
+    return collectPanelBuffModsTraced(ctx)
+  }
   // 行级例外已并入缓存键（`rowBuffOverrideKey`），与 collectPanelBuffModSources 统一走缓存：
   // 同一例外命中缓存、不同例外各自成键。此前"带例外绕开缓存"的写法已删（每次求值重建整份清单，
   // 2026-09-22 实测：42 行全带例外时单次评估 3.76 → 24.42 ms）。
   const key = buildBuffCatalogKey(ctx)
   let entry = buffCatalogCache.get(key)
   if (!entry) {
+    buffCatalogCacheDebugCounters.catalogMisses += 1
     const sources = collectPanelBuffModSourcesUncached(ctx)
     entry = makeCatalogEntryFromSources(sources, ctx)
     rememberBuffCatalogEntry(key, entry)
@@ -2898,6 +2943,22 @@ export function collectPanelBuffMods(ctx: PanelCalcContext): BuffStatModifiers {
   touchBuffCatalogEntry(key, entry)
   ensureNonConvertMods(entry, ctx)
   if (ctx.skipConvert) return entry.nonConvertMods ?? createEmptyBuffStatModifiers()
+  /**
+   * 目录命中、且该条目里**一个转模运算包都没有**：`collectConvertOnlyMods` 只能返回全 0，
+   * 再拿它做一次全字段合并（`createEmptyBuffStatModifiers()` + 逐字段加法，返回新对象）
+   * 是纯浪费 —— 直接交出非转模合并结果本身（Spec §4.3.2）。
+   *
+   * 判据是**条目结构**（建条目时算好的 `hasConvertPacks`），不是"上次转模算出来是 0"：
+   * 只要存在转模包就照常走下面的实时求值，源值 0 → 1000 必须跟着变（Spec §4.3.3）。
+   *
+   * 返回值共享说明：`entry.nonConvertMods` 是目录条目持有的对象，与 `skipConvert=true`
+   * 命中原有的返回语义一致。消费者审计（`scripts/test-buff-catalog-empty-convert.mjs` 文件头）
+   * 覆盖了生产侧全部 3 个调用点及其后续落点：没有任何写入方，因此不复制。
+   */
+  if (!entry.hasConvertPacks) {
+    buffCatalogCacheDebugCounters.emptyConvertShortCircuits += 1
+    return entry.nonConvertMods ?? createEmptyBuffStatModifiers()
+  }
   return mergeBuffStatModifiers(
     entry.nonConvertMods ?? createEmptyBuffStatModifiers(),
     collectConvertOnlyMods(entry.packs, ctx),
