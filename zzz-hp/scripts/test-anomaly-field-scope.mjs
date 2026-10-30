@@ -29,11 +29,13 @@ import { findBuffStatZoneById, statRowsForZone } from '../src/utils/buffStatZone
 import { buildSkillCalcZoneRows } from '../src/utils/skillCalcZones.ts'
 import { buildAlignedAnomalyFormulaGroups } from '../src/utils/anomalyFormulaDisplay.ts'
 import {
+  detectScope,
   extractKeywordEffects,
   enforceSlotWhitelist,
   mapKeywordsToEffect,
   resolveStatField,
   SCOPE_OPTIONS,
+  SCOPE_SLOT_TO_ID,
   STAT_OPTIONS,
 } from '../../zzz-hp-backend/src/services/nanoka/nanokaBuffExtractor.js'
 import { smartMergeParse } from '../../zzz-hp-backend/src/services/nanokaBuffService.js'
@@ -431,6 +433,8 @@ console.log('\n[C5] 中文名与不变项')
     check(`B01 resolveStatField「${slot}」→ ${stat}`, resolveStatField({ stat: slot, action: '提升', unit: '%' }) === stat, resolveStatField({ stat: slot, action: '提升', unit: '%' }))
   }
   check('B01 作用域选项为「属性异常」', SCOPE_OPTIONS.includes('属性异常') && !SCOPE_OPTIONS.includes('异常'))
+  check('B01 detectScope 产出「属性异常」槽位值', detectScope('仅对属性异常伤害生效') === '属性异常', detectScope('仅对属性异常伤害生效'))
+  check('B01 作用域槽位值映射到 attributeAnomaly', SCOPE_SLOT_TO_ID['属性异常'] === 'attributeAnomaly', SCOPE_SLOT_TO_ID['属性异常'])
   check('B01 字典里不再有旧槽位', !STAT_OPTIONS.includes('异常增伤') && !STAT_OPTIONS.includes('异常暴击率') && !STAT_OPTIONS.includes('异常暴击伤害'))
 
   // 原文解析：原文逐字不变，产出的槽位是新值
