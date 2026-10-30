@@ -60,7 +60,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -83,7 +82,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -106,7 +104,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -129,7 +126,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -152,7 +148,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -215,7 +210,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -238,7 +232,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -261,7 +254,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -284,7 +276,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -307,7 +298,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -350,7 +340,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -388,7 +377,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -431,7 +419,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -454,7 +441,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -477,7 +463,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -500,7 +485,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -523,7 +507,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -561,7 +544,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -584,7 +566,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -607,7 +588,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -630,7 +610,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -653,7 +632,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -696,7 +674,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -719,7 +696,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -742,7 +718,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -787,7 +762,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -825,7 +799,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -848,7 +821,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -871,7 +843,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -916,7 +887,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -958,7 +928,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -978,7 +947,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -998,7 +966,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1018,7 +985,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1038,7 +1004,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 }
               ],
@@ -1073,7 +1038,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -1093,7 +1057,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -1113,7 +1076,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -1133,7 +1095,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -1153,7 +1114,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             }
           ],
@@ -1194,7 +1154,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1239,7 +1198,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": "强攻",
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1346,7 +1304,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1391,7 +1348,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": "强攻",
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1503,7 +1459,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1526,7 +1481,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1549,7 +1503,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1572,7 +1525,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -1632,7 +1584,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1655,7 +1606,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1678,7 +1628,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1701,7 +1650,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -1888,7 +1836,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1908,7 +1855,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1928,7 +1874,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1948,7 +1893,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1968,7 +1912,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -1988,7 +1931,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 }
               ],
@@ -2023,7 +1965,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -2043,7 +1984,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -2063,7 +2003,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -2083,7 +2022,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -2103,7 +2041,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -2123,7 +2060,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             }
           ],
@@ -2287,7 +2223,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2325,7 +2260,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2371,7 +2305,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2412,7 +2345,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2477,7 +2409,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2500,7 +2431,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2523,7 +2453,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2546,7 +2475,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2606,7 +2534,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2629,7 +2556,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2652,7 +2578,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2675,7 +2600,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2718,7 +2642,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2741,7 +2664,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2764,7 +2686,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2787,7 +2708,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2810,7 +2730,6 @@
                   "enabledDefault": false,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -2848,7 +2767,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2871,7 +2789,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2894,7 +2811,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2917,7 +2833,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2940,7 +2855,6 @@
               "enabledDefault": false,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -2983,7 +2897,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3021,7 +2934,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3063,7 +2975,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -3117,7 +3028,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -3322,7 +3232,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3382,7 +3291,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3513,7 +3421,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3536,7 +3443,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3559,7 +3465,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3582,7 +3487,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3605,7 +3509,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -3731,7 +3634,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3754,7 +3656,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3777,7 +3678,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3800,7 +3700,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3823,7 +3722,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -3944,7 +3842,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -3964,7 +3861,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -3984,7 +3880,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 },
                 {
@@ -4004,7 +3899,6 @@
                   "applySituation": "global",
                   "enabledDefault": true,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null
                 }
               ],
@@ -4039,7 +3933,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -4059,7 +3952,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -4079,7 +3971,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             },
             {
@@ -4099,7 +3990,6 @@
               "applySituation": "global",
               "enabledDefault": true,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null
             }
           ],
@@ -4151,7 +4041,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -4200,7 +4089,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
@@ -4243,7 +4131,6 @@
                   "enabledDefault": true,
                   "teamProfession": null,
                   "applyProfession": null,
-                  "appliesToAnomaly": true,
                   "skillSubcategoryId": null,
                   "teamProfessionValues": null,
                   "teamProfessionMinCount": null
@@ -4281,7 +4168,6 @@
               "enabledDefault": true,
               "teamProfession": null,
               "applyProfession": null,
-              "appliesToAnomaly": true,
               "skillSubcategoryId": null,
               "teamProfessionValues": null,
               "teamProfessionMinCount": null
