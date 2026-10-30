@@ -99,7 +99,7 @@ const combat = {
 
 console.log('\n[1] 政策表选取')
 check('异常攻击取 powerProvider', zoneSourceRole('baseAtk', 'anomaly') === 'powerProvider')
-check('异常增伤取 powerProvider', zoneSourceRole('dmgBonus', 'radiance') === 'powerProvider')
+check('非直伤增伤取 powerProvider', zoneSourceRole('dmgBonus', 'radiance') === 'powerProvider')
 check('异常抗穿取 anomalyTrigger', zoneSourceRole('resPen', 'disorder') === 'anomalyTrigger')
 check('直伤减防表上是 owner', zoneSourceRole('reduceDefense', 'direct') === 'owner')
 check(
