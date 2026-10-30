@@ -178,13 +178,20 @@ function selectDamageType(type: BuffDamageType) {
   }
 }
 
+/** 大类分组 id → 伤害种类：分组 id 是 `direct` / `anomalyClass`，种类语义值仍是 direct / anomaly */
+const GROUP_DAMAGE_KIND: Record<string, 'direct' | 'anomaly'> = {
+  direct: 'direct',
+  anomalyClass: 'anomaly',
+}
+
 function selectTypeSlice(id: string) {
   if (typeDimension.value === 'category') {
-    if (id !== 'direct' && id !== 'anomaly') return
+    const kind = GROUP_DAMAGE_KIND[id]
+    if (!kind) return
     damageFilter.value = {
       ...damageFilter.value,
       damageType: null,
-      damageKind: damageFilter.value.damageKind === id ? null : id,
+      damageKind: damageFilter.value.damageKind === kind ? null : kind,
     }
   } else selectDamageType(id as BuffDamageType)
 }
@@ -283,9 +290,9 @@ function sliceMatchesFilter(typeId: string) {
 }
 
 function typeSliceSelected(id: string) {
-  return typeDimension.value === 'type'
-    ? damageFilter.value.damageType === id
-    : damageFilter.value.damageKind === id
+  if (typeDimension.value === 'type') return damageFilter.value.damageType === id
+  const kind = GROUP_DAMAGE_KIND[id]
+  return Boolean(kind) && damageFilter.value.damageKind === kind
 }
 
 function removeFilter(key: keyof SkillFlowDamageFilter) {
