@@ -37,7 +37,7 @@ export interface AlignedFormulaTerm {
 
 export type AlignedAnomalyFormulaKey =
   | 'anomalyBaseExpected'
-  | 'anomalyExpected'
+  | 'attributeAnomalyExpected'
   | 'anomalyReleaseExpected'
   | 'radianceExpected'
   | 'radianceMutation'
@@ -119,20 +119,20 @@ export function buildAlignedAnomalyFormulaGroups(
     result: formatNumber(baseWithMutation),
   }
   const anomaly: AlignedAnomalyFormulaGroup = {
-    key: 'anomalyExpected',
-    title: '异常伤害',
+    key: 'attributeAnomalyExpected',
+    title: '属性异常伤害',
     agentLabel: labels?.bonusAgent,
     terms: [
       { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
-      { label: '异常增伤区', value: formatFormulaNumber(p.anomalyDmgBonusZone), tipsKey: 'anomalyDmgBonusZone' },
-      { label: '异常倍率区', value: formatFormulaNumber(p.anomalyMultZone), tipsKey: 'anomalyMultZone' },
+      { label: '属性异常增伤区', value: formatFormulaNumber(p.attributeAnomalyDmgBonusZone), tipsKey: 'attributeAnomalyDmgBonusZone' },
+      { label: '属性异常倍率区', value: formatFormulaNumber(p.attributeAnomalyMultZone), tipsKey: 'attributeAnomalyMultZone' },
       {
-        label: '异常暴击区',
-        value: formatFormulaNumber(pickEventCritMultiplier(p, 'anomaly', critMode)),
-        tipsKey: 'anomalyCritZone',
+        label: '属性异常暴击区',
+        value: formatFormulaNumber(pickEventCritMultiplier(p, 'attributeAnomaly', critMode)),
+        tipsKey: 'attributeAnomalyCritZone',
       },
     ],
-    result: formatNumber(pickEventDamage(p, 'anomaly', critMode)),
+    result: formatNumber(pickEventDamage(p, 'attributeAnomaly', critMode)),
   }
   const disorder: AlignedAnomalyFormulaGroup = {
     key: 'disorderExpected',
@@ -159,12 +159,12 @@ export function buildAlignedAnomalyFormulaGroups(
       { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       { label: '乱流倍率区', value: formatFormulaNumber(p.turbulenceZone), tipsKey: 'turbulenceZone' },
       {
-        label: '乱流增伤区+异常增伤区',
-        value: formatFormulaNumber(p.turbulenceCombinedDmgBonusZone),
-        tipsKey: 'turbulenceCombinedDmgBonusZone',
+        label: '乱流增伤区',
+        value: formatFormulaNumber(p.turbulenceDmgBonusZone),
+        tipsKey: 'turbulenceDmgBonusZone',
       },
       {
-        // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用异常暴击区
+        // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用属性异常暴击区
         label: '乱流暴击区',
         value: formatFormulaNumber(pickEventCritMultiplier(p, 'turbulence', critMode)),
         tipsKey: 'turbulenceCritZone',
@@ -179,9 +179,9 @@ export function buildAlignedAnomalyFormulaGroups(
     terms: [
       { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
       {
-        label: '异放综合增伤区',
-        value: formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone),
-        tipsKey: 'anomalyReleaseCombinedDmgBonusZone',
+        label: '异放增伤区',
+        value: formatFormulaNumber(p.anomalyReleaseDmgBonusZone),
+        tipsKey: 'anomalyReleaseDmgBonusZone',
       },
       {
         label: '异放倍率区',
@@ -229,9 +229,9 @@ export function buildAlignedAnomalyFormulaGroups(
             tipsKey: 'staggerMultiplier',
           },
           {
-            label: '耀变综合增伤区',
-            value: formatFormulaNumber(p.radianceCombinedDmgBonusZone),
-            tipsKey: 'radianceCombinedDmgBonusZone',
+            label: '耀变增伤区',
+            value: formatFormulaNumber(p.radianceDmgBonusZone),
+            tipsKey: 'radianceDmgBonusZone',
           },
           {
             label: '耀变倍率区',
@@ -258,9 +258,9 @@ export function buildAlignedAnomalyFormulaGroups(
       : [
           { label: '异常基础期望', value: formatFormulaNumber(baseWithMutation), tipsKey: 'anomalyBaseExpected' },
           {
-            label: '耀变综合增伤区',
-            value: formatFormulaNumber(p.radianceCombinedDmgBonusZone),
-            tipsKey: 'radianceCombinedDmgBonusZone',
+            label: '耀变增伤区',
+            value: formatFormulaNumber(p.radianceDmgBonusZone),
+            tipsKey: 'radianceDmgBonusZone',
           },
           {
             label: '耀变倍率区',

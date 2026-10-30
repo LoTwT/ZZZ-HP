@@ -1,11 +1,12 @@
 import type { DamageEvent, DamageEventMode, DamageEventModeType } from '@/types/calculator'
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 
 const STORAGE_KEY = 'zzz-hp-custom-damage-event-modes'
 
 function safeParse(raw: string | null): DamageEventMode[] {
   if (!raw) return []
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(raw))
     if (!Array.isArray(parsed)) return []
     return parsed
       .filter((item) => item && typeof item === 'object')
@@ -29,7 +30,7 @@ function normalizeMode(item: Record<string, unknown>): DamageEventMode {
       const entry = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
       return {
         id: String(entry.id ?? `evt-${index}`),
-        kind: (entry.kind as DamageEvent['kind']) ?? (modeType === 'anomaly' ? 'anomaly' : 'direct'),
+        kind: (entry.kind as DamageEvent['kind']) ?? (modeType === 'anomaly' ? 'attributeAnomaly' : 'direct'),
         categoryId: (entry.categoryId as DamageEvent['categoryId']) || 'basic',
         skillSubcategoryId:
           entry.skillSubcategoryId == null || entry.skillSubcategoryId === ''

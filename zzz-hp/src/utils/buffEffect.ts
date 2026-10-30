@@ -22,6 +22,10 @@ import type {
 } from '@/types/calculator'
 import { CONVERT_FROM_OPTIONS } from '@/types/calculator'
 import {
+  ATTRIBUTE_ANOMALY_FIELD_RENAMES,
+  migrateAttributeAnomalyNamingDeep,
+} from '@/utils/attributeAnomalyMigration'
+import {
   anomalyTypeOfStat,
   damageTypeLabel,
   damageTypesOf,
@@ -81,8 +85,8 @@ const BUFF_STAT_KEYS: BuffStatKey[] = [
   'staggerVulnerable',
   'staggerVulnerableOnly',
   'special',
-  'anomalyCritRate',
-  'anomalyCritDmg',
+  'attributeAnomalyCritRate',
+  'attributeAnomalyCritDmg',
   // 各异常子类自己的暴击：与后端 BUFF_STAT_KEYS 对齐；缺了会让面板的 turbulence/radiance/disorder 暴击字段变成 NaN
   'turbulenceCritRate',
   'turbulenceCritDmg',
@@ -90,14 +94,14 @@ const BUFF_STAT_KEYS: BuffStatKey[] = [
   'radianceCritDmg',
   'disorderCritRate',
   'disorderCritDmg',
-  'anomalyDmgBonus',
+  'attributeAnomalyDmgBonus',
   'anomalyReleaseDmgBonus',
   'anomalyReleaseCritRate',
   'anomalyReleaseCritDmg',
   'anomalyReleaseMult',
   'directDmgMult',
   'settlementDmgMult',
-  'anomalyMult',
+  'attributeAnomalyMult',
   'disorderBaseMult',
   'anomalyDuration',
   'disorderCompMult',
@@ -113,7 +117,7 @@ const BUFF_STAT_KEYS: BuffStatKey[] = [
   'skillDmgBonus',
   'skillMultiplierBonus',
   'directDmgMultFactor',
-  'anomalyMultFactor',
+  'attributeAnomalyMultFactor',
   'anomalyReleaseMultFactor',
   'disorderBaseMultFactor',
   'turbulenceBaseMultFactor',
@@ -168,7 +172,7 @@ function readNumber(value: unknown) {
 
 const BUFF_MULT_FACTOR_KEYS: BuffStatKey[] = [
   'directDmgMultFactor',
-  'anomalyMultFactor',
+  'attributeAnomalyMultFactor',
   'anomalyReleaseMultFactor',
   'disorderBaseMultFactor',
   'turbulenceBaseMultFactor',
@@ -565,7 +569,8 @@ export function resolveBuffEffectParameters(
 }
 
 /** 当前结算上下文的第二级伤害类型 */
-function contextDamageType(ctx: SkillCalcContext): BuffDamageType | null {  if (ctx.damageKind === 'anomaly') return ctx.anomalySubKind ?? 'anomaly'
+function contextDamageType(ctx: SkillCalcContext): BuffDamageType | null {
+  if (ctx.damageKind === 'anomaly') return ctx.anomalySubKind ?? 'attributeAnomaly'
   return ctx.directSubKind ?? 'normal'
 }
 
@@ -578,7 +583,7 @@ function damageTypeMatches(
   if (types.includes(current)) return true
   if (
     current === 'anomalyRelease' &&
-    types.includes('anomaly') &&
+    types.includes('attributeAnomaly') &&
     (stat === 'anomalyReleaseMult' || stat === 'anomalyReleaseMultFactor')
   ) {
     return true
@@ -1023,8 +1028,11 @@ function normalizeKind(value: unknown): BuffEffectKind {
 }
 
 function normalizeStat(value: unknown): BuffStatKey {
-  if (typeof value === 'string' && (BUFF_STAT_KEYS as string[]).includes(value)) {
-    return value as BuffStatKey
+  // 旧个人效果可能在字段白名单之前仍写着旧名（`anomalyDmgBonus` 等）：
+  // 先按 §4.4 映射转换再做白名单判定（幂等）。
+  const migrated = typeof value === 'string' ? ATTRIBUTE_ANOMALY_FIELD_RENAMES[value] ?? value : value
+  if (typeof migrated === 'string' && (BUFF_STAT_KEYS as string[]).includes(migrated)) {
+    return migrated as BuffStatKey
   }
   return 'dmgBonus'
 }
@@ -1095,11 +1103,19 @@ function normalizeElementFilter(value: unknown): BuffEffect['elementFilter'] {
 export function normalizeBuffEffect(value: unknown): BuffEffect | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const entry = value as Record<string, unknown>
+  // 旧个人效果/旧导入包可能仍写旧子类类型值（`conditions.damageTypes` / 旧 `scope`）：
+  // 在归一化（白名单）之前换成新值，转换幂等（Spec §4.4.3）。
+  const legacyMigrated = migrateAttributeAnomalyNamingDeep({
+    scope: entry.scope,
+    conditions: entry.conditions,
+  }) as { scope?: BuffScope | BuffScope[]; conditions?: BuffEffect['conditions'] }
+  const legacyScope = legacyMigrated.scope
+  const legacyConditions = legacyMigrated.conditions
   const effect = createEmptyBuffEffect({
     id: typeof entry.id === 'string' && entry.id ? entry.id : newEffectId(),
     origin: typeof entry.origin === 'string' ? entry.origin : '',
-    conditions: entry.conditions as BuffEffect['conditions'],
-    scope: entry.scope as BuffScope | BuffScope[] | undefined,
+    conditions: legacyConditions,
+    scope: legacyScope,
     groupId: typeof entry.groupId === 'string' ? entry.groupId : undefined,
     applyTarget: normalizeApplyTarget(entry.applyTarget),
     applySituation: normalizeApplySituation(entry.applySituation),
@@ -1190,8 +1206,8 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
  * 增伤类（skillDmgBonus / dmgBonus）仍须显式勾选 appliesToAnomaly。
  */
 const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
-  'anomalyMult',
-  'anomalyMultFactor',
+  'attributeAnomalyMult',
+  'attributeAnomalyMultFactor',
   'anomalyReleaseMult',
   'anomalyReleaseMultFactor',
   'disorderBaseMult',
@@ -1206,9 +1222,9 @@ const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
   'radianceMultFactor',
   'radianceDmgBonus',
   'radianceResPen',
-  'anomalyDmgBonus',
-  'anomalyCritRate',
-  'anomalyCritDmg',
+  'attributeAnomalyDmgBonus',
+  'attributeAnomalyCritRate',
+  'attributeAnomalyCritDmg',
   'anomalyDuration',
   'mutationCoeff',
   'mutationCoeffFactor',

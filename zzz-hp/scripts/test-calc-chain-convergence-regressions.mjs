@@ -34,7 +34,7 @@ async function sfcImports(url) {
 }
 
 for (const mode of ['ordinary', 'extra-team']) {
-  for (const stat of ['mastery', 'anomalyDmgBonus']) await check(`${mode}: direct does not adopt ${stat}`, () => {
+  for (const stat of ['mastery', 'attributeAnomalyDmgBonus']) await check(`${mode}: direct does not adopt ${stat}`, () => {
     const f = eventFixture({ mode, damageType: 'direct', effects: [fixed('unused', stat, 25)] })
     const d = evaluateSkillFlowHit(f.context, null, f.hits[0], true)
     assert.equal(projectEventEffectRecords(d.effectRecords)[idIn(f, 'unused')].state, 'inactive')
@@ -252,7 +252,7 @@ await check('real PanelCalcSection preview and detail share a complete snapshot 
 })
 
 for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: real detail tips follow trigger resistance and owner combat sources`, async () => {
-  const f = eventFixture({ mode, damageType: 'anomaly', effects: [fixed('foreign-respen', 'resPen', 25, { applyProfession: '支援' }), fixed('foreign-vulnerable', 'vulnerable', 25, { applyProfession: '支援' })], agents: [testAgent('owner'), testAgent('power', { profession: '支援' })] })
+  const f = eventFixture({ mode, damageType: 'attributeAnomaly', effects: [fixed('foreign-respen', 'resPen', 25, { applyProfession: '支援' }), fixed('foreign-vulnerable', 'vulnerable', 25, { applyProfession: '支援' })], agents: [testAgent('owner'), testAgent('power', { profession: '支援' })] })
   const d = evaluateSkillFlowHit(f.context, null, f.hits[0], true)
   assert.equal(d.result.resistanceMultiplier, 1)
   const url = new URL('../src/components/calculator/DamageResultDetail.vue', import.meta.url)
@@ -388,14 +388,14 @@ for (const mode of ['ordinary', 'extra-team']) await check(`${mode}: real optima
 })
 
 const pairedEventResults = new Map()
-for (const mode of ['ordinary', 'extra-team']) for (const damageType of ['direct', 'sharpen', 'anomaly', 'anomalyRelease', 'disorder', 'turbulence', 'radiance']) {
+for (const mode of ['ordinary', 'extra-team']) for (const damageType of ['direct', 'sharpen', 'attributeAnomaly', 'anomalyRelease', 'disorder', 'turbulence', 'radiance']) {
   await check(`${mode}: actual ${damageType} event matrix preserves numeric/detail/parity and adoption`, () => {
-    for (const stat of ['atk','def','hp','penRate','pen','resPen','mastery','dmgBonus','critRate','critDmg','anomalyDmgBonus','anomalyMult','anomalyCritRate','anomalyCritDmg','anomalyReleaseMult','anomalyReleaseMultFactor','disorderBaseMult','disorderCompMult','anomalyDuration','turbulenceBaseMult','turbulenceCompMult','radianceMult','mutationCoeff','directDmgMult','pierce','pierceDmgBonus','settlementDmgMult','sharpenDmgBonus','sharpenCritDmgBonus']) {
+    for (const stat of ['atk','def','hp','penRate','pen','resPen','mastery','dmgBonus','critRate','critDmg','attributeAnomalyDmgBonus','attributeAnomalyMult','attributeAnomalyCritRate','attributeAnomalyCritDmg','anomalyReleaseMult','anomalyReleaseMultFactor','disorderBaseMult','disorderCompMult','anomalyDuration','turbulenceBaseMult','turbulenceCompMult','radianceMult','mutationCoeff','directDmgMult','pierce','pierceDmgBonus','settlementDmgMult','sharpenDmgBonus','sharpenCritDmgBonus']) {
       const f = eventFixture({ mode, damageType, effects: [fixed('matrix', stat, 50)], agents: [
         testAgent('owner', { element: damageType === 'radiance' ? '流明' : damageType === 'turbulence' ? '风' : '电' }), testAgent('power'),
       ] })
       const id = idIn(f, 'matrix')
-      const hit = { ...f.hits[0], multOverrides: { directDmgMult: 100, anomalyMult: 100, anomalyReleaseMult: 100, radianceMult: 100 } }
+      const hit = { ...f.hits[0], multOverrides: { directDmgMult: 100, attributeAnomalyMult: 100, anomalyReleaseMult: 100, radianceMult: 100 } }
       const d = evaluateSkillFlowHit(f.context, null, hit, true)
       const n = evaluateSkillFlowHit(f.context, null, hit, false)
       const off = evaluateSkillFlowHit(f.context, null, { ...hit, buffOverride: { disabledEffectIds: [id] } }, true)

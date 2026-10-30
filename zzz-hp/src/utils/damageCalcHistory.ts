@@ -1,4 +1,5 @@
 import { normalizeFlowEventElements } from '@/utils/resolvedHit'
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 import { loadCustomSkills, parseCustomSkillList, replaceCustomSkills } from '@/utils/skillLibrary'
 import {
   loadCustomSkillGroups,
@@ -463,7 +464,7 @@ function readStore(): SchemeStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return createEmptyStore()
-    const parsed = JSON.parse(raw) as unknown
+    const parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(raw) as unknown)
     if (Array.isArray(parsed)) {
       const store = migrateFromLegacyArray(parsed)
       try {
@@ -986,7 +987,7 @@ function readStoredDraft(): DamageCalcWorkingDraft | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as DamageCalcWorkingDraft
+    const parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(raw) as DamageCalcWorkingDraft)
     if (!parsed || !Array.isArray(parsed.teamSlots)) return null
     return { ...parsed, slots: parsed.slots?.map(slot => ({ ...slot, flow: (slot.flow ?? []).map(normalizeFlowEventElements) })) }
   } catch {
@@ -1331,7 +1332,7 @@ export function importDamageCalcHistory(
   )
   let parsed: unknown
   try {
-    parsed = JSON.parse(json)
+    parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(json))
   } catch {
     return emptyImportResult(['JSON 解析失败，请检查文件格式'], mode)
   }

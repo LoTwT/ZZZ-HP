@@ -3039,7 +3039,7 @@ export function applyBuffModsToPanel(
       externalPanel.energyRegen +
       (baseEnergyRegen * mods.energyRegen) / 100 +
       mods.energyRegenFlat,
-    anomalyCritRate: externalPanel.anomalyCritRate + mods.anomalyCritRate,
+    attributeAnomalyCritRate: externalPanel.attributeAnomalyCritRate + mods.attributeAnomalyCritRate,
     // 子类暴击**各自独立**：每类只吃「自己的局外面板值 + 自己的增益」，彼此没有父类。
     // 2026-10-18 前这里错写成 externalPanel.anomalyCrit*（把异常暴击当父类），
     // 与下方异放（anomalyReleaseCrit*）、上方异常（anomalyCrit*）的写法不一致；
@@ -3050,8 +3050,8 @@ export function applyBuffModsToPanel(
     radianceCritDmg: externalPanel.radianceCritDmg + mods.radianceCritDmg,
     disorderCritRate: externalPanel.disorderCritRate + mods.disorderCritRate,
     disorderCritDmg: externalPanel.disorderCritDmg + mods.disorderCritDmg,
-    anomalyCritDmg: externalPanel.anomalyCritDmg + mods.anomalyCritDmg,
-    anomalyDmgBonus: externalPanel.anomalyDmgBonus + mods.anomalyDmgBonus,
+    attributeAnomalyCritDmg: externalPanel.attributeAnomalyCritDmg + mods.attributeAnomalyCritDmg,
+    attributeAnomalyDmgBonus: externalPanel.attributeAnomalyDmgBonus + mods.attributeAnomalyDmgBonus,
     anomalyReleaseCritRate:
       externalPanel.anomalyReleaseCritRate + mods.anomalyReleaseCritRate,
     anomalyReleaseCritDmg:
@@ -3062,7 +3062,7 @@ export function applyBuffModsToPanel(
     directDmgMult:
       externalPanel.directDmgMult + mods.directDmgMult + mods.skillMultiplierBonus,
     settlementDmgMult: mods.settlementDmgMult,
-    anomalyMult: externalPanel.anomalyMult + mods.anomalyMult,
+    attributeAnomalyMult: externalPanel.attributeAnomalyMult + mods.attributeAnomalyMult,
     disorderBaseMult: externalPanel.disorderBaseMult + mods.disorderBaseMult,
     anomalyDuration: externalPanel.anomalyDuration + mods.anomalyDuration,
     disorderCompMult: externalPanel.disorderCompMult + mods.disorderCompMult,
@@ -3079,9 +3079,9 @@ export function applyBuffModsToPanel(
       externalPanel.directDmgMultFactor,
       mods.directDmgMultFactor,
     ),
-    anomalyMultFactor: combineMultFactorPercent(
-      externalPanel.anomalyMultFactor,
-      mods.anomalyMultFactor,
+    attributeAnomalyMultFactor: combineMultFactorPercent(
+      externalPanel.attributeAnomalyMultFactor,
+      mods.attributeAnomalyMultFactor,
     ),
     anomalyReleaseMultFactor: combineMultFactorPercent(
       externalPanel.anomalyReleaseMultFactor,

@@ -54,7 +54,7 @@ const remielSelf = {
   resPen: 0,
   radianceResPen: 0,
   radianceDmgBonus: 0,
-  anomalyDmgBonus: 0,
+  attributeAnomalyDmgBonus: 0,
   resistanceElement: null,
   isMb: false,
 }
@@ -63,7 +63,7 @@ function run(extraPanel, subKind, extraInput = {}) {
   const panel = makePanel({
     atk: 2000,
     mastery: 100,
-    anomalyMult: 713,
+    attributeAnomalyMult: 713,
     anomalyDuration: 10,
     disorderBaseMult: 450,
     disorderCompMult: 7.5,
@@ -132,8 +132,8 @@ console.log('\n[3] 紊乱暴击区只吃紊乱字段，不蹭异常 / 乱流暴�
     {
       disorderCritRate: 100,
       disorderCritDmg: 50,
-      anomalyCritRate: 30,
-      anomalyCritDmg: 200,
+      attributeAnomalyCritRate: 30,
+      attributeAnomalyCritDmg: 200,
       turbulenceCritRate: 80,
       turbulenceCritDmg: 300,
     },
@@ -234,10 +234,10 @@ console.log('\n[5] 耀变（普通链）暴击区：0% → 1；100% / 爆伤 50 
   )
   check(
     '所有伤害类型流程口径一律期望（含属性异常/乱流/异放）',
-    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance'].every(
+    ['direct', 'sharpen', 'attributeAnomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance'].every(
       (kind) => resolveFlowHitCritMode(kind, 'expected') === 'expected',
     ),
-    ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
+    ['direct', 'sharpen', 'attributeAnomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
       .map((kind) => `${kind}=${resolveFlowHitCritMode(kind, 'expected')}`)
       .join(' '),
   )

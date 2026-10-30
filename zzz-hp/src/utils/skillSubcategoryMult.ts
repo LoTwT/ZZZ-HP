@@ -40,8 +40,8 @@ function skillMultStatForDamageType(
   switch (damageType) {
     case 'direct':
       return 'directDmgMult'
-    case 'anomaly':
-      return 'anomalyMult'
+    case 'attributeAnomaly':
+      return 'attributeAnomalyMult'
     case 'anomalyRelease':
       return 'anomalyReleaseMult'
     case 'disorder':
@@ -143,7 +143,7 @@ export function resolveInherentSkillMultPercent(options: {
   const agentKey = options.agent?.id || options.agent?.name || ''
 
   switch (options.damageType) {
-    case 'anomaly': {
+    case 'attributeAnomaly': {
       const value = defaultAnomalyMultByElement(element)
       return unsetSkillMult(value) ? null : value
     }

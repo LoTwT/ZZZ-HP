@@ -82,7 +82,7 @@ const props = defineProps<{
   defenseTriggerAgentLabel?: string
 }>()
 
-const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
+const anomalySubKind = computed(() => props.anomalySubKind ?? 'attributeAnomaly')
 const critMode = computed(() => props.critMode ?? 'expected')
 const critModeLabel = computed(() =>
   DAMAGE_EVENT_CRIT_MODE_OPTIONS.find((mode) => mode.id === critMode.value)?.label ?? '期望',
@@ -123,7 +123,7 @@ type AlignedFormulaResultKey =
   | 'generalMultiplier'
   | 'directDamageExpected'
   | 'anomalyBaseExpected'
-  | 'anomalyExpected'
+  | 'attributeAnomalyExpected'
   | 'anomalyReleaseExpected'
   | 'disorderExpected'
   | 'turbulenceExpected'
@@ -319,14 +319,14 @@ const formulaValueTips = computed(() => {
         </p>
         <p class="result-total">异常基础期望：<StatValueWithSources :value="Math.round(anomalyBaseWithMutation).toLocaleString('en-US')" :groups="valueTips.anomalyBaseExpected" /></p>
 
-        <template v-if="anomalySubKind === 'anomaly'">
-        <h4 class="result-subsection-title">异常伤害</h4>
-        <p>异常增伤区：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyDmgBonusZone)" :groups="valueTips.anomalyDmgBonusZone" /></p>
-        <p>异常倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyMultZone)" :groups="valueTips.anomalyMultZone" /></p>
-        <p>异常暴击区（暴击率=0）：1</p>
-        <p>异常暴击区（暴击率=1）：<StatValueWithSources :value="formatCalcPlain(calcParts.anomalyFullCritZone)" :groups="valueTips.anomalyCritZone" /></p>
-        <p class="result-total">异常伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.anomalyExpectedNoCrit)" :groups="valueTips.anomalyExpected" /></p>
-        <p class="result-total">异常伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.anomalyExpectedFullCrit)" :groups="valueTips.anomalyExpected" /></p>
+        <template v-if="anomalySubKind === 'attributeAnomaly'">
+        <h4 class="result-subsection-title">属性异常伤害</h4>
+        <p>属性异常增伤区：<StatValueWithSources :value="formatCalcPlain(calcParts.attributeAnomalyDmgBonusZone)" :groups="valueTips.attributeAnomalyDmgBonusZone" /></p>
+        <p>属性异常倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.attributeAnomalyMultZone)" :groups="valueTips.attributeAnomalyMultZone" /></p>
+        <p>属性异常暴击区（暴击率=0）：1</p>
+        <p>属性异常暴击区（暴击率=1）：<StatValueWithSources :value="formatCalcPlain(calcParts.attributeAnomalyFullCritZone)" :groups="valueTips.attributeAnomalyCritZone" /></p>
+        <p class="result-total">属性异常伤害（暴击率=0）：<StatValueWithSources :value="formatNumber(calcParts.attributeAnomalyExpectedNoCrit)" :groups="valueTips.attributeAnomalyExpected" /></p>
+        <p class="result-total">属性异常伤害（暴击率=1）：<StatValueWithSources :value="formatNumber(calcParts.attributeAnomalyExpectedFullCrit)" :groups="valueTips.attributeAnomalyExpected" /></p>
         </template>
 
         <template v-else-if="anomalySubKind === 'disorder'">
@@ -350,9 +350,9 @@ const formulaValueTips = computed(() => {
         <p>乱流补偿倍率：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceCompMultRatio)" :groups="valueTips.turbulenceCompMult" /></p>
         <p>乱流倍率区：<StatValueWithSources :value="formatCalcPlain(calcParts.turbulenceZone)" :groups="valueTips.turbulenceZone" /></p>
         <p>
-          乱流增伤区+异常增伤区：<StatValueWithSources
-            :value="formatCalcPlain(calcParts.turbulenceCombinedDmgBonusZone)"
-            :groups="valueTips.turbulenceCombinedDmgBonusZone"
+          乱流增伤区：<StatValueWithSources
+            :value="formatCalcPlain(calcParts.turbulenceDmgBonusZone)"
+            :groups="valueTips.turbulenceDmgBonusZone"
           />
         </p>
         <p>乱流暴击区（暴击率=0）：1</p>
@@ -364,10 +364,10 @@ const formulaValueTips = computed(() => {
         <template v-else-if="anomalySubKind === 'anomalyRelease'">
         <h4 class="result-subsection-title">异放伤害</h4>
         <p>
-          异放综合增伤区：
+          异放增伤区：
           <StatValueWithSources
-            :value="formatCalcPlain(calcParts.anomalyReleaseCombinedDmgBonusZone)"
-            :groups="valueTips.anomalyReleaseCombinedDmgBonusZone"
+            :value="formatCalcPlain(calcParts.anomalyReleaseDmgBonusZone)"
+            :groups="valueTips.anomalyReleaseDmgBonusZone"
           />
         </p>
         <p>
@@ -408,10 +408,10 @@ const formulaValueTips = computed(() => {
         <template v-else-if="anomalySubKind === 'radiance'">
         <h4 class="result-subsection-title">耀变伤害</h4>
         <p>
-          耀变综合增伤区：
+          耀变增伤区：
           <StatValueWithSources
-            :value="formatCalcPlain(calcParts.radianceCombinedDmgBonusZone)"
-            :groups="valueTips.radianceCombinedDmgBonusZone"
+            :value="formatCalcPlain(calcParts.radianceDmgBonusZone)"
+            :groups="valueTips.radianceDmgBonusZone"
           />
         </p>
         <p>

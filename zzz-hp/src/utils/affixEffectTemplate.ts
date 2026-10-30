@@ -1,3 +1,4 @@
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 import type {
   BuffSkillTargetId,
   BuffStatKey,
@@ -106,7 +107,8 @@ export function buildAffixEffectTemplate(
 
 export function parseAffixEffectTemplate(raw: unknown): AffixEffectTemplate | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const item = raw as Record<string, unknown>
+  // 旧模板的 legacyTarget / spec.stat 可能是旧名：在校验前转换（幂等）
+  const item = migrateAttributeAnomalyNamingDeep(raw) as Record<string, unknown>
   if (item.version !== AFFIX_EFFECT_TEMPLATE_VERSION) return null
   if (typeof item.legacyTarget !== 'string' || !isAffixLibraryEntryTarget(item.legacyTarget)) {
     return null

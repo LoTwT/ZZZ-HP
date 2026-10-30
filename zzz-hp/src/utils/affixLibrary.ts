@@ -10,6 +10,7 @@ import {
   BUFF_SKILL_TARGET_OPTIONS,
 } from '@/types/calculator'
 import { AFFIX_VALUE_PER_COUNT } from '@/utils/affixPanelCalc'
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 import { BUFF_STAT_FIELDS, buffStatFieldLabel } from '@/utils/calculatorUi'
 import type { ExtraBuffGain } from '@/types/extraBuff'
 import { createEmptyBuffEffect } from '@/utils/buffEffect'
@@ -90,9 +91,9 @@ export type AffixPanelDeltaField =
   | 'anomalyControl'
   | 'energyRegen'
   | 'impact'
-  | 'anomalyDmgBonus'
-  | 'anomalyCritRate'
-  | 'anomalyCritDmg'
+  | 'attributeAnomalyDmgBonus'
+  | 'attributeAnomalyCritRate'
+  | 'attributeAnomalyCritDmg'
   | 'anomalyReleaseDmgBonus'
   | 'anomalyReleaseCritRate'
   | 'anomalyReleaseCritDmg'
@@ -141,9 +142,9 @@ export const AFFIX_PANEL_DELTA_FIELD_LABELS: Record<AffixPanelDeltaField, string
   anomalyControl: '异常掌控',
   energyRegen: '能量恢复效率',
   impact: '冲击力',
-  anomalyDmgBonus: '异常增伤%',
-  anomalyCritRate: '异常暴击率%',
-  anomalyCritDmg: '异常暴击伤害%',
+  attributeAnomalyDmgBonus: '属性异常增伤%',
+  attributeAnomalyCritRate: '属性异常暴击率%',
+  attributeAnomalyCritDmg: '属性异常暴击伤害%',
   anomalyReleaseDmgBonus: '异放增伤%',
   anomalyReleaseCritRate: '异放暴击率%',
   anomalyReleaseCritDmg: '异放暴击伤害%',
@@ -160,9 +161,9 @@ export const AFFIX_PANEL_DELTA_FIELD_LABELS: Record<AffixPanelDeltaField, string
  */
 export const AFFIX_PANEL_FIELDS_HIDDEN_FROM_PICKER = [
   'resPen',
-  'anomalyDmgBonus',
-  'anomalyCritRate',
-  'anomalyCritDmg',
+  'attributeAnomalyDmgBonus',
+  'attributeAnomalyCritRate',
+  'attributeAnomalyCritDmg',
   'anomalyReleaseDmgBonus',
   'anomalyReleaseCritRate',
   'anomalyReleaseCritDmg',
@@ -321,7 +322,7 @@ const AFFIX_APPLY_SITUATIONS: ReadonlySet<string> = new Set(['global', 'stagger'
 const AFFIX_BUFF_SCOPES: ReadonlySet<string> = new Set([
   'general',
   'skill',
-  'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',
@@ -734,7 +735,7 @@ export const skippedServerPresetEntries = ref(0)
 
 /**
  * 表单保存作用域（**防数据丢失**）：
- * - 用户没改过 scope → 原样回写整个数组（`['anomaly','anomalyRelease']` 仍是多值）；
+ * - 用户没改过 scope → 原样回写整个数组（`['attributeAnomaly','anomalyRelease']` 仍是多值）；
  * - 用户显式改成某个值 → 写成 `[该值]`。
  */
 export function resolveAffixScopeForSave(
@@ -1528,7 +1529,9 @@ export function loadAffixLibraryStore(): AffixLibraryStore {
   try {
     const raw = localStorage.getItem(AFFIX_LIBRARY_STORAGE_KEY)
     if (!raw) return createDefaultAffixLibraryStore()
-    const parsed = coerceAffixLibraryStore(JSON.parse(raw)) ?? createDefaultAffixLibraryStore()
+    const parsed =
+      coerceAffixLibraryStore(migrateAttributeAnomalyNamingDeep(JSON.parse(raw))) ??
+      createDefaultAffixLibraryStore()
     const synced = stripRetiredHiddenPanelAffixFromDefaultCopy(parsed)
     if (synced !== parsed) writeAffixLibraryStore(synced)
     return synced
@@ -2263,7 +2266,7 @@ export function importAffixLibrarySet(
 ): AffixLibraryImportResult {
   let parsed: unknown
   try {
-    parsed = JSON.parse(json)
+    parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(json))
   } catch {
     return { store, name: '', error: 'JSON 解析失败，请检查文件格式' }
   }

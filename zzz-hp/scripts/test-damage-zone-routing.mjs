@@ -78,9 +78,9 @@ const trigger = makePanel({
   reduceDefense: 40,
   ignoreDefense: 10,
   mastery: 0,
-  anomalyDmgBonus: 25,
-  anomalyCritRate: 10,
-  anomalyCritDmg: 20,
+  attributeAnomalyDmgBonus: 25,
+  attributeAnomalyCritRate: 10,
+  attributeAnomalyCritDmg: 20,
 })
 const panels = { owner, powerProvider: power, anomalyTrigger: trigger }
 const enemy = {
@@ -131,7 +131,7 @@ console.log('\n[2] 防御混拼与抗穿回落（跟旧引擎，不是理想表�
 
 console.log('\n[3] computeDamageResult 三人面板数字与阶段 1 锁一致')
 {
-  const anomalyKinds = ['anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
+  const anomalyKinds = ['attributeAnomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
   for (const kind of anomalyKinds) {
     const r = computeDamageResult({
       finalPanel: owner,
@@ -165,7 +165,7 @@ console.log('\n[4] 未传 anomalyTriggerPanel 时抗穿回落强度提供者')
     ...combat,
     staggerPhase: 'stagger',
     ownerAgentLevel: 60,
-    anomalySubKind: 'anomaly',
+    anomalySubKind: 'attributeAnomaly',
     triggerFinalPanel: power,
     triggerAgentElement: '电',
     triggerAgentLevel: 60,
@@ -180,7 +180,7 @@ console.log('\n[4] 未传 anomalyTriggerPanel 时抗穿回落强度提供者')
     ...combat,
     staggerPhase: 'stagger',
     ownerAgentLevel: 60,
-    anomalySubKind: 'anomaly',
+    anomalySubKind: 'attributeAnomaly',
     triggerFinalPanel: power,
     triggerAgentElement: '电',
     triggerAgentLevel: 60,

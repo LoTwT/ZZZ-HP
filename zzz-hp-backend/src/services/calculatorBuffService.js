@@ -22,7 +22,7 @@ const WENGINE_TABLE = '`W-Engine`'
 const BUFF_SCOPE_VALUES = new Set([
   'general',
   'skill',
-  'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',
@@ -34,7 +34,7 @@ const BUFF_SCOPE_VALUES = new Set([
 const BUFF_SCOPE_ORDER = [
   'general',
   'skill',
-  'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',

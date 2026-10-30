@@ -126,7 +126,7 @@ const agentBase = {
   energyRegen: 120,
   mastery: 0,
   directDmgMult: 100,
-  anomalyMult: 0,
+  attributeAnomalyMult: 0,
 }
 const wengineAdvanced = {
   ...createEmptyWengineAdvancedStats(),
@@ -181,7 +181,7 @@ const ctx = buildOptimalEvalContext({
 
 const baseCounts = { ...createEmptyAffixCounts(), atkPercent: 4, critRate: 3, critDmg: 5 }
 
-const legacy = computeDiffAnalysis(ctx, baseCounts, 'direct', 'anomaly', null)
+const legacy = computeDiffAnalysis(ctx, baseCounts, 'direct', 'attributeAnomaly', null)
 const legacyByLabel = new Map(legacy.addOne.map((row) => [row.label, row]))
 
 const table = computeAffixBenefitTable({

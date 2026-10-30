@@ -13,7 +13,7 @@ const DAMAGE_TYPE_COLORS: Record<BuffDamageType, string> = {
   normal: '#c9a55c',
   pierce: '#70a9b5',
   sharpen: '#c277a1',
-  anomaly: '#4caf8a',
+  attributeAnomaly: '#4caf8a',
   turbulence: '#e08a3c',
   disorder: '#9b7ed9',
   radiance: '#d46a6a',
@@ -211,7 +211,11 @@ export function skillFlowDamageSlices(
         ? line.damageType
         : dimension === 'stagger'
           ? line.hit.staggerPhase
-          : line.hit.damageKind
+          : // 大类维度：分组 id 用 `BUFF_DAMAGE_TYPE_GROUPS` 的 id（异常类 = `anomalyClass`），
+            // 但不能拿它当 `damageKind` 比对 —— 类的语义值仍是 `anomaly`
+            line.hit.damageKind === 'direct'
+            ? 'direct'
+            : 'anomalyClass'
     totals.set(key, (totals.get(key) ?? 0) + line.total)
     total += line.total
   }

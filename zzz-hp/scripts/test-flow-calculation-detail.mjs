@@ -22,7 +22,7 @@ const agents = [testAgent('a'), testAgent('b', { element: '风', profession: '�
 const teamSlots = agents.map((agent) => testSlot(agent.id))
 const panel = makePanel({
   atk: 2317, def: 1300, critRate: 37, critDmg: 123, dmgBonus: 40, mastery: 280,
-  anomalyCritRate: 35, anomalyCritDmg: 80,
+  attributeAnomalyCritRate: 35, attributeAnomalyCritDmg: 80,
   disorderCritRate: 35, disorderCritDmg: 80,
   turbulenceCritRate: 35, turbulenceCritDmg: 80,
   anomalyReleaseCritRate: 35, anomalyReleaseCritDmg: 80,
@@ -31,7 +31,7 @@ const panel = makePanel({
   sharpenCritDmgBonus: 60, sharpenDmgBonus: 22,
 })
 const activeSlotPanels = { a: panel, b: makePanel({ ...panel, atk: 3781, def: 1700 }), remiel: makePanel({ ...panel, atk: 3163 }) }
-const types = ['direct', 'sharpen', 'anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
+const types = ['direct', 'sharpen', 'attributeAnomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
 const skills = Object.fromEntries(types.map((damageType) => [damageType, {
   id: damageType, name: '同名招式', agentId: '', source: 'custom', damageType,
   skillTypes: damageType === 'direct' || damageType === 'sharpen' ? ['basic'] : [],

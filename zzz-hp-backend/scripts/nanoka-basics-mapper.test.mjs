@@ -111,9 +111,9 @@ test('ADV_MAP / ELEMENT_CONSTANTS 键位与工具一致', () => {
   assert.equal(ADV_MAP['异常掌控'], 'anomalyControlPercent')
   assert.equal(ADV_MAP['能量自动回复'], 'energyRegen')
   assert.equal(ADV_MAP['冲击力'], null)
-  assert.equal(ELEMENT_CONSTANTS['火'].anomalyMult, 50)
+  assert.equal(ELEMENT_CONSTANTS['火'].attributeAnomalyMult, 50)
   assert.equal(ELEMENT_CONSTANTS['风'].anomalyDuration, 30)
-  assert.equal(ELEMENT_CONSTANTS['流明'].anomalyMult, 0)
+  assert.equal(ELEMENT_CONSTANTS['流明'].attributeAnomalyMult, 0)
 })
 
 // ---------------------------------------------------------------- 索引比对（不依赖夹具）
@@ -237,7 +237,7 @@ test('角色面板：逐元素常量按 element 查表，未收录元素标注�
   const detail = readFixture('char', '1011')
   const entry = mapAgentDetail({ detail, nanokaId: '1011', indexMeta: readCharIndex()['1011'] })
   assert.equal(entry.element, '电')
-  assert.equal(entry.basePanel.anomalyMult, ELEMENT_CONSTANTS['电'].anomalyMult)
+  assert.equal(entry.basePanel.attributeAnomalyMult, ELEMENT_CONSTANTS['电'].attributeAnomalyMult)
   assert.equal(entry.basePanel.turbulenceCompMult, ELEMENT_CONSTANTS['电'].turbulenceCompMult)
   assert.equal(entry.basePanel.mutationCoeff, 0)
   assert.match(entry.constantsSource, /按元素 电 查表/)

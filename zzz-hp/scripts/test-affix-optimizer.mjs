@@ -106,7 +106,7 @@ function makeCtx(overrides = {}) {
         basePanel: {
           ...createEmptyAgentBasePanel(),
           hp: 9000, atk: 900, def: 700, critRate: 5, critDmg: 50,
-          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
         },
       },
     ],
@@ -1109,7 +1109,7 @@ console.log('\n[12] 交叉项补测（暴击为 0 时爆伤增益为 0）')
         basePanel: {
           ...createEmptyAgentBasePanel(),
           hp: 9000, atk: 900, def: 700, critRate: 0, critDmg: 50,
-          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
         },
       },
     ],
@@ -1256,7 +1256,7 @@ console.log('\n[14] 换音擎（基础值相同、加成不同）不得吃到旧
       basePanel: {
         ...createEmptyAgentBasePanel(),
         hp: 9000, atk: 900, def: 700, critRate: 5, critDmg: 50,
-        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
       },
     }],
     wengines: [wA, wB],
@@ -1313,7 +1313,7 @@ console.log('\n[15] 角色基础面板变化不得吃到旧缓存')
       basePanel: {
         ...createEmptyAgentBasePanel(),
         hp: 9000, atk: baseAtk, def: 700, critRate: 5, critDmg: 50,
-        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
       },
     }],
     wengines: [],
@@ -1366,7 +1366,7 @@ console.log('\n[16] 跨轮缓存（不随主 C 面板变化的招式）')
   const twoAgentBasePanel = (atk) => ({
     ...createEmptyAgentBasePanel(),
     hp: 9000, atk, def: 700, critRate: 5, critDmg: 50,
-    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
   })
   const makeTwoAgentCtx = (hits) => makeCtx({
     teamSlots: [
@@ -1461,7 +1461,7 @@ console.log('\n[17] 队友数据变化必须让缓存失效（上下文签名覆
   const basePanel = (atk) => ({
     ...createEmptyAgentBasePanel(),
     hp: 9000, atk, def: 700, critRate: 5, critDmg: 50,
-    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
   })
 
   const buildCtx = (allyWengineId) =>
@@ -1531,7 +1531,7 @@ console.log('\n[18] 就地修改同一个 teamSlots 数组（真实 UI 形态）
   const basePanel = (atk) => ({
     ...createEmptyAgentBasePanel(),
     hp: 9000, atk, def: 700, critRate: 5, critDmg: 50,
-    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+    anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
   })
   /** 只带「4 件套：全队攻击 +N」的驱动盘文档 */
   const driveDiscDoc = (id, teamAtkFlat) => ({
@@ -2368,7 +2368,7 @@ console.log('\n[锐爆诊断] 小规模穷举，只有真漏解才留回归')
           ...createEmptyAgentBasePanel(),
           hp: 9000, atk: 900, def: 1500, critRate, critDmg: 50,
           sharpenCritDmgBonus: 150,
-          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+          anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
         },
       }],
       activeSlotPanels: {

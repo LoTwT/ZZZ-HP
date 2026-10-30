@@ -2852,9 +2852,9 @@ const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
 /** 局内面板比局外多出的字段（与顶部「局内面板」一致）：锋御专属锐爆 + 异常系 5 项 */
 const FINAL_EXTRA_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
-  { key: 'anomalyCritRate', label: '异常暴击%' },
-  { key: 'anomalyCritDmg', label: '异常爆伤%' },
-  { key: 'anomalyDmgBonus', label: '异常增伤%' },
+  { key: 'attributeAnomalyCritRate', label: '属性异常暴击%' },
+  { key: 'attributeAnomalyCritDmg', label: '属性异常爆伤%' },
+  { key: 'attributeAnomalyDmgBonus', label: '属性异常增伤%' },
   { key: 'disorderDmgBonus', label: '紊乱增伤%' },
   { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
 ]

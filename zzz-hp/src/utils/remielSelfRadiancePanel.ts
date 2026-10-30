@@ -140,7 +140,7 @@ export function extractRemielSelfInCombatStats(
   resPen: number
   radianceResPen: number
   radianceDmgBonus: number
-  anomalyDmgBonus: number
+  attributeAnomalyDmgBonus: number
 } {
   const panel = breakdown.finalPanel
   const restricted = computeRemielSelfRestrictedAtkAndMastery(
@@ -157,7 +157,7 @@ export function extractRemielSelfInCombatStats(
     resPen: panel.resPen,
     radianceResPen: panel.radianceResPen,
     radianceDmgBonus: panel.radianceDmgBonus,
-    anomalyDmgBonus: panel.anomalyDmgBonus,
+    attributeAnomalyDmgBonus: panel.attributeAnomalyDmgBonus,
   }
 }
 
@@ -241,7 +241,7 @@ export function resolveRemielSelfRadianceCalcInput(options: {
     resPen: fullPanelResPen,
     radianceResPen: stats.radianceResPen,
     radianceDmgBonus: stats.radianceDmgBonus,
-    anomalyDmgBonus: stats.anomalyDmgBonus,
+    attributeAnomalyDmgBonus: stats.attributeAnomalyDmgBonus,
     resistanceElement: resolveLuminousEquivalentElement(
       options.teamSlots,
       options.agents,

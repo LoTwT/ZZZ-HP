@@ -103,7 +103,7 @@ console.log('=== 4. multOverrides 按 kind 取对应字段作基础倍率 ===')
 {
   const { skills } = run([
     mode([
-      event({ id: 'e4a', kind: 'direct', multOverrides: { directDmgMult: 320, anomalyMult: 999 } }),
+      event({ id: 'e4a', kind: 'direct', multOverrides: { directDmgMult: 320, attributeAnomalyMult: 999 } }),
       event({
         id: 'e4b',
         kind: 'disorder',
