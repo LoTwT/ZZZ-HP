@@ -150,7 +150,6 @@ function conditionPatch(row: {
   scope?: string
   skillCategory?: string
   skillSubcategoryId?: string | null
-  appliesToAnomaly?: boolean
 }) {
   if (!isGainTargetText(row.target)) return {}
   const scope = (row.scope as BuffScope | undefined) || 'general'
@@ -163,7 +162,6 @@ function conditionPatch(row: {
           skillSubcategoryId: row.skillSubcategoryId ?? null,
         }
       : {}),
-    ...(typeof row.appliesToAnomaly === 'boolean' ? { appliesToAnomaly: row.appliesToAnomaly } : {}),
   }
 }
 
@@ -222,7 +220,6 @@ function entrySignature(row: AffixPresetEntryDoc): string {
     row.scope ?? '',
     row.skillCategory ?? '',
     row.skillSubcategoryId ?? '',
-    row.appliesToAnomaly === true ? 1 : 0,
   ])
 }
 
@@ -997,7 +994,6 @@ function createDraft() {
     scope: 'general' as BuffScope,
     skillCategory: 'basic' as BuffSkillTargetId,
     skillSubcategoryId: null as string | null,
-    appliesToAnomaly: false,
   }
 }
 
@@ -1139,7 +1135,6 @@ function effectRuleHint(
     scope?: string
     skillCategory?: string
     skillSubcategoryId?: string | null
-    appliesToAnomaly?: boolean
   },
 ) {
   if (!isAffixLibraryEntryTarget(target)) return ''

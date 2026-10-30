@@ -1,3 +1,4 @@
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 import type {
   BuffSkillTargetId,
   BuffStatKey,
@@ -26,7 +27,7 @@ export const AFFIX_EFFECT_TEMPLATE_VERSION = 1 as const
 
 type AffixConditionFields = Pick<
   AffixLibraryEntry,
-  'applySituation' | 'scope' | 'skillCategory' | 'skillSubcategoryId' | 'appliesToAnomaly'
+  'applySituation' | 'scope' | 'skillCategory' | 'skillSubcategoryId'
 >
 
 export type AffixEffectTemplate =
@@ -49,7 +50,6 @@ function conditionsFromEntry(entry: AffixConditionFields): EffectSpec['condition
     skillTargets: entry.skillCategory
       ? [{ category: entry.skillCategory, subcategoryId: entry.skillSubcategoryId ?? null }]
       : undefined,
-    appliesToAnomaly: entry.appliesToAnomaly,
   }
 }
 
@@ -61,9 +61,6 @@ function conditionsToEntry(spec: EffectSpec): AffixConditionFields {
     ...(skill?.category ? { skillCategory: skill.category as BuffSkillTargetId } : {}),
     ...(skill && skill.subcategoryId !== undefined
       ? { skillSubcategoryId: skill.subcategoryId }
-      : {}),
-    ...(typeof spec.conditions.appliesToAnomaly === 'boolean'
-      ? { appliesToAnomaly: spec.conditions.appliesToAnomaly }
       : {}),
   }
 }
@@ -106,7 +103,8 @@ export function buildAffixEffectTemplate(
 
 export function parseAffixEffectTemplate(raw: unknown): AffixEffectTemplate | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const item = raw as Record<string, unknown>
+  // 旧模板的 legacyTarget / spec.stat 可能是旧名：在校验前转换（幂等）
+  const item = migrateAttributeAnomalyNamingDeep(raw) as Record<string, unknown>
   if (item.version !== AFFIX_EFFECT_TEMPLATE_VERSION) return null
   if (typeof item.legacyTarget !== 'string' || !isAffixLibraryEntryTarget(item.legacyTarget)) {
     return null
@@ -169,7 +167,6 @@ export function mergeAffixEntryFromTemplate(
       entry.skillSubcategoryId !== undefined
         ? entry.skillSubcategoryId
         : fromSpec.skillSubcategoryId,
-    appliesToAnomaly: entry.appliesToAnomaly ?? fromSpec.appliesToAnomaly,
   }
 }
 

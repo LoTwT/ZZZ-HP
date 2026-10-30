@@ -44,7 +44,7 @@ for (const mode of ['ordinary', 'extra-slot']) for (const damageType of ['direct
     check(`R5 ${mode} ${damageType} ${hit.id} independent detail`, value(resolveSkillFlowCalculationDetail(fixture.context, null, hit)?.evaluation), expected)
   }
 }
-for (const damageType of ['direct', 'sharpen', 'anomaly', 'anomalyRelease', 'disorder', 'turbulence', 'radiance']) {
+for (const damageType of ['direct', 'sharpen', 'attributeAnomaly', 'anomalyRelease', 'disorder', 'turbulence', 'radiance']) {
   const hit = { skill: { damageType, element: '物理' }, ownerAgentId: 'owner', anomalyPowerAgentId: 'power', elementOverride: null }
   const agents = [testAgent('owner', { element: '冰' }), testAgent('power', { element: '电' })]
   const expected = ['direct', 'sharpen'].includes(damageType) ? '冰' : '电'
@@ -263,7 +263,7 @@ for (const mode of ['ordinary', 'extra-slot']) for (const disabledBy of ['parent
   const { resolveInherentSkillMultPercent, unsetSkillMult, skillMultNeedsAnomalyPowerProvider } = await import('../src/utils/skillSubcategoryMult.ts')
   const { resolveEffectiveBaseMult } = await import('../src/utils/skillTalentLevels.ts')
   const { ref } = await import('vue')
-  for (const [damageType, element, expected] of [['anomaly', '火', '50'], ['anomaly', '电', '125'], ['turbulence', '火', '900'], ['turbulence', '冰', '1300']]) {
+  for (const [damageType, element, expected] of [['attributeAnomaly', '火', '50'], ['attributeAnomaly', '电', '125'], ['turbulence', '火', '900'], ['turbulence', '冰', '1300']]) {
     const f = eventFixture({ damageType, effects: [], agents: [testAgent('owner', { element: '风' }), testAgent('power')], panels: { owner: makePanel(), power: makePanel() } })
     f.hits[0].elementOverride = element
     const ui = bindVueFunctions(new URL('../src/components/calculator/SkillFlowSection.vue', import.meta.url), ['skillMultText', 'libraryEffectiveBaseMult'], {

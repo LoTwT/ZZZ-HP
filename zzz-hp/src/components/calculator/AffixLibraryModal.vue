@@ -666,7 +666,6 @@ type EntryFormDraft = {
   /** 用户是否显式改过 scope（没改 → 保存时原样保留整个数组，避免压扁多值） */
   scopeTouched: boolean
   skillCategory: BuffSkillTargetId
-  appliesToAnomaly: boolean
 }
 
 function emptyDraft(): EntryFormDraft {
@@ -680,7 +679,6 @@ function emptyDraft(): EntryFormDraft {
     scope: 'general',
     scopeTouched: false,
     skillCategory: 'basic',
-    appliesToAnomaly: false,
   }
 }
 
@@ -706,7 +704,6 @@ function conditionFieldsFromForm(row: EntryFormDraft): Partial<AffixLibraryEntry
       scope: undefined,
       skillCategory: undefined,
       skillSubcategoryId: undefined,
-      appliesToAnomaly: undefined,
     }
   }
   return {
@@ -722,12 +719,10 @@ function conditionFieldsFromForm(row: EntryFormDraft): Partial<AffixLibraryEntry
       ? {
           skillCategory: row.skillCategory,
           skillSubcategoryId: null,
-          appliesToAnomaly: row.appliesToAnomaly,
         }
       : {
           skillCategory: undefined,
           skillSubcategoryId: undefined,
-          appliesToAnomaly: undefined,
         }),
   }
 }
@@ -762,7 +757,6 @@ async function toggleEdit(entry: AffixLibraryEntry) {
     scope: normalizeBuffScopes(entry.scope)[0] ?? 'general',
     scopeTouched: false,
     skillCategory: entry.skillCategory || 'basic',
-    appliesToAnomaly: entry.appliesToAnomaly === true,
   }
   await nextTick()
   document.querySelector('.affix-library-modal .add-entry')?.scrollIntoView({ block: 'nearest' })

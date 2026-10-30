@@ -86,7 +86,7 @@ function makeCtx(overrides = {}) {
           anomalyControl: 100,
           energyRegen: 120,
           directDmgMult: 100,
-          anomalyMult: 125,
+          attributeAnomalyMult: 125,
         },
       },
     ],
@@ -293,7 +293,7 @@ console.log('\n[5] 真实验证：词条增益进转模链路（音擎「血髓�
       anomalyControl: 100,
       energyRegen: 120,
       directDmgMult: 100,
-      anomalyMult: 125,
+      attributeAnomalyMult: 125,
     },
   }
   const fyCtx = makeCtx({

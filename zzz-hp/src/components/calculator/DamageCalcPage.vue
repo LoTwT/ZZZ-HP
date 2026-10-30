@@ -280,7 +280,7 @@ const previewHits = computed(() =>
 const firstHit = computed(() => hits.value[0] ?? null)
 
 const anomalySubKind = computed<AnomalyDamageSubKind>(
-  () => firstHit.value?.anomalySubKind ?? 'anomaly',
+  () => firstHit.value?.anomalySubKind ?? 'attributeAnomaly',
 )
 /** 页级回落：第一击的异常强度提供者（非触发者）；逐 hit 请用 hit 字段 */
 const triggerAnomalyAgentId = computed(() => firstHit.value?.anomalyPowerAgentId ?? null)

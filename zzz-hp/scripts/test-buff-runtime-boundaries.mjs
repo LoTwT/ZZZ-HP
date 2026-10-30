@@ -324,13 +324,13 @@ cases.set('K22', async () => {
   }
 
   for(const mode of ['ordinary','extra-team']) {
-    const f=eventFixture({mode,damageType:'anomaly',effects:[fixed('electric','dmgBonus',25,{elementFilter:['电']}),fixed('ice','dmgBonus',40,{elementFilter:['冰']})],
+    const f=eventFixture({mode,damageType:'attributeAnomaly',effects:[fixed('electric','dmgBonus',25,{elementFilter:['电']}),fixed('ice','dmgBonus',40,{elementFilter:['冰']})],
       agents:[testAgent('owner',{element:'火'}),testAgent('power',{element:'电'}),testAgent('trigger',{element:'冰'})],
       prepared:[{id:'prepared',skillId:'event-skill',skillSource:'custom',anomalyPowerAgentId:'power',triggerAgentId:'trigger'}],
     })
     const runtime=runtimeFor(f)
-    for(const [damageType,element,expected] of [['direct',null,0],['direct','电',25],['anomaly',null,25],['anomaly','火',0],['anomaly',null,25]]){
-      const hit={...f.hits[0],skill:{...f.hits[0].skill,damageType},damageKind:damageType==='direct'?'direct':'anomaly',elementOverride:element,multOverrides:{directDmgMult:100,anomalyMult:100}}
+    for(const [damageType,element,expected] of [['direct',null,0],['direct','电',25],['attributeAnomaly',null,25],['attributeAnomaly','火',0],['attributeAnomaly',null,25]]){
+      const hit={...f.hits[0],skill:{...f.hits[0].skill,damageType},damageKind:damageType==='direct'?'direct':'anomaly',elementOverride:element,multOverrides:{directDmgMult:100,attributeAnomalyMult:100}}
       const d=runtime.getHitDetail(hit), preview=runtime.getHitBuffPreview(0,hit),tips=buildEventValueTips(d)
       const key=collectAllBuffEffects(f.context.panelContext).find(i=>i.effect.id.endsWith('electric')).effect.id
       equal(preview.effectAmounts[key],expected)
@@ -351,8 +351,8 @@ cases.set('K22', async () => {
       equal(detail.evaluation.viewSnapshots[dependency.viewKey].panel.atk,2500,'indirect source snapshot retains its own panel')
       equal(tips.baseDamage.find(group=>group.label==='合计').items[0],'局内攻击力 1,000',mode+' indirect conversion source cannot replace actual base input')
     }
-    for(const damageType of ['anomaly','anomalyRelease','disorder','turbulence','radiance']){
-      const stat=damageType+'DmgBonus',key=damageType==='radiance'?'radianceCombinedDmgBonusZone':damageType==='anomalyRelease'?'anomalyReleaseCombinedDmgBonusZone':damageType+'DmgBonusZone'
+    for(const damageType of ['attributeAnomaly','anomalyRelease','disorder','turbulence','radiance']){
+      const stat=damageType+'DmgBonus',key=damageType==='radiance'?'radianceDmgBonusZone':damageType==='anomalyRelease'?'anomalyReleaseDmgBonusZone':damageType+'DmgBonusZone'
       const f=eventFixture({mode,damageType,effects:[fixed('aliased-bonus',stat,25)],
         agents:[testAgent('owner',{element:damageType==='radiance'?'流明':damageType==='turbulence'?'风':'火'}),testAgent('power',{element:'电'})]})
       const hit={...f.hits[0],elementOverride:damageType==='radiance'?'流明':damageType==='turbulence'?'风':null}
@@ -360,10 +360,10 @@ cases.set('K22', async () => {
       equal(detail.evaluation.result[key],1.25,mode+' '+damageType+' actual typed bonus')
       ok(JSON.stringify(tips[key]).includes('25%'),mode+' '+damageType+' typed bonus source must retain aliased owner/trigger view: '+JSON.stringify(tips[key]))
     }
-    for(const damageType of ['direct','sharpen','anomaly','anomalyRelease','disorder','turbulence','radiance']){
+    for(const damageType of ['direct','sharpen','attributeAnomaly','anomalyRelease','disorder','turbulence','radiance']){
       const fixture=eventFixture({mode,damageType,effects:[fixed('actual','dmgBonus',25),fixed('unused','energyRegen',50)],
         agents:[testAgent('owner',{element:damageType==='radiance'?'流明':damageType==='turbulence'?'风':'火'}),testAgent('power',{element:'电'})]})
-      const r=runtimeFor(fixture),hit={...fixture.hits[0],multOverrides:{directDmgMult:100,anomalyMult:100,anomalyReleaseMult:100,radianceMult:100}}
+      const r=runtimeFor(fixture),hit={...fixture.hits[0],multOverrides:{directDmgMult:100,attributeAnomalyMult:100,anomalyReleaseMult:100,radianceMult:100}}
       const d=r.getHitDetail(hit)
       ok(d,damageType+' must be calculable')
       const tips=buildEventValueTips(d), zones=buildEventZoneDisplay(d)

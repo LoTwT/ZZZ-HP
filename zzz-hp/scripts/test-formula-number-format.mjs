@@ -47,7 +47,7 @@ function run(panelExtra, subKind) {
     critDmg: 174,
     dmgBonus: 103,
     mastery: 280,
-    anomalyMult: 713,
+    attributeAnomalyMult: 713,
     anomalyDuration: 10,
     radianceMult: 360,
     radianceCritRate: 35,

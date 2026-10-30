@@ -194,8 +194,8 @@ export type AffixExternalFixedParts = {
   energyRegen: number
   /** 6 号位「冲击力 18%」按点数落进来（见 affixDriveDiscConfig 的口径说明） */
   impact: number
-  anomalyCritRate: number
-  anomalyCritDmg: number
+  attributeAnomalyCritRate: number
+  attributeAnomalyCritDmg: number
   /** 子类专用暴击（可选：agentBase 不提供时按 0，由预设/驱动盘等来源单独补） */
   turbulenceCritRate?: number
   turbulenceCritDmg?: number
@@ -203,9 +203,9 @@ export type AffixExternalFixedParts = {
   radianceCritDmg?: number
   disorderCritRate?: number
   disorderCritDmg?: number
-  anomalyDmgBonus: number
+  attributeAnomalyDmgBonus: number
   directDmgMult: number
-  anomalyMult: number
+  attributeAnomalyMult: number
   disorderBaseMult: number
   anomalyDuration: number
   disorderCompMult: number
@@ -257,7 +257,7 @@ export function buildAffixExternalFixedParts(
       twoPieceMods.energyRegenFlat,
     // 冲击力：没有「基础冲击力」这份数据，按点数加（与异常掌控 / 能量恢复同口径）
     impact: mainStats.impact,
-    anomalyCritRate: agentBase.anomalyCritRate,
+    attributeAnomalyCritRate: agentBase.attributeAnomalyCritRate,
     // 子类专用暴击：agentBase 里没有 → 0（由预设/驱动盘等来源单独补）
     turbulenceCritRate: 0,
     turbulenceCritDmg: 0,
@@ -265,10 +265,10 @@ export function buildAffixExternalFixedParts(
     radianceCritDmg: 0,
     disorderCritRate: 0,
     disorderCritDmg: 0,
-    anomalyCritDmg: agentBase.anomalyCritDmg,
-    anomalyDmgBonus: agentBase.anomalyDmgBonus,
+    attributeAnomalyCritDmg: agentBase.attributeAnomalyCritDmg,
+    attributeAnomalyDmgBonus: agentBase.attributeAnomalyDmgBonus,
     directDmgMult: agentBase.directDmgMult,
-    anomalyMult: agentBase.anomalyMult,
+    attributeAnomalyMult: agentBase.attributeAnomalyMult,
     disorderBaseMult: agentBase.disorderBaseMult,
     anomalyDuration: agentBase.anomalyDuration,
     disorderCompMult: agentBase.disorderCompMult,
@@ -345,22 +345,22 @@ export function applyAffixCountsToFixedParts(
      * 与「没填的一律按 0」一致。
      */
     impact: roundPanelValue(parts.impact),
-    anomalyCritRate: roundPanelValue(parts.anomalyCritRate),
+    attributeAnomalyCritRate: roundPanelValue(parts.attributeAnomalyCritRate),
     turbulenceCritRate: roundPanelValue(parts.turbulenceCritRate ?? 0),
     turbulenceCritDmg: roundPanelValue(parts.turbulenceCritDmg ?? 0),
     radianceCritRate: roundPanelValue(parts.radianceCritRate ?? 0),
     radianceCritDmg: roundPanelValue(parts.radianceCritDmg ?? 0),
     disorderCritRate: roundPanelValue(parts.disorderCritRate ?? 0),
     disorderCritDmg: roundPanelValue(parts.disorderCritDmg ?? 0),
-    anomalyCritDmg: roundPanelValue(parts.anomalyCritDmg),
-    anomalyDmgBonus: roundPanelValue(parts.anomalyDmgBonus),
+    attributeAnomalyCritDmg: roundPanelValue(parts.attributeAnomalyCritDmg),
+    attributeAnomalyDmgBonus: roundPanelValue(parts.attributeAnomalyDmgBonus),
     anomalyReleaseCritRate: 0,
     anomalyReleaseCritDmg: 0,
     anomalyReleaseMult: 0,
     anomalyReleaseDmgBonus: 0,
     directDmgMult: roundPanelValue(parts.directDmgMult),
     settlementDmgMult: 0,
-    anomalyMult: roundPanelValue(parts.anomalyMult),
+    attributeAnomalyMult: roundPanelValue(parts.attributeAnomalyMult),
     disorderBaseMult: roundPanelValue(parts.disorderBaseMult),
     anomalyDuration: roundPanelValue(parts.anomalyDuration),
     disorderCompMult: roundPanelValue(parts.disorderCompMult),
@@ -374,7 +374,7 @@ export function applyAffixCountsToFixedParts(
     specialMult: roundPanelValue(parts.specialMult),
     mutationCoeff: 0,
     directDmgMultFactor: 100,
-    anomalyMultFactor: 100,
+    attributeAnomalyMultFactor: 100,
     anomalyReleaseMultFactor: 100,
     disorderBaseMultFactor: 100,
     turbulenceBaseMultFactor: 100,

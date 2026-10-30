@@ -60,12 +60,12 @@ function k1Fixture(mode) {
   })
   const fixture = eventFixture({
     mode,
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     effects: [effect],
     agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
   })
   const hit = fixture.hits[0]
-  hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
+  hit.multOverrides = { ...hit.multOverrides, attributeAnomalyMult: 100 }
   const effectId = fixture.items.find((item) => item.effect.id.endsWith('support-bonus')).effect.id
   return { fixture, hit, effectId }
 }
@@ -120,7 +120,7 @@ for (const mode of ['ordinary', 'extra-team']) {
   })
   const fixture = eventFixture({
     mode,
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     effects: [effect],
     agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '支援' })],
   })
@@ -202,7 +202,7 @@ console.log('== K2a 采用筛选（两个面板都 applied，只有一边被事�
     convert: { from: 'atk', panelSource: 'external', ratioPercent: 1, initialBase: 0, cap: null },
   })
   const fixture = eventFixture({
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     effects: [],
     agents: [testAgent('owner', { profession: '强攻' }), testAgent('power', { profession: '强攻' })],
   })
@@ -216,7 +216,7 @@ console.log('== K2a 采用筛选（两个面板都 applied，只有一边被事�
     },
   ]
   const hit = fixture.hits[0]
-  hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
+  hit.multOverrides = { ...hit.multOverrides, attributeAnomalyMult: 100 }
   const effectId = collectAllBuffEffects(fixture.context.panelContext)[0].effect.id
   fixture.context.panelContext.buffSelection = {
     enabledIds: { [effectId]: true },
@@ -646,7 +646,7 @@ console.log('== K6 详情实际采用：乘区角色由记录决定（不按伤�
     return detail.damageInputUsages ?? []
   }
   const disorder = buildUsage('disorder')
-  const anomaly = buildUsage('anomaly')
+  const anomaly = buildUsage('attributeAnomaly')
   const has = (list, view, field) => list.some((usage) => usage.usedView === view && String(usage.field) === field)
 
   check('K6 紊乱：倍率面板字段标在强度提供者视图上',

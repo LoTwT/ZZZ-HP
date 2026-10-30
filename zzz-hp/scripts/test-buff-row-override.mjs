@@ -89,7 +89,7 @@ const baseHit = {
   count: 3,
   staggerPhase: 'stagger',
   critMode: 'expected',
-  anomalySubKind: 'anomaly',
+  anomalySubKind: 'attributeAnomaly',
   coords: [],
   isFollowUp: false,
   multOverrides: null,
@@ -99,7 +99,7 @@ const baseHit = {
   skill: {
     id: 'dev-1',
     name: '测试招式',
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     baseMult: 100,
     skillTypes: [],
     buffAnchorId: null,

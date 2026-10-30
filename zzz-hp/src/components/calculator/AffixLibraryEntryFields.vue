@@ -19,7 +19,6 @@ export interface AffixLibraryEntryFormFields {
   scope?: string
   skillCategory?: string
   skillSubcategoryId?: string | null
-  appliesToAnomaly?: boolean
   sortOrder?: number
   enabledByDefault?: boolean
   id?: string
@@ -75,7 +74,6 @@ function applyPickedTarget(target: string) {
     props.entry.scope = undefined
     props.entry.skillCategory = undefined
     props.entry.skillSubcategoryId = undefined
-    props.entry.appliesToAnomaly = undefined
   } else if (!props.entry.scope) {
     props.entry.applySituation = 'global'
     props.entry.scope = 'general'
@@ -152,13 +150,6 @@ function applyPickedTarget(target: string) {
             {{ opt.label }}
           </option>
         </select>
-      </label>
-      <label v-if="entry.scope === 'skill'" class="entry-fields--check">
-        <span>异常结算</span>
-        <span class="check-row">
-          <input v-model="entry.appliesToAnomaly" type="checkbox" :disabled="disabled" />
-          也生效
-        </span>
       </label>
     </template>
     <label>

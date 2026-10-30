@@ -26,15 +26,15 @@ export interface PanelStats {
   anomalyControl: number
   /** 能量回复效率（不进伤害乘区） */
   energyRegen: number
-  anomalyCritRate: number
-  anomalyCritDmg: number
+  attributeAnomalyCritRate: number
+  attributeAnomalyCritDmg: number
   turbulenceCritRate: number
   turbulenceCritDmg: number
   radianceCritRate: number
   radianceCritDmg: number
   disorderCritRate: number
   disorderCritDmg: number
-  anomalyDmgBonus: number
+  attributeAnomalyDmgBonus: number
   /** 异放暴击% */
   anomalyReleaseCritRate: number
   /** 异放爆伤% */
@@ -47,8 +47,8 @@ export interface PanelStats {
   directDmgMult: number
   /** 决算倍率%（仅来自增益，默认 0） */
   settlementDmgMult: number
-  /** 异常倍率% */
-  anomalyMult: number
+  /** 属性异常倍率% */
+  attributeAnomalyMult: number
   /** 紊乱基础倍率% */
   disorderBaseMult: number
   /** 异常持续时间（秒） */
@@ -75,8 +75,8 @@ export interface PanelStats {
   mutationCoeff: number
   /** 直伤倍率乘算修正（默认 1） */
   directDmgMultFactor: number
-  /** 异常倍率乘算修正（默认 1） */
-  anomalyMultFactor: number
+  /** 属性异常倍率乘算修正（默认 1） */
+  attributeAnomalyMultFactor: number
   /** 异放倍率乘算修正（默认 1） */
   anomalyReleaseMultFactor: number
   /** 紊乱倍率乘算修正（默认 1） */
@@ -209,15 +209,15 @@ export const SCHEME_EXCLUDED_PANEL_DEFAULTS: Pick<
 const DEFAULT_EXTERNAL_PANEL: PanelStats = {
   hp: 9873, atk: 4008, def: 0, critRate: 48.2, critDmg: 186, sharpenCritDmgBonus: 0, dmgBonus: 10,
   ignoreDefense: 0, reduceDefense: 0, penRate: 0, pen: 90, resPen: 0, mastery: 0,
-  anomalyControl: 0, energyRegen: 0, impact: 0, anomalyCritRate: 0, anomalyCritDmg: 0,
+  anomalyControl: 0, energyRegen: 0, impact: 0, attributeAnomalyCritRate: 0, attributeAnomalyCritDmg: 0,
     turbulenceCritRate: 0, turbulenceCritDmg: 0, radianceCritRate: 0, radianceCritDmg: 0,
     disorderCritRate: 0, disorderCritDmg: 0,
-  anomalyDmgBonus: 0, anomalyReleaseCritRate: 0, anomalyReleaseCritDmg: 0,
+  attributeAnomalyDmgBonus: 0, anomalyReleaseCritRate: 0, anomalyReleaseCritDmg: 0,
   anomalyReleaseMult: 0, anomalyReleaseDmgBonus: 0, directDmgMult: 100,
-  settlementDmgMult: 0, anomalyMult: 0, disorderBaseMult: 0, anomalyDuration: 0,
+  settlementDmgMult: 0, attributeAnomalyMult: 0, disorderBaseMult: 0, anomalyDuration: 0,
   disorderCompMult: 0, turbulenceBaseMult: 0, turbulenceCompMult: 0,
   disorderDmgBonus: 0, turbulenceDmgBonus: 0, directDmgMultFactor: 100,
-  anomalyMultFactor: 100, anomalyReleaseMultFactor: 100, disorderBaseMultFactor: 100,
+  attributeAnomalyMultFactor: 100, anomalyReleaseMultFactor: 100, disorderBaseMultFactor: 100,
   turbulenceBaseMultFactor: 100, radianceMult: 0, radianceDmgBonus: 0,
   radianceResPen: 0, specialMult: 100, mutationCoeff: 0, radianceMultFactor: 100,
   specialMultFactor: 100, mutationCoeffFactor: 100,
@@ -365,11 +365,11 @@ export type AgentBaseLike = {
   mastery?: number
   anomalyControl: number
   energyRegen: number
-  anomalyCritRate: number
-  anomalyCritDmg: number
-  anomalyDmgBonus: number
+  attributeAnomalyCritRate: number
+  attributeAnomalyCritDmg: number
+  attributeAnomalyDmgBonus: number
   directDmgMult: number
-  anomalyMult: number
+  attributeAnomalyMult: number
   disorderBaseMult: number
   anomalyDuration: number
   disorderCompMult: number
@@ -394,10 +394,10 @@ export function applyAgentBaseToPanelStats(target: PanelStats, base: AgentBaseLi
   target.penRate = base.penRate
   target.pen = base.pen
   target.directDmgMult = base.directDmgMult
-  target.anomalyMult = base.anomalyMult
-  target.anomalyCritRate = base.anomalyCritRate
-  target.anomalyCritDmg = base.anomalyCritDmg
-  target.anomalyDmgBonus = base.anomalyDmgBonus
+  target.attributeAnomalyMult = base.attributeAnomalyMult
+  target.attributeAnomalyCritRate = base.attributeAnomalyCritRate
+  target.attributeAnomalyCritDmg = base.attributeAnomalyCritDmg
+  target.attributeAnomalyDmgBonus = base.attributeAnomalyDmgBonus
   target.anomalyControl = base.anomalyControl
   target.energyRegen = base.energyRegen
   target.disorderBaseMult = base.disorderBaseMult

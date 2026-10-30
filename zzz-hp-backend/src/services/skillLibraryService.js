@@ -94,11 +94,11 @@ async function ensurePublicAnomalySkills() {
       `INSERT INTO calculator_skills
         (id, agent_id, name, damage_type, skill_types, buff_anchor_id,
          base_mult, base_mult_factor, settlement_mult, sort_order, element)
-       VALUES (?, '', ?, 'anomaly', '[]', NULL, ?, 100, 0, ?, ?)
+       VALUES (?, '', ?, 'attributeAnomaly', '[]', NULL, ?, 100, 0, ?, ?)
        ON DUPLICATE KEY UPDATE
          agent_id = '',
          name = VALUES(name),
-         damage_type = 'anomaly',
+         damage_type = 'attributeAnomaly',
          skill_types = '[]',
          buff_anchor_id = NULL,
          base_mult = VALUES(base_mult),

@@ -549,17 +549,17 @@ test('异常语境：「属性异常伤害」句里的暴击率 / 暴击伤害 /
     origin: 'test',
   })
   const stats = effects.map((effect) => effect.slots.stat)
-  assert.ok(stats.includes('异常暴击率'), `异常语境的暴击率应落异常区，实际：${stats.join('/')}`)
-  assert.ok(stats.includes('异常暴击伤害'))
+  assert.ok(stats.includes('属性异常暴击率'), `异常语境的暴击率应落属性异常区，实际：${stats.join('/')}`)
+  assert.ok(stats.includes('属性异常暴击伤害'))
   assert.equal(
-    mapKeywordsToEffect(keyword({ slots: { stat: '异常暴击率', action: '提升', value: 30, unit: '%' } }))
+    mapKeywordsToEffect(keyword({ slots: { stat: '属性异常暴击率', action: '提升', value: 30, unit: '%' } }))
       .effect.stat,
-    'anomalyCritRate',
+    'attributeAnomalyCritRate',
   )
   assert.equal(
-    mapKeywordsToEffect(keyword({ slots: { stat: '异常暴击伤害', action: '提升', value: 25, unit: '%' } }))
+    mapKeywordsToEffect(keyword({ slots: { stat: '属性异常暴击伤害', action: '提升', value: 25, unit: '%' } }))
       .effect.stat,
-    'anomalyCritDmg',
+    'attributeAnomalyCritDmg',
   )
 
   // 对照：没有异常语境 → 普通暴击区
@@ -939,16 +939,16 @@ test('1641「菲欧妮」：转模条（异常掌控 → 暴击率）与无视�
   assert.ok(convert, '「每点异常掌控使得暴击率提升」应当出转模条')
   assert.equal(convert.slots.action, '转化')
   // 异常语境（用户 2026-10-16 纠正）：这句说的是「属性异常伤害」，暴击落**异常暴击区**
-  assert.equal(convert.slots.stat, '异常暴击率')
-  assert.equal(convert.layerC.stat, 'anomalyCritRate')
+  assert.equal(convert.slots.stat, '属性异常暴击率')
+  assert.equal(convert.layerC.stat, 'attributeAnomalyCritRate')
   assert.equal(convert.layerC.value, 0)
   assert.equal(convert.layerC.convert.from, 'anomalyControl')
   assert.equal(convert.layerC.convert.ratioPercent, 0.7)
   assert.equal(convert.layerC.convert.defaultBase, 155, '「每点超过 155」的 155 要落基础值')
 
   // 同句的「基础暴击率为30%」「暴击伤害为25%」也落异常区
-  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritRate' && effect.layerC.value === 30))
-  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'anomalyCritDmg' && effect.layerC.value === 25))
+  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'attributeAnomalyCritRate' && effect.layerC.value === 30))
+  assert.ok(coreEffects.some((effect) => effect.layerC.stat === 'attributeAnomalyCritDmg' && effect.layerC.value === 25))
 
   const talent6 = keywordEffects(items.get('talent-6'))
   const resPen = talent6.find((effect) => effect.layerC.stat === 'resPen')
@@ -1121,7 +1121,7 @@ test('作用域槽位：实例「[异放]效果无视敌人40%防御力」→ �
       乱流: 'turbulenceDmgBonus',
       耀变: 'radianceDmgBonus',
       紊乱: 'disorderDmgBonus',
-      异常: 'anomalyDmgBonus',
+      属性异常: 'attributeAnomalyDmgBonus',
     }[slotValue]
     if (dedicatedDamage) {
       assert.equal(
@@ -1205,8 +1205,8 @@ test('目标判定以主语为准：点名角色 → 自身；无主语 + 敌人
   const sentence =
     '[灼蚀]状态下的敌人受到属性异常伤害时有概率触发暴击，基础暴击率为30%，暴击伤害为25%'
   const effects = keywordEffects(simplifyText({ text: sentence, origin: 'test', selfNames: names }))
-  const critRate = effects.find((effect) => effect.slots.stat === '异常暴击率')
-  const critDmg = effects.find((effect) => effect.slots.stat === '异常暴击伤害')
+  const critRate = effects.find((effect) => effect.slots.stat === '属性异常暴击率')
+  const critDmg = effects.find((effect) => effect.slots.stat === '属性异常暴击伤害')
   assert.ok(critRate && critDmg, '两句都要抽出来')
   for (const effect of [critRate, critDmg]) {
     assert.equal(effect.slots.target, '全队', '无主语 + 敌人状态 → 全队')
@@ -1214,9 +1214,9 @@ test('目标判定以主语为准：点名角色 → 自身；无主语 + 敌人
     assert.equal(effect.layerC.applyTarget, 'team')
     assert.match(effect.layerC.note, /目标默认：条件为敌人状态、未限定施放者/)
   }
-  assert.equal(critRate.layerC.stat, 'anomalyCritRate')
+  assert.equal(critRate.layerC.stat, 'attributeAnomalyCritRate')
   assert.equal(critRate.layerC.value, 30)
-  assert.equal(critDmg.layerC.stat, 'anomalyCritDmg')
+  assert.equal(critDmg.layerC.stat, 'attributeAnomalyCritDmg')
   assert.equal(critDmg.layerC.value, 25)
 
   // ④ 点名「11号」→ 自身
@@ -1889,7 +1889,7 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   assert.equal(damage.length, 4, '属性伤害 = 合集 4 条')
   // 有专用字段就落专用字段：阶段一「属性」槽位显示的就是**最终落库**那个词，作用域清成 `无`
   const damageStats = damage.map((effect) => effect.slots.stat).sort()
-  assert.deepEqual(damageStats, ['乱流增伤', '异放增伤', '耀变增伤', '异常增伤'].sort())
+  assert.deepEqual(damageStats, ['乱流增伤', '异放增伤', '耀变增伤', '属性异常增伤'].sort())
   assert.ok(
     damage.every((effect) => effect.slots.scope === '无'),
     '落专用字段 → 作用域槽位保持「无」（阶段一显示 = 最终落库）',
@@ -1902,7 +1902,7 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   // 用户 2026-10-16 口径：**有专用字段就落专用字段**，「属性伤害」= 4 个专用字段各一条，scope 用默认
   assert.deepEqual(
     damage.map((effect) => effect.layerC?.stat).sort(),
-    ['anomalyDmgBonus', 'anomalyReleaseDmgBonus', 'radianceDmgBonus', 'turbulenceDmgBonus'].sort(),
+    ['attributeAnomalyDmgBonus', 'anomalyReleaseDmgBonus', 'radianceDmgBonus', 'turbulenceDmgBonus'].sort(),
     '属性伤害合集 → 4 个专用增伤字段各一条',
   )
   assert.ok(
@@ -1916,12 +1916,12 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   assert.equal(critRate.length, 4)
   assert.deepEqual(
     critRate.map((effect) => effect.slots.stat).sort(),
-    ['乱流暴击率', '异放暴击率', '耀变暴击率', '异常暴击率'].sort(),
+    ['乱流暴击率', '异放暴击率', '耀变暴击率', '属性异常暴击率'].sort(),
   )
   assert.ok(critRate.every((effect) => effect.slots.scope === '无' && effect.slots.value === 10))
   assert.deepEqual(
     critRate.map((effect) => effect.layerC?.stat).sort(),
-    ['anomalyCritRate', 'anomalyReleaseCritRate', 'radianceCritRate', 'turbulenceCritRate'].sort(),
+    ['attributeAnomalyCritRate', 'anomalyReleaseCritRate', 'radianceCritRate', 'turbulenceCritRate'].sort(),
   )
   assert.ok(critRate.every((effect) => JSON.stringify(effect.layerC?.scope) === JSON.stringify(['general'])))
   assert.ok(critRate.every((effect) => effect.collection?.title === '属性暴击'))
@@ -1931,12 +1931,12 @@ test('合集扇出（抽取层）：属性伤害→4 条 / 属性暴击→2 条 
   assert.equal(critDmg.length, 4)
   assert.deepEqual(
     critDmg.map((effect) => effect.slots.stat).sort(),
-    ['乱流暴击伤害', '异放暴击伤害', '耀变暴击伤害', '异常暴击伤害'].sort(),
+    ['乱流暴击伤害', '异放暴击伤害', '耀变暴击伤害', '属性异常暴击伤害'].sort(),
   )
   assert.ok(critDmg.every((effect) => effect.slots.scope === '无' && effect.slots.value === 15))
   assert.deepEqual(
     critDmg.map((effect) => effect.layerC?.stat).sort(),
-    ['anomalyCritDmg', 'anomalyReleaseCritDmg', 'radianceCritDmg', 'turbulenceCritDmg'].sort(),
+    ['attributeAnomalyCritDmg', 'anomalyReleaseCritDmg', 'radianceCritDmg', 'turbulenceCritDmg'].sort(),
   )
   assert.ok(critDmg.every((effect) => effect.collection?.title === '属性暴击伤害'))
 
@@ -1988,35 +1988,35 @@ test('属性下拉（STAT_OPTIONS）与词表一致：子类增伤关键词既�
 })
 test('旧 scope 兼容（词条库仍用）：数组口径归一 / 写库前迁移为 conditions', () => {
   // ① 单值兼容
-  assert.deepEqual(normalizeBuffScopes('anomaly'), ['anomaly'])
+  assert.deepEqual(normalizeBuffScopes('attributeAnomaly'), ['attributeAnomaly'])
   assert.deepEqual(normalizeBuffScopes(['anomalyRelease']), ['anomalyRelease'])
   // ② general 归一（含 general 时其余丢弃）+ 缺省/空/全非法
-  assert.deepEqual(normalizeBuffScopes(['anomaly', 'general']), ['general'])
+  assert.deepEqual(normalizeBuffScopes(['attributeAnomaly', 'general']), ['general'])
   assert.deepEqual(normalizeBuffScopes(['general', 'skill']), ['general'])
   assert.deepEqual(normalizeBuffScopes([]), ['general'])
   assert.deepEqual(normalizeBuffScopes(undefined), ['general'])
   assert.deepEqual(normalizeBuffScopes(['bogus']), ['general'])
   // ③ 去重 + 剔非法 + 按枚举顺序保序
-  assert.deepEqual(normalizeBuffScopes(['radiance', 'anomaly', 'anomaly', 'bogus']), ['anomaly', 'radiance'])
+  assert.deepEqual(normalizeBuffScopes(['radiance', 'attributeAnomaly', 'attributeAnomaly', 'bogus']), ['attributeAnomaly', 'radiance'])
   assert.deepEqual(
     normalizeBuffScopes(['mutation', 'skill', 'turbulence']),
     ['skill', 'turbulence', 'mutation'],
   )
   // ④ skill 与其它并存（招式锚点仍需 skillTargets）
-  assert.deepEqual(normalizeBuffScopes(['skill', 'anomaly']), ['skill', 'anomaly'])
+  assert.deepEqual(normalizeBuffScopes(['skill', 'attributeAnomaly']), ['skill', 'attributeAnomaly'])
   // ⑤ 写库前归一（nanoka 写入路径 `sanitizeEffect` 落 conditions；不再写 scope）
   const sanitized = sanitizeEffect(
-    { id: 'a', stat: 'dmgBonus', kind: 'fixed', value: 10, applyTarget: 'self', scope: 'anomaly' },
+    { id: 'a', stat: 'dmgBonus', kind: 'fixed', value: 10, applyTarget: 'self', scope: 'attributeAnomaly' },
     0,
   )
   assert.equal('scope' in sanitized, false, '写库不再输出 scope')
-  assert.deepEqual(sanitized.conditions, { damageTypes: ['anomaly'] })
+  assert.deepEqual(sanitized.conditions, { damageTypes: ['attributeAnomaly'] })
   assert.equal(sanitized.groupId, undefined)
   // ⑥ 官方预设模板的条件字段也走数组口径
   const template = buildAffixEffectTemplate({
     target: 'gain:dmgBonus',
     perRoll: 3,
-    scope: 'anomaly',
+    scope: 'attributeAnomaly',
   })
-  assert.deepEqual(template?.spec?.conditions?.scope, ['anomaly'])
+  assert.deepEqual(template?.spec?.conditions?.scope, ['attributeAnomaly'])
 })

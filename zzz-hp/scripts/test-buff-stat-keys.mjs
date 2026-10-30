@@ -110,7 +110,7 @@ console.log('\n[5] 端到端：面板带一条 Buff 时五类异常都出有限�
     turbulenceBaseMult: 800,
     turbulenceCompMult: 7.5,
     anomalyDuration: 10,
-    anomalyMult: 713,
+    attributeAnomalyMult: 713,
   })
   const { finalPanel } = computeFinalPanel(external, ctx)
 
@@ -151,11 +151,11 @@ console.log('\n[5] 端到端：面板带一条 Buff 时五类异常都出有限�
   check('乱流期望伤害 > 0', turbulence.turbulenceExpected > 0, `${turbulence.turbulenceExpected}`)
   check('乱流倍率区 = 800% + 10×0.075×100', Math.abs(turbulence.turbulenceZone - 8.75) < 1e-9, `${turbulence.turbulenceZone}`)
 
-  for (const kind of ['anomaly', 'disorder', 'anomalyRelease', 'radiance']) {
+  for (const kind of ['attributeAnomaly', 'disorder', 'anomalyRelease', 'radiance']) {
     const r = computeDamageResult({ ...input, anomalySubKind: kind })
     const value =
-      kind === 'anomaly'
-        ? r.anomalyExpected
+      kind === 'attributeAnomaly'
+        ? r.attributeAnomalyExpected
         : kind === 'disorder'
           ? r.disorderExpected
           : kind === 'anomalyRelease'
@@ -213,7 +213,7 @@ console.log('\n[6] 乱流暴击区：没爆伤时 = 1（不展示），有爆伤
   )
 }
 
-console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，不是异常暴击区')
+console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，不是属性异常暴击区')
 {
   const enemy = {
     level: 60,
@@ -229,8 +229,8 @@ console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，�
     turbulenceBaseMult: 800,
     turbulenceCompMult: 7.5,
     anomalyDuration: 10,
-    anomalyCritRate: 30,
-    anomalyCritDmg: 90,
+    attributeAnomalyCritRate: 30,
+    attributeAnomalyCritDmg: 90,
     turbulenceCritRate: 100,
     turbulenceCritDmg: 50,
   })
@@ -260,28 +260,28 @@ console.log('\n[7] 伤害详情公式表：乱流那一格读乱流暴击区，�
   )
   const critTerm = turbulenceGroup.terms.find((term) => term.tipsKey === 'turbulenceCritZone')
   check('乱流公式里有「乱流暴击区」这一项', Boolean(critTerm), critTerm?.label ?? '缺失')
-  check('乱流暴击区标签不是「异常暴击区」', critTerm?.label === '乱流暴击区', critTerm?.label)
+  check('乱流暴击区标签不是「属性异常暴击区」', critTerm?.label === '乱流暴击区', critTerm?.label)
   // 2026-10-18：乘区显示**期望区**（1 + 率×爆伤），不再是「1 / 满暴击区」两档
   check('乱流暴击区取期望 turbulenceCritZone（1.5）', critTerm?.value === '1.5', critTerm?.value)
 
-  const anomaly = computeDamageResult({ ...input, anomalySubKind: 'anomaly' })
+  const anomaly = computeDamageResult({ ...input, anomalySubKind: 'attributeAnomaly' })
   const [, anomalyGroup] = buildAlignedAnomalyFormulaGroups(
     anomaly,
-    'anomaly',
+    'attributeAnomaly',
     '紊乱',
     fmt,
     (v) => String(v),
   )
-  const anomalyTerm = anomalyGroup.terms.find((term) => term.tipsKey === 'anomalyCritZone')
-  check('属性异常仍用「异常暴击区」', anomalyTerm?.label === '异常暴击区', anomalyTerm?.label)
-  check('属性异常取期望 anomalyCritZone（1.27）', anomalyTerm?.value === '1.27', anomalyTerm?.value)
+  const anomalyTerm = anomalyGroup.terms.find((term) => term.tipsKey === 'attributeAnomalyCritZone')
+  check('属性异常仍用「属性异常暴击区」', anomalyTerm?.label === '属性异常暴击区', anomalyTerm?.label)
+  check('属性异常取期望 attributeAnomalyCritZone（1.27）', anomalyTerm?.value === '1.27', anomalyTerm?.value)
 }
 
-console.log('\n[8] 子类暴击互相独立：异常暴击不是父类，不会串到异放/乱流/耀变/紊乱')
+console.log('\n[8] 子类暴击互相独立：属性异常暴击不是父类，不会串到异放/乱流/耀变/紊乱')
 {
   const external = makePanel({
-    anomalyCritRate: 50,
-    anomalyCritDmg: 100,
+    attributeAnomalyCritRate: 50,
+    attributeAnomalyCritDmg: 100,
     anomalyReleaseCritRate: 40,
     anomalyReleaseCritDmg: 80,
     turbulenceCritRate: 20,
@@ -291,37 +291,37 @@ console.log('\n[8] 子类暴击互相独立：异常暴击不是父类，不会�
   })
   const { finalPanel } = computeFinalPanel(external, makePanelCtx())
 
-  check('异常暴击保留自己的值 50', finalPanel.anomalyCritRate === 50, `${finalPanel.anomalyCritRate}`)
-  check('异常爆伤保留自己的值 100', finalPanel.anomalyCritDmg === 100, `${finalPanel.anomalyCritDmg}`)
-  check('异放暴击不吃异常暴击 → 40', finalPanel.anomalyReleaseCritRate === 40, `${finalPanel.anomalyReleaseCritRate}`)
-  check('乱流暴击不吃异常暴击 → 20', finalPanel.turbulenceCritRate === 20, `${finalPanel.turbulenceCritRate}`)
-  check('乱流爆伤不吃异常爆伤 → 30', finalPanel.turbulenceCritDmg === 30, `${finalPanel.turbulenceCritDmg}`)
-  check('耀变暴击不吃异常暴击 → 10', finalPanel.radianceCritRate === 10, `${finalPanel.radianceCritRate}`)
+  check('属性异常暴击保留自己的值 50', finalPanel.attributeAnomalyCritRate === 50, `${finalPanel.attributeAnomalyCritRate}`)
+  check('属性异常爆伤保留自己的值 100', finalPanel.attributeAnomalyCritDmg === 100, `${finalPanel.attributeAnomalyCritDmg}`)
+  check('异放暴击不吃属性异常暴击 → 40', finalPanel.anomalyReleaseCritRate === 40, `${finalPanel.anomalyReleaseCritRate}`)
+  check('乱流暴击不吃属性异常暴击 → 20', finalPanel.turbulenceCritRate === 20, `${finalPanel.turbulenceCritRate}`)
+  check('乱流爆伤不吃属性异常爆伤 → 30', finalPanel.turbulenceCritDmg === 30, `${finalPanel.turbulenceCritDmg}`)
+  check('耀变暴击不吃属性异常暴击 → 10', finalPanel.radianceCritRate === 10, `${finalPanel.radianceCritRate}`)
   check('耀变爆伤默认 0', finalPanel.radianceCritDmg === 0, `${finalPanel.radianceCritDmg}`)
-  check('紊乱暴击不吃异常暴击 → 5', finalPanel.disorderCritRate === 5, `${finalPanel.disorderCritRate}`)
+  check('紊乱暴击不吃属性异常暴击 → 5', finalPanel.disorderCritRate === 5, `${finalPanel.disorderCritRate}`)
   check('紊乱爆伤默认 0', finalPanel.disorderCritDmg === 0, `${finalPanel.disorderCritDmg}`)
 
   // 增益侧同样互不串：只给「异常暴击」的增益，不得抬高任何子类
   const ctxWithBuff = makePanelCtx({
     agents: [
       testAgent('a', {
-        mindscapeBuffs: mindscapeWithEffects([fixedEffect('eff-acr', 'anomalyCritRate', 30)]),
+        mindscapeBuffs: mindscapeWithEffects([fixedEffect('eff-acr', 'attributeAnomalyCritRate', 30)]),
       }),
     ],
   })
-  const withBuff = computeFinalPanel(makePanel({ anomalyCritRate: 10 }), ctxWithBuff).finalPanel
-  check('增益异常暴击 +30 只抬异常暴击 → 40', withBuff.anomalyCritRate === 40, `${withBuff.anomalyCritRate}`)
-  check('增益异常暴击不影响异放暴击', withBuff.anomalyReleaseCritRate === 0, `${withBuff.anomalyReleaseCritRate}`)
-  check('增益异常暴击不影响乱流暴击', withBuff.turbulenceCritRate === 0, `${withBuff.turbulenceCritRate}`)
-  check('增益异常暴击不影响耀变暴击', withBuff.radianceCritRate === 0, `${withBuff.radianceCritRate}`)
-  check('增益异常暴击不影响紊乱暴击', withBuff.disorderCritRate === 0, `${withBuff.disorderCritRate}`)
+  const withBuff = computeFinalPanel(makePanel({ attributeAnomalyCritRate: 10 }), ctxWithBuff).finalPanel
+  check('增益属性异常暴击 +30 只抬属性异常暴击 → 40', withBuff.attributeAnomalyCritRate === 40, `${withBuff.attributeAnomalyCritRate}`)
+  check('增益属性异常暴击不影响异放暴击', withBuff.anomalyReleaseCritRate === 0, `${withBuff.anomalyReleaseCritRate}`)
+  check('增益属性异常暴击不影响乱流暴击', withBuff.turbulenceCritRate === 0, `${withBuff.turbulenceCritRate}`)
+  check('增益属性异常暴击不影响耀变暴击', withBuff.radianceCritRate === 0, `${withBuff.radianceCritRate}`)
+  check('增益属性异常暴击不影响紊乱暴击', withBuff.disorderCritRate === 0, `${withBuff.disorderCritRate}`)
 
-  // 结算侧：只有异常暴击时，四类子类的暴击区都必须还是 1
+  // 结算侧：只有属性异常暴击时，四类子类的暴击区都必须还是 1
   const panels = makePanel({
     atk: 2000,
     mastery: 100,
-    anomalyCritRate: 50,
-    anomalyCritDmg: 100,
+    attributeAnomalyCritRate: 50,
+    attributeAnomalyCritDmg: 100,
     turbulenceBaseMult: 800,
     turbulenceCompMult: 7.5,
     anomalyDuration: 10,
@@ -350,12 +350,12 @@ console.log('\n[8] 子类暴击互相独立：异常暴击不是父类，不会�
     anomalyTriggerPanel: panels,
   }
   const byKind = (kind) => computeDamageResult({ ...damageInput, anomalySubKind: kind })
-  check('只有异常暴击 → 异放暴击区 = 1', byKind('anomalyRelease').anomalyReleaseFullCritZone === 1, `${byKind('anomalyRelease').anomalyReleaseFullCritZone}`)
-  check('只有异常暴击 → 乱流暴击区 = 1', byKind('turbulence').turbulenceFullCritZone === 1, `${byKind('turbulence').turbulenceFullCritZone}`)
-  check('只有异常暴击 → 耀变暴击区 = 1', byKind('radiance').radianceFullCritZone === 1, `${byKind('radiance').radianceFullCritZone}`)
-  check('只有异常暴击 → 紊乱暴击区 = 1', byKind('disorder').disorderFullCritZone === 1, `${byKind('disorder').disorderFullCritZone}`)
-  const anomalyHit = byKind('anomaly')
-  check('只有异常暴击 → 异常暴击区 = 1 + 100% = 2（自己的生效）', anomalyHit.anomalyFullCritZone === 2, `${anomalyHit.anomalyFullCritZone}`)
+  check('只有属性异常暴击 → 异放暴击区 = 1', byKind('anomalyRelease').anomalyReleaseFullCritZone === 1, `${byKind('anomalyRelease').anomalyReleaseFullCritZone}`)
+  check('只有属性异常暴击 → 乱流暴击区 = 1', byKind('turbulence').turbulenceFullCritZone === 1, `${byKind('turbulence').turbulenceFullCritZone}`)
+  check('只有属性异常暴击 → 耀变暴击区 = 1', byKind('radiance').radianceFullCritZone === 1, `${byKind('radiance').radianceFullCritZone}`)
+  check('只有属性异常暴击 → 紊乱暴击区 = 1', byKind('disorder').disorderFullCritZone === 1, `${byKind('disorder').disorderFullCritZone}`)
+  const anomalyHit = byKind('attributeAnomaly')
+  check('只有属性异常暴击 → 属性异常暴击区 = 1 + 100% = 2（自己的生效）', anomalyHit.attributeAnomalyFullCritZone === 2, `${anomalyHit.attributeAnomalyFullCritZone}`)
 }
 
 console.log('\n[9] 异常掌控是唯一保留整数的属性（舍弃小数，不是四舍五入）')

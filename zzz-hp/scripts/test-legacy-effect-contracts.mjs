@@ -221,7 +221,7 @@ console.log('\n[5] 双代理人乘区（三人不同面板）')
 {
   const roles = { owner: 'owner', powerProvider: 'power', anomalyTrigger: 'trigger' }
   check('直伤增伤取 owner', zoneSourceRole('dmgBonus', 'direct') === 'owner')
-  check('异常增伤取 powerProvider', zoneSourceRole('dmgBonus', 'anomaly') === 'powerProvider')
+  check('非直伤增伤取 powerProvider', zoneSourceRole('dmgBonus', 'anomaly') === 'powerProvider')
   check('异常抗穿取 anomalyTrigger', zoneSourceRole('resPen', 'anomaly') === 'anomalyTrigger')
   check('异常减防取 anomalyTrigger', zoneSourceRole('reduceDefense', 'anomaly') === 'anomalyTrigger')
   check('异常精通取 powerProvider', zoneSourceRole('mastery', 'anomaly') === 'powerProvider')
@@ -236,9 +236,9 @@ console.log('\n[5] 双代理人乘区（三人不同面板）')
     resPen: 30,
     reduceDefense: 40,
     mastery: 0,
-    anomalyDmgBonus: 25,
-    anomalyCritRate: 10,
-    anomalyCritDmg: 20,
+    attributeAnomalyDmgBonus: 25,
+    attributeAnomalyCritRate: 10,
+    attributeAnomalyCritDmg: 20,
   })
   const enemy = {
     level: 60,
@@ -253,7 +253,7 @@ console.log('\n[5] 双代理人乘区（三人不同面板）')
     combatStaggerVulnerable: 0,
     combatSpecial: 0,
   }
-  const anomalyKinds = ['anomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
+  const anomalyKinds = ['attributeAnomaly', 'disorder', 'turbulence', 'anomalyRelease', 'radiance']
   for (const kind of anomalyKinds) {
     const r = computeDamageResult({
       finalPanel: owner,

@@ -1,3 +1,4 @@
+import { migrateAttributeAnomalyNamingDeep } from '@/utils/attributeAnomalyMigration'
 import type {
   DamageEvent,
   DamageEventMode,
@@ -72,7 +73,7 @@ function normalizeSkill(raw: Record<string, unknown>): Skill | null {
 export function loadCustomSkills(): Skill[] {
   if (typeof localStorage === 'undefined') return []
   try {
-    const parsed = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]')
+    const parsed = migrateAttributeAnomalyNamingDeep(JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]'))
     if (!Array.isArray(parsed)) return []
     return parsed
       .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
@@ -95,8 +96,9 @@ export function saveCustomSkills(list: Skill[]): void {
 /** 导出/导入用。`raw` 不是数组时返回 null（调用方应中止，不要清空本地库）。 */
 export function parseCustomSkillList(raw: unknown): Skill[] | null {
   if (raw == null) return []
-  if (!Array.isArray(raw)) return null
-  return raw
+  const migrated = migrateAttributeAnomalyNamingDeep(raw)
+  if (!Array.isArray(migrated)) return null
+  return migrated
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     .map(normalizeSkill)
     .filter((item): item is Skill => item !== null)
@@ -142,8 +144,8 @@ function readBaseMult(event: DamageEvent): { baseMult: number; baseMultFactor?: 
   switch (event.kind) {
     case 'direct':
       return pick(o.directDmgMult, o.directDmgMultFactor)
-    case 'anomaly':
-      return pick(o.anomalyMult, o.anomalyMultFactor)
+    case 'attributeAnomaly':
+      return pick(o.attributeAnomalyMult, o.attributeAnomalyMultFactor)
     case 'anomalyRelease':
       return pick(o.anomalyReleaseMult, o.anomalyReleaseMultFactor)
     case 'disorder':

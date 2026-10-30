@@ -96,8 +96,8 @@ panel.penRate = 0
 panel.pen = 0
 panel.resPen = 0
 panel.mastery = 300 // 精通区 3
-panel.anomalyMult = 500 // 异常倍率 5
-panel.anomalyDmgBonus = 0
+panel.attributeAnomalyMult = 500 // 属性异常倍率 5
+panel.attributeAnomalyDmgBonus = 0
 panel.directDmgMult = 100
 panel.anomalyDuration = 9.8
 panel.disorderBaseMult = 450
@@ -138,7 +138,7 @@ const critZone = 1.5
 const special = 1
 const levelZone = computeLevelZone(60) // 2
 const masteryZone = 3
-const anomalyMult = 5
+const attributeAnomalyMult = 5
 
 const generalOn =
   3000 * dmgZone * defZone * resZone * staggerOn
@@ -148,7 +148,7 @@ const generalOff =
 const expectedDirectOn =
   generalOn * directVuln * critZone * special * 1 * 1
 const expectedAnomalyOn =
-  generalOn * anomalyVuln * masteryZone * levelZone * special * 1 * anomalyMult
+  generalOn * anomalyVuln * masteryZone * levelZone * special * 1 * attributeAnomalyMult
 
 const resultStagger = computeDamageResult({
   finalPanel: panel,
@@ -160,7 +160,7 @@ const resultStagger = computeDamageResult({
   combatStaggerVulnerable: combat.combatStaggerVulnerable,
   staggerPhase: 'stagger',
   ownerAgentLevel: 60,
-  anomalySubKind: 'anomaly',
+  anomalySubKind: 'attributeAnomaly',
 })
 
 const resultNormal = computeDamageResult({
@@ -173,7 +173,7 @@ const resultNormal = computeDamageResult({
   combatStaggerVulnerable: combat.combatStaggerVulnerable,
   staggerPhase: 'normal',
   ownerAgentLevel: 60,
-  anomalySubKind: 'anomaly',
+  anomalySubKind: 'attributeAnomaly',
 })
 
 check('失衡期·直伤易伤区', resultStagger.directVulnerableMultiplier, directVuln)
@@ -188,19 +188,19 @@ check(
   1,
 )
 
-// 异常期望：无 trigger 时用 mainParts；anomalyExpected 含 anomalyCritZone=1
+// 异常期望：无 trigger 时用 mainParts；attributeAnomalyExpected 含 attributeAnomalyCritZone=1
 check(
   '失衡期·异常期望(无暴击区)',
-  resultStagger.anomalyExpected,
+  resultStagger.attributeAnomalyExpected,
   Math.round(expectedAnomalyOn),
   2,
 )
 
 const expectedAnomalyOff =
-  generalOff * anomalyVuln * masteryZone * levelZone * special * anomalyMult
+  generalOff * anomalyVuln * masteryZone * levelZone * special * attributeAnomalyMult
 check(
   '非失衡·异常期望',
-  resultNormal.anomalyExpected,
+  resultNormal.attributeAnomalyExpected,
   Math.round(expectedAnomalyOff),
   2,
 )
@@ -209,13 +209,13 @@ section('5. 旧行为对照（非失衡全局失衡易伤）')
 // 旧：非失衡固定 1；新：1+global
 const oldGeneralOff = 3000 * dmgZone * defZone * resZone * 1
 const oldAnomalyOff =
-  oldGeneralOff * anomalyVuln * masteryZone * levelZone * special * anomalyMult
+  oldGeneralOff * anomalyVuln * masteryZone * levelZone * special * attributeAnomalyMult
 console.log(
-  `  INFO  非失衡异常：旧(区=1)≈${Math.round(oldAnomalyOff)} 新(区=1.25)≈${resultNormal.anomalyExpected} 比= ${(resultNormal.anomalyExpected / oldAnomalyOff).toFixed(4)}`,
+  `  INFO  非失衡异常：旧(区=1)≈${Math.round(oldAnomalyOff)} 新(区=1.25)≈${resultNormal.attributeAnomalyExpected} 比= ${(resultNormal.attributeAnomalyExpected / oldAnomalyOff).toFixed(4)}`,
 )
 check(
   '非失衡相对旧值倍率应为 1.25',
-  resultNormal.anomalyExpected / oldAnomalyOff,
+  resultNormal.attributeAnomalyExpected / oldAnomalyOff,
   1.25,
   1e-4,
 )

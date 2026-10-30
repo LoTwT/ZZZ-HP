@@ -83,16 +83,16 @@ export const SLOT_LABELS = {
 
 /**
  * **生效范围**的取值（以源码为准）：`zzz-hp/src/types/calculator.ts:63` 的 `BUFF_SCOPE_OPTIONS`
- * = 通用 / 招式 / 异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数；编辑器下拉在
+ * = 通用 / 招式 / 属性异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数；编辑器下拉在
  * `AdminBuffEffectEditor.vue:550`。`无` = 通用（阶段2 **不写** scope）。
  */
-export const SCOPE_OPTIONS = [NONE, '招式', '异常', '紊乱', '乱流', '异放', '耀变', '异化系数']
+export const SCOPE_OPTIONS = [NONE, '招式', '属性异常', '紊乱', '乱流', '异放', '耀变', '异化系数']
 
 /** 槽位取值（中文）→ `scope` 字段值；`无` → 空串（= 不写 scope） */
 export const SCOPE_SLOT_TO_ID = {
   [NONE]: '',
   招式: 'skill',
-  异常: 'anomaly',
+  属性异常: 'attributeAnomaly',
   紊乱: 'disorder',
   乱流: 'turbulence',
   异放: 'anomalyRelease',
@@ -111,7 +111,7 @@ const SCOPE_RULES = [
   { id: '紊乱', re: /\[?紊乱\]?/ },
   { id: '异化系数', re: /异化系数/ },
   {
-    id: '异常',
+    id: '属性异常',
     re: /(?:仅|只|限定)(?:对|对处于)?(?:属性)?异常(?:伤害)?(?:状态)?(?:生效|计入|计算|有效)|(?:属性)?异常伤害(?:计算|结算|生效)时/,
   },
 ]
@@ -154,9 +154,9 @@ export const STAT_LABELS = {
   energyRegenFlat: '能量回复（固定）',
   vulnerable: '失衡易伤',
   dmgReduction: '受到伤害降低',
-  anomalyCritRate: '异常暴击率',
-  anomalyCritDmg: '异常暴击伤害',
-  anomalyDmgBonus: '异常增伤',
+  attributeAnomalyCritRate: '属性异常暴击率',
+  attributeAnomalyCritDmg: '属性异常暴击伤害',
+  attributeAnomalyDmgBonus: '属性异常增伤',
   anomalyReleaseDmgBonus: '异放增伤',
   disorderDmgBonus: '紊乱增伤',
   turbulenceDmgBonus: '乱流增伤',
@@ -192,7 +192,7 @@ export const ELEMENTS = ['物理', '火', '冰', '电', '以太', '风']
 export const STAT_OPTIONS = [
   '增伤',
   '招式增伤',
-  '异常增伤',
+  '属性异常增伤',
   '异放增伤',
   '乱流增伤',
   '耀变增伤',
@@ -205,8 +205,8 @@ export const STAT_OPTIONS = [
   '耀变暴击伤害',
   '紊乱暴击率',
   '紊乱暴击伤害',
-  '异常暴击率',
-  '异常暴击伤害',
+  '属性异常暴击率',
+  '属性异常暴击伤害',
   '异常精通',
   '异常掌控',
   '暴击率',
@@ -964,19 +964,19 @@ const REFERENCE_RE =
 
 /**
  * **异常语境判定**（用户 2026-10-16 报的坑）：同一句/子句说的是「（属性）异常伤害」时，
- * 后面那个「暴击率 / 暴击伤害 / 增伤」属于**异常暴击区**，不能落成普通 `critRate` / `critDmg`。
+ * 后面那个「暴击率 / 暴击伤害 / 增伤」属于**属性异常暴击区**，不能落成普通 `critRate` / `critDmg`。
  *   - 本句出现「属性异常伤害 / 异常伤害 / 异常暴击」→ 打开异常语境（**按句重置**）；
  *   - 同句后面的子句（含用「该效果 / 该增益效果」指代的那句）**继承**这个语境。
- * 对照正例（1641 额外能力）：`…受到属性异常伤害的暴击伤害提升15%` → `anomalyCritDmg=15`；
+ * 对照正例（1641 额外能力）：`…受到属性异常伤害的暴击伤害提升15%` → `attributeAnomalyCritDmg=15`；
  * 反例守则（1041 额外能力）：本句没有异常词时，「该增益效果额外提升 22.5%」不许判成异常区。
  */
 const ANOMALY_MARK_RE = /(?:属性)?异常伤害|异常暴击/
 
 /** 异常语境下要改写的属性（工具语义 → 异常区字段名） */
 const ANOMALY_STAT_MAP = {
-  暴击率: '异常暴击率',
-  暴击伤害: '异常暴击伤害',
-  增伤: '异常增伤',
+  暴击率: '属性异常暴击率',
+  暴击伤害: '属性异常暴击伤害',
+  增伤: '属性异常增伤',
 }
 
 /** 队伍 / 自身 指代 */
@@ -1054,11 +1054,11 @@ const STAT_RULES_INTERNAL = [
   { keyword: '减防', re: /(?:无视|降低|减少)[^，。；]{0,8}防御力|防御力(?:降低|减少|下降)/ },
   { keyword: '抗性穿透', test: (t) => /抗性/.test(t) && /无视|降低|减少|穿透/.test(t) },
   { keyword: '招式增伤', re: /招式(?:造成的)?伤害|招式增伤|技能(?:造成的)?伤害|技能伤害/ },
-  { keyword: '异常暴击伤害', re: /属性异常伤害(?:的)?暴击伤害|异常伤害(?:的)?暴击伤害|异常暴击伤害/ },
-  { keyword: '异常暴击率', re: /属性异常伤害(?:的)?暴击率|异常伤害(?:的)?暴击率|异常暴击率/ },
+  { keyword: '属性异常暴击伤害', re: /属性异常伤害(?:的)?暴击伤害|异常伤害(?:的)?暴击伤害|异常暴击伤害/ },
+  { keyword: '属性异常暴击率', re: /属性异常伤害(?:的)?暴击率|异常伤害(?:的)?暴击率|异常暴击率/ },
   { keyword: '异常精通', re: /异常精通/ },
   { keyword: '异常掌控', re: /异常掌控/ },
-  { keyword: '异常增伤', re: /属性异常伤害|异常伤害/ },
+  { keyword: '属性异常增伤', re: /属性异常伤害|异常伤害/ },
   { keyword: '暴击率', re: /暴击率/ },
   { keyword: '暴击伤害', re: /暴击伤害/ },
   {
@@ -1266,41 +1266,41 @@ export const COLLECTION_FANOUT_RULES = [
     /** 原文匹配（**前面不能是元素字**，否则是「火属性伤害」= 元素增伤，不扇出） */
     re: /(?:^|[^物理火冰电以太风])属性(?:异常)?伤害/,
     /** 当前解析出的 stat（合集代表值） */
-    primaryStats: new Set(['异常增伤', '增伤']),
+    primaryStats: new Set(['属性异常增伤', '增伤']),
     targets: [
       // 落**专用字段**（用户 2026-10-16：有专用字段就落专用字段，不要「共用字段 + scope」）→ 作用域槽位保持「无」
-      { stat: '异常增伤', scopeSlot: '无' },
+      { stat: '属性异常增伤', scopeSlot: '无' },
       { stat: '异放增伤', scopeSlot: '无' },
       { stat: '乱流增伤', scopeSlot: '无' },
       { stat: '耀变增伤', scopeSlot: '无' },
     ],
-    note: '合集 = 异常 / 异放 / 乱流 / 耀变（不含紊乱）',
+    note: '合集 = 属性异常 / 异放 / 乱流 / 耀变（不含紊乱）',
   },
   {
     id: 'attribute-crit-rate',
     title: '属性暴击',
     re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击率|属性暴击(?!伤害)/,
-    primaryStats: new Set(['异常暴击率', '暴击率']),
+    primaryStats: new Set(['属性异常暴击率', '暴击率']),
     targets: [
-      { stat: '异常暴击率', scopeSlot: '无' },
+      { stat: '属性异常暴击率', scopeSlot: '无' },
       { stat: '异放暴击率', scopeSlot: '无' },
       { stat: '乱流暴击率', scopeSlot: '无' },
       { stat: '耀变暴击率', scopeSlot: '无' },
     ],
-    note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
+    note: '合集 = 属性异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
   },
   {
     id: 'attribute-crit-dmg',
     title: '属性暴击伤害',
     re: /(?:^|[^物理火冰电以太风])属性(?:异常)?暴击伤害/,
-    primaryStats: new Set(['异常暴击伤害', '暴击伤害']),
+    primaryStats: new Set(['属性异常暴击伤害', '暴击伤害']),
     targets: [
-      { stat: '异常暴击伤害', scopeSlot: '无' },
+      { stat: '属性异常暴击伤害', scopeSlot: '无' },
       { stat: '异放暴击伤害', scopeSlot: '无' },
       { stat: '乱流暴击伤害', scopeSlot: '无' },
       { stat: '耀变暴击伤害', scopeSlot: '无' },
     ],
-    note: '合集 = 异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
+    note: '合集 = 属性异常 / 异放（不含紊乱；乱流 / 耀变等字段待建）',
   },
 ]
 
@@ -1356,29 +1356,29 @@ export function buildCollectionFanOutRulesTable() {
  * `scope` 只用于**没有专用字段**的场合（例：限定某子类的暴击 —— 等第 3 项把
  * `turbulence/radiance/disorder Crit*` 建好后，暴击类也一律落专用字段）。
  *
- * 判定：属性槽位是「增伤 / 异常增伤」这一族 + 本句或作用域槽出现子类词。
+ * 判定：属性槽位是「增伤 / 属性异常增伤」这一族 + 本句或作用域槽出现子类词。
  */
 const SUBKIND_DEDICATED = [
   { label: '异放', re: /异放/, damage: '异放增伤', critRate: '异放暴击率', critDmg: '异放暴击伤害' },
   { label: '乱流', re: /乱流/, damage: '乱流增伤', critRate: '乱流暴击率', critDmg: '乱流暴击伤害' },
   { label: '耀变', re: /耀变/, damage: '耀变增伤', critRate: '耀变暴击率', critDmg: '耀变暴击伤害' },
   { label: '紊乱', re: /紊乱/, damage: '紊乱增伤', critRate: '紊乱暴击率', critDmg: '紊乱暴击伤害' },
-  // 「异常」放最后（最泛）：它本身就落在 anomalyDmgBonus / anomalyCritRate / anomalyCritDmg 这些专用字段上
+  // 「异常」放最后（最泛）：它本身就落在 attributeAnomalyDmgBonus / attributeAnomalyCritRate / attributeAnomalyCritDmg 这些专用字段上
   {
     label: '属性异常（强击）',
     re: /强击|属性异常|异常/,
-    damage: '异常增伤',
-    critRate: '异常暴击率',
-    critDmg: '异常暴击伤害',
+    damage: '属性异常增伤',
+    critRate: '属性异常暴击率',
+    critDmg: '属性异常暴击伤害',
   },
 ]
 
 /** 「增伤」族 */
-const DAMAGE_FAMILY_STATS = new Set(['增伤', '异常增伤', '全属性伤害'])
+const DAMAGE_FAMILY_STATS = new Set(['增伤', '属性异常增伤', '全属性伤害'])
 /** 「暴击率」族 */
-const CRIT_RATE_FAMILY_STATS = new Set(['暴击率', '异常暴击率'])
+const CRIT_RATE_FAMILY_STATS = new Set(['暴击率', '属性异常暴击率'])
 /** 「暴击伤害」族 */
-const CRIT_DMG_FAMILY_STATS = new Set(['暴击伤害', '异常暴击伤害'])
+const CRIT_DMG_FAMILY_STATS = new Set(['暴击伤害', '属性异常暴击伤害'])
 
 /**
  * 命中子类专用字段（返回 `{ label, stat }`；不命中返回 null）。
@@ -1585,7 +1585,7 @@ export function buildRulesTable() {
  * （工具是期望值计算，没有这个条件）→ `无法提取`，**绝不能**丢掉条件当无条件生效。
  */
 const INTRINSIC_PREMISE_RULES = [
-  { stats: ['暴击伤害', '异常暴击伤害', '异放暴击伤害'], re: /暴击/ },
+  { stats: ['暴击伤害', '属性异常暴击伤害', '异放暴击伤害'], re: /暴击/ },
 ]
 
 /**
@@ -1730,10 +1730,10 @@ const DEBUFF_ACTION_RE = /降低|减少|下降|削减/
  * **敌人状态（泛指）→ 目标默认全队**（用户 2026-10-16 定稿）：
  * 句子没有主语（泛指）、带敌人状态限定（形如「[X]状态下的敌人受到…」）→ `目标 = 全队`，
  * note 写固定短语（不是原文）：`目标默认：条件为敌人状态、未限定施放者`。
- * 实例：1641 核心被动第 3 句 → `anomalyCritRate=30 / anomalyCritDmg=25`，两者都 team；
+ * 实例：1641 核心被动第 3 句 → `attributeAnomalyCritRate=30 / attributeAnomalyCritDmg=25`，两者都 team；
  * 一旦句子里点名角色（「菲欧妮对[灼蚀]状态下的敌人造成的伤害提升30%」）→ 回落 `自身`。
  */
-const ENEMY_STATUS_CRIT_STATS = new Set(['异常暴击率', '异常暴击伤害', '暴击率', '暴击伤害'])
+const ENEMY_STATUS_CRIT_STATS = new Set(['属性异常暴击率', '属性异常暴击伤害', '暴击率', '暴击伤害'])
 
 /** 「[X]状态下的敌人…」这类**敌人状态**主语句式 */
 const ENEMY_STATUS_RE =
@@ -2086,7 +2086,7 @@ export function extractKeywordEffects({
 
         // 异常语境（用户 2026-10-16）：**本句**出现过「（属性）异常伤害 / 异常暴击」（含同句前面的子句，
         // 以及后面用「该效果」指代的情况）→ 暴击率 / 暴击伤害 / 增伤落**异常区**
-        // （anomalyCritRate / anomalyCritDmg / anomalyDmgBonus）。
+        // （attributeAnomalyCritRate / attributeAnomalyCritDmg / attributeAnomalyDmgBonus）。
         const anomalyInScope = anomalyContext || ANOMALY_MARK_RE.test(group)
         if (anomalyInScope && ANOMALY_STAT_MAP[stat.value]) {
           stat = { value: ANOMALY_STAT_MAP[stat.value], source: stat.source }
@@ -2376,7 +2376,7 @@ const STAT_TABLE = {
   增伤: { '%': 'dmgBonus', 点: 'dmgBonus' },
   全属性伤害: { '%': 'dmgBonus', 点: 'dmgBonus' },
   招式增伤: { '%': 'skillDmgBonus', 点: 'skillDmgBonus' },
-  异常增伤: { '%': 'anomalyDmgBonus', 点: 'anomalyDmgBonus' },
+  属性异常增伤: { '%': 'attributeAnomalyDmgBonus', 点: 'attributeAnomalyDmgBonus' },
   异放增伤: { '%': 'anomalyReleaseDmgBonus', 点: 'anomalyReleaseDmgBonus' },
   乱流增伤: { '%': 'turbulenceDmgBonus', 点: 'turbulenceDmgBonus' },
   耀变增伤: { '%': 'radianceDmgBonus', 点: 'radianceDmgBonus' },
@@ -2389,8 +2389,8 @@ const STAT_TABLE = {
   耀变暴击伤害: { '%': 'radianceCritDmg', 点: 'radianceCritDmg' },
   紊乱暴击率: { '%': 'disorderCritRate', 点: 'disorderCritRate' },
   紊乱暴击伤害: { '%': 'disorderCritDmg', 点: 'disorderCritDmg' },
-  异常暴击率: { '%': 'anomalyCritRate', 点: 'anomalyCritRate' },
-  异常暴击伤害: { '%': 'anomalyCritDmg', 点: 'anomalyCritDmg' },
+  属性异常暴击率: { '%': 'attributeAnomalyCritRate', 点: 'attributeAnomalyCritRate' },
+  属性异常暴击伤害: { '%': 'attributeAnomalyCritDmg', 点: 'attributeAnomalyCritDmg' },
   异常精通: { 点: 'mastery', '%': 'mastery' },
   异常掌控: { '%': 'anomalyControlPercent', 点: 'anomalyControl' },
   暴击率: { '%': 'critRate', 点: 'critRate' },
@@ -2415,7 +2415,7 @@ const STAT_TABLE = {
   // —— 旧取值别名（老关键字 / 手填内容仍能映射）
   伤害加成: { '%': 'dmgBonus', 点: 'dmgBonus' },
   招式伤害: { '%': 'skillDmgBonus', 点: 'skillDmgBonus' },
-  异常伤害: { '%': 'anomalyDmgBonus', 点: 'anomalyDmgBonus' },
+  异常伤害: { '%': 'attributeAnomalyDmgBonus', 点: 'attributeAnomalyDmgBonus' },
   攻击力: { '%': 'externalAtkPercent', 点: 'atk' },
   抗性: { '%': 'resPen', 点: 'resPen' },
   穿透值: { 点: 'pierce', '%': 'pierce' },
@@ -2902,7 +2902,6 @@ export function mapKeywordsToEffect(keyword = {}) {
         maxStacks,
         valuePerStack,
         defaultStacks: 1,
-        appliesToAnomaly: undefined,
         enabledDefault: true,
         note,
         // 招式限定 = 条件（锚点关联到既有招式小类 / 大类）
@@ -3337,4 +3336,3 @@ export function slotView(slots = {}, { expandAll = false } = {}) {
   }
   return { visible, hidden, unable, expandAll: Boolean(expandAll) }
 }
-

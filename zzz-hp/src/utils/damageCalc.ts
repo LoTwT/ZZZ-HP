@@ -209,16 +209,19 @@ export interface DamageCalcResult {
   levelZone: number
   /** 等级区所采用的角色等级（展示用） */
   levelZoneAgentLevel: number
-  anomalyDmgBonusZone: number
-  anomalyMultZone: number
-  anomalyCritRateRatio: number
-  anomalyCritDmgRatio: number
-  anomalyCritZone: number
-  /** 普通异常暴击区（暴击率强制为 1） */
-  anomalyFullCritZone: number
+  /** 属性异常增伤区（只含属性异常增伤自身字段） */
+  attributeAnomalyDmgBonusZone: number
+  /** 属性异常倍率区 */
+  attributeAnomalyMultZone: number
+  attributeAnomalyCritRateRatio: number
+  attributeAnomalyCritDmgRatio: number
+  /** 属性异常暴击区（期望形式：1 + 自身暴击率 × 自身爆伤） */
+  attributeAnomalyCritZone: number
+  /** 属性异常暴击区（暴击率强制为 1） */
+  attributeAnomalyFullCritZone: number
   turbulenceCritZone: number
   turbulenceFullCritZone: number
-  /** 异常基础期望（不含异常增伤/倍率/暴击区；本人耀变时为蕾米埃尔异常基础） */
+  /** 异常基础期望（不含子类增伤/倍率/暴击区；本人耀变时为蕾米埃尔异常基础） */
   anomalyBaseExpected: number
   /** 是否走蕾米埃尔本人耀变专用公式 */
   remielSelfRadianceActive?: boolean
@@ -232,16 +235,14 @@ export interface DamageCalcResult {
   remielSelfResistanceElement?: string | null
   remielSelfDefenseMultiplier?: number
   remielSelfResistanceMultiplier?: number
-  /** 异常期望伤害（实际暴击率加权；不含异放） */
-  anomalyExpected: number
-  /** 异常伤害（暴击率=0，不触发暴击） */
-  anomalyExpectedNoCrit: number
-  /** 异常伤害（暴击率=1，必定暴击） */
-  anomalyExpectedFullCrit: number
-  /** 异放增伤区 */
+  /** 属性异常期望伤害（自身暴击率加权；不含异放） */
+  attributeAnomalyExpected: number
+  /** 属性异常伤害（暴击率=0，不触发暴击） */
+  attributeAnomalyExpectedNoCrit: number
+  /** 属性异常伤害（暴击率=1，必定暴击） */
+  attributeAnomalyExpectedFullCrit: number
+  /** 异放增伤区（只含异放增伤，不再叠加属性异常增伤） */
   anomalyReleaseDmgBonusZone: number
-  /** 异放综合增伤区 = 异放增伤区 + 异常增伤区 */
-  anomalyReleaseCombinedDmgBonusZone: number
   /** 异放倍率区 */
   anomalyReleaseMultZone: number
   /** 异放暴击区（单独期望形式，仅展示参考） */
@@ -249,14 +250,7 @@ export interface DamageCalcResult {
   anomalyReleaseCritRateRatio: number
   anomalyReleaseCritDmgRatio: number
   anomalyReleaseFullCritZone: number
-  /** 综合暴击率比值 = 异常暴击率 + 异放暴击率 */
-  /** 综合爆伤比值 = 异常爆伤 + 异放爆伤 */
-  /**
-   * 异常综合暴击区 =
-   * 1 + (异常暴击 + 异放暴击) × (异常爆伤 + 异放爆伤)
-   */
-  /** 异常综合暴击区（暴击率强制为 1） */
-  /** 异放期望伤害（实际综合暴击率加权） */
+  /** 异放期望伤害（异放自身暴击率加权） */
   anomalyReleaseExpected: number
   /** 异放伤害（暴击率=0） */
   anomalyReleaseExpectedNoCrit: number
@@ -285,10 +279,9 @@ export interface DamageCalcResult {
   /** 乱流倍率修正（乘在倍率区上） */
   turbulenceMultFactor: number
   turbulenceZone: number
+  /** 乱流增伤区（只含乱流增伤自身字段；不含属性异常增伤） */
   turbulenceDmgBonusZone: number
-  /** 乱流增伤区 + 异常增伤区（百分点加算后乘区；不含异放） */
-  turbulenceCombinedDmgBonusZone: number
-  /** 乱流是否乘了非 1 的异常暴击区（有普通异常暴击时为 true） */
+  /** 历史字段：乱流是否乘了非 1 的属性异常暴击区；现固定 false（乱流只吃自身暴击） */
   turbulenceUsesAnomalyCrit: boolean
   turbulenceExpected: number
   /** 乱流伤害（暴击率=0） */
@@ -297,8 +290,8 @@ export interface DamageCalcResult {
   turbulenceExpectedFullCrit: number
   /** 有招式紊乱倍率贡献时为极性紊乱 */
   hasPolarDisorder: boolean
-  /** 耀变综合增伤区 */
-  radianceCombinedDmgBonusZone: number
+  /** 耀变增伤区（只含耀变增伤自身字段；不含属性异常增伤） */
+  radianceDmgBonusZone: number
   /** 耀变倍率区 */
   radianceMultZone: number
   /** 特殊倍率乘区 */
@@ -595,9 +588,9 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const panel = input.finalPanel
   const staggerPhase = input.staggerPhase ?? 'stagger'
   const useSharpenFormula = Boolean(input.useSharpenFormula) && !input.isMbMainAgent
-  const subKind = input.anomalySubKind ?? 'anomaly'
+  const subKind = input.anomalySubKind ?? 'attributeAnomaly'
   const useTriggerBase =
-    (subKind === 'anomaly' ||
+    (subKind === 'attributeAnomaly' ||
       subKind === 'turbulence' ||
       subKind === 'anomalyRelease' ||
       subKind === 'disorder' ||
@@ -795,14 +788,14 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   }
 
   // 异常乘区：全部异常子类（属性异常/异放/耀变/紊乱/乱流）的类型增伤、倍率与异常暴击均取异常类触发者（bonusPanel）；基础期望取异常强度提供者
-  const anomalyDmgBonusZone = 1 + bonusPanel.anomalyDmgBonus / 100
-  const anomalyMultZone =
-    Math.max(0, bonusPanel.anomalyMult / 100) * readFactor(bonusPanel.anomalyMultFactor)
-  const anomalyCritRateRatio = bonusPanel.anomalyCritRate / 100
-  const anomalyCritDmgRatio = clamp(bonusPanel.anomalyCritDmg / 100, 0, 20)
-  const anomalyCritZone = 1 + anomalyCritRateRatio * anomalyCritDmgRatio
-  const anomalyFullCritZone = 1 + anomalyCritDmgRatio
-  const anomalyNoCritZone = 1
+  const attributeAnomalyDmgBonusZone = 1 + bonusPanel.attributeAnomalyDmgBonus / 100
+  const attributeAnomalyMultZone =
+    Math.max(0, bonusPanel.attributeAnomalyMult / 100) * readFactor(bonusPanel.attributeAnomalyMultFactor)
+  const attributeAnomalyCritRateRatio = bonusPanel.attributeAnomalyCritRate / 100
+  const attributeAnomalyCritDmgRatio = clamp(bonusPanel.attributeAnomalyCritDmg / 100, 0, 20)
+  const attributeAnomalyCritZone = 1 + attributeAnomalyCritRateRatio * attributeAnomalyCritDmgRatio
+  const attributeAnomalyFullCritZone = 1 + attributeAnomalyCritDmgRatio
+  const attributeAnomalyNoCritZone = 1
   // 子类专用暴击（用户 2026-10-16）：各子类**只吃自己的**暴击字段，不再蹭 anomalyCrit*
   const turbulenceCritRateRatio = bonusPanel.turbulenceCritRate / 100
   const turbulenceCritDmgRatio = clamp(bonusPanel.turbulenceCritDmg / 100, 0, 20)
@@ -873,17 +866,16 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       enemyRes +
       clamp((remielSelf.resPen + remielSelf.radianceResPen) / 100, -2, 2)
   }
-  const anomalyPreCrit =
-    anomalyBaseExpected * anomalyDmgBonusZone * anomalyMultZone
-  const anomalyExpected = anomalyPreCrit * anomalyCritZone
-  const anomalyExpectedNoCrit = anomalyPreCrit * anomalyNoCritZone
-  const anomalyExpectedFullCrit = anomalyPreCrit * anomalyFullCritZone
+  const attributeAnomalyPreCrit =
+    anomalyBaseExpected * attributeAnomalyDmgBonusZone * attributeAnomalyMultZone
+  const attributeAnomalyExpected = attributeAnomalyPreCrit * attributeAnomalyCritZone
+  const attributeAnomalyExpectedNoCrit = attributeAnomalyPreCrit * attributeAnomalyNoCritZone
+  const attributeAnomalyExpectedFullCrit = attributeAnomalyPreCrit * attributeAnomalyFullCritZone
 
-  // 异放：基础用触发面板；综合增伤加算；综合暴击率/爆伤加算后再乘
+  // 异放：基础用触发面板；增伤只吃异放增伤自身字段（不再叠加属性异常增伤）；
+  // 暴击只吃异放暴击字段
 
   const anomalyReleaseDmgBonusZone = 1 + bonusPanel.anomalyReleaseDmgBonus / 100
-  const anomalyReleaseCombinedDmgBonusZone =
-    1 + (bonusPanel.anomalyReleaseDmgBonus + bonusPanel.anomalyDmgBonus) / 100
   const anomalyReleaseMultZone = skillMults
     ? skillMults.anomalyReleaseMultZone
     : Math.max(0, bonusPanel.anomalyReleaseMult / 100) *
@@ -895,7 +887,7 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const anomalyReleaseFullCritZone = 1 + releaseCritDmgRatio
   const anomalyReleasePreCrit =
     anomalyBaseExpected *
-    anomalyReleaseCombinedDmgBonusZone *
+    anomalyReleaseDmgBonusZone *
     anomalyReleaseMultZone
   const anomalyReleaseExpected = anomalyReleasePreCrit * anomalyReleaseCritZone
   const anomalyReleaseExpectedNoCrit = anomalyReleasePreCrit
@@ -944,9 +936,8 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   const disorderExpectedNoCrit = disorderPreCrit
   const disorderExpectedFullCrit = disorderPreCrit * disorderFullCritZone
 
+  // 乱流增伤只吃乱流增伤自身字段（不再叠加属性异常增伤）
   const turbulenceDmgBonusZone = 1 + bonusPanel.turbulenceDmgBonus / 100
-  const turbulenceCombinedDmgBonusZone =
-    1 + (bonusPanel.turbulenceDmgBonus + bonusPanel.anomalyDmgBonus) / 100
   const turbulenceCompMultRatio = multPanel.turbulenceCompMult / 100
 
   const turbulencePanelFactor = readFactor(multPanel.turbulenceBaseMultFactor)
@@ -974,17 +965,14 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
   }
   // 乱流**只吃自己的**暴击（不再蹭异常暴击）
   const turbulencePreCrit =
-    anomalyBaseExpected * turbulenceZone * turbulenceCombinedDmgBonusZone
+    anomalyBaseExpected * turbulenceZone * turbulenceDmgBonusZone
   const turbulenceExpected = turbulencePreCrit * turbulenceCritZone
-  const turbulenceExpectedNoCrit = turbulencePreCrit * anomalyNoCritZone
+  const turbulenceExpectedNoCrit = turbulencePreCrit * attributeAnomalyNoCritZone
   const turbulenceExpectedFullCrit = turbulencePreCrit * turbulenceFullCritZone
 
-  // 耀变综合增伤 = 耀变增伤 + 异常增伤，二者均取异常类触发者面板（含队友赋予的耀变增伤）
-
-  const radianceDmgBonusForCombined = bonusPanel.radianceDmgBonus
-  const anomalyDmgBonusForCombined = bonusPanel.anomalyDmgBonus
-  const radianceCombinedDmgBonusZone =
-    1 + (radianceDmgBonusForCombined + anomalyDmgBonusForCombined) / 100
+  // 耀变增伤只吃耀变增伤自身字段（取异常类触发者面板，含队友赋予的耀变增伤）；
+  // 不再叠加属性异常增伤
+  const radianceDmgBonusZone = 1 + bonusPanel.radianceDmgBonus / 100
   const radianceMultZone = computeRadianceMultZone(bonusPanel)
   const specialMultZone = computeSpecialMultZone(bonusPanel)
   const radiancePreCrit = remielSelfRadianceActive
@@ -993,11 +981,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       remielSelfResistanceMultiplier *
       Math.max(0, mainParts.anomalyVulnerableMultiplier) *
       Math.max(0, mainParts.staggerMultiplier) *
-      radianceCombinedDmgBonusZone *
+      radianceDmgBonusZone *
       radianceMultZone *
       specialMultZone *
       Math.max(0, mainParts.specialMultiplier)
-    : anomalyBaseExpected * radianceCombinedDmgBonusZone * radianceMultZone
+    : anomalyBaseExpected * radianceDmgBonusZone * radianceMultZone
   // 耀变暴击对所有触发者成立（普通耀变链与蕾米埃尔本人耀变链都乘同一暴击区）
   const radianceExpectedRaw = radiancePreCrit * radianceCritZone
   const radianceExpectedNoCritRaw = radiancePreCrit
@@ -1079,18 +1067,17 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
       if (!input.skillSubcategory && !useSharpenFormula) markUse(panel, 'settlementDmgMult', 'settlementDmgMultZone', ['anomalyTypeBonus'])
       markUse(panel, 'directDmgMultFactor', 'directDmgMultZone', ['anomalyTypeBonus'])
     } else {
-      if (eventKind === 'anomaly' || eventKind === 'anomalyRelease' || eventKind === 'turbulence' || eventKind === 'radiance') {
-        markUse(bonusPanel, 'anomalyDmgBonus', 'anomalyDmgBonusZone', ['anomalyTypeBonus'])
-      }
-      const prefix = eventKind === 'anomaly' ? 'anomaly' : eventKind
+      // 五个子类各报自己的增伤字段：属性异常只报 attributeAnomalyDmgBonus，
+      // 异放/乱流/耀变不得把属性异常增伤报成本事件采用的字段
+      const prefix = eventKind === 'attributeAnomaly' ? 'attributeAnomaly' : eventKind
       const bonusResult = `${prefix}DmgBonusZone` as keyof DamageCalcResult
       const critResult = `${prefix}CritZone` as keyof DamageCalcResult
-      if (eventKind !== 'anomaly') markUse(bonusPanel, `${prefix}DmgBonus` as keyof PanelStats, eventKind === 'radiance' ? 'radianceCombinedDmgBonusZone' : bonusResult, ['anomalyTypeBonus'])
+      markUse(bonusPanel, `${prefix}DmgBonus` as keyof PanelStats, bonusResult, ['anomalyTypeBonus'])
       if (critMode === 'expected') markUse(bonusPanel, `${prefix}CritRate` as keyof PanelStats, critResult, ['anomalyCrit'])
       if (critMode !== 'noCrit') markUse(bonusPanel, `${prefix}CritDmg` as keyof PanelStats, critResult, ['anomalyCrit'])
-      if (eventKind === 'anomaly') {
-        markUse(bonusPanel, 'anomalyMult', 'anomalyMultZone', ['anomalyTypeBonus'])
-        markUse(bonusPanel, 'anomalyMultFactor', 'anomalyMultZone', ['anomalyTypeBonus'])
+      if (eventKind === 'attributeAnomaly') {
+        markUse(bonusPanel, 'attributeAnomalyMult', 'attributeAnomalyMultZone', ['anomalyTypeBonus'])
+        markUse(bonusPanel, 'attributeAnomalyMultFactor', 'attributeAnomalyMultZone', ['anomalyTypeBonus'])
       } else if (eventKind === 'anomalyRelease') {
         if (!input.skillSubcategory?.anomalyReleaseMult) markUse(bonusPanel, 'anomalyReleaseMult', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
         markUse(bonusPanel, 'anomalyReleaseMultFactor', 'anomalyReleaseMultZone', ['anomalyTypeBonus'])
@@ -1158,12 +1145,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     masteryZone: round(triggerParts.masteryZone, 4),
     levelZone: round(triggerParts.levelZone, 4),
     levelZoneAgentLevel: anomalyBaseLevel,
-    anomalyDmgBonusZone: round(anomalyDmgBonusZone, 4),
-    anomalyMultZone: round(anomalyMultZone, 4),
-    anomalyCritRateRatio: round(anomalyCritRateRatio, 4),
-    anomalyCritDmgRatio: round(anomalyCritDmgRatio, 4),
-    anomalyCritZone: round(anomalyCritZone, 4),
-    anomalyFullCritZone: round(anomalyFullCritZone, 4),
+    attributeAnomalyDmgBonusZone: round(attributeAnomalyDmgBonusZone, 4),
+    attributeAnomalyMultZone: round(attributeAnomalyMultZone, 4),
+    attributeAnomalyCritRateRatio: round(attributeAnomalyCritRateRatio, 4),
+    attributeAnomalyCritDmgRatio: round(attributeAnomalyCritDmgRatio, 4),
+    attributeAnomalyCritZone: round(attributeAnomalyCritZone, 4),
+    attributeAnomalyFullCritZone: round(attributeAnomalyFullCritZone, 4),
     turbulenceCritZone: round(turbulenceCritZone, 4),
     turbulenceFullCritZone: round(turbulenceFullCritZone, 4),
     anomalyBaseExpected: round(anomalyBaseExpected, 0),
@@ -1192,12 +1179,11 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     remielSelfResistanceMultiplier: remielSelfRadianceActive
       ? round(remielSelfResistanceMultiplier, 4)
       : undefined,
-    anomalyExpected: round(applyMutation(anomalyExpected), 0),
-    anomalyExpectedNoCrit: round(applyMutation(anomalyExpectedNoCrit), 0),
-    anomalyExpectedFullCrit: round(applyMutation(anomalyExpectedFullCrit), 0),
+    attributeAnomalyExpected: round(applyMutation(attributeAnomalyExpected), 0),
+    attributeAnomalyExpectedNoCrit: round(applyMutation(attributeAnomalyExpectedNoCrit), 0),
+    attributeAnomalyExpectedFullCrit: round(applyMutation(attributeAnomalyExpectedFullCrit), 0),
     anomalyReleaseDmgBonusZone: round(anomalyReleaseDmgBonusZone, 4),
-    anomalyReleaseCombinedDmgBonusZone: round(anomalyReleaseCombinedDmgBonusZone, 4),
-    anomalyReleaseMultZone: round(anomalyReleaseMultZone, 4),
+        anomalyReleaseMultZone: round(anomalyReleaseMultZone, 4),
     anomalyReleaseCritZone: round(anomalyReleaseCritZone, 4),
     anomalyReleaseCritRateRatio: round(releaseCritRateRatio, 4),
     anomalyReleaseCritDmgRatio: round(releaseCritDmgRatio, 4),
@@ -1221,13 +1207,12 @@ export function computeDamageResult(input: DamageCalcInput): DamageCalcResult {
     turbulenceMultFactor: round(turbulenceMultFactor, 4),
     turbulenceZone: round(turbulenceZone, 4),
     turbulenceDmgBonusZone: round(turbulenceDmgBonusZone, 4),
-    turbulenceCombinedDmgBonusZone: round(turbulenceCombinedDmgBonusZone, 4),
     turbulenceUsesAnomalyCrit: false,
     turbulenceExpected: round(applyMutation(turbulenceExpected), 0),
     turbulenceExpectedNoCrit: round(applyMutation(turbulenceExpectedNoCrit), 0),
     turbulenceExpectedFullCrit: round(applyMutation(turbulenceExpectedFullCrit), 0),
     hasPolarDisorder,
-    radianceCombinedDmgBonusZone: round(radianceCombinedDmgBonusZone, 4),
+    radianceDmgBonusZone: round(radianceDmgBonusZone, 4),
     radianceMultZone: round(radianceMultZone, 4),
     specialMultZone: round(specialMultZone, 4),
     mutationZone: round(mutationMult, 4),

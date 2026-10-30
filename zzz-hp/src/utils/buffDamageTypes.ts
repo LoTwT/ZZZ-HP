@@ -26,7 +26,7 @@ const DAMAGE_TYPE_SET = new Set<string>(BUFF_DAMAGE_TYPE_IDS)
 
 /** 异常类 5 项（旧 mutation scope / 异化系数用） */
 export const ANOMALY_DAMAGE_TYPES: BuffDamageType[] = [
-  'anomaly',
+  'attributeAnomaly',
   'turbulence',
   'disorder',
   'radiance',
@@ -37,17 +37,17 @@ export const DIRECT_DAMAGE_TYPES: BuffDamageType[] = ['normal', 'pierce', 'sharp
 
 /** 15 个异常子类 stat → 第二级类型（类2 的字段本身表达类型） */
 export const ANOMALY_SUBTYPE_STAT_TO_TYPE: Partial<Record<string, BuffDamageType>> = {
-  anomalyDmgBonus: 'anomaly',
+  attributeAnomalyDmgBonus: 'attributeAnomaly',
   turbulenceDmgBonus: 'turbulence',
   disorderDmgBonus: 'disorder',
   radianceDmgBonus: 'radiance',
   anomalyReleaseDmgBonus: 'anomalyRelease',
-  anomalyCritRate: 'anomaly',
+  attributeAnomalyCritRate: 'attributeAnomaly',
   turbulenceCritRate: 'turbulence',
   disorderCritRate: 'disorder',
   radianceCritRate: 'radiance',
   anomalyReleaseCritRate: 'anomalyRelease',
-  anomalyCritDmg: 'anomaly',
+  attributeAnomalyCritDmg: 'attributeAnomaly',
   turbulenceCritDmg: 'turbulence',
   disorderCritDmg: 'disorder',
   radianceCritDmg: 'radiance',
@@ -65,7 +65,7 @@ export function isAnomalySubtypeStat(stat: string | null | undefined): boolean {
 
 /** 旧 scope → 第二级类型（skill / general 不产类型） */
 const LEGACY_SCOPE_TO_TYPES: Partial<Record<BuffScope, BuffDamageType[]>> = {
-  anomaly: ['anomaly'],
+  attributeAnomaly: ['attributeAnomaly'],
   turbulence: ['turbulence'],
   disorder: ['disorder'],
   radiance: ['radiance'],

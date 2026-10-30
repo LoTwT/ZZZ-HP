@@ -264,7 +264,7 @@ const ctx = buildOptimalEvalContext({
       basePanel: {
         ...createEmptyAgentBasePanel(),
         hp: 9000, atk: 900, def: 700, critRate: 5, critDmg: 50,
-        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, anomalyMult: 125,
+        anomalyControl: 100, energyRegen: 120, directDmgMult: 100, attributeAnomalyMult: 125,
       },
     },
   ],

@@ -28,8 +28,14 @@ export interface DamageZonePanels {
   anomalyTrigger: PanelStats
 }
 
+/**
+ * 异常类伤害的「种类」集合。
+ * 2026-10-30 起属性异常子类 id 为 `attributeAnomaly`；`anomaly` 仍是
+ * `DamageCalcKind` 的异常大类值，两个都要认（子类判定沿用这一份清单）。
+ */
 const ANOMALY_KINDS = new Set<string>([
   'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',

@@ -210,7 +210,7 @@ const emptyBangboo: BangbooBuffDoc = {
 }
 
 type DetailTab = 'diff' | 'process' | 'curve'
-type AnomalyMetric = 'anomaly' | 'disorder' | 'turbulence' | 'anomalyRelease' | 'radiance'
+type AnomalyMetric = 'attributeAnomaly' | 'disorder' | 'turbulence' | 'anomalyRelease' | 'radiance'
 type CurveMode = 'cumulative' | 'marginal'
 
 /** 本模块需手动选择直伤/异常；未选时只展示模式入口。默认跟随招式流程的首个伤害类型 */
@@ -233,7 +233,7 @@ watch(
   },
   { immediate: true },
 )
-const anomalySubKind = computed(() => props.anomalySubKind ?? 'anomaly')
+const anomalySubKind = computed(() => props.anomalySubKind ?? 'attributeAnomaly')
 /** KeepAlive 停用后仍会收到 props 变更；用 activated 门闩短路昂贵计算 */
 const keptAliveActive = ref(true)
 onActivated(() => {
@@ -277,7 +277,7 @@ const selectedIndex = ref<number | null>(null)
 /** 记录选中柱体对应的扫掠分配，调整小词条后尽量保持同一分配 */
 const selectedSweepKey = ref<{ outPercent: number; secondary: number } | null>(null)
 const detailTab = ref<DetailTab>('diff')
-const anomalyChartMetric = ref<AnomalyMetric>('anomaly')
+const anomalyChartMetric = ref<AnomalyMetric>('attributeAnomaly')
 const curveMode = ref<CurveMode>('cumulative')
 /** 扫掠模式收益曲线的收起态（2026-10-01 用户要求）：曲线区可折叠，标题行保留文字入口 */
 const curveFolded = ref(false)
@@ -1043,14 +1043,14 @@ const directBarSeries = computed(() => [
 const anomalyChartList = computed(() => {
   const all = [
     {
-      key: 'anomaly' as AnomalyMetric,
-      title: '异常期望伤害',
+      key: 'attributeAnomaly' as AnomalyMetric,
+      title: '属性异常期望伤害',
       series: [
         {
-          key: 'anomaly',
-          label: '异常期望',
+          key: 'attributeAnomaly',
+          label: '属性异常期望',
           color: '#abb2bf',
-          values: anomalyPoints.value.map((p) => p.anomalyExpected),
+          values: anomalyPoints.value.map((p) => p.attributeAnomalyExpected),
         },
       ],
     },
@@ -1285,9 +1285,9 @@ const PANEL_SHOWCASE_EXTERNAL_FIELDS: { key: keyof PanelStats; label: string }[]
 
 const PANEL_SHOWCASE_FINAL_EXTRA_FIELDS: { key: keyof PanelStats; label: string }[] = [
   { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
-  { key: 'anomalyCritRate', label: '异常暴击%' },
-  { key: 'anomalyCritDmg', label: '异常爆伤%' },
-  { key: 'anomalyDmgBonus', label: '异常增伤%' },
+  { key: 'attributeAnomalyCritRate', label: '属性异常暴击%' },
+  { key: 'attributeAnomalyCritDmg', label: '属性异常爆伤%' },
+  { key: 'attributeAnomalyDmgBonus', label: '属性异常增伤%' },
   { key: 'disorderDmgBonus', label: '紊乱增伤%' },
   { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
 ]
@@ -1656,7 +1656,7 @@ function metricOf(result: DamageCalcResult, grandTotal?: number) {
   if (anomalyChartMetric.value === 'turbulence') return result.turbulenceExpected
   if (anomalyChartMetric.value === 'anomalyRelease') return result.anomalyReleaseExpected
   if (anomalyChartMetric.value === 'radiance') return result.radianceExpected
-  return result.anomalyExpected
+  return result.attributeAnomalyExpected
 }
 
 type AffixEvalSnapshot = {

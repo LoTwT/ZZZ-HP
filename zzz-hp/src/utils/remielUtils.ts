@@ -17,7 +17,7 @@ export function isLuminousAgent(
 
 /** 旧四类异常事件（非耀变） */
 export function isLegacyAnomalyEventKind(kind: DamageEventKind): boolean {
-  return kind === 'anomaly' || kind === 'disorder' || kind === 'turbulence' || kind === 'anomalyRelease'
+  return kind === 'attributeAnomaly' || kind === 'disorder' || kind === 'turbulence' || kind === 'anomalyRelease'
 }
 
 /**
@@ -160,7 +160,7 @@ export interface RemielSelfRadianceCalcInput {
   /** @deprecated 耀变综合增伤的耀变/异常增伤均取异常类触发者面板；保留字段供旧调用兼容 */
   radianceDmgBonus: number
   /** @deprecated 同上 */
-  anomalyDmgBonus: number
+  attributeAnomalyDmgBonus: number
   /** 下一位非流明队友属性，用于敌方抗性基准 */
   resistanceElement: string | null
   isMb: boolean

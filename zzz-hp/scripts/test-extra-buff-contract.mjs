@@ -112,7 +112,7 @@ console.log('\n[4] extraGainToEffects：多效果与派生字段')
 
     const two = create()
     two.effects = [
-      { ...two.effects[0], id: 'e-anomaly', stat: 'anomalyDmgBonus', value: 75 },
+      { ...two.effects[0], id: 'e-anomaly', stat: 'attributeAnomalyDmgBonus', value: 75 },
       { ...two.effects[0], id: 'e-turbulence', stat: 'turbulenceDmgBonus', value: 75 },
     ]
     const many = toEffects(two)
@@ -532,12 +532,13 @@ console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻
     check('#12 特殊技 0', near(skillOf({}, catCtx('special')), 0))
     const oneTarget = mk('p12b', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }] })
     check('#12 删除第二项后终结技 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], { skillContext: catCtx('ultimate').skillContext })).skillDmgBonus ?? 0, 0))
-    const anomalyWithBasic = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'anomaly', categoryId: 'basic', subcategoryId: null, coords: [{ category: 'basic', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
-    check('#12 异常坐标未勾异常生效 → 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], anomalyWithBasic)).skillDmgBonus ?? 0, 0))
-    const anomOn = mk('p12c', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }], appliesToAnomaly: true })
-    check('#12 勾选后 → 30', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
-    const anomSpecial = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'anomaly', categoryId: 'special', subcategoryId: null, coords: [{ category: 'special', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
-    check('#12 特殊技坐标即使勾选仍 0', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomSpecial)).skillDmgBonus ?? 0, 0))
+    const anomalyWithBasic = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'attributeAnomaly', categoryId: 'basic', subcategoryId: null, coords: [{ category: 'basic', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
+    check('#12 异常坐标直接生效（不再需要异常开关）→ 30', near(collectPanelBuffMods(ctxFor(0, [oneTarget], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
+    // 2026-10-30 删除 appliesToAnomaly：旧数据残留该字段一律忽略
+    const legacyFlag = mk('p12c', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }], appliesToAnomaly: false })
+    check('#12 旧数据残留 appliesToAnomaly=false 被忽略 → 30', near(collectPanelBuffMods(ctxFor(0, [legacyFlag], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
+    const anomSpecial = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'attributeAnomaly', categoryId: 'special', subcategoryId: null, coords: [{ category: 'special', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
+    check('#12 特殊技坐标仍 0（招式锚点不匹配）', near(collectPanelBuffMods(ctxFor(0, [legacyFlag], anomSpecial)).skillDmgBonus ?? 0, 0))
   }
 
   // 17. 行级参数：行覆盖 > 卡片默认值；选择器残留不参与（§5.1 第 6 项、§7.2 第 17 项）
@@ -682,16 +683,16 @@ console.log('\n[10] §7.2 第 20 项：零值边界与共享归一化判定一�
     return { n: result.gains.length, d: result.discardedCount }
   }
 
-  const zeroAnomalyMult = countOf(build({ stat: 'anomalyMultFactor', kind: 'fixed', value: 0 }, 'zero-a'))
-  check('#20 anomalyMultFactor 固定 0 → 丢弃 1', zeroAnomalyMult.n === 0 && zeroAnomalyMult.d === 1, JSON.stringify(zeroAnomalyMult))
-  const zeroStacked = countOf(build({ stat: 'anomalyMultFactor', kind: 'stacked', valuePerStack: 0 }, 'zero-b'))
-  check('#20 anomalyMultFactor 叠层每层 0 → 丢弃 1', zeroStacked.n === 0 && zeroStacked.d === 1, JSON.stringify(zeroStacked))
+  const zeroAnomalyMult = countOf(build({ stat: 'attributeAnomalyMultFactor', kind: 'fixed', value: 0 }, 'zero-a'))
+  check('#20 attributeAnomalyMultFactor 固定 0 → 丢弃 1', zeroAnomalyMult.n === 0 && zeroAnomalyMult.d === 1, JSON.stringify(zeroAnomalyMult))
+  const zeroStacked = countOf(build({ stat: 'attributeAnomalyMultFactor', kind: 'stacked', valuePerStack: 0 }, 'zero-b'))
+  check('#20 attributeAnomalyMultFactor 叠层每层 0 → 丢弃 1', zeroStacked.n === 0 && zeroStacked.d === 1, JSON.stringify(zeroStacked))
   const zeroAtk = countOf(build({ stat: 'atk', kind: 'fixed', value: 0 }, 'zero-c'))
   check('#20 atk 固定 0 → 保留', zeroAtk.n === 1 && zeroAtk.d === 0, JSON.stringify(zeroAtk))
   const convertKept = countOf(
     build(
       {
-        stat: 'anomalyMultFactor',
+        stat: 'attributeAnomalyMultFactor',
         kind: 'convert',
         value: 0,
         convert: { from: 'atk', panelSource: 'external', ratioPercent: 10, initialBase: 0, cap: null, defaultBase: null },
@@ -699,13 +700,13 @@ console.log('\n[10] §7.2 第 20 项：零值边界与共享归一化判定一�
       'zero-d',
     ),
   )
-  check('#20 anomalyMultFactor 转模 0 → 保留', convertKept.n === 1 && convertKept.d === 0, JSON.stringify(convertKept))
+  check('#20 attributeAnomalyMultFactor 转模 0 → 保留', convertKept.n === 1 && convertKept.d === 0, JSON.stringify(convertKept))
   const stackedDefaultZero = countOf(
-    build({ stat: 'anomalyMultFactor', kind: 'stacked', valuePerStack: 10, defaultStacks: 0 }, 'zero-e'),
+    build({ stat: 'attributeAnomalyMultFactor', kind: 'stacked', valuePerStack: 10, defaultStacks: 0 }, 'zero-e'),
   )
-  check('#20 anomalyMultFactor 叠层默认 0 层 → 保留', stackedDefaultZero.n === 1 && stackedDefaultZero.d === 0, JSON.stringify(stackedDefaultZero))
-  const onePercent = countOf(build({ stat: 'anomalyMultFactor', kind: 'fixed', value: 1 }, 'zero-f'))
-  check('#20 anomalyMultFactor 固定 1 → 归零后丢弃', onePercent.n === 0 && onePercent.d === 1, JSON.stringify(onePercent))
+  check('#20 attributeAnomalyMultFactor 叠层默认 0 层 → 保留', stackedDefaultZero.n === 1 && stackedDefaultZero.d === 0, JSON.stringify(stackedDefaultZero))
+  const onePercent = countOf(build({ stat: 'attributeAnomalyMultFactor', kind: 'fixed', value: 1 }, 'zero-f'))
+  check('#20 attributeAnomalyMultFactor 固定 1 → 归零后丢弃', onePercent.n === 0 && onePercent.d === 1, JSON.stringify(onePercent))
 }
 
 console.log('\n[11] §7.2 第 19 项：未规范化输入的允许变化与必须保留')
@@ -778,14 +779,14 @@ console.log('\n[11] §7.2 第 19 项：未规范化输入的允许变化与必�
     const effect = createEmptyBuffEffect({
       id: 'unnorm-anomaly-e',
       kind: 'fixed',
-      stat: 'anomalyDmgBonus',
+      stat: 'attributeAnomalyDmgBonus',
       value: 75,
       conditions: { damageTypes: ['normal'] },
     })
     const restored = api.normalizeExtraGains(JSON.parse(JSON.stringify(api.serializeExtraGains([card([effect], 'unnorm-anomaly')]))))
     const got = restored.gains[0]?.effects[0]
     check('#19 异常子类冗余条件被移除', got?.conditions == null, JSON.stringify(got?.conditions))
-    check('#19 异常子类 stat/值/身份保持', got?.stat === 'anomalyDmgBonus' && got?.value === 75 && got?.id === 'unnorm-anomaly-e')
+    check('#19 异常子类 stat/值/身份保持', got?.stat === 'attributeAnomalyDmgBonus' && got?.value === 75 && got?.id === 'unnorm-anomaly-e')
   }
 
   // 招式多选：兼容字段与 skillTargets 一并保留

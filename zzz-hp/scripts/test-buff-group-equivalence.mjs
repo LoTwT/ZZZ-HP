@@ -45,7 +45,7 @@ function fx(stat, value, extra = {}) {
   })
 }
 
-function ctxFor(kind, subKind = 'anomaly', element = '电') {
+function ctxFor(kind, subKind = 'attributeAnomaly', element = '电') {
   return {
     damageKind: kind,
     categoryId: 'basic',
@@ -109,7 +109,7 @@ function samePanel(a, b) {
 }
 
 function sameDamage(a, b) {
-  for (const key of ['directDamageExpected', 'anomalyExpected', 'disorderExpected', 'turbulenceExpected', 'radianceExpected', 'anomalyReleaseExpected']) {
+  for (const key of ['directDamageExpected', 'attributeAnomalyExpected', 'disorderExpected', 'turbulenceExpected', 'radianceExpected', 'anomalyReleaseExpected']) {
     if (Math.abs(Number(a[key] ?? 0) - Number(b[key] ?? 0)) > 1e-9) {
       return `${key}: ${a[key]} vs ${b[key]}`
     }
@@ -120,7 +120,7 @@ function sameDamage(a, b) {
 console.log('\n[1] 类2 三条同组 vs 三条独立（异常）')
 {
   const grouped = [
-    fx('anomalyDmgBonus', 12, { id: 'g-anom', groupId: 'grp-1' }),
+    fx('attributeAnomalyDmgBonus', 12, { id: 'g-anom', groupId: 'grp-1' }),
     fx('disorderDmgBonus', 12, { id: 'g-dis', groupId: 'grp-1' }),
     fx('radianceDmgBonus', 12, { id: 'g-rad', groupId: 'grp-1' }),
   ]
@@ -129,7 +129,7 @@ console.log('\n[1] 类2 三条同组 vs 三条独立（异常）')
     delete copy.groupId
     return copy
   })
-  for (const sub of ['anomaly', 'disorder', 'radiance']) {
+  for (const sub of ['attributeAnomaly', 'disorder', 'radiance']) {
     const g = panelFor(grouped, ctxFor('anomaly', sub))
     const i = panelFor(independent, ctxFor('anomaly', sub))
     const diff = samePanel(g, i)
@@ -139,11 +139,11 @@ console.log('\n[1] 类2 三条同组 vs 三条独立（异常）')
   const iDirect = panelFor(independent, ctxFor('direct', 'normal'))
   check('直伤上下文一致（异常族条件不进直伤）', samePanel(gDirect, iDirect) == null)
 
-  const gPanel = panelFor(grouped, ctxFor('anomaly', 'anomaly'))
-  const iPanel = panelFor(independent, ctxFor('anomaly', 'anomaly'))
+  const gPanel = panelFor(grouped, ctxFor('anomaly', 'attributeAnomaly'))
+  const iPanel = panelFor(independent, ctxFor('anomaly', 'attributeAnomaly'))
   check(
     '异常伤害数字一致',
-    sameDamage(damageFor(gPanel, 'anomaly', 'anomaly'), damageFor(iPanel, 'anomaly', 'anomaly')) == null,
+    sameDamage(damageFor(gPanel, 'anomaly', 'attributeAnomaly'), damageFor(iPanel, 'anomaly', 'attributeAnomaly')) == null,
   )
 }
 
@@ -167,8 +167,8 @@ console.log('\n[2] 类3 一条 stat + conditions（跨类多选）vs 同一条�
   const gPierce = panelFor(grouped, ctxFor('direct', 'pierce'))
   const iPierce = panelFor(independent, ctxFor('direct', 'pierce'))
   check('命破面板一致', samePanel(gPierce, iPierce) == null)
-  const gAnomaly = panelFor(grouped, ctxFor('anomaly', 'anomaly'))
-  const iAnomaly = panelFor(independent, ctxFor('anomaly', 'anomaly'))
+  const gAnomaly = panelFor(grouped, ctxFor('anomaly', 'attributeAnomaly'))
+  const iAnomaly = panelFor(independent, ctxFor('anomaly', 'attributeAnomaly'))
   check('异常上下文不吃直伤条件', samePanel(gAnomaly, iAnomaly) == null)
 
   // 条件只影响命中，不改字段：atk 仍进攻击力
@@ -181,10 +181,10 @@ console.log('\n[2] 类3 一条 stat + conditions（跨类多选）vs 同一条�
 
 console.log('\n[3] groupId 本身不参与引擎')
 {
-  const base = [fx('anomalyDmgBonus', 12, { id: 'x1' })]
+  const base = [fx('attributeAnomalyDmgBonus', 12, { id: 'x1' })]
   const withGroup = [{ ...base[0], groupId: 'arbitrary' }]
-  const p1 = panelFor(base, ctxFor('anomaly', 'anomaly'))
-  const p2 = panelFor(withGroup, ctxFor('anomaly', 'anomaly'))
+  const p1 = panelFor(base, ctxFor('anomaly', 'attributeAnomaly'))
+  const p2 = panelFor(withGroup, ctxFor('anomaly', 'attributeAnomaly'))
   check('加任意 groupId 面板不变', samePanel(p1, p2) == null)
 }
 

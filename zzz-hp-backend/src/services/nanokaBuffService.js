@@ -238,7 +238,6 @@ export function sanitizeEffect(input, index = 0) {
       const num = Number(raw.defaultStacks)
       return Number.isFinite(num) ? Math.max(0, num) : 1
     })(),
-    appliesToAnomaly: raw.appliesToAnomaly == null ? undefined : Boolean(raw.appliesToAnomaly),
     enabledDefault: raw.enabledDefault === false ? false : true,
     note: typeof raw.note === 'string' ? raw.note : '',
   }
@@ -292,7 +291,6 @@ function effectSignature(input) {
     skillTargets: sorted(skillTargets.map((target) => JSON.stringify([target.category, target.subcategoryId ?? null]))),
     damageTypes: effect.conditions?.damageTypes ?? [],
     convert: effect.convert ?? null,
-    appliesToAnomaly: effect.appliesToAnomaly ?? null,
     enabledDefault: effect.enabledDefault,
   })
 }
@@ -570,7 +568,6 @@ export const MERGE_FIELD_LIST = [
   { id: 'skillCategory', label: '招式大类' },
   { id: 'skillSubcategoryId', label: '招式小类' },
   { id: 'convert', label: '转模' },
-  { id: 'appliesToAnomaly', label: '计入异常' },
   { id: 'enabledDefault', label: '默认启用' },
 ]
 
@@ -1455,4 +1452,3 @@ export async function findEmptyBuffTargets(options = {}) {
   const buffs = await listCalculatorBuffs()
   return { ...listEmptyBuffTargets({ ...options, buffs }), queriedAt: new Date().toISOString() }
 }
-

@@ -113,14 +113,14 @@ if (failed) {
 console.log(`\n结果：${passed} passed, 0 failed`)
 console.log('\n[scope 数组：表单保存不得静默压扁多值]')
 {
-  const original = ['anomaly', 'anomalyRelease']
-  const kept = resolveAffixScopeForSave(original, 'anomaly', false)
+  const original = ['attributeAnomaly', 'anomalyRelease']
+  const kept = resolveAffixScopeForSave(original, 'attributeAnomaly', false)
   check(
     '未改动 scope → 原样保留多值数组',
-    Array.isArray(kept) && kept.length === 2 && kept[0] === 'anomaly' && kept[1] === 'anomalyRelease',
+    Array.isArray(kept) && kept.length === 2 && kept[0] === 'attributeAnomaly' && kept[1] === 'anomalyRelease',
   )
   const changed = resolveAffixScopeForSave(original, 'radiance', true)
   check('显式改动 scope → 写成该单元素数组', JSON.stringify(changed) === JSON.stringify(['radiance']))
-  const normalized = resolveAffixScopeForSave(['anomaly', 'general'], 'anomaly', false)
+  const normalized = resolveAffixScopeForSave(['attributeAnomaly', 'general'], 'attributeAnomaly', false)
   check('未改动时也按规则归一化（含 general → 只留 general）', JSON.stringify(normalized) === JSON.stringify(['general']))
 }

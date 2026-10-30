@@ -185,9 +185,9 @@ const EXTERNAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
 const FINAL_PREVIEW_FIELDS: { key: keyof PanelStats; label: string }[] = [
   ...EXTERNAL_PREVIEW_FIELDS,
   { key: 'sharpenCritDmgBonus', label: '锐爆伤害%' },
-  { key: 'anomalyCritRate', label: '异常暴击%' },
-  { key: 'anomalyCritDmg', label: '异常爆伤%' },
-  { key: 'anomalyDmgBonus', label: '异常增伤%' },
+  { key: 'attributeAnomalyCritRate', label: '属性异常暴击%' },
+  { key: 'attributeAnomalyCritDmg', label: '属性异常爆伤%' },
+  { key: 'attributeAnomalyDmgBonus', label: '属性异常增伤%' },
   { key: 'disorderDmgBonus', label: '紊乱增伤%' },
   { key: 'turbulenceDmgBonus', label: '乱流增伤%' },
 ]

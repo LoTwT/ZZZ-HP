@@ -90,15 +90,15 @@ function buildAffixTargetBranchGroups(): AffixTargetBranchGroup[] {
     ]),
     group('anomaly', '属性异常', [
       ...gainOpts(
-        'anomalyDmgBonus',
-        'anomalyCritRate',
-        'anomalyCritDmg',
-        'anomalyMult',
-        'anomalyMultFactor',
+        'attributeAnomalyDmgBonus',
+        'attributeAnomalyCritRate',
+        'attributeAnomalyCritDmg',
+        'attributeAnomalyMult',
+        'attributeAnomalyMultFactor',
         'anomalyDuration',
       ),
     ]),
-    group('anomalyRelease', '异常放', [
+    group('anomalyRelease', '异放', [
       ...gainOpts(
         'anomalyReleaseDmgBonus',
         'anomalyReleaseCritRate',

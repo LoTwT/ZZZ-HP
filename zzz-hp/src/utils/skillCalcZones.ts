@@ -65,8 +65,8 @@ export function pickSkillMultZone(
     case 'direct':
     case 'sharpen':
       return result.directDmgMultZone
-    case 'anomaly':
-      return result.anomalyMultZone
+    case 'attributeAnomaly':
+      return result.attributeAnomalyMultZone
     case 'anomalyRelease':
       return result.anomalyReleaseMultZone
     case 'disorder':
@@ -138,7 +138,7 @@ function pushRemielSelfRadianceRows(rows: SkillCalcZoneRow[], result: DamageCalc
   push(rows, '抗性区', result.remielSelfResistanceMultiplier ?? result.resistanceMultiplier)
   push(rows, '易伤区', result.anomalyVulnerableMultiplier)
   push(rows, '失衡易伤区', result.staggerMultiplier)
-  push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
+  push(rows, '耀变增伤区', result.radianceDmgBonusZone)
   // 耀变倍率区按百分比展示（3.6 → 360）：倍率区与防御/抗性等乘数区分开，避免误读成 3.6%
   // （用户口径 2026-09-16；仅耀变如此展示，其他类型倍率区保持区小数）
   push(rows, '耀变倍率区', result.radianceMultZone * 100)
@@ -196,20 +196,20 @@ export function buildSkillCalcZoneRows(
     push(rows, '异化系数', result.mutationZone)
   }
 
-  if (damageType === 'anomaly') {
+  if (damageType === 'attributeAnomaly') {
   push(rows, '增伤区', result.dmgMultiplier)
 
-    const hasCritZone = isActiveZone(result.anomalyFullCritZone)
-    push(rows, '异常增伤区', result.anomalyDmgBonusZone)
-    push(rows, '异常倍率区', result.anomalyMultZone)
+    const hasCritZone = isActiveZone(result.attributeAnomalyFullCritZone)
+    push(rows, '属性异常增伤区', result.attributeAnomalyDmgBonusZone)
+    push(rows, '属性异常倍率区', result.attributeAnomalyMultZone)
     if (hasCritZone) {
-      push(rows, '异常暴击区', result.anomalyFullCritZone)
+      push(rows, '属性异常暴击区', result.attributeAnomalyFullCritZone)
     }
     pushAnomalyFinalDamages(rows, {
       hasCritZone,
-      critDamage: result.anomalyExpectedFullCrit,
-      expectedDamage: result.anomalyExpected,
-      noCritDamage: result.anomalyExpectedNoCrit,
+      critDamage: result.attributeAnomalyExpectedFullCrit,
+      expectedDamage: result.attributeAnomalyExpected,
+      noCritDamage: result.attributeAnomalyExpectedNoCrit,
     })
     return rows
   }
@@ -251,7 +251,7 @@ export function buildSkillCalcZoneRows(
       push(rows, '乱流倍率修正', result.turbulenceMultFactor)
     }
     push(rows, '乱流倍率区', result.turbulenceZone)
-    push(rows, '乱流综合增伤区', result.turbulenceCombinedDmgBonusZone)
+    push(rows, '乱流增伤区', result.turbulenceDmgBonusZone)
     if (hasCritZone) {
       push(rows, '乱流暴击区', result.turbulenceFullCritZone)
     }
@@ -267,7 +267,7 @@ export function buildSkillCalcZoneRows(
   if (damageType === 'anomalyRelease') {
   push(rows, '增伤区', result.dmgMultiplier)
 
-    push(rows, '异放综合增伤区', result.anomalyReleaseCombinedDmgBonusZone)
+    push(rows, '异放增伤区', result.anomalyReleaseDmgBonusZone)
     push(rows, '异放倍率区', result.anomalyReleaseMultZone)
     // 「异常综合暴击区」已删除 → 异放用自己的暴击区（用户 2026-10-16）
     const hasCritZone = isActiveZone(result.anomalyReleaseFullCritZone)
@@ -288,7 +288,7 @@ export function buildSkillCalcZoneRows(
 
     // 耀变暴击对所有触发者成立（蕾米本人链见 pushRemielSelfRadianceRows）
     const hasCritZone = isActiveZone(result.radianceFullCritZone)
-    push(rows, '耀变综合增伤区', result.radianceCombinedDmgBonusZone)
+    push(rows, '耀变增伤区', result.radianceDmgBonusZone)
     // 百分比展示，同 pushRemielSelfRadianceRows 的耀变倍率区
     push(rows, '耀变倍率区', result.radianceMultZone * 100)
     if (hasCritZone) {
@@ -377,13 +377,13 @@ const ZONE_HINTS: Record<string, string> = {
   直伤倍率区: '直伤倍率对应的乘区。',
   决算倍率区: '决算倍率（结算额外倍率）。',
   特殊倍率乘区: '特殊倍率乘区（如耀变倍率之外的额外倍率）。',
-  异常增伤区: '1 + 异常增伤（触发者）。',
-  异常倍率区: '异常倍率区（触发者）。',
-  异常暴击区: '1 + 异常暴击率 × 异常爆伤（触发者）。',
-  耀变综合增伤区: '耀变路径的综合增伤（触发者）。',
+  属性异常增伤区: '1 + 属性异常增伤（触发者）。只影响属性异常子类。',
+  属性异常倍率区: '属性异常倍率区（触发者）。只影响属性异常子类。',
+  属性异常暴击区: '1 + 属性异常暴击率 × 属性异常爆伤（触发者）。只影响属性异常子类。',
+  耀变增伤区: '1 + 耀变增伤（触发者）；不再叠加属性异常增伤。',
   耀变倍率区: '耀变倍率 × 100（百分数展示）。',
   耀变暴击区: '1 + 耀变暴击率 × 耀变爆伤（触发者）。',
-  异放综合增伤区: '异放路径的综合增伤（触发者）。',
+  异放增伤区: '1 + 异放增伤（触发者）；不再叠加属性异常增伤。',
   异放倍率区: '异放倍率区（触发者）。',
   异放暴击区: '1 + 异放暴击率 × 异放爆伤（触发者）。',
   紊乱基础倍率: '紊乱基础倍率（含异常基础伤害，取异常强度提供者）。',
@@ -397,7 +397,7 @@ const ZONE_HINTS: Record<string, string> = {
   乱流补偿倍率: '乱流补偿倍率 = 1 + 补偿系数 / 100（取异常强度提供者）。',
   乱流倍率修正: '乱流倍率修正（频率 / 触发相关，取异常强度提供者）。',
   乱流倍率区: '乱流倍率区（取异常强度提供者）。',
-  乱流综合增伤区: '乱流路径的综合增伤（触发者）。',
+  乱流增伤区: '1 + 乱流增伤（触发者）；不再叠加属性异常增伤。',
   乱流暴击区: '1 + 乱流暴击率 × 乱流爆伤（触发者）。',
   暴击伤害: '按必暴计算的单次伤害（仅对照展示）。',
   期望伤害: '单次期望伤害（暴击按概率加权）。',

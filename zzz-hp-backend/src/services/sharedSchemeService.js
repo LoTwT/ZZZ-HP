@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import pool from '../config/db.js'
+import { migrateAttributeAnomalyNamingDeep } from '../utils/attributeAnomalyMigration.js'
 
 /**
  * 共用方案（服务端预设方案）。
@@ -111,7 +112,10 @@ function buildDependencies(pack, entry) {
  * 纯函数：把方案库导出包转成待入库的行。
  * 抛错信息直接给管理端展示；不做数据库访问，便于单测。
  */
-export function buildSharedSchemeRows(pack) {
+export function buildSharedSchemeRows(rawPack) {
+  // 旧个人方案包（属性异常字段旧名 / 旧子类类型值 / 旧生成行属性槽位）在入库前转换，
+  // 统一库只存新名（Spec §4.4.3 服务端共用方案一行；同映射见 utils/attributeAnomalyMigration.js）。
+  const pack = migrateAttributeAnomalyNamingDeep(rawPack)
   if (!isPlainObject(pack)) throw invalid('文件不是 JSON 对象')
   if (pack.type !== 'zzz-hp-schemes' || !isPlainObject(pack.schemes)) {
     throw invalid('文件类型错误：不是 zzz-hp-schemes 方案库导出')
