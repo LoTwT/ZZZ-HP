@@ -1,4 +1,5 @@
 import pool from '../config/db.js'
+import { migrateAttributeAnomalyNamingDeep } from '../utils/attributeAnomalyMigration.js'
 import {
   BUFF_STAT_KEYS,
   BUFF_MULT_FACTOR_KEYS,
@@ -170,7 +171,9 @@ function normalizeConvert(value) {
   }
 }
 
-export function normalizeEffectList(value) {
+export function normalizeEffectList(rawValue) {
+  // 旧个人/旧备份效果（属性异常字段旧名、旧子类类型值）在白名单校验前转换（Spec §4.4.3，幂等）。
+  const value = Array.isArray(rawValue) ? migrateAttributeAnomalyNamingDeep(rawValue) : rawValue
   if (!Array.isArray(value)) return []
   return value
     .filter((item) => item && typeof item === 'object')
