@@ -2902,7 +2902,6 @@ export function mapKeywordsToEffect(keyword = {}) {
         maxStacks,
         valuePerStack,
         defaultStacks: 1,
-        appliesToAnomaly: undefined,
         enabledDefault: true,
         note,
         // 招式限定 = 条件（锚点关联到既有招式小类 / 大类）
@@ -3337,4 +3336,3 @@ export function slotView(slots = {}, { expandAll = false } = {}) {
   }
   return { visible, hidden, unable, expandAll: Boolean(expandAll) }
 }
-

@@ -12,7 +12,6 @@ import type { WengineBuffEditSectionId } from '@/constants/wengineBuffEditNav'
 import { packFromBlocks, packFromEffects } from '@/utils/buffEffect'
 import {
   ensureRefinementFirstBlockName,
-  syncAppliesToAnomalyAcrossRefinementBlocks,
 } from '@/utils/buffEffectBlockHelpers'
 import {
   rememberWengineStatValue,
@@ -199,13 +198,6 @@ function copyRefinementFrom(sourceRank: number) {
   error.value = ''
 }
 
-function syncRefinementAppliesToAnomaly(effect: import('@/types/calculator').BuffEffect, value: boolean) {
-  syncAppliesToAnomalyAcrossRefinementBlocks(
-    form.value.refinementForm.map((rank) => rank.effectBlocks ?? []),
-    effect,
-    value,
-  )
-}
 
 function rememberWenginePanelStats() {
   rememberWengineStatValue(WENGINE_BASE_ATK_FIELD_KEY, form.value.baseAtk)
@@ -415,7 +407,6 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
           :owner-id="form.id || undefined"
           :owners="ownerItems"
           :save-state="saving ? 'saving' : undefined"
-          :on-applies-to-anomaly-change="syncRefinementAppliesToAnomaly"
           @switch-owner="selectItem"
         >
           <template #toolbar-extra>

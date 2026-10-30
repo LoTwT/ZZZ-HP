@@ -210,81 +210,6 @@ function collectTwoPieceBlockEntries(disc: DriveDiscBuffDoc) {
   ]
 }
 
-/**
- * 邦布/音擎精炼：任一精炼勾选了「异常计算时也生效」，则当前精炼同身份效果也生效。
- */
-function refinementIdentityKey(effect: BuffEffect): string {
-  const targets = (effect.skillTargets ?? [])
-    .map((item) => `${item.category}:${item.subcategoryId ?? ''}`)
-    .join('|')
-  return [
-    effect.stat,
-    effect.kind,
-    damageTypesOf(effect).join(','),
-    effect.applyTarget,
-    targets || `${effect.skillCategory ?? ''}|${effect.skillSubcategoryId ?? ''}`,
-  ].join('|')
-}
-
-function withRefinementAnomalyFlags(
-  activeEffects: BuffEffect[],
-  allRefineEffects: BuffEffect[][],
-  allRefineBlocks?: { effects?: BuffEffect[] }[][] | null,
-): BuffEffect[] {
-  const flagged = new Set<string>()
-  const mark = (effect: BuffEffect) => {
-    if (effect.appliesToAnomaly === true) flagged.add(refinementIdentityKey(effect))
-  }
-  for (const list of allRefineEffects) {
-    for (const effect of list ?? []) mark(effect)
-  }
-  if (allRefineBlocks) {
-    for (const blocks of allRefineBlocks) {
-      for (const block of blocks ?? []) {
-        for (const effect of block.effects ?? []) mark(effect)
-      }
-    }
-  }
-  if (!flagged.size) return activeEffects
-  return activeEffects.map((effect) => {
-    if (!flagged.has(refinementIdentityKey(effect)) || effect.appliesToAnomaly === true) {
-      return effect
-    }
-    return { ...effect, appliesToAnomaly: true }
-  })
-}
-
-function applyAnomalyFlagsToPack<T extends {
-  effectBlocks?: { effects?: BuffEffect[] }[] | null
-  effects?: BuffEffect[] | null
-}>(
-  pack: T,
-  allRefineEffects: BuffEffect[][],
-  allRefineBlocks?: { effects?: BuffEffect[] }[][] | null,
-): T {
-  if (pack.effectBlocks?.length) {
-    return {
-      ...pack,
-      effectBlocks: pack.effectBlocks.map((block) => ({
-        ...block,
-        effects: withRefinementAnomalyFlags(
-          block.effects ?? [],
-          allRefineEffects,
-          allRefineBlocks,
-        ),
-      })),
-    } as T
-  }
-  return {
-    ...pack,
-    effects: withRefinementAnomalyFlags(
-      pack.effects ?? [],
-      allRefineEffects,
-      allRefineBlocks,
-    ),
-  } as T
-}
-
 export interface DriveDiscSelection {
   twoPieceId: string
   fourPieceId: string
@@ -1873,13 +1798,7 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
       if (wengine && isWengineProfessionMatch(agent.profession, wengine.profession)) {
         const refineIndex = clampRefine(slot.wengineRefine) - 1
         const refineBuffsRaw = wengine.refinementBuffs[refineIndex] ?? createEmptySelfTeamBuffs()
-        const allRefineEffects = wengine.refinementBuffs.map((rank) => rank.effects ?? [])
-        const allRefineBlocks = wengine.refinementBuffs.map((rank) => rank.effectBlocks ?? [])
-        const refineBuffs = applyAnomalyFlagsToPack(
-          refineBuffsRaw,
-          allRefineEffects,
-          allRefineBlocks,
-        )
+        const refineBuffs = refineBuffsRaw
         const sourceLabel = `${roleLabel} · ${agent.name} · 音擎 · ${wengine.name}（精${slot.wengineRefine}）`
         const groupFor = (effect: BuffEffect) =>
           isMain
@@ -2021,14 +1940,10 @@ function collectForMainSlot(ctx: CollectPassContext): CollectedEffect[] {
       effects: ctx.bangboo.effects ?? [],
     }
     const refineBlocks = ctx.bangboo.refinementEffectBlocks?.[refineIndex]
-    const refinePack = applyAnomalyFlagsToPack(
-      {
-        effectBlocks: refineBlocks?.length ? refineBlocks : undefined,
-        effects: ctx.bangboo.refinementEffects?.[refineIndex] ?? [],
-      },
-      ctx.bangboo.refinementEffects ?? [],
-      ctx.bangboo.refinementEffectBlocks,
-    )
+    const refinePack = {
+      effectBlocks: refineBlocks?.length ? refineBlocks : undefined,
+      effects: ctx.bangboo.refinementEffects?.[refineIndex] ?? [],
+    }
     pushPack(
       fixedPack,
       'bangboo-fixed',
@@ -3480,4 +3395,3 @@ export function buildDefaultBuffSelection(
 }
 
 export type { SkillCategoryId }
-

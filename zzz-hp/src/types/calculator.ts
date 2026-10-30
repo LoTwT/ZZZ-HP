@@ -478,12 +478,6 @@ export interface BuffEffect {
   defaultStacks?: number
   convert?: BuffEffectConvert
   /**
-   * 异常结算是否也吃这条效果。
-   * 默认：通用增益参与异常；招式伤害/倍率加成不参与。
-   * 勾选后：即使是招式类增益，异常结算也会计入。
-   */
-  appliesToAnomaly?: boolean
-  /**
    * 用户侧「额外增益」的效果（2026-09-24 阶段 3 起并入统一收集）。
    * 它没有勾选状态 —— **加入即已勾选**：`isEffectEnabled` 见到这个标志直接返回 true。
    */

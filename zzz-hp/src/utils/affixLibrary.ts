@@ -366,7 +366,6 @@ export function extraGainFromLibraryEntry(
           ? normalizeBuffScopes('skill')
           : scopeList,
         skillTargets,
-        appliesToAnomaly: entry.appliesToAnomaly,
         enabledDefault: true,
       }),
     ],
@@ -393,7 +392,6 @@ export function affixEntryConditionSummary(entry: AffixLibraryEntry): string {
   } else if (!(entryScopes.length === 1 && entryScopes[0] === 'general')) {
     parts.push(buffScopeLabel(entryScopes))
   }
-  if (entry.appliesToAnomaly) parts.push('异常也生效')
   return parts.join(' · ')
 }
 
@@ -461,7 +459,6 @@ export interface AffixLibraryEntry {
   scopeTouched?: boolean
   skillCategory?: BuffSkillTargetId
   skillSubcategoryId?: string | null
-  appliesToAnomaly?: boolean
   /**
    * 版本化效果模板（官方预设 `effect_json`）。缺省时由 `target` + 条件字段现编。
    * 旧存档没有这个键，不升 localStorage 版本。
@@ -796,12 +793,6 @@ function hoistPresetConditionFields(item: Record<string, unknown>): Partial<Affi
         : skillFromSpec && typeof skillFromSpec === 'object'
           ? ((skillFromSpec as { subcategoryId?: string | null }).subcategoryId ?? undefined)
           : undefined
-  const appliesToAnomaly =
-    typeof item.appliesToAnomaly === 'boolean'
-      ? item.appliesToAnomaly
-      : typeof specCond.appliesToAnomaly === 'boolean'
-        ? specCond.appliesToAnomaly
-        : undefined
   const effectTemplate =
     templateRaw && typeof templateRaw === 'object' && !Array.isArray(templateRaw)
       ? (templateRaw as AffixEffectTemplate)
@@ -811,7 +802,6 @@ function hoistPresetConditionFields(item: Record<string, unknown>): Partial<Affi
     ...(scope ? { scope } : {}),
     ...(skillCategory ? { skillCategory } : {}),
     ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
-    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
     ...(effectTemplate ? { effectTemplate } : {}),
   }
 }
@@ -1018,7 +1008,6 @@ export interface AffixLibraryState {
         | 'scope'
         | 'skillCategory'
         | 'skillSubcategoryId'
-        | 'appliesToAnomaly'
       >
     >
   >
@@ -1177,8 +1166,6 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
       : typeof item.skillSubcategoryId === 'string'
         ? item.skillSubcategoryId
         : undefined
-  const appliesToAnomaly =
-    typeof item.appliesToAnomaly === 'boolean' ? item.appliesToAnomaly : undefined
 
   return {
     id,
@@ -1193,7 +1180,6 @@ function migrateCustomEntry(raw: unknown): AffixLibraryEntry | null {
     ...(scope ? { scope } : {}),
     ...(skillCategory ? { skillCategory } : {}),
     ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
-    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
   }
 }
 
@@ -1730,7 +1716,6 @@ export function updateAffixLibraryEntry(
       | 'scope'
       | 'skillCategory'
       | 'skillSubcategoryId'
-      | 'appliesToAnomaly'
     >
   >,
 ): AffixLibraryState {

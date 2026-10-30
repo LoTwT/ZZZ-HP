@@ -44,7 +44,6 @@ export function adaptBuffEffect(effect: BuffEffect): EffectSpec {
       damageTypes: damageTypesOf(effect),
       skillTargets: getEffectSkillTargets(effect),
       elementFilter: effect.elementFilter,
-      appliesToAnomaly: effect.appliesToAnomaly,
       applyProfession: effect.applyProfession,
       teamProfession: effect.teamProfession,
       teamProfessionValues: effect.teamProfessionValues,
@@ -104,7 +103,6 @@ export function effectInstanceToBuffEffect(instance: EffectInstance): BuffEffect
     valuePerStack: instance.valuePerStack,
     defaultStacks: instance.defaultStacks,
     convert: instance.convert,
-    appliesToAnomaly: instance.conditions.appliesToAnomaly,
     enabledDefault: instance.enabledDefault,
     // 运行期额外 Buff 标记必须过往返（Spec §5.1 第 8 项）
     extraGain: instance.extraGain,

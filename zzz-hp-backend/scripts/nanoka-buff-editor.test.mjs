@@ -62,7 +62,6 @@ test('生效目标、条件、数值和启用状态不同不能误判重复', ()
     ['招式', { skillTargets: [{ category: 'basic', subcategoryId: '落雷' }] }],
     ['伤害类型', { conditions: { damageTypes: ['normal'] } }],
     ['数值', { value: 30 }],
-    ['异常开关', { appliesToAnomaly: false }],
     ['默认启用', { enabledDefault: false }],
   ]
   for (const [name, difference] of differences) {
@@ -101,12 +100,11 @@ test('新版效果块按 id 入库，保留旧块，名称备注与分组条件�
   assert.equal(local.mindscapeBuffs[0].effectBlocks.length, 1)
 })
 
-test('转模基础值、初始值、上限和异常开关不同不能误判为重复', () => {
+test('转模基础值、初始值、上限不同不能误判为重复', () => {
   const base = effect({ kind: 'convert', value: 0, convert: { from: 'mastery', panelSource: 'external', ratioPercent: 10, cap: 100, defaultBase: 0, initialBase: 0 } })
   const patches = [{}, { cap: 200 }, { defaultBase: 100 }, { initialBase: 50 }]
   const rows = patches.map((patch, index) => row(`c${index}`, { effect: { ...base, id: `c${index}`, convert: { ...base.convert, ...patch } } }))
   assert.equal(plan(rows).updated, 4)
-  assert.equal(plan([row('a'), row('b', { effect: effect({ appliesToAnomaly: true }) })]).updated, 2)
   assert.equal(plan([row('a'), row('b', { effect: effect({ enabledDefault: false }) })]).updated, 2)
 })
 

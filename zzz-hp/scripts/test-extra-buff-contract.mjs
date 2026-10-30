@@ -533,11 +533,12 @@ console.log('\n[9] §7.2 第 1–12 项：固定夹具（甲/乙/丙，局外攻
     const oneTarget = mk('p12b', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }] })
     check('#12 删除第二项后终结技 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], { skillContext: catCtx('ultimate').skillContext })).skillDmgBonus ?? 0, 0))
     const anomalyWithBasic = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'attributeAnomaly', categoryId: 'basic', subcategoryId: null, coords: [{ category: 'basic', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
-    check('#12 异常坐标未勾异常生效 → 0', near(collectPanelBuffMods(ctxFor(0, [oneTarget], anomalyWithBasic)).skillDmgBonus ?? 0, 0))
-    const anomOn = mk('p12c', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }], appliesToAnomaly: true })
-    check('#12 勾选后 → 30', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
+    check('#12 异常坐标直接生效（不再需要异常开关）→ 30', near(collectPanelBuffMods(ctxFor(0, [oneTarget], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
+    // 2026-10-30 删除 appliesToAnomaly：旧数据残留该字段一律忽略
+    const legacyFlag = mk('p12c', { stat: 'skillDmgBonus', value: 30, skillTargets: [{ category: 'basic', subcategoryId: null }], appliesToAnomaly: false })
+    check('#12 旧数据残留 appliesToAnomaly=false 被忽略 → 30', near(collectPanelBuffMods(ctxFor(0, [legacyFlag], anomalyWithBasic)).skillDmgBonus ?? 0, 30))
     const anomSpecial = { skillContext: { damageKind: 'anomaly', anomalySubKind: 'attributeAnomaly', categoryId: 'special', subcategoryId: null, coords: [{ category: 'special', subcategoryId: null }], element: '电', staggerPhase: 'stagger', isFollowUp: false } }
-    check('#12 特殊技坐标即使勾选仍 0', near(collectPanelBuffMods(ctxFor(0, [anomOn], anomSpecial)).skillDmgBonus ?? 0, 0))
+    check('#12 特殊技坐标仍 0（招式锚点不匹配）', near(collectPanelBuffMods(ctxFor(0, [legacyFlag], anomSpecial)).skillDmgBonus ?? 0, 0))
   }
 
   // 17. 行级参数：行覆盖 > 卡片默认值；选择器残留不参与（§5.1 第 6 项、§7.2 第 17 项）

@@ -62,8 +62,6 @@ export function normalizeEntryPayload(body = {}) {
   const skillCategory = readOptionalString(body.skillCategory)
   const skillSubcategoryId =
     body.skillSubcategoryId === null ? null : readOptionalString(body.skillSubcategoryId)
-  const appliesToAnomaly =
-    typeof body.appliesToAnomaly === 'boolean' ? body.appliesToAnomaly : undefined
   const effectJson =
     parsedTemplate ??
     buildAffixEffectTemplate({
@@ -72,7 +70,6 @@ export function normalizeEntryPayload(body = {}) {
       scope,
       skillCategory,
       skillSubcategoryId,
-      appliesToAnomaly,
     })
   if (!effectJson) return { error: '无法编出效果模板' }
 
@@ -90,7 +87,6 @@ export function normalizeEntryPayload(body = {}) {
     ...(scope ? { scope } : {}),
     ...(skillCategory ? { skillCategory } : {}),
     ...(skillSubcategoryId !== undefined ? { skillSubcategoryId } : {}),
-    ...(appliesToAnomaly !== undefined ? { appliesToAnomaly } : {}),
     effectJson,
   }
 }

@@ -9,7 +9,7 @@ function skillTargetsKey(effect: BuffEffect) {
 }
 
 /**
- * 效果块身份匹配（跨精炼同步「异常计算时也生效」用）
+ * 效果块身份匹配（跨精炼同步同身份效果用）
  */
 export function sameBuffEffectIdentity(a: BuffEffect, b: BuffEffect) {
   return (
@@ -19,22 +19,6 @@ export function sameBuffEffectIdentity(a: BuffEffect, b: BuffEffect) {
     a.applyTarget === b.applyTarget &&
     skillTargetsKey(a) === skillTargetsKey(b)
   )
-}
-
-/** 邦布/音擎：勾选「异常计算时也生效」时同步到所有精炼 */
-export function syncAppliesToAnomalyAcrossRefinementBlocks(
-  ranks: BuffEffectBlock[][],
-  target: BuffEffect,
-  value: boolean,
-) {
-  for (const blocks of ranks) {
-    for (const block of blocks) {
-      for (const effect of block.effects) {
-        if (!sameBuffEffectIdentity(effect, target)) continue
-        effect.appliesToAnomaly = value ? true : undefined
-      }
-    }
-  }
 }
 
 /** 精炼效果块：保证第一块默认名为 精N（不覆盖用户已改过的名字） */

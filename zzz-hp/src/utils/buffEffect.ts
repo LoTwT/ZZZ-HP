@@ -280,7 +280,6 @@ export function createEmptyBuffEffect(
     valuePerStack: overrides.valuePerStack ?? 0,
     defaultStacks: overrides.defaultStacks ?? 1,
     convert: overrides.convert,
-    appliesToAnomaly: overrides.appliesToAnomaly,
     enabledDefault: overrides.enabledDefault ?? true,
     note: overrides.note ?? '',
     extraGain: overrides.extraGain,
@@ -597,11 +596,11 @@ function hasSkillCondition(effect: BuffEffect): boolean {
 }
 
 /**
- * 效果生效判定（2026-10-20 条件体系）。
+ * 效果生效判定（2026-10-20 条件体系；2026-10-30 删除 `appliesToAnomaly` 门槛）。
  *
  * - 有 `conditions.damageTypes`：只在这些第二级类型上生效；通用面板上下文一律不命中。
- * - 无伤害类型条件：走旧「通用」语义（含 appliesToAnomaly 规则）。
- * - 有 skillTargets：要求命中招式坐标；异常结算下仍要求 appliesToAnomaly === true。
+ * - 无伤害类型条件：走「通用」语义，任何结算上下文都不额外加门槛。
+ * - 有 skillTargets：要求命中招式坐标（异常结算同样只看招式坐标，不再要求额外勾选）。
  * - `groupId` 不参与任何判定。
  */
 export function effectMatchesContext(
@@ -632,21 +631,8 @@ export function effectMatchesContext(
     if (ctx.generic) return false
     const current = contextDamageType(ctx)
     if (!current || !damageTypeMatches(types, current, effect.stat)) return false
-    if (skillCondition) {
-      if (ctx.damageKind === 'anomaly' && effect.appliesToAnomaly !== true) return false
-      return effectTargetsSkill(effect, ctx)
-    }
+    if (skillCondition) return effectTargetsSkill(effect, ctx)
     return true
-  }
-
-  if (ctx.damageKind === 'anomaly') {
-    const skillStat =
-      effect.stat === 'skillDmgBonus' || effect.stat === 'skillMultiplierBonus'
-    const allowsAnomaly =
-      effect.appliesToAnomaly === true ||
-      (effect.appliesToAnomaly !== false && !skillStat)
-    if (!allowsAnomaly) return false
-    if (skillCondition && effect.appliesToAnomaly !== true) return false
   }
 
   if (skillCondition) return effectTargetsSkill(effect, ctx)
@@ -663,7 +649,6 @@ export function effectTargetsSkill(
   ctx: SkillCalcContext | null | undefined,
 ): boolean {
   if (!ctx) return false
-  if (ctx.damageKind === 'anomaly' && effect.appliesToAnomaly !== true) return false
   const targets = getEffectSkillTargets(effect)
   if (!targets.length) return false
   return targets.some((target) => skillTargetMatchesContext(target, ctx))
@@ -1161,7 +1146,6 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
       return Math.max(0, n)
     })(),
     convert: normalizeConvert(entry.convert),
-    appliesToAnomaly: resolveAppliesToAnomaly(entry),
     enabledDefault: entry.enabledDefault === false ? false : true,
     note: typeof entry.note === 'string' ? entry.note : '',
   })
@@ -1199,45 +1183,6 @@ export function normalizeBuffEffect(value: unknown): BuffEffect | null {
     }
   }
   return effect
-}
-
-/**
- * 耀变/异放/紊乱等天然异常乘区：招式限定时若未显式关闭，默认可用于异常伤害。
- * 增伤类（skillDmgBonus / dmgBonus）仍须显式勾选 appliesToAnomaly。
- */
-const INHERENT_ANOMALY_SKILL_STATS = new Set<BuffStatKey>([
-  'attributeAnomalyMult',
-  'attributeAnomalyMultFactor',
-  'anomalyReleaseMult',
-  'anomalyReleaseMultFactor',
-  'disorderBaseMult',
-  'disorderBaseMultFactor',
-  'disorderCompMult',
-  'disorderDmgBonus',
-  'turbulenceBaseMult',
-  'turbulenceBaseMultFactor',
-  'turbulenceCompMult',
-  'turbulenceDmgBonus',
-  'radianceMult',
-  'radianceMultFactor',
-  'radianceDmgBonus',
-  'radianceResPen',
-  'attributeAnomalyDmgBonus',
-  'attributeAnomalyCritRate',
-  'attributeAnomalyCritDmg',
-  'anomalyDuration',
-  'mutationCoeff',
-  'mutationCoeffFactor',
-])
-
-function resolveAppliesToAnomaly(entry: Record<string, unknown>): boolean | undefined {
-  if (entry.appliesToAnomaly != null) return Boolean(entry.appliesToAnomaly)
-  const stat = normalizeStat(entry.stat)
-  const hasSkill =
-    (Array.isArray(entry.skillTargets) && entry.skillTargets.length > 0) ||
-    Boolean(entry.skillCategory)
-  if (hasSkill && INHERENT_ANOMALY_SKILL_STATS.has(stat)) return true
-  return undefined
 }
 
 export function normalizeBuffEffects(value: unknown): BuffEffect[] {

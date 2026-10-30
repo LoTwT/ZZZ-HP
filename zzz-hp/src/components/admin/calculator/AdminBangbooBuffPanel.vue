@@ -21,7 +21,6 @@ import {
 } from '@/utils/buffEffect'
 import {
   ensureRefinementFirstBlockName,
-  syncAppliesToAnomalyAcrossRefinementBlocks,
 } from '@/utils/buffEffectBlockHelpers'
 import {
   createEmptyBuffStatModifiers,
@@ -169,13 +168,6 @@ function buildRefinementPacks() {
   )
 }
 
-function syncRefinementAppliesToAnomaly(effect: BuffEffect, value: boolean) {
-  syncAppliesToAnomalyAcrossRefinementBlocks(
-    form.value.refinementForm.map((rank) => rank.effectBlocks ?? []),
-    effect,
-    value,
-  )
-}
 
 async function saveItem() {
   message.value = ''
@@ -350,7 +342,6 @@ defineExpose({ scrollToSection, saveItem, removeItem, selectedId, saving })
             v-model="activeRefinementForm.effectBlocks"
             lock-apply-target="team"
             :default-first-block-name="`精${activeRefinementRank}`"
-            :on-applies-to-anomaly-change="syncRefinementAppliesToAnomaly"
           />
         </section>
 

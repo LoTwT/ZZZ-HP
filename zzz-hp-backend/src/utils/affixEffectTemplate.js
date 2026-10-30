@@ -21,9 +21,6 @@ function conditionsFromEntry(entry) {
       { category: entry.skillCategory, subcategoryId: entry.skillSubcategoryId ?? null },
     ]
   }
-  if (typeof entry.appliesToAnomaly === 'boolean') {
-    conditions.appliesToAnomaly = entry.appliesToAnomaly
-  }
   return conditions
 }
 

@@ -257,8 +257,6 @@ export function normalizeEffectList(rawValue) {
         })(),
 
         convert: normalizeConvert(item.convert),
-        appliesToAnomaly:
-          item.appliesToAnomaly == null ? undefined : Boolean(item.appliesToAnomaly),
         enabledDefault: item.enabledDefault === false ? false : true,
         note: typeof item.note === 'string' ? item.note : '',
       }
