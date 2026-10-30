@@ -1,29 +1,16 @@
 <script setup lang="ts">
 import InfoTip from '@/components/common/InfoTip.vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import FlowCalculationDetail from '@/components/calculator/FlowCalculationDetail.vue'
-import SkillFlowDamageCrossAnalysis from '@/components/calculator/SkillFlowDamageCrossAnalysis.vue'
+import FlowDamageModule from '@/components/calculator/FlowDamageModule.vue'
 import SkillFlowDamageRecordComparison from '@/components/calculator/SkillFlowDamageRecordComparison.vue'
 import { captureSkillFlowDamageSnapshot } from '@/utils/skillFlowDamageRecordComparison'
+import { buildSkillFlowDamageAnalysisFromSnapshot } from '@/utils/skillFlowDamageRecordAnalysis'
 import type { TeamSlot } from '@/components/calculator/DamageCalcPage.vue'
-import type { AgentBuffDoc, BuffDamageType, StaggerPhase } from '@/types/calculator'
-import { damageTypeLabel } from '@/utils/buffDamageTypes'
+import type { AgentBuffDoc } from '@/types/calculator'
 import type { SchemeSlot } from '@/types/damageCalcHistory'
 import type { ResolvedHit } from '@/utils/resolvedHit'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
-import { flowBuffOverrideExceptionCount } from '@/utils/flowBuffTable'
-import {
-  buildSkillFlowDamageAnalysis,
-  filterSkillFlowDamageLines,
-  skillFlowDamageCrossRows,
-  skillFlowDamageSlices,
-  skillFlowSliceAtPoint,
-  skillFlowSkillContributions,
-  type SkillFlowDamageLine,
-  type SkillFlowDamageFilter,
-  type SkillFlowDamageSlice,
-  type SkillFlowSkillContribution,
-} from '@/utils/skillFlowDamageAnalysis'
+import { buildSkillFlowDamageAnalysis } from '@/utils/skillFlowDamageAnalysis'
 import {
   loadSkillFlowDamageRecords,
   MAX_SKILL_FLOW_DAMAGE_RECORDS,
@@ -31,6 +18,7 @@ import {
   saveSkillFlowDamageRecords,
   skillFlowDamageRecordLabel,
   type SkillFlowDamageRecord,
+  type SkillFlowDamageRecordSlotMeta,
 } from '@/utils/skillFlowDamageRecords'
 
 const props = defineProps<{
@@ -43,22 +31,20 @@ const props = defineProps<{
   resolveCalculationDetail?: (hitId: string) => SkillFlowCalculationDetail | null
   /** 当前加载的方案名；未归档为空 */
   schemeName?: string
+  /** 每槽位的配置摘要（影画/音擎/驱动盘），记录时一并存入 */
+  slotMeta?: SkillFlowDamageRecordSlotMeta[]
 }>()
 
 const MAX_RECORDS = MAX_SKILL_FLOW_DAMAGE_RECORDS
 const UNSAVED_SCHEME_LABEL = '未保存'
+/** 记录列表里的「记录 0」：当前流程，不可改名/删除/拖动 */
+const CURRENT_RECORD_ID = '__current__'
 
 const records = ref<SkillFlowDamageRecord[]>(loadSkillFlowDamageRecords())
 const recordSaveError = ref(false)
 /** 正在改名的记录 id；与记录列表同源，改名后由 watch(records) 自动落库 */
 const renamingRecordId = ref('')
 const renamingRecordValue = ref('')
-const analysisSlotIndex = ref<number | null>(null)
-const typeDimension = ref<'type' | 'category'>('type')
-const comparisonMode = ref<'damage' | 'percentage'>('damage')
-const expandedContributionIds = ref<Set<string>>(new Set())
-const selectedCalculationHitId = ref<string | null>(null)
-const damageFilter = ref<SkillFlowDamageFilter>({})
 
 watch(
   records,
@@ -94,200 +80,21 @@ const analysis = computed(() =>
 const teamTotal = computed(() => analysis.value.total)
 const currentTotal = computed(() => analysis.value.slots[props.activeSlotIndex]?.total ?? 0)
 
-const slotRows = computed(() =>
-  props.teamSlots.map((slot, index) => {
-    const stats = analysis.value.slots[index]!
-    const total = stats.total
-    return {
-      index,
-      name: agentName(slot.agentId),
-      total,
-      pct: formatPct(total, teamTotal.value),
-      active: index === props.activeSlotIndex,
-      slices: skillFlowDamageSlices(stats.lines, 'type'),
-    }
-  }),
-)
-
-const analysisName = computed(() =>
-  analysisSlotIndex.value == null
-    ? '全队'
-    : agentName(props.teamSlots[analysisSlotIndex.value]?.agentId),
-)
-const scopedLines = computed(() =>
-  analysisSlotIndex.value == null
-    ? analysis.value.lines
-    : (analysis.value.slots[analysisSlotIndex.value]?.lines ?? []),
-)
-const scopedTotal = computed(() => scopedLines.value.reduce((sum, line) => sum + line.total, 0))
-const uncomputedCount = computed(() =>
-  analysis.value.slots
-    .filter((slot) => analysisSlotIndex.value == null || slot.slotIndex === analysisSlotIndex.value)
-    .reduce((sum, slot) => sum + slot.uncomputedCount, 0),
-)
-const typeSlices = computed(() => skillFlowDamageSlices(scopedLines.value, typeDimension.value))
-const staggerSlices = computed(() => skillFlowDamageSlices(scopedLines.value, 'stagger'))
-const crossRows = computed(() => skillFlowDamageCrossRows(scopedLines.value))
-const filteredLines = computed(() =>
-  filterSkillFlowDamageLines(scopedLines.value, damageFilter.value),
-)
-const filteredTotal = computed(() => filteredLines.value.reduce((sum, line) => sum + line.total, 0))
-const filterChips = computed(() => {
-  const filter = damageFilter.value
-  const chips: Array<{ key: keyof SkillFlowDamageFilter; label: string }> = []
-  if (filter.damageType)
-    chips.push({ key: 'damageType', label: damageTypeLabel(filter.damageType) })
-  if (filter.damageKind)
-    chips.push({ key: 'damageKind', label: filter.damageKind === 'direct' ? '直伤类' : '异常类' })
-  if (filter.staggerPhase)
-    chips.push({
-      key: 'staggerPhase',
-      label: filter.staggerPhase === 'stagger' ? '失衡期' : '非失衡',
-    })
-  return chips
-})
-const comparisonLegend = computed(() => skillFlowDamageSlices(analysis.value.lines, 'type'))
-const largestSlotTotal = computed(() => Math.max(0, ...slotRows.value.map((row) => row.total)))
-const contributions = computed(() =>
-  skillFlowSkillContributions(analysis.value, analysisSlotIndex.value, damageFilter.value),
-)
-const selectedCalculation = computed(() =>
-  selectedCalculationHitId.value
-    ? (props.resolveCalculationDetail?.(selectedCalculationHitId.value) ?? null)
-    : null,
-)
-
-function clearExpandedDetails() {
-  expandedContributionIds.value = new Set()
-  selectedCalculationHitId.value = null
-}
-
-watch(analysisSlotIndex, clearExpandedDetails)
-watch(damageFilter, clearExpandedDetails)
-watch(
-  () => props.teamSlots.map((slot) => slot.agentId).join('\0'),
-  () => {
-    analysisSlotIndex.value = null
-    damageFilter.value = {}
-    clearExpandedDetails()
-  },
-)
-watch(
-  () =>
-    contributions.value
-      .map((item) => `${item.id}:${item.lines.map((line) => line.hit.id).join(',')}`)
-      .sort()
-      .join('|'),
-  clearExpandedDetails,
-)
-
-function toggleContribution(item: SkillFlowSkillContribution) {
-  const next = new Set(expandedContributionIds.value)
-  if (next.has(item.id)) {
-    next.delete(item.id)
-    if (item.lines.some((line) => line.hit.id === selectedCalculationHitId.value)) {
-      selectedCalculationHitId.value = null
-    }
-  } else next.add(item.id)
-  expandedContributionIds.value = next
-}
-
-function toggleCalculation(hitId: string) {
-  selectedCalculationHitId.value = selectedCalculationHitId.value === hitId ? null : hitId
-}
-
-function selectDamageType(type: BuffDamageType) {
-  damageFilter.value = {
-    ...damageFilter.value,
-    damageKind: null,
-    damageType: damageFilter.value.damageType === type ? null : type,
-  }
-}
-
-function selectTypeSlice(id: string) {
-  if (typeDimension.value === 'category') {
-    if (id !== 'direct' && id !== 'anomaly') return
-    damageFilter.value = {
-      ...damageFilter.value,
-      damageType: null,
-      damageKind: damageFilter.value.damageKind === id ? null : id,
-    }
-  } else selectDamageType(id as BuffDamageType)
-}
-
-function selectStaggerPhase(phase: StaggerPhase) {
-  damageFilter.value = {
-    ...damageFilter.value,
-    staggerPhase: damageFilter.value.staggerPhase === phase ? null : phase,
-  }
-}
-
-function selectCrossCell(type: BuffDamageType, phase: StaggerPhase) {
-  const clear = damageFilter.value.damageType === type && damageFilter.value.staggerPhase === phase
-  damageFilter.value = { damageType: clear ? null : type, staggerPhase: clear ? null : phase }
-}
-
-function selectRoleSegment(slotIndex: number, type: string) {
-  analysisSlotIndex.value = slotIndex
-  damageFilter.value = {
-    ...damageFilter.value,
-    damageKind: null,
-    damageType: type as BuffDamageType,
-  }
-}
-
-function onPieClick(
-  event: MouseEvent,
-  slices: SkillFlowDamageSlice[],
-  dimension: 'type' | 'stagger',
-) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const slice = skillFlowSliceAtPoint(
-    slices,
-    event.clientX - rect.left - rect.width / 2,
-    event.clientY - rect.top - rect.height / 2,
-  )
-  if (!slice) return
-  if (dimension === 'type') selectTypeSlice(slice.id)
-  else selectStaggerPhase(slice.id as StaggerPhase)
-}
-
-function typeSliceSelected(id: string) {
-  return typeDimension.value === 'type'
-    ? damageFilter.value.damageType === id
-    : damageFilter.value.damageKind === id
-}
-
-function removeFilter(key: keyof SkillFlowDamageFilter) {
-  damageFilter.value = { ...damageFilter.value, [key]: null }
-}
-
-function comparisonWidth(total: number) {
-  const denominator = comparisonMode.value === 'percentage' ? total : largestSlotTotal.value
-  return `${denominator > 0 ? (total / denominator) * 100 : 0}%`
-}
-
-function sliceDescription(slices: SkillFlowDamageSlice[]) {
-  return slices
-    .map((slice) => `${slice.name} ${formatNum(slice.total)}，${formatPct(slice.ratio, 1)}`)
-    .join('；')
-}
-
-function participants(line: SkillFlowDamageLine) {
-  if (line.hit.damageKind !== 'anomaly') return ''
-  return `异常强度：${agentName(line.hit.anomalyPowerAgentId ?? undefined)} · 触发者：${agentName(line.hit.triggerAgentId ?? undefined)}`
-}
-
-function pieBackground(slices: SkillFlowDamageSlice[]) {
-  if (!slices.length) return 'var(--sf-analysis-track)'
-  let cursor = 0
-  const stops = slices.map((slice) => {
-    const from = cursor
-    cursor += slice.ratio * 100
-    return `${slice.color} ${from}% ${cursor}%`
-  })
-  return `conic-gradient(${stops.join(', ')})`
-}
+/** 当前流程也作为一条对比用记录参与记录结构对比（不落库、不占列表序号） */
+const currentRecordForComparison = computed<SkillFlowDamageRecord>(() => ({
+  id: CURRENT_RECORD_ID,
+  savedAt: Date.now(),
+  current: currentTotal.value,
+  team: teamTotal.value,
+  agentName: agentName(props.teamSlots[props.activeSlotIndex]?.agentId),
+  schemeName: '当前流程',
+  agentNames: props.teamSlots.map((slot) => agentName(slot.agentId)),
+  slotMeta: props.slotMeta ? [...props.slotMeta] : undefined,
+  snapshot: captureSkillFlowDamageSnapshot(
+    analysis.value,
+    props.teamSlots.map((slot) => slot.agentId),
+  ),
+}))
 
 function currentSchemeLabel() {
   const name = props.schemeName?.trim()
@@ -301,19 +108,336 @@ function formatRecordTime(savedAt: number) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-function firstNameChar(name: string | undefined) {
-  const trimmed = (name ?? '').trim()
-  if (!trimmed || trimmed === '未选' || trimmed === '未知') return '·'
-  return Array.from(trimmed)[0] ?? '·'
-}
-
-function teamInitials(rec: SkillFlowDamageRecord) {
-  const names = rec.agentNames.length ? rec.agentNames : [rec.agentName]
-  return names.map(firstNameChar).join('')
-}
-
 function recordLabel(rec: SkillFlowDamageRecord) {
   return skillFlowDamageRecordLabel(rec)
+}
+
+/** 记录柱状图：每个角色一个固定颜色（按 agentId 首次出现顺序分配），旧记录用中性灰 */
+const AGENT_RECORD_COLORS = ['#5b8def', '#4caf8a', '#e08a3c', '#9b7ed9', '#d46a6a']
+const LEGACY_RECORD_COLOR = '#6b7280'
+
+/** 柱状图要一起比长短的对象：记录 0（当前流程）+ 已保存记录 */
+const barRecords = computed<SkillFlowDamageRecord[]>(() => [
+  currentRecordForComparison.value,
+  ...records.value,
+])
+
+const recordAgentColorMap = computed(() => {
+  const positive = new Set<string>()
+  for (const rec of barRecords.value) {
+    if (!rec.snapshot) continue
+    for (const line of rec.snapshot.lines) {
+      if (!(line.total > 0)) continue
+      positive.add(rec.snapshot.agentIds[line.slotIndex] || `slot-${line.slotIndex + 1}`)
+    }
+  }
+  const map = new Map<string, string>()
+  for (const rec of barRecords.value) {
+    rec.snapshot?.agentIds.forEach((id, slot) => {
+      const key = id || `slot-${slot + 1}`
+      if (!positive.has(key) || map.has(key)) return
+      map.set(key, AGENT_RECORD_COLORS[map.size % AGENT_RECORD_COLORS.length]!)
+    })
+  }
+  return map
+})
+
+const recordLegend = computed(() => {
+  const seen = new Map<string, { key: string; name: string; color: string }>()
+  for (const rec of barRecords.value) {
+    rec.snapshot?.agentIds.forEach((id, slot) => {
+      const key = id || `slot-${slot + 1}`
+      const color = recordAgentColorMap.value.get(key)
+      if (!color || seen.has(key)) return
+      seen.set(key, {
+        key,
+        name: rec.agentNames[slot]?.trim() || `角色${slot + 1}`,
+        color,
+      })
+    })
+  }
+  return [...seen.values()]
+})
+
+const hasLegacyRecord = computed(() => records.value.some((rec) => !rec.snapshot))
+
+/** 柱状图角色筛选：空 = 全队；勾选后未选中的分段置灰（数值与长度不变） */
+const barAgentFilter = ref<string[]>([])
+const barAgentFilterActive = computed(() => barAgentFilter.value.length > 0)
+
+const barAgentOptions = computed(() => {
+  const seen = new Map<string, string>()
+  for (const rec of barRecords.value) {
+    rec.snapshot?.agentIds.forEach((id, slot) => {
+      if (!id || seen.has(id)) return
+      seen.set(id, rec.agentNames[slot]?.trim() || `角色${slot + 1}`)
+    })
+  }
+  return [...seen.entries()].map(([id, name]) => ({ id, name }))
+})
+
+// 记录被删或换队后，剔除已经不存在的角色
+watch(barAgentOptions, (options) => {
+  const ids = new Set(options.map((option) => option.id))
+  const next = barAgentFilter.value.filter((id) => ids.has(id))
+  if (next.length !== barAgentFilter.value.length) barAgentFilter.value = next
+})
+
+function toggleBarAgent(id: string) {
+  barAgentFilter.value = barAgentFilter.value.includes(id)
+    ? barAgentFilter.value.filter((item) => item !== id)
+    : [...barAgentFilter.value, id]
+}
+
+function clearBarAgentFilter() {
+  barAgentFilter.value = []
+}
+
+function barSegmentMuted(key: string) {
+  return barAgentFilterActive.value && !barAgentFilter.value.includes(key)
+}
+const recordBarMax = computed(() => Math.max(0, ...barRecords.value.map((rec) => rec.team)) || 1)
+
+interface RecordMetaBlock {
+  label: string
+  value: string
+  /** 顶栏槽位卡的配色：音擎金色、驱动盘蓝色 */
+  kind: 'wengine' | 'disc'
+}
+
+interface RecordBarSegment {
+  key: string
+  name: string
+  total: number
+  /** 角色筛选未命中：置灰但保留长度 */
+  muted: boolean
+  /** 该槽位影画，跟在角色名后展示 */
+  rankLabel: string
+  color: string
+  widthPercent: string
+  /** 记录时该槽位的影画/音擎/驱动盘（像顶栏一样分块） */
+  metaBlocks: RecordMetaBlock[]
+}
+
+/** 槽位配置 → 顶栏槽位卡同款分块（标签 + 值） */
+function slotMetaBlocks(meta?: SkillFlowDamageRecordSlotMeta): RecordMetaBlock[] {
+  if (!meta) return []
+  if (meta.text) return [{ label: '', value: meta.text, kind: 'disc' }]
+  const blocks: RecordMetaBlock[] = []
+  // 影画跟在角色名后面（见 segmentTip.rankLabel），这里不再单独开块
+  // 音擎 / 驱动盘按顶栏槽位卡的「标签 + 名字」小卡展示
+  if (meta.wengine) {
+    blocks.push({
+      label: '音擎',
+      value: `${meta.wengine}${meta.wengineRefine ? ` · 精${meta.wengineRefine}` : ''}`,
+      kind: 'wengine',
+    })
+  }
+  if (meta.disc4) blocks.push({ label: '4件套', value: meta.disc4, kind: 'disc' })
+  if (meta.disc2) blocks.push({ label: '2件套', value: meta.disc2, kind: 'disc' })
+  // 旧记录只存了「4件套 X / 2件套 Y / 未选」整串
+  if (meta.disc) blocks.push({ label: '驱动盘', value: meta.disc, kind: 'disc' })
+  return blocks
+}
+
+/** 影画跟在角色名后（顶栏同一口径：N影） */
+function rankLabelOf(meta?: SkillFlowDamageRecordSlotMeta) {
+  return meta?.rank != null ? `${meta.rank}影` : ''
+}
+
+/** 一条记录 → 横向堆叠条的各段（按角色/槽位），宽度相对所有记录的最大总伤 */
+function recordSegments(rec: SkillFlowDamageRecord): RecordBarSegment[] {
+  const max = recordBarMax.value
+  const toWidth = (total: number) => `${Math.max(0, Math.min(100, (total / max) * 100))}%`
+  if (!rec.snapshot) {
+    return [
+      {
+        key: `${rec.id}-legacy`,
+        name: '仅总伤',
+        total: rec.team,
+        color: LEGACY_RECORD_COLOR,
+        widthPercent: toWidth(rec.team),
+        muted: false,
+        rankLabel: '',
+        metaBlocks: [],
+      },
+    ]
+  }
+  const bySlot = new Map<number, number>()
+  for (const line of rec.snapshot.lines) {
+    bySlot.set(line.slotIndex, (bySlot.get(line.slotIndex) ?? 0) + line.total)
+  }
+  const segments = [...bySlot.entries()]
+    .filter(([, total]) => total > 0)
+    .sort((a, b) => a[0] - b[0])
+    .map(([slot, total]) => {
+      const key = rec.snapshot!.agentIds[slot] || `slot-${slot + 1}`
+      return {
+        key: `${rec.id}-${key}`,
+        name: rec.agentNames[slot]?.trim() || `角色${slot + 1}`,
+        total,
+        color: recordAgentColorMap.value.get(key) ?? LEGACY_RECORD_COLOR,
+        widthPercent: toWidth(total),
+        muted: barSegmentMuted(key),
+        rankLabel: rankLabelOf(rec.slotMeta?.[slot]),
+        metaBlocks: slotMetaBlocks(rec.slotMeta?.[slot]),
+      }
+    })
+  if (segments.length) return segments
+  return [
+    {
+      key: `${rec.id}-empty`,
+      name: '无明细',
+      total: rec.team,
+      color: LEGACY_RECORD_COLOR,
+      widthPercent: toWidth(rec.team),
+      muted: false,
+      rankLabel: '',
+      metaBlocks: [],
+    },
+  ]
+}
+
+function recordBarTitle(rec: SkillFlowDamageRecord) {
+  const parts = recordSegments(rec).map(
+    (seg) => `${seg.name} ${formatNum(seg.total)}（${formatPct(seg.total, rec.team)}）`,
+  )
+  return [`全队 ${formatNum(rec.team)}`, ...parts].join('\n')
+}
+
+/** 对比参考记录：'__prev__' = 上一条（默认），否则为选中的记录 id */
+const recordRefId = ref<string>('__prev__')
+const RECORD_REF_PREV = '__prev__'
+
+/** 该行要比对的参考记录；选了自己或找不到参考时返回 undefined（显示 '—'） */
+/**
+ * 当前角色筛选下的合计：选了角色就只算这些角色，没选就是记录全队。
+ * 旧记录没有分角色明细，无法拆，仍按总伤算。
+ */
+function recordFilteredTeam(rec: SkillFlowDamageRecord): number {
+  if (!barAgentFilterActive.value) return rec.team
+  const snapshot = rec.snapshot
+  if (!snapshot) return rec.team
+  const pick = new Set(barAgentFilter.value)
+  return snapshot.lines.reduce((total, line) => {
+    const agentId = snapshot.agentIds[line.slotIndex] ?? ''
+    return pick.has(agentId) ? total + line.total : total
+  }, 0)
+}
+
+function teamDeltaBase(index: number): SkillFlowDamageRecord | undefined {
+  const rec = records.value[index]
+  if (!rec) return undefined
+  if (recordRefId.value === RECORD_REF_PREV) return records.value[index - 1]
+  if (recordRefId.value === rec.id) return undefined
+  return records.value.find((item) => item.id === recordRefId.value)
+}
+
+/** 全队较参考记录的方向（用于颜色），'—' 表示没有可比的参考 */
+function teamDeltaKind(index: number): 'up' | 'down' | 'flat' {
+  const base = teamDeltaBase(index)
+  const rec = records.value[index]
+  if (!base || !rec) return 'flat'
+  const before = recordFilteredTeam(base)
+  const next = recordFilteredTeam(rec)
+  if (!(before > 0)) return 'flat'
+  if (next > before) return 'up'
+  if (next < before) return 'down'
+  return 'flat'
+}
+
+/** 段落悬停提示：角色（金色）· 记录名 · 伤害占比 · 槽位配置分块 */
+interface RecordSegmentTip {
+  name: string
+  /** 影画，如「3影」；没有就为空 */
+  rankLabel: string
+  recordLabel: string
+  lines: string[]
+  /** 装备行：音擎独占一行，4 件套 + 2 件套同一行 */
+  wengineBlocks: RecordMetaBlock[]
+  discBlocks: RecordMetaBlock[]
+  x: string
+  y: string
+  transform: string
+}
+
+const segmentTip = ref<RecordSegmentTip | null>(null)
+/** 分段边缘移动时会连续 enter/leave：延迟隐藏，避免弹窗频闪 */
+let segmentTipHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelSegmentTipHide() {
+  if (segmentTipHideTimer == null) return
+  clearTimeout(segmentTipHideTimer)
+  segmentTipHideTimer = null
+}
+
+function showSegmentTip(
+  rec: SkillFlowDamageRecord,
+  seg: RecordBarSegment,
+  event: Event,
+) {
+  cancelSegmentTipHide()
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const tipWidth = 340
+  const left = Math.min(
+    Math.max(8, rect.left + rect.width / 2 - tipWidth / 2),
+    window.innerWidth - tipWidth - 8,
+  )
+  const below = rect.top < 120
+  segmentTip.value = {
+    name: seg.name,
+    rankLabel: seg.rankLabel,
+    recordLabel: recordLabel(rec),
+    lines: barAgentFilterActive.value
+      ? [
+          `伤害 ${formatNum(seg.total)}`,
+          `占该记录全队 ${formatPct(seg.total, rec.team)}`,
+          `占所选合计 ${formatPct(seg.total, recordFilteredTeam(rec))}`,
+        ]
+      : [
+          `伤害 ${formatNum(seg.total)}`,
+          `占该记录全队 ${formatPct(seg.total, rec.team)}`,
+        ],
+    wengineBlocks: seg.metaBlocks.filter((block) => block.kind === 'wengine'),
+    discBlocks: seg.metaBlocks.filter((block) => block.kind === 'disc'),
+    x: `${left}px`,
+    y: below ? `${rect.bottom + 8}px` : `${rect.top - 8}px`,
+    transform: below ? 'none' : 'translateY(-100%)',
+  }
+}
+
+function scheduleHideSegmentTip() {
+  cancelSegmentTipHide()
+  segmentTipHideTimer = setTimeout(() => {
+    segmentTip.value = null
+    segmentTipHideTimer = null
+  }, 160)
+}
+
+/** 记录名后的影画标签：1蕾 = 1影·蕾米埃尔（取名字首字） */
+function firstNameChar(name: string | undefined) {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed || trimmed === '未选' || trimmed === '未知') return ''
+  return Array.from(trimmed)[0] ?? ''
+}
+
+function recordRankTags(rec: SkillFlowDamageRecord) {
+  const tags: { key: string; text: string; title: string }[] = []
+  rec.slotMeta?.forEach((meta, slot) => {
+    if (meta.rank == null) return
+    const name = rec.agentNames[slot]?.trim()
+    if (!name) return
+    const char = firstNameChar(name)
+    if (!char) return
+    tags.push({
+      key: `${slot}-${name}`,
+      text: `${meta.rank}${char}`,
+      title: `${name} · ${meta.rank}影`,
+    })
+  })
+  return tags
 }
 
 function recordTip(rec: SkillFlowDamageRecord) {
@@ -364,6 +488,7 @@ function recordNow() {
     agentName: agentName(props.teamSlots[props.activeSlotIndex]?.agentId),
     schemeName: currentSchemeLabel(),
     agentNames,
+    slotMeta: props.slotMeta ? [...props.slotMeta] : undefined,
     snapshot: captureSkillFlowDamageSnapshot(
       analysis.value,
       props.teamSlots.map((slot) => slot.agentId),
@@ -380,368 +505,171 @@ function recordDelta(prev: number | undefined, cur: number | undefined) {
 }
 
 function teamDelta(index: number) {
-  if (index <= 0) return '—'
-  return recordDelta(records.value[index - 1]?.team, records.value[index]?.team)
-}
-
-function currentDelta(index: number) {
-  if (index <= 0) return '—'
-  return recordDelta(records.value[index - 1]?.current, records.value[index]?.current)
+  const base = teamDeltaBase(index)
+  const rec = records.value[index]
+  if (!base || !rec) return '—'
+  return recordDelta(recordFilteredTeam(base), recordFilteredTeam(rec))
 }
 
 function removeRecord(id: string) {
   records.value = records.value.filter((item) => item.id !== id)
+  // 参考记录被删掉时回到「上一条」，避免下拉框悬空
+  if (recordRefId.value !== RECORD_REF_PREV && !records.value.some((item) => item.id === recordRefId.value)) {
+    recordRefId.value = RECORD_REF_PREV
+  }
 }
 
 function clearRecords() {
   records.value = []
+  recordRefId.value = RECORD_REF_PREV
 }
+
+// ============ 拖动排序 ============
+const draggingRecordId = ref('')
+/** 落点缝隙下标（0..记录数），与招式流程的插入线同一套语义 */
+const recordDropIndex = ref<number | null>(null)
+const recordListEl = ref<HTMLElement | null>(null)
+
+/** 停在自己原来那条缝上不画线（拖了等于没动） */
+const recordInsertIndex = computed(() => {
+  const drop = recordDropIndex.value
+  const draggingId = draggingRecordId.value
+  if (drop == null || !draggingId) return null
+  const from = records.value.findIndex((item) => item.id === draggingId)
+  if (from < 0) return drop
+  if (drop === from || drop === from + 1) return null
+  return drop
+})
+
+/** 按行的中线取最近缝隙：光标在哪一行上半 → 插到它前面 */
+/** 只按已保存记录的缝算落点：记录 0（当前流程）固定在顶部，不能被插入 */
+function nearestRecordSeamIndex(clientY: number): number | null {
+  const list = recordListEl.value
+  if (!list) return null
+  const rows = [...list.querySelectorAll<HTMLElement>('.sf-rec-row[data-saved="true"]')]
+  if (!rows.length) return null
+  for (let index = 0; index < rows.length; index += 1) {
+    const box = rows[index]!.getBoundingClientRect()
+    if (clientY < box.top + box.height / 2) return index
+  }
+  return rows.length
+}
+
+function onRecordDragStart(rec: SkillFlowDamageRecord, event: DragEvent) {
+  const target = event.target as HTMLElement | null
+  // 输入框 / 按钮 / 下拉上按下时不启动拖动，避免误触
+  if (target?.closest('input, button, select, textarea, label')) {
+    event.preventDefault()
+    return
+  }
+  draggingRecordId.value = rec.id
+  recordDropIndex.value = null
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', rec.id)
+  }
+}
+
+function onRecordDragOver(event: DragEvent) {
+  if (!draggingRecordId.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  const index = nearestRecordSeamIndex(event.clientY)
+  if (index != null) recordDropIndex.value = index
+}
+
+function onRecordDrop(event: DragEvent) {
+  event.preventDefault()
+  const fromId = draggingRecordId.value || event.dataTransfer?.getData('text/plain') || ''
+  const index = nearestRecordSeamIndex(event.clientY) ?? recordDropIndex.value
+  draggingRecordId.value = ''
+  recordDropIndex.value = null
+  if (!fromId || index == null) return
+  const list = [...records.value]
+  const from = list.findIndex((item) => item.id === fromId)
+  if (from < 0) return
+  const [item] = list.splice(from, 1)
+  if (!item) return
+  // 缝隙下标按拖动前的顺序算：从前面抽走一格后，后面的缝位要前移一位
+  list.splice(index > from ? index - 1 : index, 0, item)
+  records.value = list
+}
+
+function onRecordDragEnd() {
+  draggingRecordId.value = ''
+  recordDropIndex.value = null
+}
+
+// ============ 记录视图（记录 0 = 当前流程）============
+type RecordView = 'flow' | 'compare'
+const recordView = ref<RecordView>('flow')
+
+/** 列表渲染顺序：当前流程固定在最前，其后是已保存记录 */
+const displayRecords = computed<
+  Array<{ record: SkillFlowDamageRecord; savedIndex: number }>
+>(() => [
+  { record: currentRecordForComparison.value, savedIndex: -1 },
+  ...records.value.map((record, savedIndex) => ({ record, savedIndex })),
+])
+
+/** 当前选中的记录 id；默认就是记录 0 */
+const selectedRecordId = ref(CURRENT_RECORD_ID)
+const selectedSavedRecord = computed<SkillFlowDamageRecord | null>(
+  () => records.value.find((item) => item.id === selectedRecordId.value) ?? null,
+)
+const selectedIsCurrent = computed(() => selectedSavedRecord.value == null)
+/** 记录快照还原出的流程伤害（与当前流程共用同一套渲染） */
+const selectedRecordAnalysis = computed(() =>
+  buildSkillFlowDamageAnalysisFromSnapshot(selectedSavedRecord.value?.snapshot),
+)
+const selectedRecordSlots = computed<Array<Pick<TeamSlot, 'agentId'>>>(
+  () => selectedSavedRecord.value?.snapshot?.agentIds.map((agentId) => ({ agentId })) ?? [],
+)
+const selectedRecordAgents = computed<Array<Pick<AgentBuffDoc, 'id' | 'name'>>>(() =>
+  (selectedSavedRecord.value?.snapshot?.agentIds ?? []).map((id, index) => ({
+    id,
+    name: selectedSavedRecord.value?.agentNames[index]?.trim() || `角色${index + 1}`,
+  })),
+)
+const selectedRecordUncomputed = computed(
+  () => selectedSavedRecord.value?.snapshot?.uncomputedCount ?? 0,
+)
+const selectedRecordHasSnapshot = computed(() => Boolean(selectedSavedRecord.value?.snapshot))
+const selectedRecordTitle = computed(() =>
+  selectedSavedRecord.value
+    ? `记录流程伤害 · ${recordLabel(selectedSavedRecord.value)}`
+    : '当前流程',
+)
+const selectedRecordMeta = computed(() => {
+  const rec = selectedSavedRecord.value
+  if (!rec) return '未保存，随编辑实时更新；点「记录」可把此刻留存为一条历史记录。'
+  const detail = rec.snapshot ? '只存数值，不含逐段乘区计算过程' : '只保存了总伤（旧格式）'
+  return `${formatRecordTime(rec.savedAt)} · 全队 ${formatNum(rec.team)} · ${detail}`
+})
+
+/** 点行选中：看这条的流程伤害；行内的改名/删除/拖动按钮不触发选中 */
+function selectRecordRow(id: string, event: Event) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button, input, select, textarea, label')) return
+  selectedRecordId.value = id
+  recordView.value = 'flow'
+}
+
+watch(records, (list) => {
+  if (
+    selectedRecordId.value !== CURRENT_RECORD_ID &&
+    !list.some((item) => item.id === selectedRecordId.value)
+  ) {
+    selectedRecordId.value = CURRENT_RECORD_ID
+  }
+})
 </script>
 
 <template>
-  <section class="sf-stats" aria-label="流程伤害统计">
+  <section id="flow-records" class="sf-stats" aria-label="伤害记录">
     <header class="sf-stats-head">
-      <h3>流程伤害</h3>
-      <p>按流程归属统计期望伤害，口径与词条计算总伤相同；角色占比不代表辅助增益贡献。</p>
-    </header>
-
-    <div class="sf-stats-current">
-      <div class="sf-stats-metric">
-        <span class="sf-stats-label">全队</span>
-        <strong class="sf-stats-num team">{{ formatNum(teamTotal) }}</strong>
-      </div>
-      <div class="sf-stats-metric">
-        <span class="sf-stats-label">编辑中角色</span>
-        <strong class="sf-stats-num current">{{ formatNum(currentTotal) }}</strong>
-        <span class="sf-stats-pct">{{ formatPct(currentTotal, teamTotal) }}</span>
-      </div>
-    </div>
-
-    <div class="sf-stats-team">
-      <div
-        v-for="row in slotRows"
-        :key="row.index"
-        class="sf-stats-agent"
-        :class="{ active: row.active }"
-      >
-        <span class="sf-stats-label">{{ row.index + 1 }} · {{ row.name }}</span>
-        <strong class="sf-stats-num">{{ formatNum(row.total) }}</strong>
-        <span class="sf-stats-pct">{{ row.pct }}</span>
-      </div>
-    </div>
-
-    <section class="sf-analysis-comparison" aria-label="全队角色伤害构成">
-      <div class="sf-analysis-section-head">
-        <div>
-          <h4>
-            全队角色构成
-            <InfoTip
-              label="全队角色构成说明"
-              text="每条按伤害类型分段，颜色与下方构成分析一致。"
-            />
-          </h4>
-
-        </div>
-        <div class="sf-analysis-switch" role="group" aria-label="角色构成显示方式">
-          <button
-            type="button"
-            :aria-pressed="comparisonMode === 'damage'"
-            @click="comparisonMode = 'damage'"
-          >
-            实际伤害
-          </button>
-          <button
-            type="button"
-            :aria-pressed="comparisonMode === 'percentage'"
-            @click="comparisonMode = 'percentage'"
-          >
-            个人构成
-          </button>
-        </div>
-      </div>
-      <div class="sf-analysis-axis" aria-hidden="true">
-        <span>0</span>
-        <span>{{
-          comparisonMode === 'percentage' ? '100%' : `${formatNum(largestSlotTotal)} 期望伤害`
-        }}</span>
-      </div>
-      <div v-for="row in slotRows" :key="row.index" class="sf-analysis-bar-row">
-        <span class="sf-analysis-bar-label">{{ row.index + 1 }} · {{ row.name }}</span>
-        <div class="sf-analysis-track" role="group" :aria-label="`${row.name}伤害构成，可筛选招式`">
-          <div class="sf-analysis-bar" :style="{ width: comparisonWidth(row.total) }">
-            <button
-              v-for="slice in row.slices"
-              :key="slice.id"
-              type="button"
-              :style="{ width: `${slice.ratio * 100}%`, background: slice.color }"
-              :title="`${row.name} · ${slice.name}：${formatNum(slice.total)}，占个人 ${formatPct(slice.ratio, 1)}`"
-              :aria-label="`筛选${row.name} · ${slice.name}`"
-              :aria-pressed="
-                analysisSlotIndex === row.index && damageFilter.damageType === slice.id
-              "
-              @click="selectRoleSegment(row.index, slice.id)"
-            />
-          </div>
-        </div>
-        <span class="sf-analysis-bar-total"
-          >{{ formatNum(row.total) }} <small>占全队 {{ row.pct }}</small></span
-        >
-      </div>
-      <ul class="sf-analysis-inline-legend" aria-label="伤害类型颜色">
-        <li v-for="slice in comparisonLegend" :key="slice.id">
-          <i :style="{ background: slice.color }" />{{ slice.name }}
-        </li>
-      </ul>
-    </section>
-
-    <div class="sf-analysis-section-head sf-analysis-scope-head">
-      <div>
-        <h4>
-          伤害构成分析
-          <InfoTip
-            label="伤害构成分析说明"
-            text="查看范围独立于编辑角色；下方图表与招式排行同步切换。"
-          />
-        </h4>
-
-      </div>
-      <div class="sf-analysis-switch sf-analysis-scope" role="group" aria-label="伤害分析范围">
-        <button
-          type="button"
-          :aria-pressed="analysisSlotIndex === null"
-          @click="analysisSlotIndex = null"
-        >
-          全队
-        </button>
-        <button
-          v-for="row in slotRows"
-          :key="row.index"
-          type="button"
-          :aria-pressed="analysisSlotIndex === row.index"
-          @click="analysisSlotIndex = row.index"
-        >
-          {{ row.index + 1 }} · {{ row.name }}
-        </button>
-      </div>
-    </div>
-    <p v-if="uncomputedCount" class="sf-analysis-notice">
-      此范围有 {{ uncomputedCount }} 段流程未计入伤害，请检查面板与参与角色配置。
-    </p>
-
-    <div class="sf-stats-pies">
-      <div class="sf-pie-block">
-        <div class="sf-analysis-section-head">
-          <h4>{{ analysisName }} · 伤害类型</h4>
-          <div class="sf-analysis-switch" role="group" aria-label="伤害类型层级">
-            <button
-              type="button"
-              :aria-pressed="typeDimension === 'type'"
-              @click="typeDimension = 'type'"
-            >
-              细分
-            </button>
-            <button
-              type="button"
-              :aria-pressed="typeDimension === 'category'"
-              @click="typeDimension = 'category'"
-            >
-              大类
-            </button>
-          </div>
-        </div>
-        <div class="sf-pie-row">
-          <div
-            class="sf-pie"
-            role="img"
-            :aria-label="`${analysisName}伤害类型：${sliceDescription(typeSlices) || '暂无伤害'}`"
-            :style="{ background: pieBackground(typeSlices) }"
-            @click="onPieClick($event, typeSlices, 'type')"
-          />
-          <ul class="sf-pie-legend">
-            <li v-for="slice in typeSlices" :key="slice.id">
-              <button
-                type="button"
-                class="sf-pie-choice"
-                :aria-pressed="typeSliceSelected(slice.id)"
-                :aria-label="`筛选伤害类型：${slice.name}`"
-                @click="selectTypeSlice(slice.id)"
-              >
-                <i :style="{ background: slice.color }" />
-                <span>{{ slice.name }}</span>
-                <b>{{ formatNum(slice.total) }}</b>
-                <em>{{ formatPct(slice.ratio, 1) }}</em>
-              </button>
-            </li>
-            <li v-if="!typeSlices.length" class="muted">{{ analysisName }}流程暂无可统计伤害</li>
-          </ul>
-        </div>
-        <p class="sf-stats-hint">
-          占{{ analysisName }}总伤 {{ formatNum(scopedTotal) }} 的比例；点击扇区或图例筛选招式。
-        </p>
-      </div>
-      <div class="sf-pie-block">
-        <h4>{{ analysisName }} · 失衡状态</h4>
-        <div class="sf-pie-row">
-          <div
-            class="sf-pie"
-            role="img"
-            :aria-label="`${analysisName}失衡状态：${sliceDescription(staggerSlices) || '暂无伤害'}`"
-            :style="{ background: pieBackground(staggerSlices) }"
-            @click="onPieClick($event, staggerSlices, 'stagger')"
-          />
-          <ul class="sf-pie-legend">
-            <li v-for="slice in staggerSlices" :key="slice.id">
-              <button
-                type="button"
-                class="sf-pie-choice"
-                :aria-pressed="damageFilter.staggerPhase === slice.id"
-                :aria-label="`筛选失衡状态：${slice.name}`"
-                @click="selectStaggerPhase(slice.id as StaggerPhase)"
-              >
-                <i :style="{ background: slice.color }" />
-                <span>{{ slice.name }}</span>
-                <b>{{ formatNum(slice.total) }}</b>
-                <em>{{ formatPct(slice.ratio, 1) }}</em>
-              </button>
-            </li>
-            <li v-if="!staggerSlices.length" class="muted">{{ analysisName }}流程暂无可统计伤害</li>
-          </ul>
-        </div>
-        <p class="sf-stats-hint">占{{ analysisName }}总伤 {{ formatNum(scopedTotal) }} 的比例。</p>
-      </div>
-    </div>
-
-    <SkillFlowDamageCrossAnalysis
-      :name="analysisName"
-      :rows="crossRows"
-      :filter="damageFilter"
-      @select-type="selectDamageType"
-      @select-cell="selectCrossCell"
-    />
-
-    <section class="sf-analysis-ranking" aria-label="招式贡献排行">
-      <h4>{{ analysisName }} · 招式贡献排行</h4>
-      <p class="sf-stats-hint">
-        按总伤降序；同一角色的同一招式合并，展开可查看各段状态与计算过程。
-      </p>
-      <div v-if="filterChips.length" class="sf-analysis-filter-bar" aria-label="当前招式筛选">
-        <span>筛选：</span>
-        <button
-          v-for="chip in filterChips"
-          :key="chip.key"
-          type="button"
-          class="sf-analysis-detail-button"
-          :aria-label="`移除筛选：${chip.label}`"
-          @click="removeFilter(chip.key)"
-        >
-          {{ chip.label }} ×
-        </button>
-        <button type="button" class="sf-analysis-detail-button" @click="damageFilter = {}">
-          清除全部筛选
-        </button>
-        <span
-          >命中 {{ filteredLines.length }} 段 · {{ formatNum(filteredTotal) }} · 占当前范围
-          {{ formatPct(filteredTotal, scopedTotal) }}</span
-        >
-      </div>
-      <p v-if="filterChips.length" class="sf-stats-hint">
-        上方图表保留完整范围；排行占个人／全队仍以各自完整总伤为分母。
-      </p>
-      <div
-        v-if="contributions.length"
-        class="sf-analysis-table-scroll"
-        tabindex="0"
-        aria-label="招式排行，可横向滚动"
-      >
-        <table class="sf-analysis-table">
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">角色</th>
-              <th scope="col">招式</th>
-              <th scope="col">累计次数</th>
-              <th scope="col">期望总伤</th>
-              <th scope="col">占个人</th>
-              <th scope="col">占全队</th>
-              <th scope="col">流程明细</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="(item, index) in contributions" :key="item.id">
-              <tr>
-                <td>{{ index + 1 }}</td>
-                <td>{{ agentName(teamSlots[item.slotIndex]?.agentId) }}</td>
-                <td class="sf-analysis-skill-name">{{ item.name }}</td>
-                <td>{{ item.count.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) }}</td>
-                <td class="sf-analysis-damage">{{ formatNum(item.total) }}</td>
-                <td>{{ formatPct(item.personalRatio, 1) }}</td>
-                <td>{{ formatPct(item.teamRatio, 1) }}</td>
-                <td>
-                  <button
-                    type="button"
-                    class="sf-analysis-detail-button"
-                    :aria-expanded="expandedContributionIds.has(item.id)"
-                    :aria-label="`${expandedContributionIds.has(item.id) ? '收起' : '展开'}${agentName(teamSlots[item.slotIndex]?.agentId)}的${item.name}流程明细`"
-                    @click="toggleContribution(item)"
-                  >
-                    {{ expandedContributionIds.has(item.id) ? '收起' : '展开' }}
-                    {{ item.lines.length }} 段
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="expandedContributionIds.has(item.id)" class="sf-analysis-expanded-row">
-                <td colspan="8">
-                  <div v-for="line in item.lines" :key="line.hit.id" class="sf-analysis-flow-line">
-                    <div class="sf-analysis-line-summary">
-                      <strong>流程第 {{ line.flowEntryIndex + 1 }} 项</strong>
-                      <span>{{ line.hit.staggerPhase === 'stagger' ? '失衡期' : '非失衡' }}</span>
-                      <span>单次 {{ formatNum(line.perHit) }} × {{ line.hit.count }} 次</span>
-                      <span>合计 {{ formatNum(line.total) }}</span>
-                      <span>{{
-                        flowBuffOverrideExceptionCount(line.hit.buffOverride)
-                          ? `增益例外 ${flowBuffOverrideExceptionCount(line.hit.buffOverride)} 项`
-                          : '增益继承全局'
-                      }}</span>
-                      <button
-                        v-if="resolveCalculationDetail"
-                        type="button"
-                        class="sf-analysis-detail-button"
-                        :aria-expanded="selectedCalculationHitId === line.hit.id"
-                        :aria-label="`流程第${line.flowEntryIndex + 1}项${item.name}计算过程`"
-                        @click="toggleCalculation(line.hit.id)"
-                      >
-                        {{
-                          selectedCalculationHitId === line.hit.id ? '收起计算过程' : '查看计算过程'
-                        }}
-                      </button>
-                    </div>
-                    <p v-if="participants(line)" class="sf-stats-hint">{{ participants(line) }}</p>
-                    <template v-if="selectedCalculationHitId === line.hit.id">
-                      <FlowCalculationDetail
-                        v-if="selectedCalculation"
-                        :calculation="selectedCalculation"
-                      />
-                      <p v-else class="sf-stats-hint">本段计算过程暂不可用，请检查当前面板来源。</p>
-                    </template>
-                  </div>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-      <p v-else class="sf-stats-hint">
-        {{
-          filterChips.length
-            ? '没有符合当前筛选的招式，可移除筛选条件。'
-            : `${analysisName}流程暂无可统计招式。`
-        }}
-      </p>
-    </section>
-
-    <div class="sf-stats-lift">
-      <div class="sf-stats-lift-head">
-        <h4>伤害记录</h4>
+      <div class="sf-rec-head-row">
+        <h3>伤害记录列表</h3>
         <div class="sf-stats-lift-actions">
           <button
             type="button"
@@ -761,92 +689,353 @@ function clearRecords() {
           </button>
         </div>
       </div>
-      <p class="sf-stats-hint">
-        最多
-        {{
-          MAX_RECORDS
-        }}
-        条，全局存在浏览器，不会被方案记录。新记录保存完整全队快照，不受当前筛选影响；旧记录仅保留总伤。悬停在方案列可看全称、三人与当前角色。
+      <p>
+        第 0 条固定是「当前流程」，随编辑实时更新，不能改名、删除或排序；点「记录」把它此刻的完整流程伤害另存为第 1 条起的历史记录，最多
+        {{ MAX_RECORDS }}
+        条，只存在本浏览器、不写进方案库。点任意一行，可在下方切换「流程伤害」与「记录对比」查看该条当时的全队构成、类型分布与招式明细。
       </p>
+    </header>
+
+    <div class="sf-stats-lift">
       <p v-if="recordSaveError" class="sf-analysis-notice" role="alert">
         浏览器未能保存伤害记录，当前页仍可查看；刷新前请检查浏览器存储空间或隐私设置。
       </p>
-      <div
-        v-if="records.length"
-        class="sf-rec-scroll"
-        tabindex="0"
-        aria-label="伤害历史记录，可横向滚动"
-      >
-        <table class="sf-rec-table">
-          <thead>
-            <tr>
-              <th class="sf-rec-num">#</th>
-              <th class="sf-rec-ctx">名称</th>
-              <th class="sf-rec-time">时间</th>
-              <th>全队</th>
-              <th>当前角色</th>
-              <th>全队较上一条</th>
-              <th>当前较上一条</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(rec, index) in records" :key="rec.id">
-              <td class="sf-rec-num">{{ index + 1 }}</td>
-              <td class="sf-rec-ctx">
-                <input
-                  v-if="renamingRecordId === rec.id"
-                  v-model="renamingRecordValue"
-                  class="sf-rec-rename-input"
-                  type="text"
-                  maxlength="40"
-                  aria-label="伤害记录名称"
-                  @keydown.enter.prevent="commitRenameRecord"
-                  @keydown.esc.prevent="cancelRenameRecord"
-                  @blur="commitRenameRecord"
-                />
-                <template v-else>
-                  <span class="sf-rec-clip" :title="recordTip(rec)">{{ recordLabel(rec) }}</span>
-                  <small class="sf-record-detail-status">{{
-                    rec.snapshot ? '含结构明细' : '仅总伤'
-                  }}</small>
-                </template>
-              </td>
-              <td class="sf-rec-time">{{ formatRecordTime(rec.savedAt) }}</td>
-              <td class="sf-rec-dmg">
-                <span class="sf-rec-who">{{ teamInitials(rec) }}</span>
-                <span>{{ formatNum(rec.team) }}</span>
-              </td>
-              <td class="sf-rec-dmg">
-                <span class="sf-rec-who">{{ firstNameChar(rec.agentName) }}</span>
-                <span>{{ formatNum(rec.current) }}</span>
-              </td>
-              <td>{{ teamDelta(index) }}</td>
-              <td>{{ currentDelta(index) }}</td>
-              <td class="sf-rec-actions">
-                <button
-                  type="button"
-                  class="mini-btn"
-                  :aria-label="`重命名第${index + 1}条伤害记录`"
-                  @click="startRenameRecord(rec)"
+      <div class="sf-rec-scroll" tabindex="0" aria-label="伤害记录列表，可横向滚动">
+        <div class="sf-rec-chart-wrap">
+          <div class="sf-rec-legend-row">
+            <div
+              v-if="recordLegend.length || hasLegacyRecord"
+              class="sf-rec-legend"
+              aria-label="角色颜色图例"
+            >
+              <span
+                v-for="item in recordLegend"
+                :key="item.key"
+                class="sf-rec-legend-item"
+                :class="{ 'is-muted': barSegmentMuted(item.key) }"
+              >
+                <i class="sf-rec-dot" :style="{ background: item.color }" />
+                {{ item.name }}
+              </span>
+              <span v-if="hasLegacyRecord" class="sf-rec-legend-item">
+                <i class="sf-rec-dot" :style="{ background: LEGACY_RECORD_COLOR }" />
+                仅总伤
+              </span>
+            </div>
+            <label v-if="records.length > 1" class="sf-rec-ref">
+              参考
+              <select v-model="recordRefId" class="sf-rec-ref-select" aria-label="伤害记录对比参考">
+                <option value="__prev__">上一条</option>
+                <option v-for="(rec, i) in records" :key="rec.id" :value="rec.id">
+                  #{{ i + 1 }} {{ recordLabel(rec) }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <div
+            v-if="barAgentOptions.length"
+            class="sf-rec-agent-filter"
+            role="group"
+            aria-label="柱状图角色筛选"
+          >
+            <button
+              type="button"
+              class="sf-rec-agent-chip"
+              :class="{ 'is-active': !barAgentFilterActive }"
+              :aria-pressed="!barAgentFilterActive"
+              @click="clearBarAgentFilter"
+            >
+              全队
+            </button>
+            <button
+              v-for="agent in barAgentOptions"
+              :key="agent.id"
+              type="button"
+              class="sf-rec-agent-chip"
+              :class="{ 'is-active': barAgentFilter.includes(agent.id) }"
+              :aria-pressed="barAgentFilter.includes(agent.id)"
+              @click="toggleBarAgent(agent.id)"
+            >
+              {{ agent.name }}
+            </button>
+          </div>
+          <div
+            ref="recordListEl"
+            class="sf-rec-chart"
+            role="list"
+            aria-label="伤害记录（横向柱状图）"
+            @dragover="onRecordDragOver"
+            @drop="onRecordDrop"
+          >
+            <template v-for="row in displayRecords" :key="row.record.id">
+              <div
+                v-if="row.savedIndex >= 0"
+                class="sf-rec-insert-slot"
+                :class="{ 'is-active': recordInsertIndex === row.savedIndex }"
+                aria-hidden="true"
+              />
+              <div
+                class="sf-rec-row"
+                :class="{
+                  'is-ref': recordRefId === row.record.id,
+                  'is-dragging': draggingRecordId === row.record.id,
+                  'is-selected': selectedRecordId === row.record.id,
+                  'is-current': row.savedIndex < 0,
+                }"
+                :data-saved="row.savedIndex >= 0 ? 'true' : 'false'"
+                role="listitem"
+                :draggable="row.savedIndex >= 0"
+                @dragstart="row.savedIndex >= 0 && onRecordDragStart(row.record, $event)"
+                @dragend="onRecordDragEnd"
+                @click="selectRecordRow(row.record.id, $event)"
+              >
+                <div class="sf-rec-row-head">
+                  <span
+                    class="sf-rec-drag"
+                    :class="{ 'is-hidden': row.savedIndex < 0 }"
+                    title="拖动排序"
+                    aria-hidden="true"
+                    >⋮⋮</span
+                  >
+                  <span class="sf-rec-num">{{ row.savedIndex < 0 ? 0 : row.savedIndex + 1 }}</span>
+                  <span class="sf-rec-name-cell">
+                    <span v-if="recordRefId === row.record.id" class="sf-rec-ref-badge">参考</span>
+                    <input
+                      v-if="renamingRecordId === row.record.id"
+                      v-model="renamingRecordValue"
+                      class="sf-rec-rename-input"
+                      type="text"
+                      maxlength="40"
+                      aria-label="伤害记录名称"
+                      @keydown.enter.prevent="commitRenameRecord"
+                      @keydown.esc.prevent="cancelRenameRecord"
+                      @blur="commitRenameRecord"
+                    />
+                    <template v-else>
+                      <span class="sf-rec-clip" :title="recordTip(row.record)">
+                        {{ recordLabel(row.record) }}
+                      </span>
+                      <small v-if="row.savedIndex >= 0" class="sf-record-detail-status">
+                        {{ row.record.snapshot ? '含结构明细' : '仅总伤' }}
+                      </small>
+                      <span v-else class="sf-rec-current-badge">当前</span>
+                    </template>
+                    <span
+                      v-for="tag in recordRankTags(row.record)"
+                      :key="tag.key"
+                      class="sf-rec-rank-tag"
+                      :title="tag.title"
+                    >
+                      {{ tag.text }}
+                    </span>
+                  </span>
+                  <span class="sf-rec-time">{{
+                    row.savedIndex < 0 ? '实时' : formatRecordTime(row.record.savedAt)
+                  }}</span>
+                  <span
+                    class="sf-rec-total"
+                    :class="{ 'is-filtered': barAgentFilterActive }"
+                    :title="
+                      barAgentFilterActive
+                        ? `所选角色 ${formatNum(recordFilteredTeam(row.record))}（记录全队 ${formatNum(row.record.team)}）`
+                        : `全队 ${formatNum(row.record.team)}`
+                    "
+                  >
+                    {{ formatNum(recordFilteredTeam(row.record)) }}
+                    <em v-if="barAgentFilterActive" class="sf-rec-total-scope">所选</em>
+                  </span>
+                  <span
+                    v-if="row.savedIndex >= 0"
+                    class="sf-rec-delta"
+                    :class="{
+                      'is-up': teamDeltaKind(row.savedIndex) === 'up',
+                      'is-down': teamDeltaKind(row.savedIndex) === 'down',
+                    }"
+                    :title="
+                      barAgentFilterActive ? '所选角色较参考记录' : '全队较参考记录'
+                    "
+                  >
+                    {{ teamDelta(row.savedIndex) }}
+                  </span>
+                  <span v-else class="sf-rec-delta" title="当前流程不参与较参考">—</span>
+                  <span class="sf-rec-actions">
+                    <template v-if="row.savedIndex >= 0">
+                      <button
+                        type="button"
+                        class="mini-btn"
+                        :aria-label="`重命名第${row.savedIndex + 1}条伤害记录`"
+                        @click="startRenameRecord(row.record)"
+                      >
+                        改名
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-btn danger"
+                        :aria-label="`删除第${row.savedIndex + 1}条伤害记录`"
+                        @click="removeRecord(row.record.id)"
+                      >
+                        删除
+                      </button>
+                    </template>
+                    <span v-else class="sf-rec-locked">固定</span>
+                  </span>
+                </div>
+                <div
+                  class="sf-rec-bar"
+                  role="img"
+                  :aria-label="recordBarTitle(row.record).replace(/\n/g, '；')"
                 >
-                  改名
-                </button>
-                <button
-                  type="button"
-                  class="mini-btn danger"
-                  :aria-label="`删除第${index + 1}条伤害记录`"
-                  @click="removeRecord(rec.id)"
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  <span
+                    v-for="seg in recordSegments(row.record)"
+                    :key="seg.key"
+                    class="sf-rec-seg"
+                    :class="{ 'is-muted': seg.muted }"
+                    :style="{ width: seg.widthPercent, background: seg.color }"
+                    @mouseenter="showSegmentTip(row.record, seg, $event)"
+                    @mouseleave="scheduleHideSegmentTip"
+                  />
+                </div>
+              </div>
+            </template>
+            <div
+              class="sf-rec-insert-slot"
+              :class="{ 'is-active': recordInsertIndex === records.length }"
+              aria-hidden="true"
+            />
+          </div>
+        </div>
       </div>
-      <SkillFlowDamageRecordComparison :records="records" />
     </div>
+
+    <div class="sf-rec-view-switch" role="tablist" aria-label="伤害记录视图">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="recordView === 'flow'"
+        :class="{ 'is-active': recordView === 'flow' }"
+        @click="recordView = 'flow'"
+      >
+        流程伤害
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="recordView === 'compare'"
+        :class="{ 'is-active': recordView === 'compare' }"
+        @click="recordView = 'compare'"
+      >
+        记录对比
+      </button>
+    </div>
+
+    <section
+      v-show="recordView === 'flow'"
+      id="flow-damage"
+      class="sf-rec-panel"
+      aria-label="流程伤害"
+    >
+      <div class="sf-rec-block-head">
+        <h4>
+          {{ selectedRecordTitle }}
+          <span class="sf-rec-current-badge" :class="{ 'is-frozen': !selectedIsCurrent }">{{
+            selectedIsCurrent ? '当前' : '记录'
+          }}</span>
+          <InfoTip
+            v-if="selectedIsCurrent"
+            label="当前流程说明"
+            text="按流程归属统计期望伤害，口径与词条计算总伤相同；角色占比不代表辅助增益贡献。"
+          />
+        </h4>
+        <div class="sf-rec-block-actions">
+          <span class="sf-stats-hint">{{ selectedRecordMeta }}</span>
+          <button
+            v-if="!selectedIsCurrent"
+            type="button"
+            class="mini-btn"
+            @click="selectedRecordId = CURRENT_RECORD_ID"
+          >
+            回到当前
+          </button>
+        </div>
+      </div>
+      <FlowDamageModule
+        v-if="selectedIsCurrent"
+        :analysis="analysis"
+        :team-slots="teamSlots"
+        :agents="agents"
+        :active-slot-index="activeSlotIndex"
+        :resolve-calculation-detail="resolveCalculationDetail"
+      />
+      <p v-else-if="!selectedRecordHasSnapshot" class="sf-rec-empty">
+        这条记录只保存了总伤（旧格式），没有逐段明细，无法还原当时的流程伤害。
+      </p>
+      <FlowDamageModule
+        v-else
+        frozen
+        :analysis="selectedRecordAnalysis"
+        :team-slots="selectedRecordSlots"
+        :agents="selectedRecordAgents"
+        :active-slot-index="-1"
+        :team-uncomputed-count="selectedRecordUncomputed"
+      />
+    </section>
+
+    <section v-show="recordView === 'compare'" class="sf-rec-panel" aria-label="记录对比">
+      <SkillFlowDamageRecordComparison
+        :records="records"
+        :current-record="currentRecordForComparison"
+        :preferred-comparison-id="selectedSavedRecord?.id"
+      />
+    </section>
+
+    <Teleport to="body">
+        <div
+          v-if="segmentTip"
+          class="stat-value-tip sf-rec-tip"
+          :style="{
+            left: segmentTip.x,
+            top: segmentTip.y,
+            transform: segmentTip.transform,
+            pointerEvents: 'none',
+          }"
+        >
+          <p class="tip-title">
+            <strong class="sf-rec-tip-name">{{ segmentTip.name }}</strong>
+            <span v-if="segmentTip.rankLabel" class="sf-rec-tip-rank">{{
+              segmentTip.rankLabel
+            }}</span>
+            <span class="sf-rec-tip-record"> · {{ segmentTip.recordLabel }}</span>
+          </p>
+          <div
+            v-if="segmentTip.wengineBlocks.length || segmentTip.discBlocks.length"
+            class="sf-rec-tip-equip"
+          >
+            <div v-if="segmentTip.wengineBlocks.length" class="sf-rec-tip-equip-row">
+              <span
+                v-for="block in segmentTip.wengineBlocks"
+                :key="`w-${block.value}`"
+                class="sf-rec-meta-block is-wengine"
+              >
+                <em class="sf-rec-meta-tag">{{ block.label }}</em>
+                <span class="sf-rec-meta-text">{{ block.value }}</span>
+              </span>
+            </div>
+            <div v-if="segmentTip.discBlocks.length" class="sf-rec-tip-equip-row">
+              <span
+                v-for="block in segmentTip.discBlocks"
+                :key="`d-${block.label}-${block.value}`"
+                class="sf-rec-meta-block is-disc"
+              >
+                <em v-if="block.label" class="sf-rec-meta-tag">{{ block.label }}</em>
+                <span class="sf-rec-meta-text">{{ block.value }}</span>
+              </span>
+            </div>
+          </div>
+          <ul class="tip-items">
+            <li v-for="line in segmentTip.lines" :key="line">{{ line }}</li>
+          </ul>
+        </div>
+      </Teleport>
   </section>
 </template>
 
@@ -868,339 +1057,124 @@ function clearRecords() {
   border-top: 1px solid #2a3038;
   background: #12161c;
 }
-.sf-stats-head h3,
-.sf-pie-block h4,
-.sf-stats-lift-head h4,
-.sf-analysis-section-head h4,
-.sf-analysis-ranking h4 {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--sf-analysis-text);
-}
-.sf-stats-head p,
 .sf-stats-hint {
   margin: 0.2rem 0 0;
   font-size: 0.72rem;
   color: #8b93a0;
 }
-.sf-stats-current {
-  display: flex;
-  align-items: baseline;
-  gap: 1.4rem;
-  flex-wrap: wrap;
-}
-.sf-stats-metric {
-  display: flex;
-  align-items: baseline;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-.sf-stats-label {
-  font-size: 0.72rem;
-  color: #9aa3b0;
-}
-.sf-stats-num {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #d7e4ff;
-  font-variant-numeric: tabular-nums;
-}
-.sf-stats-num.team,
-.sf-stats-num.current {
-  font-size: 1.55rem;
-}
-.sf-stats-num.team {
-  color: #e8edf5;
-}
-.sf-stats-num.current {
-  color: #c4b4f0;
-}
-.sf-stats-pct {
-  font-size: 0.85rem;
-  color: #8ec8ff;
-  font-variant-numeric: tabular-nums;
-}
-.sf-stats-team {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-.sf-stats-agent {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #2a3038;
-  border-radius: 8px;
-  background: #161a20;
-}
-.sf-stats-agent.active {
-  border-color: #c9a55c;
-}
-.sf-stats-pies {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.85rem;
-}
-.sf-analysis-comparison,
-.sf-analysis-ranking {
-  min-width: 0;
-}
-.sf-analysis-comparison {
-  padding: 0.2rem 0 0.8rem;
-  border-bottom: 1px solid var(--sf-analysis-border);
-}
-.sf-analysis-section-head {
+.sf-rec-head-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem 1rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
-.sf-analysis-scope-head {
-  align-items: flex-start;
-}
-.sf-analysis-switch {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-}
-.sf-analysis-switch button,
-.sf-analysis-detail-button {
-  padding: 0.3rem 0.55rem;
-  border: 1px solid var(--sf-analysis-border);
-  border-radius: 6px;
-  background: var(--sf-analysis-surface);
-  color: var(--sf-analysis-text);
-  font: inherit;
-  font-size: 0.76rem;
-  line-height: 1.4;
-  cursor: pointer;
-}
-.sf-analysis-switch button[aria-pressed='true'] {
-  border-color: var(--sf-analysis-accent);
-  background: var(--sf-analysis-selected);
-  font-weight: 700;
-}
-.sf-analysis-switch button:hover,
-.sf-analysis-detail-button:hover {
-  border-color: var(--sf-analysis-accent);
-}
-.sf-analysis-switch button:focus-visible,
-.sf-analysis-detail-button:focus-visible,
-.sf-analysis-table-scroll:focus-visible {
-  outline: 2px solid var(--sf-analysis-accent);
-  outline-offset: 3px;
-}
-.sf-analysis-axis {
-  display: flex;
-  justify-content: space-between;
-  margin: 0.65rem 11rem 0.3rem 8.5rem;
-  color: var(--sf-analysis-muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-}
-.sf-analysis-bar-row {
-  display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr) 10.5rem;
-  gap: 0.5rem;
-  align-items: center;
-  margin-top: 0.45rem;
-  color: var(--sf-analysis-text);
-  font-size: 0.8rem;
-}
-.sf-analysis-bar-label {
-  overflow-wrap: anywhere;
-}
-.sf-analysis-track {
-  height: 1.15rem;
-  overflow: hidden;
-  border-radius: 3px;
-  background: var(--sf-analysis-track);
-}
-.sf-analysis-bar {
-  display: flex;
-  height: 100%;
-}
-.sf-analysis-bar > button {
-  flex-shrink: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
-}
-.sf-analysis-bar > button:focus-visible {
-  outline: 2px solid var(--sf-analysis-text);
-  outline-offset: -2px;
-}
-.sf-analysis-filter-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.6rem;
-  color: var(--sf-analysis-text);
-  font-size: 0.76rem;
-}
-.sf-analysis-bar-total {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.sf-analysis-bar-total small {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--sf-analysis-muted);
-}
-.sf-analysis-inline-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  margin: 0.65rem 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--sf-analysis-muted);
-  font-size: 0.74rem;
-}
-.sf-analysis-inline-legend li {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.sf-analysis-inline-legend i {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 2px;
-}
-.sf-analysis-notice {
+.sf-stats-head h3 {
   margin: 0;
-  color: var(--sf-analysis-muted);
-  font-size: 0.78rem;
+  font-size: 0.95rem;
 }
-.sf-analysis-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
-  margin-top: 0.5rem;
-}
-.sf-analysis-table {
-  width: 100%;
-  min-width: 730px;
-  border-collapse: collapse;
-  color: var(--sf-analysis-text);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-}
-.sf-analysis-table th,
-.sf-analysis-table td {
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--sf-analysis-border);
-  text-align: right;
-  vertical-align: top;
-}
-.sf-analysis-table th {
-  color: var(--sf-analysis-muted);
-  font-size: 0.74rem;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.sf-analysis-table th:nth-child(2),
-.sf-analysis-table td:nth-child(2),
-.sf-analysis-table th:nth-child(3),
-.sf-analysis-table td:nth-child(3) {
-  text-align: left;
-}
-.sf-analysis-skill-name {
-  min-width: 9rem;
-  max-width: 24rem;
-  overflow-wrap: anywhere;
-}
-.sf-analysis-damage {
-  font-weight: 700;
-}
-.sf-analysis-expanded-row > td {
-  padding: 0.35rem 0.65rem;
-  text-align: left;
-  background: var(--sf-analysis-surface);
-}
-.sf-analysis-flow-line {
-  padding: 0.65rem 0;
-}
-.sf-analysis-flow-line + .sf-analysis-flow-line {
-  border-top: 1px solid var(--sf-analysis-border);
-}
-.sf-analysis-line-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-}
-.sf-pie-row {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  margin-top: 0.45rem;
-}
-.sf-pie {
-  flex: 0 0 5.6rem;
-  width: 5.6rem;
-  height: 5.6rem;
-  border-radius: 50%;
-  background: #2a3038;
-  cursor: pointer;
-}
-.sf-pie-choice {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 0.6rem minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.3rem;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.sf-pie-choice:hover,
-.sf-pie-choice[aria-pressed='true'] {
-  border-color: var(--sf-analysis-accent);
-  background: var(--sf-analysis-selected);
-}
-.sf-pie-choice:focus-visible {
-  outline: 2px solid var(--sf-analysis-accent);
-  outline-offset: 2px;
-}
-.sf-pie-legend {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.28rem;
-  min-width: 0;
-}
-.sf-pie-legend li {
-  display: grid;
-  grid-template-columns: 0.6rem minmax(0, 1fr) auto auto;
-  gap: 0.4rem;
-  align-items: center;
-  font-size: 0.72rem;
-  color: #c5ccd6;
-}
-.sf-pie-legend i {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-}
-.sf-pie-legend .muted {
-  display: block;
+.sf-stats-head p {
+  margin: 0.35rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.65;
   color: #8b93a0;
 }
-.sf-pie-legend b,
-.sf-pie-legend em {
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
+/* 当前流程 / 记录流程伤害两个块头 */
+.sf-rec-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.1rem 0 0.35rem;
+}
+.sf-rec-block-head h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--sf-analysis-text);
+}
+.sf-rec-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+/* 流程伤害 / 记录对比 两个视图 */
+.sf-rec-view-switch {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border: 1px solid #2a3038;
+  border-radius: 10px;
+  background: #10141a;
+  align-self: flex-start;
+}
+.sf-rec-view-switch button {
+  padding: 0.28rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa3b0;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.sf-rec-view-switch button:hover {
+  color: #d5dae4;
+}
+.sf-rec-view-switch button.is-active {
+  border-color: rgba(201, 165, 92, 0.55);
+  background: rgba(201, 165, 92, 0.14);
+  color: #d4b06a;
+}
+.sf-rec-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.sf-rec-empty {
+  margin: 0;
+  padding: 0.9rem 0.8rem;
+  border: 1px dashed #2a3038;
+  border-radius: 8px;
+  color: #9aa3b0;
+  font-size: 0.76rem;
+}
+.sf-rec-locked {
+  font-size: 0.7rem;
+  color: #6a7382;
+  padding: 0 0.2rem;
+}
+.sf-rec-drag.is-hidden {
+  visibility: hidden;
+}
+.sf-rec-row.is-current {
+  border-color: #3a4650;
+  background: #14181f;
+}
+/* 正在查看的那条：金色左侧竖条（不是整圈金边，免得和「参考」混） */
+.sf-rec-row.is-selected {
+  border-color: #3c444f;
+  background: #171d25;
+  box-shadow: inset 3px 0 0 #c9a55c;
+}
+.sf-rec-current-badge {
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 165, 92, 0.5);
+  color: #d4b06a;
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.sf-rec-current-badge.is-frozen {
+  border-color: #3f4a3a;
+  color: #9aa3b0;
+}
+.mini-btn.is-active {
+  border-color: #c9a55c;
+  color: #d4b06a;
 }
 .sf-stats-lift-head {
   display: flex;
@@ -1232,47 +1206,99 @@ function clearRecords() {
   color: #e8b4b4;
   border-color: #5a3a3a;
 }
-.sf-rec-table {
-  width: 100%;
-  margin-top: 0.45rem;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 0.75rem;
-  color: #d5dae4;
-  min-width: 880px;
-}
 .sf-rec-scroll {
   max-width: 100%;
   overflow-x: auto;
+}
+.sf-rec-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+.sf-rec-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+}
+.sf-rec-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-size: 0.72rem;
+  color: #9aa3b0;
+}
+.sf-rec-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #9aa3b0;
+}
+.sf-rec-ref-select {
+  border: 1px solid #2d323a;
+  border-radius: 6px;
+  background: #0f1217;
+  color: #e8edf5;
+  padding: 0.18rem 0.35rem;
+  font: inherit;
+  font-size: 0.72rem;
+}
+.sf-rec-ref-select:focus {
+  outline: none;
+  border-color: #c9a55c;
+}
+.sf-rec-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.sf-rec-dot {
+  display: inline-block;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 2px;
+}
+.sf-rec-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sf-rec-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 560px;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #2a3038;
+  border-radius: 8px;
+  background: #12161c;
+  font-size: 0.75rem;
+  color: #d5dae4;
+}
+.sf-rec-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .sf-record-detail-status {
   display: block;
   color: var(--sf-analysis-muted);
   font-size: 0.67rem;
-  margin-top: 0.12rem;
-}
-.sf-rec-table th,
-.sf-rec-table td {
-  padding: 0.32rem 0.4rem;
-  border-bottom: 1px solid #2a3038;
-  text-align: left;
-  font-variant-numeric: tabular-nums;
-  vertical-align: middle;
-}
-.sf-rec-table th {
-  color: #9aa3b0;
-  font-weight: 600;
 }
 .sf-rec-num {
-  width: 2.1rem;
+  flex: 0 0 1.5rem;
+  color: #9aa3b0;
+  font-variant-numeric: tabular-nums;
 }
-.sf-rec-time {
-  width: 7.4rem;
-  white-space: nowrap;
-}
-.sf-rec-ctx {
-  width: 7.2rem;
-  max-width: 7.2rem;
+.sf-rec-name-cell {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
 }
 .sf-rec-clip {
   display: block;
@@ -1296,89 +1322,276 @@ function clearRecords() {
   outline: none;
   border-color: #c9a55c;
 }
-.sf-rec-dmg {
-  white-space: nowrap;
-}
-.sf-rec-who {
-  margin-right: 0.35rem;
+.sf-rec-time {
+  flex: 0 0 auto;
   color: #8b93a0;
-  font-variant-numeric: normal;
-  letter-spacing: 0.04em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sf-rec-total-scope {
+  margin-left: 0.22rem;
+  padding: 0 0.18rem;
+  border: 1px solid rgba(201, 165, 92, 0.5);
+  border-radius: 4px;
+  color: #d4b06a;
+  font-size: 0.6rem;
+  font-style: normal;
+  line-height: 1.4;
+  vertical-align: 0.08em;
+}
+.sf-rec-total {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sf-rec-delta {
+  flex: 0 0 4.2rem;
+  text-align: right;
+  color: #9aa3b0;
+  font-variant-numeric: tabular-nums;
+}
+.sf-rec-delta.is-up {
+  color: #69b38d;
+}
+.sf-rec-delta.is-down {
+  color: #d98b8b;
+}
+/* 对比参考的那条：蓝色，与「正在查看」的金色区分开 */
+.sf-rec-row.is-ref {
+  border-color: #5b8def;
+}
+.sf-rec-ref-badge {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.32rem;
+  border-radius: 4px;
+  background: #5b8def;
+  color: #0b1220;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.sf-rec-bar {
+  display: flex;
+  height: 1rem;
+  border-radius: 999px;
+  overflow: visible;
+  background: #1d232c;
+}
+.sf-rec-bar:hover .sf-rec-seg:not(:hover) {
+  opacity: 0.45;
+}
+.sf-rec-seg {
+  height: 100%;
+  min-width: 2px;
+  cursor: help;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease,
+    opacity 0.12s ease;
+  transform-origin: 50% 50%;
+}
+.sf-rec-seg:first-child {
+  border-radius: 999px 0 0 999px;
+}
+.sf-rec-seg:last-child {
+  border-radius: 0 999px 999px 0;
+}
+.sf-rec-seg:only-child {
+  border-radius: 999px;
+}
+.sf-rec-seg:hover {
+  position: relative;
+  z-index: 1;
+  transform: scaleY(1.5);
+  filter: brightness(1.15);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1.5px rgba(232, 237, 245, 0.45),
+    0 2px 10px rgba(0, 0, 0, 0.35);
 }
 .sf-rec-actions {
-  width: 6.2rem;
+  flex: 0 0 auto;
   text-align: right;
   white-space: nowrap;
 }
 .sf-rec-actions .mini-btn + .mini-btn {
   margin-left: 0.3rem;
 }
-@media (max-width: 800px) {
-  .sf-stats-team,
-  .sf-stats-pies {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* 悬停提示里的槽位配置：像顶栏槽位卡一样分块（标签 + 值） */
+/* 浮层整体收紧：标题、装备、数字三块挨得更近 */
+.sf-rec-tip {
+  gap: 0.3rem;
+  min-width: 300px;
+  padding: 0.6rem 0.7rem;
 }
-@container (max-width: 800px) {
-  .sf-stats-team,
-  .sf-stats-pies {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.sf-rec-tip .tip-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
 }
-:global([data-theme='light']) .sf-stats {
-  --sf-record-up: #28734e;
-  --sf-record-down: #a43d44;
-  --sf-analysis-text: var(--calc-text, #24324a);
-  --sf-analysis-muted: var(--calc-text-muted, #5c6570);
-  --sf-analysis-border: var(--calc-border, #d5dae3);
-  --sf-analysis-surface: var(--calc-surface-2, #f1efe9);
-  --sf-analysis-track: var(--calc-surface-3, #e4e1da);
-  --sf-analysis-selected: var(--calc-accent-bg, #fff8eb);
-  border-top-color: #e4e8ef;
-  background: #f7f8fb;
+/* 伤害与占比的字号放大一档 */
+.sf-rec-tip .tip-items {
+  margin: 0;
 }
-:global([data-theme='light']) .sf-stats-head h3,
-:global([data-theme='light']) .sf-pie-block h4,
-:global([data-theme='light']) .sf-stats-lift-head h4 {
-  color: #2b3038;
+.sf-rec-tip .tip-items li {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
-:global([data-theme='light']) .sf-stats-head p,
-:global([data-theme='light']) .sf-stats-hint,
-:global([data-theme='light']) .sf-stats-label,
-:global([data-theme='light']) .sf-rec-who,
-:global([data-theme='light']) .sf-rec-table th {
-  color: #5a6575;
+/* 装备行：音擎独占一行，4 件套 + 2 件套同一行（与顶栏槽位卡同款小卡） */
+.sf-rec-tip-equip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
 }
-:global([data-theme='light']) .sf-stats-num {
-  color: #2b5088;
+.sf-rec-tip-equip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.26rem;
 }
-:global([data-theme='light']) .sf-stats-agent {
-  border-color: #d7dde6;
-  background: #fff;
+.sf-rec-meta-block {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.34rem;
+  min-width: 0;
+  padding: 0.16rem 0.42rem 0.16rem 0.3rem;
+  border: 1px solid #3a414c;
+  border-radius: 7px;
+  background: #1f252e;
 }
-:global([data-theme='light']) .mini-btn {
-  border-color: #cfd6e0;
-  background: #fff;
-  color: #3a4250;
+/* 顶栏同款配色：音擎金色、驱动盘蓝色 */
+.sf-rec-meta-block.is-wengine {
+  border-color: rgba(214, 178, 104, 0.62);
+  background: rgba(201, 165, 92, 0.18);
 }
-:global([data-theme='light']) .mini-btn.danger {
-  color: #b54747;
-  border-color: #e2b4b4;
+.sf-rec-meta-block.is-wengine .sf-rec-meta-tag {
+  background: rgba(214, 178, 104, 0.34);
+  color: #ffe9bd;
 }
-:global([data-theme='light']) .sf-rec-table {
-  color: #3a4250;
+.sf-rec-meta-block.is-wengine .sf-rec-meta-text {
+  color: #faeed2;
 }
-:global([data-theme='light']) .sf-rec-table th,
-:global([data-theme='light']) .sf-rec-table td {
-  border-bottom-color: #e4e8ef;
+.sf-rec-meta-block.is-disc {
+  border-color: rgba(150, 182, 232, 0.5);
+  background: rgba(140, 170, 220, 0.16);
 }
-:global([data-theme='light']) .sf-rec-rename-input {
-  border-color: #cfd6e0;
-  background: #fff;
-  color: #2b3038;
+.sf-rec-meta-block.is-disc .sf-rec-meta-tag {
+  background: rgba(150, 182, 232, 0.28);
+  color: #d3e2f8;
 }
-:global([data-theme='light']) .sf-rec-rename-input:focus {
-  border-color: #8a6d33;
+.sf-rec-meta-block.is-disc .sf-rec-meta-text {
+  color: #e2ebfa;
+}
+.sf-rec-meta-tag {
+  flex: 0 0 auto;
+  padding: 0 0.26rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #dbe4f2;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.sf-rec-meta-text {
+  color: #d5dae4;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+/* 悬停提示里的角色名：金色 */
+.sf-rec-tip-name {
+  color: #d4b06a;
+  font-weight: 700;
+}
+/* 影画跟在角色名后 */
+.sf-rec-tip-rank {
+  margin-left: 0.28rem;
+  color: #d4b06a;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.sf-rec-tip-record {
+  color: #9aa3b0;
+}
+/* 角色筛选：未选中的分段与图例置灰，长度与数值不变 */
+.sf-rec-seg.is-muted {
+  filter: grayscale(1);
+  opacity: 0.32;
+}
+.sf-rec-legend-item.is-muted {
+  opacity: 0.45;
+}
+.sf-rec-agent-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.sf-rec-agent-chip {
+  padding: 0.12rem 0.58rem;
+  border: 1px solid #2a3038;
+  border-radius: 999px;
+  background: transparent;
+  color: #9aa3b0;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.sf-rec-agent-chip:hover {
+  border-color: #c9a55c;
+  color: #d5dae4;
+}
+.sf-rec-agent-chip.is-active {
+  border-color: #c9a55c;
+  background: rgba(201, 165, 92, 0.14);
+  color: #d4b06a;
+}
+/* 记录名后的影画标签：1蕾 = 1影 · 蕾米埃尔 */
+.sf-rec-rank-tag {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border: 1px solid rgba(201, 165, 92, 0.5);
+  border-radius: 4px;
+  color: #d4b06a;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+/* 拖动排序 */
+.sf-rec-drag {
+  flex: 0 0 auto;
+  color: #6a7382;
+  letter-spacing: -0.12rem;
+  cursor: grab;
+  user-select: none;
+}
+.sf-rec-row.is-dragging {
+  opacity: 0.45;
+}
+/* 插入线占的正是原来的行间距，拖起来和招式流程一致 */
+.sf-rec-insert-slot {
+  position: relative;
+  flex: 0 0 auto;
+  height: 0.5rem;
+}
+.sf-rec-insert-slot:first-child,
+.sf-rec-insert-slot:last-child {
+  height: 0;
+}
+.sf-rec-insert-slot.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0.12rem;
+  right: 0.12rem;
+  top: 50%;
+  height: 2px;
+  background: #c9a55c;
+  border-radius: 1px;
+  transform: translateY(-50%);
+  box-shadow: 0 0 5px rgba(201, 165, 92, 0.85);
+  pointer-events: none;
 }
 @container (max-width: 600px) {
   .sf-analysis-bar-row {

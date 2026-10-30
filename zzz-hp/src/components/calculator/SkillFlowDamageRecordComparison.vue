@@ -15,22 +15,45 @@ import {
   type SkillFlowDamageSegmentSide,
 } from '@/utils/skillFlowDamageRecordSegments'
 
-const props = defineProps<{ records: SkillFlowDamageRecord[] }>()
+const props = defineProps<{
+  records: SkillFlowDamageRecord[]
+  /** 当前流程（未保存）也能当对比的一方；它不占记录列表的序号 */
+  currentRecord?: SkillFlowDamageRecord | null
+  /** 记录列表里被展开的那条：自动成为对照 */
+  preferredComparisonId?: string
+}>()
 const baselineId = ref('')
 const comparisonId = ref('')
 const dimension = ref<'agent' | 'type' | 'skill'>('agent')
 const skillView = ref<'single' | 'count' | 'total'>('single')
 const onlyChanges = ref(true)
 
+const allRecords = computed(() =>
+  props.currentRecord ? [props.currentRecord, ...props.records] : props.records,
+)
+const currentId = computed(() => props.currentRecord?.id ?? '')
+
 watch(
-  () => props.records.map((record) => record.id),
-  (ids, before) => {
+  () => [allRecords.value.map((record) => record.id).join('|'), props.preferredComparisonId ?? ''],
+  ([joined], before) => {
+    const ids = joined ? joined.split('|') : []
     if (ids.length < 2) {
       baselineId.value = ''
       comparisonId.value = ''
       return
     }
-    if (!before || ids.length > before.length) {
+    const previous = before?.[0] ? before[0].split('|') : null
+    // 展开某条记录时：它当对照，当前流程当基准
+    const preferred = props.preferredComparisonId
+    if (preferred && ids.includes(preferred)) {
+      comparisonId.value = preferred
+      baselineId.value =
+        currentId.value && currentId.value !== preferred
+          ? currentId.value
+          : ([...ids].reverse().find((id) => id !== preferred) ?? '')
+      return
+    }
+    if (!previous || ids.length > previous.length) {
       baselineId.value = ids[ids.length - 2]!
       comparisonId.value = ids[ids.length - 1]!
       return
@@ -42,14 +65,17 @@ watch(
   { immediate: true },
 )
 
-const baseline = computed(() => props.records.find((record) => record.id === baselineId.value))
-const comparison = computed(() => props.records.find((record) => record.id === comparisonId.value))
+const baseline = computed(() => allRecords.value.find((record) => record.id === baselineId.value))
+const comparison = computed(() =>
+  allRecords.value.find((record) => record.id === comparisonId.value),
+)
 const result = computed(() =>
   baseline.value && comparison.value
     ? compareSkillFlowDamageRecords(baseline.value, comparison.value)
     : null,
 )
 const countView = computed(() => dimension.value === 'skill' && skillView.value === 'count')
+
 const rows = computed(() =>
   (result.value?.[dimension.value] ?? []).filter(
     (row) =>
@@ -145,8 +171,11 @@ function segmentConditions(
   return labels.join(' · ')
 }
 function optionLabel(record: SkillFlowDamageRecord, index: number) {
+  if (record.id === currentId.value) return '当前流程（未保存）'
+  const savedIndex = props.records.findIndex((item) => item.id === record.id)
+  const number = (savedIndex >= 0 ? savedIndex : index) + 1
   const scheme = record.name ? `（${record.schemeName}）` : ''
-  return `#${index + 1} ${skillFlowDamageRecordLabel(record)}${scheme} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
+  return `#${number} ${skillFlowDamageRecordLabel(record)}${scheme} · ${new Date(record.savedAt).toLocaleTimeString('zh-CN', { hour12: false })}${record.snapshot ? '' : '（仅总伤）'}`
 }
 </script>
 
@@ -159,15 +188,15 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
         text="比较记录时的完整伤害快照；队伍、流程或配置变化均会影响差值。角色按身份对齐，换槽不会被视为换人。"
       />
     </h4>
-    <p v-if="records.length < 2" class="sf-record-hint">
-      记录两次伤害后，可比较角色、伤害类型与招式的变化。
+    <p v-if="allRecords.length < 2" class="sf-record-hint">
+      需要两条可比较的伤害快照（当前流程算一条），可再记录一次。
     </p>
     <template v-else>
       <div class="sf-record-selectors">
         <label
           >基准记录<select v-model="baselineId" aria-label="基准伤害记录">
             <option
-              v-for="(record, index) in records"
+              v-for="(record, index) in allRecords"
               :key="record.id"
               :value="record.id"
             >
@@ -179,7 +208,7 @@ function optionLabel(record: SkillFlowDamageRecord, index: number) {
         <label
           >对照记录<select v-model="comparisonId" aria-label="对照伤害记录">
             <option
-              v-for="(record, index) in records"
+              v-for="(record, index) in allRecords"
               :key="record.id"
               :value="record.id"
             >

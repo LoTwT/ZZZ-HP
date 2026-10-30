@@ -18,8 +18,28 @@ export interface SkillFlowDamageRecord {
   name?: string
   /** 记录当时三人全名，按下标对齐编队 */
   agentNames: string[]
+  /** 记录当时的槽位配置摘要（影画/音擎/驱动盘，按槽位对齐） */
+  slotMeta?: SkillFlowDamageRecordSlotMeta[]
   /** 新版记录的完整全队快照；旧记录保留总伤，不补造结构。 */
   snapshot?: SkillFlowDamageSnapshot
+}
+
+/** 记录时每槽位的装备摘要，用于柱状图悬停时像顶栏一样分项标记 */
+export interface SkillFlowDamageRecordSlotMeta {
+  /** 影画档位 */
+  rank?: number
+  /** 音擎名称 */
+  wengine?: string
+  /** 音擎精炼等级 */
+  wengineRefine?: number
+  /** 4 件套驱动盘名称 */
+  disc4?: string
+  /** 2 件套驱动盘名称 */
+  disc2?: string
+  /** 旧格式：4/2 未拆分时的驱动盘摘要（如「4件套 谵羽之哲」） */
+  disc?: string
+  /** 旧格式整串文本，原样保留为单个标签 */
+  text?: string
 }
 
 export const SKILL_FLOW_DAMAGE_RECORD_NAME_MAX = 40
@@ -60,6 +80,36 @@ function isRecord(value: unknown): value is SkillFlowDamageRecord {
   return true
 }
 
+function normalizeRecordSlotMetaItem(value: unknown): SkillFlowDamageRecordSlotMeta | null {
+  if (typeof value === 'string') {
+    const text = value.trim().slice(0, 160)
+    return text ? { text } : null
+  }
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<SkillFlowDamageRecordSlotMeta>
+  const item: SkillFlowDamageRecordSlotMeta = {}
+  if (typeof raw.rank === 'number' && Number.isFinite(raw.rank)) item.rank = raw.rank
+  if (typeof raw.wengine === 'string' && raw.wengine.trim()) {
+    item.wengine = raw.wengine.trim().slice(0, 60)
+  }
+  if (typeof raw.wengineRefine === 'number' && Number.isFinite(raw.wengineRefine)) {
+    item.wengineRefine = raw.wengineRefine
+  }
+  if (typeof raw.disc4 === 'string' && raw.disc4.trim()) item.disc4 = raw.disc4.trim().slice(0, 80)
+  if (typeof raw.disc2 === 'string' && raw.disc2.trim()) item.disc2 = raw.disc2.trim().slice(0, 80)
+  if (typeof raw.disc === 'string' && raw.disc.trim()) item.disc = raw.disc.trim().slice(0, 80)
+  if (typeof raw.text === 'string' && raw.text.trim()) item.text = raw.text.trim().slice(0, 160)
+  return Object.keys(item).length ? item : null
+}
+
+function normalizeRecordSlotMeta(value: unknown): SkillFlowDamageRecordSlotMeta[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const list = value
+    .map(normalizeRecordSlotMetaItem)
+    .filter((item): item is SkillFlowDamageRecordSlotMeta => item != null)
+  return list.length ? list : undefined
+}
+
 function normalizeRecord(value: unknown): SkillFlowDamageRecord | null {
   if (!isRecord(value)) return null
   const agentNames = Array.isArray(value.agentNames)
@@ -71,6 +121,7 @@ function normalizeRecord(value: unknown): SkillFlowDamageRecord | null {
     ...value,
     name: normalizeSkillFlowDamageRecordName(value.name),
     agentNames,
+    slotMeta: normalizeRecordSlotMeta(value.slotMeta),
     snapshot: normalizeSkillFlowDamageSnapshot(value.snapshot, value.team),
   }
 }

@@ -85,6 +85,7 @@ async function component() {
   if (StatsPanel) return StatsPanel
   await compileComponent('SkillFlowDamageCrossAnalysis')
   await compileComponent('SkillFlowDamageRecordComparison')
+  await compileComponent('FlowDamageModule')
   const filename = await compileComponent('SkillFlowStatsPanel')
   StatsPanel = (await import(filename)).default
   return StatsPanel

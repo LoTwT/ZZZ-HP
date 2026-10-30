@@ -87,6 +87,20 @@ try {
     assert.ok(mounted.one('.sf-stats-pies').textContent.includes('200'))
     assert.equal(mounted.state.activeSlotIndex, 1)
   })
+  check('选中的伤害类型对应柱体保持上浮，饼图也保持选中态', () => {
+    const rows = mounted.all('.sf-analysis-bar-row')
+    assert.equal(
+      rows[0].querySelectorAll('.sf-analysis-bar > button[aria-pressed="true"]').length,
+      1,
+      '乱流只在角色甲这一行有一段',
+    )
+    assert.equal(
+      rows[1].querySelectorAll('.sf-analysis-bar > button[aria-pressed="true"]').length,
+      0,
+      '角色乙没有乱流，不应上浮',
+    )
+    assert.equal(mounted.all('.sf-pie.is-selected').length, 1)
+  })
   await mounted.clickLabel('筛选失衡状态：失衡期')
   check('状态与类型交集筛选', () => {
     assert.ok(mounted.one('.sf-analysis-table').textContent.includes('40.00%'))

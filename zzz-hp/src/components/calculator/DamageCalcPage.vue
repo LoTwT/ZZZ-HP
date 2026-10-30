@@ -89,6 +89,7 @@ import {
   saveWorkingDraft,
   setLoadedSchemeId,
 } from '@/utils/damageCalcHistory'
+import type { SkillFlowDamageRecordSlotMeta } from '@/utils/skillFlowDamageRecords'
 import {
   buildFlowBuffEffectText,
   effectRecipientNote,
@@ -865,6 +866,23 @@ function resolveFlowCalculationDetail(hitId: string): SkillFlowCalculationDetail
   const hit = hits.value.find(item => item.id === hitId)
   return hit ? flowCalculationRuntime.value.getHitDetail(hit) : null
 }
+
+/** 伤害记录用：每槽位的影画 / 音擎 / 驱动盘摘要（与顶栏槽位卡同口径，分项存储） */
+const recordSlotMeta = computed<SkillFlowDamageRecordSlotMeta[]>(() =>
+  teamSlots.map((slot) => {
+    if (!slot.agentId) return {}
+    const wengine = wengines.value.find((item) => item.id === slot.wengineId)
+    const four = driveDiscs.value.find((item) => item.id === slot.fourPieceDriveDiscId)
+    const two = driveDiscs.value.find((item) => item.id === slot.twoPieceDriveDiscId)
+    return {
+      rank: slot.rank,
+      wengine: wengine?.name,
+      wengineRefine: wengine ? slot.wengineRefine : undefined,
+      disc4: four?.name,
+      disc2: two?.name,
+    }
+  }),
+)
 
 const buffSelectionSignature = computed(() => JSON.stringify(multiSlotBuffSelection))
 const combatBuffBreakdown = computed(() => {
@@ -2113,8 +2131,9 @@ async function scrollToSection(sectionId: DamageCalcSectionId) {
   await nextTick()
   // 「面板导入 / 词条导入」入口已永久删除（2026-09-12，见 damageCalcNav.ts）；
   // 「词条配比分析」区块即锚点本身（#damage-panel），无映射。
-  if (sectionId === 'skill-flow') {
-    // 流程区会先展开，展开后目标位置下移 —— 必须等这一帧之后再算位置
+  // 流程区内还有「伤害记录」锚点（其下含「当前流程」）：要先展开流程区，
+  // 展开后目标位置下移 —— 必须等这一帧之后再算位置
+  if (sectionId === 'skill-flow' || sectionId === 'flow-records') {
     skillFlowSectionRef.value?.expand()
     await nextTick()
   }
@@ -2557,6 +2576,7 @@ defineExpose({ scrollToSection })
         :multi-buff-selection="multiSlotBuffSelection"
         :skill-talent-levels-by-agent="skillTalentLevelsByAgent"
         :scheme-name="currentSchemeName"
+        :slot-meta="recordSlotMeta"
         :panel-source-mode="skillFlowPanelSource"
         :panel-source-availability="skillFlowPanelAvailability"
         :display-panel-sources="displayPanelSources"
