@@ -12,8 +12,10 @@ import type { ResolvedHit } from '@/utils/resolvedHit'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import { buildSkillFlowDamageAnalysis } from '@/utils/skillFlowDamageAnalysis'
 import {
+  exportSkillFlowDamageRecords,
   loadSkillFlowDamageRecords,
-  MAX_SKILL_FLOW_DAMAGE_RECORDS,
+  appendSkillFlowDamageRecords,
+  parseSkillFlowDamageRecordExport,
   normalizeSkillFlowDamageRecordName,
   saveSkillFlowDamageRecords,
   skillFlowDamageRecordLabel,
@@ -35,7 +37,6 @@ const props = defineProps<{
   slotMeta?: SkillFlowDamageRecordSlotMeta[]
 }>()
 
-const MAX_RECORDS = MAX_SKILL_FLOW_DAMAGE_RECORDS
 const UNSAVED_SCHEME_LABEL = '未保存'
 /** 记录列表里的「记录 0」：当前流程，不可改名/删除/拖动 */
 const CURRENT_RECORD_ID = '__current__'
@@ -477,7 +478,6 @@ function cancelRenameRecord() {
 }
 
 function recordNow() {
-  if (records.value.length >= MAX_RECORDS) return
   const now = Date.now()
   const agentNames = props.teamSlots.map((slot) => agentName(slot.agentId))
   records.value.push({
@@ -522,6 +522,58 @@ function removeRecord(id: string) {
 function clearRecords() {
   records.value = []
   recordRefId.value = RECORD_REF_PREV
+}
+
+// ============ 导出 / 导入 ============
+const recordImportInput = ref<HTMLInputElement | null>(null)
+const recordIoNotice = ref<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+function downloadTextFile(filename: string, text: string) {
+  if (typeof document === 'undefined') return
+  const blob = new Blob([text], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function recordExportStamp(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
+
+function exportRecords() {
+  if (!records.value.length) return
+  recordIoNotice.value = null
+  downloadTextFile(
+    `zzz-hp-damage-stats-${recordExportStamp(new Date())}.json`,
+    exportSkillFlowDamageRecords(records.value),
+  )
+}
+
+function triggerRecordImport() {
+  recordImportInput.value?.click()
+}
+
+async function onRecordImportChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (!input || !file) return
+  const text = await file.text()
+  input.value = ''
+  const parsed = parseSkillFlowDamageRecordExport(text)
+  if (!parsed) {
+    recordIoNotice.value = { kind: 'error', text: '导入失败：不是本页导出的伤害统计文件。' }
+    return
+  }
+  records.value = appendSkillFlowDamageRecords(records.value, parsed.records)
+  const parts = [`导入 ${parsed.records.length} 条，现共 ${records.value.length} 条`]
+  if (parsed.dropped) parts.push(`损坏丢弃 ${parsed.dropped} 条`)
+  recordIoNotice.value = { kind: 'ok', text: parts.join('，') }
 }
 
 // ============ 拖动排序 ============
@@ -669,16 +721,24 @@ watch(records, (list) => {
   <section id="flow-records" class="sf-stats" aria-label="伤害记录">
     <header class="sf-stats-head">
       <div class="sf-rec-head-row">
-        <h3>伤害记录列表</h3>
+        <h3>伤害统计列表</h3>
         <div class="sf-stats-lift-actions">
           <button
             type="button"
             class="mini-btn"
-            :disabled="records.length >= MAX_RECORDS"
             @click="recordNow"
           >
             记录
           </button>
+          <button
+            type="button"
+            class="mini-btn"
+            :disabled="!records.length"
+            @click="exportRecords"
+          >
+            导出
+          </button>
+          <button type="button" class="mini-btn" @click="triggerRecordImport">导入</button>
           <button
             type="button"
             class="mini-btn danger"
@@ -687,16 +747,30 @@ watch(records, (list) => {
           >
             清空
           </button>
+          <input
+            ref="recordImportInput"
+            class="sf-rec-import-input"
+            type="file"
+            accept="application/json,.json"
+            aria-label="导入伤害统计文件"
+            @change="onRecordImportChange"
+          />
         </div>
       </div>
       <p>
-        第 0 条固定是「当前流程」，随编辑实时更新，不能改名、删除或排序；点「记录」把它此刻的完整流程伤害另存为第 1 条起的历史记录，最多
-        {{ MAX_RECORDS }}
-        条，只存在本浏览器、不写进方案库。点任意一行，可在下方切换「流程伤害」与「记录对比」查看该条当时的全队构成、类型分布与招式明细。
+        第 0 条固定是「当前流程」，随编辑实时更新，不能改名、删除或排序；点「记录」把它此刻的完整流程伤害另存为第 1 条起的历史记录，条数不限，只存在本浏览器、不写进方案库。点任意一行，可在下方切换「流程伤害」与「记录对比」查看该条当时的全队构成、类型分布与招式明细。换浏览器或清缓存前，可用「导出」存成 JSON 文件，「导入」会整份追加到现有记录后面。
       </p>
     </header>
 
     <div class="sf-stats-lift">
+      <p
+        v-if="recordIoNotice"
+        class="sf-analysis-notice"
+        :class="{ 'is-error': recordIoNotice.kind === 'error' }"
+        role="status"
+      >
+        {{ recordIoNotice.text }}
+      </p>
       <p v-if="recordSaveError" class="sf-analysis-notice" role="alert">
         浏览器未能保存伤害记录，当前页仍可查看；刷新前请检查浏览器存储空间或隐私设置。
       </p>
@@ -1142,6 +1216,15 @@ watch(records, (list) => {
   color: #9aa3b0;
   font-size: 0.76rem;
 }
+/* 导入用的文件选择器：不占位，由「导入」按钮触发 */
+.sf-rec-import-input {
+  display: none;
+}
+.sf-analysis-notice.is-error {
+  color: #f0b0b0;
+  border-color: #7a4a4a;
+  background: rgba(160, 60, 60, 0.16);
+}
 .sf-rec-locked {
   font-size: 0.7rem;
   color: #6a7382;
@@ -1345,16 +1428,18 @@ watch(records, (list) => {
   font-variant-numeric: tabular-nums;
 }
 .sf-rec-delta {
-  flex: 0 0 4.2rem;
+  flex: 0 0 4.8rem;
   text-align: right;
   color: #9aa3b0;
+  font-size: 0.8rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .sf-rec-delta.is-up {
-  color: #69b38d;
+  color: #7fd3a4;
 }
 .sf-rec-delta.is-down {
-  color: #d98b8b;
+  color: #f09a9a;
 }
 /* 对比参考的那条：蓝色，与「正在查看」的金色区分开 */
 .sf-rec-row.is-ref {

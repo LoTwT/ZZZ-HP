@@ -3584,6 +3584,11 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   background: #fff8eb !important;
   color: #8a6a1f !important;
 }
+[data-theme='light'] .sf-analysis-notice.is-error {
+  color: #b42318 !important;
+  border-color: #e4b4b4 !important;
+  background: #fdf2f2 !important;
+}
 [data-theme='light'] .sf-rec-locked {
   color: #8b93a0 !important;
 }
@@ -3645,6 +3650,7 @@ body:has(.calculator-page.theme-light) .preset-preview li,
 [data-theme='light'] .sf-rec-time,
 [data-theme='light'] .sf-rec-delta {
   color: #5a6575 !important;
+  font-weight: 700 !important;
 }
 [data-theme='light'] .sf-rec-ref-select {
   border-color: #cfd6e0 !important;

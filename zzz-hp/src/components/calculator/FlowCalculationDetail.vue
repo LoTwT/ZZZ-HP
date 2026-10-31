@@ -2,6 +2,7 @@
 import { buildEventValueTips } from '@/utils/eventDamageSourceTips'
 import { computed } from 'vue'
 import DamageResultDetail from '@/components/calculator/DamageResultDetail.vue'
+import FlowZoneCalculation from '@/components/calculator/FlowZoneCalculation.vue'
 import type { SkillFlowCalculationDetail } from '@/utils/skillFlowCalculation'
 import { DAMAGE_EVENT_CRIT_MODE_OPTIONS } from '@/utils/damageEvent'
 import { buildSkillBaseMultNote } from '@/utils/skillTalentLevels'
@@ -15,9 +16,12 @@ const critModeLabel = computed(() =>
 const skillMultLevelNote = computed(() =>
   buildSkillBaseMultNote(detail.value.hit.skill, detail.value.hit.skillTalentLevel),
 )
-function formatDamage(value: number) {
-  return Math.round(value).toLocaleString('en-US')
-}
+/** 计算合计：与招式流程详情同一套「期望 × 次数 = 合计」 */
+const damageSummary = computed(() => ({
+  perHit: detail.value.perHit,
+  count: detail.value.hit.count,
+  total: detail.value.total,
+}))
 </script>
 
 <template>
@@ -27,13 +31,15 @@ function formatDamage(value: number) {
       · {{ critModeLabel }}
       · 事件元素 {{ detail.eventElement ?? '待选择' }}
     </p>
-    <p class="calculation-total">
-      单次 <strong>{{ formatDamage(detail.perHit) }}</strong>
-      × {{ detail.hit.count }} 次
-      = 合计 <strong>{{ formatDamage(detail.total) }}</strong>
-    </p>
-    <p class="calculation-hint">悬停、聚焦或轻触公式中的数值，可查看计算组成与增益来源。</p>
-    <DamageResultDetail
+    <FlowZoneCalculation
+      :calculation="calculation"
+      :summary="damageSummary"
+      empty-hint="本段计算过程暂不可用，请检查当前面板来源。"
+    />
+    <details class="calculation-more">
+      <summary>完整公式与来源</summary>
+      <p class="calculation-hint">悬停、聚焦或轻触公式中的数值，可查看计算组成与增益来源。</p>
+      <DamageResultDetail
       :source-tips="sourceTips"
       :calc-parts="detail.result"
       :damage-input-usages="detail.damageInputUsages"
@@ -70,8 +76,9 @@ function formatDamage(value: number) {
       :remiel-self-external-panel="detail.remielSelfExternalPanel"
       :remiel-self-sources="detail.remielSelfSources"
       :remiel-self-final-panel="detail.remielSelfFinalPanel"
-      :remiel-is-mb="detail.remielIsMb"
-    />
+        :remiel-is-mb="detail.remielIsMb"
+      />
+    </details>
   </section>
 </template>
 
@@ -112,5 +119,22 @@ function formatDamage(value: number) {
   margin: 0 0 0.55rem;
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
+}
+.calculation-more {
+  margin-top: 0.6rem;
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 60%, transparent);
+  padding-top: 0.45rem;
+}
+.calculation-more > summary {
+  cursor: pointer;
+  font-size: 0.74rem;
+  color: var(--color-text-muted, #9aa3b0);
+  list-style: none;
+}
+.calculation-more > summary::before {
+  content: '▸ ';
+}
+.calculation-more[open] > summary::before {
+  content: '▾ ';
 }
 </style>

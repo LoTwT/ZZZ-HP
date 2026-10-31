@@ -5,7 +5,6 @@ import {
 } from '@/utils/skillFlowDamageRecordComparison'
 
 export const SKILL_FLOW_DAMAGE_RECORD_KEY = 'zzz-hp-skill-flow-damage-records'
-export const MAX_SKILL_FLOW_DAMAGE_RECORDS = 10
 
 export interface SkillFlowDamageRecord {
   id: string
@@ -126,27 +125,79 @@ function normalizeRecord(value: unknown): SkillFlowDamageRecord | null {
   }
 }
 
+/** 外部文件（导出/导入）的类型标识，避免把别的 JSON 当记录读进来 */
+export const SKILL_FLOW_DAMAGE_RECORD_EXPORT_KIND = 'zzz-hp-damage-records'
+
+/** 规范化一份记录数组：丢弃坏条目，不做去重（去重由调用方决定） */
+export function normalizeSkillFlowDamageRecords(value: unknown): SkillFlowDamageRecord[] {
+  if (!Array.isArray(value)) return []
+  return value.map(normalizeRecord).filter((item): item is SkillFlowDamageRecord => item != null)
+}
+
 export function loadSkillFlowDamageRecords(): SkillFlowDamageRecord[] {
   try {
     if (typeof localStorage === 'undefined') return []
     const parsed = JSON.parse(localStorage.getItem(SKILL_FLOW_DAMAGE_RECORD_KEY) ?? '[]')
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map(normalizeRecord)
-      .filter((item): item is SkillFlowDamageRecord => item != null)
-      .slice(0, MAX_SKILL_FLOW_DAMAGE_RECORDS)
+    return normalizeSkillFlowDamageRecords(parsed)
   } catch {
     return []
   }
 }
 
-export function saveSkillFlowDamageRecords(list: SkillFlowDamageRecord[]): boolean {
+/** 导出成可存档的 JSON 文本（附带类型与版本，方便导入时校验） */
+export function exportSkillFlowDamageRecords(list: readonly SkillFlowDamageRecord[]): string {
+  return JSON.stringify(
+    {
+      kind: SKILL_FLOW_DAMAGE_RECORD_EXPORT_KIND,
+      version: 1,
+      exportedAt: Date.now(),
+      count: list.length,
+      records: list,
+    },
+    null,
+    2,
+  )
+}
+
+export interface SkillFlowDamageRecordImportResult {
+  records: SkillFlowDamageRecord[]
+  /** 文件里被丢弃的坏条目数 */
+  dropped: number
+}
+
+/**
+ * 解析导入文件：只认本页导出的格式（也接受裸数组，方便手工整理）。
+ * 坏条目逐条丢弃，不整体失败；`null` 表示完全无法识别。
+ */
+export function parseSkillFlowDamageRecordExport(text: string): SkillFlowDamageRecordImportResult | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const raw = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as { records?: unknown }).records)
+      ? (parsed as { records: unknown[] }).records
+      : null
+  if (!raw) return null
+  const records = normalizeSkillFlowDamageRecords(raw)
+  return { records, dropped: raw.length - records.length }
+}
+
+/** 导入一律追加到现有记录后面：不去重、不设条数上限（存储空间不足由保存失败提示兜底） */
+export function appendSkillFlowDamageRecords(
+  existing: readonly SkillFlowDamageRecord[],
+  incoming: readonly SkillFlowDamageRecord[],
+): SkillFlowDamageRecord[] {
+  return [...existing, ...incoming]
+}
+
+export function saveSkillFlowDamageRecords(list: readonly SkillFlowDamageRecord[]): boolean {
   try {
     if (typeof localStorage === 'undefined') return false
-    localStorage.setItem(
-      SKILL_FLOW_DAMAGE_RECORD_KEY,
-      JSON.stringify(list.slice(0, MAX_SKILL_FLOW_DAMAGE_RECORDS)),
-    )
+    localStorage.setItem(SKILL_FLOW_DAMAGE_RECORD_KEY, JSON.stringify(list))
     return true
   } catch {
     return false

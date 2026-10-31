@@ -19,7 +19,10 @@ import {
   skillFlowSkillContributions,
 } from '../src/utils/skillFlowDamageAnalysis.ts'
 import {
+  exportSkillFlowDamageRecords,
   loadSkillFlowDamageRecords,
+  appendSkillFlowDamageRecords,
+  parseSkillFlowDamageRecordExport,
   normalizeSkillFlowDamageRecordName,
   saveSkillFlowDamageRecords,
   skillFlowDamageRecordLabel,
@@ -480,11 +483,11 @@ try {
     assert.equal(saveSkillFlowDamageRecords([legacy, before, after]), true)
     assert.equal(loadSkillFlowDamageRecords()[2].snapshot.lines[3].total, 80)
   })
-  check('仍最多保存 10 条，坏 JSON 有稳定空态', () => {
+  check('条数不设上限，12 条原样存取；坏 JSON 有稳定空态', () => {
     saveSkillFlowDamageRecords(
       Array.from({ length: 12 }, (_, index) => ({ ...legacy, id: `record-${index}` })),
     )
-    assert.equal(loadSkillFlowDamageRecords().length, 10)
+    assert.equal(loadSkillFlowDamageRecords().length, 12)
     storage.setItem(SKILL_FLOW_DAMAGE_RECORD_KEY, 'bad json')
     assert.deepEqual(loadSkillFlowDamageRecords(), [])
   })
@@ -566,6 +569,42 @@ try {
         assert.equal(line.hit.anomalyPowerAgentId, null)
       }
     }
+  })
+
+  check('导出成 JSON 再导入：记录、名称、槽位配置与快照都还原', () => {
+    const named = { ...before, name: '爆发前', slotMeta: [{ rank: 2, disc4: '谵羽之哲' }] }
+    const text = exportSkillFlowDamageRecords([named, after])
+    const parsed = parseSkillFlowDamageRecordExport(text)
+    assert.ok(parsed, '应能解析自己导出的文件')
+    assert.equal(parsed.dropped, 0)
+    assert.equal(parsed.records.length, 2)
+    assert.equal(parsed.records[0].name, '爆发前')
+    assert.deepEqual(parsed.records[0].slotMeta, [{ rank: 2, disc4: '谵羽之哲' }])
+    assert.equal(parsed.records[0].snapshot.lines.length, named.snapshot.lines.length)
+    assert.equal(parsed.records[1].team, after.team)
+  })
+  check('导入也接受裸数组，坏条目逐条丢弃而不是整体失败', () => {
+    const raw = JSON.parse(exportSkillFlowDamageRecords([before]))
+    const bare = parseSkillFlowDamageRecordExport(
+      JSON.stringify([...raw.records, { id: '' }, { nonsense: true }]),
+    )
+    assert.equal(bare.records.length, 1)
+    assert.equal(bare.dropped, 2)
+  })
+  check('不是本页格式的文件导入失败，不会清空现有记录', () => {
+    assert.equal(parseSkillFlowDamageRecordExport('bad json'), null)
+    assert.equal(parseSkillFlowDamageRecordExport('{"foo":1}'), null)
+    assert.equal(parseSkillFlowDamageRecordExport('[1,2,3]').records.length, 0)
+  })
+  check('导入整份追加：不去重、不设条数上限', () => {
+    const same = appendSkillFlowDamageRecords([before], [before, after])
+    assert.equal(same.length, 3)
+    assert.deepEqual(
+      same.map((record) => record.id),
+      ['before', 'before', 'after'],
+    )
+    const many = Array.from({ length: 30 }, (_, index) => ({ ...before, id: `many-${index}` }))
+    assert.equal(appendSkillFlowDamageRecords(many, [{ ...before, id: 'extra' }]).length, 31)
   })
 
   saveSkillFlowDamageRecords([legacy, before, after])
