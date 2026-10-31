@@ -659,7 +659,7 @@ console.log('== A7 复用层「非纯对象一律判不同」的保守分支不�
     ...FIXED_ATK_OPTIONS(),
     setupHit: (target) => {
       target.buffOverride = { disabledEffectIds: ['x', 'y'] }
-      target.multOverrides = { directDmgMult: 100, anomalyMult: 50, nested: { deep: [1, 2, 3] } }
+      target.multOverrides = { directDmgMult: 100, attributeAnomalyMult: 50, nested: { deep: [1, 2, 3] } }
     },
   })
   check('行级覆盖 + 嵌套倍率覆盖仍然是纯容器', isPlainContainer(decoratedHit.buffOverride) && isPlainContainer(decoratedHit.multOverrides))

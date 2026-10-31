@@ -169,7 +169,6 @@ async function migrateToEffectJsonColumn() {
       scope: normalizeBuffScopes(raw.scope),
       skillCategory: raw.skillCategory,
       skillSubcategoryId: raw.skillSubcategoryId,
-      appliesToAnomaly: raw.appliesToAnomaly,
     })
     if (!template) continue
     await pool.query(`UPDATE ${ENTRY_TABLE} SET effect_json = ? WHERE scheme = ? AND id = ?`, [
@@ -292,8 +291,6 @@ function rowToEntry(row) {
         : skillFromSpec && 'subcategoryId' in skillFromSpec
           ? skillFromSpec.subcategoryId
           : undefined,
-    appliesToAnomaly:
-      typeof raw?.appliesToAnomaly === 'boolean' ? raw.appliesToAnomaly : specCond.appliesToAnomaly,
     effectJson: effectJson ?? null,
     raw: raw && typeof raw === 'object' ? raw : null,
   }

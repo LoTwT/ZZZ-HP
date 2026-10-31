@@ -1,4 +1,9 @@
 import { normalizeFlowEventElements } from '@/utils/resolvedHit'
+import {
+  migrateAttributeAnomalyNamingDeep,
+  migrateAttributeAnomalyNoteText,
+  migrateAttributeAnomalyTypeValue,
+} from '@/utils/attributeAnomalyMigration'
 /**
  * 方案包：收集引用、招式/组指纹、合并改写。
  * 不读写 localStorage；IO 在 damageCalcHistory.ts。
@@ -67,13 +72,13 @@ export function skillFingerprint(skill: Pick<Skill, 'name' | 'agentId' | 'elemen
     name: String(skill.name ?? '').trim(),
     agentId: String(skill.agentId ?? ''),
     element: String(skill.element ?? ''),
-    damageType: String(skill.damageType ?? 'direct'),
+    damageType: String(migrateAttributeAnomalyTypeValue(skill.damageType ?? 'direct')),
     skillTypes: types,
     buffAnchorId: skill.buffAnchorId ?? null,
     baseMult: Number(skill.baseMult) || 0,
     baseMultFactor: Number.isFinite(Number(skill.baseMultFactor)) ? Number(skill.baseMultFactor) : null,
     settlementMult: Number.isFinite(Number(skill.settlementMult)) ? Number(skill.settlementMult) : null,
-    note: String(skill.note ?? '').trim(),
+    note: migrateAttributeAnomalyNoteText(String(skill.note ?? '').trim()),
   })
 }
 
@@ -103,7 +108,7 @@ export function schemeContentFingerprint(entry: DamageCalcHistoryEntry): string 
     sharedPresetId: _sharedPresetId,
     ...rest
   } = entry
-  return stableJson(rest)
+  return stableJson(migrateAttributeAnomalyNamingDeep(rest))
 }
 
 export function parseSkillGroupList(raw: unknown): SkillGroup[] | null {

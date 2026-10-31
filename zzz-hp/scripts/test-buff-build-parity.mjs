@@ -34,6 +34,7 @@ import { createEmptyBuffEffect } from '../src/utils/buffEffect.ts'
 import { createEmptyAffixCounts } from '../src/types/calculatorPanel.ts'
 import { schemeActivePanels, schemeAffixInputs } from '../src/utils/agentPanelSources.ts'
 import { BUFFS_JSON, DEV_ROOT, FRONTEND_ROOT, resolveSchemePath } from './_paths.mjs'
+import { migrateAttributeAnomalyNamingDeep } from '../src/utils/attributeAnomalyMigration.ts'
 import { extraCard } from './_effectPipelineHarness.mjs'
 
 const WRITE = process.argv.includes('--write')
@@ -240,7 +241,8 @@ for (const fixture of FIXTURES) {
     console.log(`  [skip] 夹具不存在（跳过）：${fixture.file}`)
     continue
   }
-  const pack = JSON.parse(fs.readFileSync(fixture.file, 'utf8'))
+  // 旧个人方案包：与 App 读取入口一致，先做属性异常改名转换再参与结算
+  const pack = migrateAttributeAnomalyNamingDeep(JSON.parse(fs.readFileSync(fixture.file, 'utf8')))
   const schemes = Object.values(pack.schemes ?? {})
   const picked = fixture.allSchemes ? schemes : [schemes[0]]
   picked.forEach((scheme, index) => {

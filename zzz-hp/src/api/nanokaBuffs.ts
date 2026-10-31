@@ -55,7 +55,7 @@ export interface NanokaKeywordSlots {
   target: string
   /** **允许复数**的槽位之一（与 `elements` 一起构成复数白名单） */
   conditions: string[]
-  /** **作用域**（= 编辑器 `scope`）：`招式 / 异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数` 或 `无` */
+  /** **作用域**（= 编辑器 `scope`）：`招式 / 属性异常 / 紊乱 / 乱流 / 异放 / 耀变 / 异化系数` 或 `无` */
   scope: string
   stacks: string
   duration: string
@@ -118,7 +118,7 @@ export interface NanokaKeywordEffect {
   unmappableSlots: { slot: string; value: string; reason: string }[]
   /**
    * **合集扇出元数据**（抽取层；界面徽章「合集：属性伤害」用它；**写入库前剔除、不进结算**）。
-   * 形如 `{ id: 'attribute-damage', title: '属性伤害', note: '合集 = 异常 / 异放 / 乱流 / 耀变（不含紊乱）', targetStat: '异常增伤' }`
+   * 形如 `{ id: 'attribute-damage', title: '属性伤害', note: '合集 = 属性异常 / 异放 / 乱流 / 耀变（不含紊乱）', targetStat: '属性异常增伤' }`
    */
   collection?: { id: string; title: string; note: string; targetStat: string }
   anchors: NanokaKeywordAnchors

@@ -8,13 +8,13 @@ const keyword = (patch = {}) => ({
   key: 'core#0', itemSlot: 'core', itemSlotLabel: '核心被动', source: 'passive.core', containerIndex: 0,
   title: '核心被动：测试', rawText: '原文说明', origin: '原始来源', slots: {}, convert: null,
   anchors: { ok: true, pendingCreates: [] }, skillDesc: null,
-  gain: normalizeBuffEffect({ id: 'source', stat: 'dmgBonus', kind: 'fixed', value: 20, applyTarget: 'self', scope: ['anomaly', 'disorder'], groupId: 'group' }),
+  gain: normalizeBuffEffect({ id: 'source', stat: 'dmgBonus', kind: 'fixed', value: 20, applyTarget: 'self', scope: ['attributeAnomaly', 'disorder'], groupId: 'group' }),
   recorded: true, included: true, blocked: false, dirty: {}, ...patch,
 })
 
 const rows = reactive([keyword()])
 const slots = reactive(createNanokaBuffDraft('agent', rows))
-assert.deepEqual(slots['0'][0].effects[0].conditions, { damageTypes: ['anomaly', 'disorder'] })
+assert.deepEqual(slots['0'][0].effects[0].conditions, { damageTypes: ['attributeAnomaly', 'disorder'] })
 assert.equal(slots['0'][0].effects[0].groupId, 'group')
 slots['0'][0].name = '人工块名'
 slots['0'][0].note = '人工备注'
@@ -37,7 +37,7 @@ assert.equal(beforeSplit.effects.length, 2)
 assert.equal(nanokaDraftApplyRows('agent', slots, rows).length, 2, '拆分后不能只提交原先一条关键字')
 rememberNanokaDraftEdits(slots, rows)
 refreshNanokaBuffDraft('agent', slots, rows)
-assert.deepEqual(beforeSplit.effects.map((item) => item.conditions.damageTypes), [['anomaly'], ['disorder']], '重解析保持手动拆分类型')
+assert.deepEqual(beforeSplit.effects.map((item) => item.conditions.damageTypes), [['attributeAnomaly'], ['disorder']], '重解析保持手动拆分类型')
 beforeSplit.effects = []
 rememberNanokaDraftEdits(slots, rows)
 refreshNanokaBuffDraft('agent', slots, rows)
@@ -54,7 +54,7 @@ assert.equal(manual[0].rawText, '')
 assert.equal(manual[0].anchors, null)
 
 // 正式编辑器联动后生成新 id，仍能跟踪原关键字并提交全部子类效果。
-const zoneRows = [keyword({ gain: normalizeBuffEffect({ id: 'z', stat: 'anomalyDmgBonus', kind: 'fixed', value: 20, applyTarget: 'self' }) })]
+const zoneRows = [keyword({ gain: normalizeBuffEffect({ id: 'z', stat: 'attributeAnomalyDmgBonus', kind: 'fixed', value: 20, applyTarget: 'self' }) })]
 const zones = createNanokaBuffDraft('agent', zoneRows)
 const zoneBlock = zones['0'][0]
 zoneBlock.effects = toggleRowDamageType(zoneBlock.effects, buildEffectRows(zoneBlock.effects)[0], 'disorder', true)

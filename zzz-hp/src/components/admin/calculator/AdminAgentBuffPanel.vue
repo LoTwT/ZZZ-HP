@@ -174,7 +174,7 @@ function toggleSupportNeed(stat: SupportStatNeed) {
 }
 
 function onElementChange() {
-  form.value.basePanel.anomalyMult = defaultAnomalyMultByElement(form.value.element)
+  form.value.basePanel.attributeAnomalyMult = defaultAnomalyMultByElement(form.value.element)
   const agentKey = `${form.value.id} ${form.value.name}`
   const disorder = defaultDisorderStats(form.value.element, agentKey)
   const turbulence = defaultTurbulenceStats(form.value.element, agentKey)

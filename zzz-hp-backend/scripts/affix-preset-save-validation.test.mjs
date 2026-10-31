@@ -189,14 +189,12 @@ test('normalizeEntryPayload 保留 gain 条件与 effectJson', () => {
     scope: 'skill',
     skillCategory: 'basic',
     skillSubcategoryId: null,
-    appliesToAnomaly: true,
     effectJson: { version: 1, allocation: 'effect', legacyTarget: 'gain:dmgBonus' },
   })
   assert.equal(payload.error, undefined)
   assert.equal(payload.scope, 'skill')
   assert.equal(payload.skillCategory, 'basic')
   assert.equal(payload.skillSubcategoryId, null)
-  assert.equal(payload.appliesToAnomaly, true)
   assert.equal(payload.effectJson.allocation, 'effect')
   assert.equal(payload.target, 'gain:dmgBonus')
 })

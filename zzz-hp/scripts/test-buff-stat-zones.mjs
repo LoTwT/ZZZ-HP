@@ -72,17 +72,17 @@ check(
 )
 const rowsAll = statRowsForZone(dmgZone, [])
 check('类2 空选择 = 全部 5 条', rowsAll.length === 5)
-const rowsTwo = statRowsForZone(dmgZone, ['anomaly', 'disorder'])
+const rowsTwo = statRowsForZone(dmgZone, ['attributeAnomaly', 'disorder'])
 check(
   '类2 勾 2 类 = 2 条（字段正确）',
   rowsTwo.length === 2 &&
-    rowsTwo[0].stat === 'anomalyDmgBonus' &&
+    rowsTwo[0].stat === 'attributeAnomalyDmgBonus' &&
     rowsTwo[1].stat === 'disorderDmgBonus',
 )
 check(
   '类2 反推类型',
-  zoneTypesOfStats(dmgZone, ['anomalyDmgBonus', 'disorderDmgBonus']).join(',') ===
-    'anomaly,disorder',
+  zoneTypesOfStats(dmgZone, ['attributeAnomalyDmgBonus', 'disorderDmgBonus']).join(',') ===
+    'attributeAnomaly,disorder',
 )
 
 console.log('\n[4] 类3 都可选；不改字段')
@@ -108,7 +108,7 @@ check(
 )
 
 console.log('\n[5] 子类字段反查')
-check('anomalyDmgBonus → 属性异常', anomalyTypeOfStat('anomalyDmgBonus') === 'anomaly')
+check('attributeAnomalyDmgBonus → 属性异常', anomalyTypeOfStat('attributeAnomalyDmgBonus') === 'attributeAnomaly')
 check('anomalyReleaseCritDmg → 异放', anomalyTypeOfStat('anomalyReleaseCritDmg') === 'anomalyRelease')
 check('普通 stat 无子类类型', anomalyTypeOfStat('atk') === null)
 check('异放增伤已折叠（不是独立乘区 id）', !findBuffStatZoneById('zone:anomalyReleaseDmgBonus'))

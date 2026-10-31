@@ -195,7 +195,7 @@ const MULT_FIELDS: Record<
 > = {
   direct: { mult: 'directDmgMult', factor: 'directDmgMultFactor' },
   sharpen: { mult: 'directDmgMult', factor: 'directDmgMultFactor' },
-  anomaly: { mult: 'anomalyMult', factor: 'anomalyMultFactor' },
+  attributeAnomaly: { mult: 'attributeAnomalyMult', factor: 'attributeAnomalyMultFactor' },
   anomalyRelease: { mult: 'anomalyReleaseMult', factor: 'anomalyReleaseMultFactor' },
   disorder: { mult: 'disorderZoneMult', factor: 'disorderBaseMultFactor' },
   turbulence: { mult: 'turbulenceZoneMult', factor: 'turbulenceBaseMultFactor' },

@@ -62,7 +62,7 @@ const AGENT_BASE = {
   anomalyControl: 100,
   energyRegen: 120,
   directDmgMult: 100,
-  anomalyMult: 125,
+  attributeAnomalyMult: 125,
 }
 
 function makeCtx(overrides = {}) {

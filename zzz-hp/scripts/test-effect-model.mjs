@@ -52,12 +52,12 @@ console.log('\n[2] BuffEffect 适配')
     Array.isArray(spec.conditions.damageTypes) && spec.conditions.damageTypes.length === 0,
   )
 
-  const anomalyFx = fixedEffect('b', 'dmgBonus', 10, { scope: ['anomaly'] })
+  const anomalyFx = fixedEffect('b', 'dmgBonus', 10, { scope: ['attributeAnomaly'] })
   const anomalySpec = adaptBuffEffect(anomalyFx)
   check(
     '旧 scope=anomaly 迁到 conditions.damageTypes',
     Array.isArray(anomalySpec.conditions.damageTypes) &&
-      anomalySpec.conditions.damageTypes[0] === 'anomaly',
+      anomalySpec.conditions.damageTypes[0] === 'attributeAnomaly',
   )
 
   const cv = convertEffect('c', 'atk', { from: 'mastery', panelSource: 'final', ratioPercent: 80 })

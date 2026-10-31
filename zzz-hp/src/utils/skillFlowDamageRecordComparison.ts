@@ -4,6 +4,7 @@ import {
   type StaggerPhase,
 } from '@/types/calculator'
 import type { SkillFlowDamageAnalysis } from '@/utils/skillFlowDamageAnalysis'
+import { migrateAttributeAnomalyTypeValue } from '@/utils/attributeAnomalyMigration'
 import {
   captureSkillFlowDamageSnapshotContext,
   compareSkillFlowDamageSegments,
@@ -139,6 +140,8 @@ export function normalizeSkillFlowDamageSnapshot(
   const lines: SkillFlowDamageSnapshotLine[] = []
   for (const item of raw.lines) {
     if (!item || typeof item !== 'object') return undefined
+    // 旧子类 id（nomaly）在类型白名单校验前转换；不改已保存的数值
+    const lineDamageType = migrateAttributeAnomalyTypeValue(item.damageType) as string
     if (
       !Number.isInteger(item.slotIndex) ||
       item.slotIndex < 0 ||
@@ -146,7 +149,7 @@ export function normalizeSkillFlowDamageSnapshot(
       typeof item.skillId !== 'string' ||
       !item.skillId ||
       typeof item.skillName !== 'string' ||
-      !types.has(item.damageType) ||
+      !types.has(lineDamageType) ||
       !['normal', 'stagger'].includes(item.staggerPhase) ||
       !Number.isFinite(item.count) ||
       item.count < 0 ||
@@ -158,7 +161,7 @@ export function normalizeSkillFlowDamageSnapshot(
       slotIndex: item.slotIndex,
       skillId: item.skillId,
       skillName: item.skillName,
-      damageType: item.damageType,
+      damageType: lineDamageType as SkillFlowDamageSnapshotLine['damageType'],
       staggerPhase: item.staggerPhase,
       count: item.count,
       total: item.total,

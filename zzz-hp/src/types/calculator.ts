@@ -54,7 +54,7 @@ export type SupportStatNeed =
 export type BuffScope =
   | 'general'
   | 'skill'
-  | 'anomaly'
+  | 'attributeAnomaly'
   | 'disorder'
   | 'turbulence'
   | 'anomalyRelease'
@@ -64,7 +64,7 @@ export type BuffScope =
 export const BUFF_SCOPE_OPTIONS: { id: BuffScope; label: string }[] = [
   { id: 'general', label: '通用' },
   { id: 'skill', label: '招式' },
-  { id: 'anomaly', label: '异常' },
+  { id: 'attributeAnomaly', label: '属性异常' },
   { id: 'disorder', label: '紊乱' },
   { id: 'turbulence', label: '乱流' },
   { id: 'anomalyRelease', label: '异放' },
@@ -77,12 +77,16 @@ export const BUFF_SCOPE_OPTIONS: { id: BuffScope; label: string }[] = [
  *
  * 两级只影响展示：直伤类 3 项 / 异常类 5 项；数据层只存第二级 id。
  * 空数组 = 全部。
+ *
+ * 2026-10-30 口径统一：属性异常子类 id 由 `anomaly` 改为 `attributeAnomaly`；
+ * 「异常类」分组 id 改为 `anomalyClass`。类级语义（`DamageCalcKind`、
+ * 事件模式 `modeType`）仍是 `anomaly`，不随之改名。
  */
 export type BuffDamageType =
   | 'normal'
   | 'pierce'
   | 'sharpen'
-  | 'anomaly'
+  | 'attributeAnomaly'
   | 'turbulence'
   | 'disorder'
   | 'radiance'
@@ -94,7 +98,7 @@ export interface BuffDamageTypeOption {
 }
 
 export interface BuffDamageTypeGroup {
-  id: 'direct' | 'anomaly'
+  id: 'direct' | 'anomalyClass'
   label: string
   types: BuffDamageTypeOption[]
 }
@@ -111,10 +115,10 @@ export const BUFF_DAMAGE_TYPE_GROUPS: BuffDamageTypeGroup[] = [
     ],
   },
   {
-    id: 'anomaly',
+    id: 'anomalyClass',
     label: '异常类',
     types: [
-      { id: 'anomaly', label: '属性异常' },
+      { id: 'attributeAnomaly', label: '属性异常' },
       { id: 'turbulence', label: '乱流' },
       { id: 'disorder', label: '紊乱' },
       { id: 'radiance', label: '耀变' },
@@ -137,9 +141,9 @@ export type BuffApplyTarget = 'self' | 'team'
 export type BuffApplySituation = 'global' | 'stagger' | 'non_stagger'
 export type BuffEffectKind = 'fixed' | 'stacked' | 'convert'
 export type DamageCalcKind = 'direct' | 'anomaly'
-/** 异常伤害子类：异常 / 紊乱 / 乱流 / 异放 / 耀变 */
+/** 异常伤害子类：属性异常 / 紊乱 / 乱流 / 异放 / 耀变 */
 export type AnomalyDamageSubKind =
-  | 'anomaly'
+  | 'attributeAnomaly'
   | 'disorder'
   | 'turbulence'
   | 'anomalyRelease'
@@ -315,9 +319,12 @@ export interface BuffStatModifiers {
   /** 失衡易伤（仅失衡）%（仅失衡期存在并生效） */
   staggerVulnerableOnly: number
   special: number
-  anomalyCritRate: number
-  anomalyCritDmg: number
-  anomalyDmgBonus: number
+  /** 属性异常暴击% */
+  attributeAnomalyCritRate: number
+  /** 属性异常爆伤% */
+  attributeAnomalyCritDmg: number
+  /** 属性异常增伤% */
+  attributeAnomalyDmgBonus: number
   /** 异放增伤% */
   anomalyReleaseDmgBonus: number
   /** 异放暴击% */
@@ -328,7 +335,7 @@ export interface BuffStatModifiers {
   anomalyReleaseMult: number
   /**
    * 子类专用暴击（用户 2026-10-16：暴击按子类拆开，各子类只吃自己的字段；
-   * 属性异常用 `anomalyCrit*`、异放用 `anomalyReleaseCrit*`）。
+   * 属性异常用 `attributeAnomalyCrit*`、异放用 `anomalyReleaseCrit*`）。
    */
   turbulenceCritRate: number
   turbulenceCritDmg: number
@@ -339,7 +346,7 @@ export interface BuffStatModifiers {
   directDmgMult: number
   /** 决算倍率%（直伤大类下的独立伤害分量，公式同直伤倍率区） */
   settlementDmgMult: number
-  anomalyMult: number
+  attributeAnomalyMult: number
   /** 紊乱基础倍率% */
   disorderBaseMult: number
   /** 异常持续时间（秒） */
@@ -370,8 +377,8 @@ export interface BuffStatModifiers {
   skillMultiplierBonus: number
   /** 直伤倍率乘算修正（默认 1，多来源连乘） */
   directDmgMultFactor: number
-  /** 异常倍率乘算修正（默认 1） */
-  anomalyMultFactor: number
+  /** 属性异常倍率乘算修正（默认 1） */
+  attributeAnomalyMultFactor: number
   /** 异放倍率乘算修正（默认 1） */
   anomalyReleaseMultFactor: number
   /** 紊乱基础倍率乘算修正（默认 1；作用于紊乱倍率区） */
@@ -460,7 +467,7 @@ export interface BuffEffect {
   skillCategory?: BuffSkillTargetId
   /** @deprecated 兼容旧数据；优先用 skillTargets */
   skillSubcategoryId?: string | null
-  /** 属性限定（属性增伤/异常增伤/抗性穿透等）；可多选 */
+  /** 属性限定（属性增伤/属性异常增伤/抗性穿透等）；可多选 */
   elementFilter?: 'all' | string[]
   kind: BuffEffectKind
   stat: BuffStatKey
@@ -470,12 +477,6 @@ export interface BuffEffect {
   valuePerStack?: number
   defaultStacks?: number
   convert?: BuffEffectConvert
-  /**
-   * 异常结算是否也吃这条效果。
-   * 默认：通用增益参与异常；招式伤害/倍率加成不参与。
-   * 勾选后：即使是招式类增益，异常结算也会计入。
-   */
-  appliesToAnomaly?: boolean
   /**
    * 用户侧「额外增益」的效果（2026-09-24 阶段 3 起并入统一收集）。
    * 它没有勾选状态 —— **加入即已勾选**：`isEffectEnabled` 见到这个标志直接返回 true。
@@ -536,7 +537,7 @@ export type DamageEventCritMode = 'expected' | 'noCrit' | 'fullCrit'
 export type DamageEventKind =
   | 'direct'
   | 'sharpen'
-  | 'anomaly'
+  | 'attributeAnomaly'
   | 'disorder'
   | 'anomalyRelease'
   | 'turbulence'
@@ -571,8 +572,10 @@ export interface DamageEventMultOverrides {
   directDmgMult?: number | null
   settlementDmgMult?: number | null
   directDmgMultFactor?: number | null
-  anomalyMult?: number | null
-  anomalyMultFactor?: number | null
+  /** 属性异常倍率%（原「异常倍率」） */
+  attributeAnomalyMult?: number | null
+  /** 属性异常倍率修正% */
+  attributeAnomalyMultFactor?: number | null
   anomalyReleaseMult?: number | null
   anomalyReleaseMultFactor?: number | null
   disorderBaseMult?: number | null
@@ -759,13 +762,13 @@ export interface AgentBasePanel {
   penRate: number
   dmgBonus: number
   pen: number
-  anomalyCritRate: number
-  anomalyCritDmg: number
-  anomalyDmgBonus: number
+  attributeAnomalyCritRate: number
+  attributeAnomalyCritDmg: number
+  attributeAnomalyDmgBonus: number
   /** 直伤倍率%，默认 100（即 ×1） */
   directDmgMult: number
-  /** 异常倍率%，按属性默认（如冰 500） */
-  anomalyMult: number
+  /** 属性异常倍率%，按属性默认（如冰 500） */
+  attributeAnomalyMult: number
   /** 紊乱基础倍率% */
   disorderBaseMult: number
   /** 异常持续时间（秒） */

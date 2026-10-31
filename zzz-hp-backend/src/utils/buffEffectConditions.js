@@ -13,7 +13,7 @@ export const BUFF_DAMAGE_TYPES = [
   'normal',
   'pierce',
   'sharpen',
-  'anomaly',
+  'attributeAnomaly',
   'turbulence',
   'disorder',
   'radiance',
@@ -24,7 +24,7 @@ const DAMAGE_TYPE_SET = new Set(BUFF_DAMAGE_TYPES)
 
 /** 异常类 5 项（异化系数 / 旧 mutation scope 用） */
 export const ANOMALY_DAMAGE_TYPES = [
-  'anomaly',
+  'attributeAnomaly',
   'turbulence',
   'disorder',
   'radiance',
@@ -36,17 +36,17 @@ export const ANOMALY_DAMAGE_TYPES = [
  * 归一化时清空，避免同组出现假 ⚠。
  */
 export const ANOMALY_SUBTYPE_STATS = new Set([
-  'anomalyDmgBonus',
+  'attributeAnomalyDmgBonus',
   'turbulenceDmgBonus',
   'disorderDmgBonus',
   'radianceDmgBonus',
   'anomalyReleaseDmgBonus',
-  'anomalyCritRate',
+  'attributeAnomalyCritRate',
   'turbulenceCritRate',
   'disorderCritRate',
   'radianceCritRate',
   'anomalyReleaseCritRate',
-  'anomalyCritDmg',
+  'attributeAnomalyCritDmg',
   'turbulenceCritDmg',
   'disorderCritDmg',
   'radianceCritDmg',
@@ -55,7 +55,7 @@ export const ANOMALY_SUBTYPE_STATS = new Set([
 
 /** 旧 scope → 第二级类型（skill / general 不产类型） */
 const LEGACY_SCOPE_TO_TYPES = {
-  anomaly: ['anomaly'],
+  attributeAnomaly: ['attributeAnomaly'],
   turbulence: ['turbulence'],
   disorder: ['disorder'],
   radiance: ['radiance'],

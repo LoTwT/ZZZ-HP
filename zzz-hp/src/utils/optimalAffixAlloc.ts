@@ -116,7 +116,7 @@ const PANEL_NUMBERS_ONLY = { includeDetails: false } as const
 
 export type OptimalDamageKind = 'direct' | 'anomaly'
 
-export type OptimalAnomalyMetric = 'anomaly' | 'disorder' | 'turbulence' | 'anomalyRelease' | 'radiance'
+export type OptimalAnomalyMetric = 'attributeAnomaly' | 'disorder' | 'turbulence' | 'anomalyRelease' | 'radiance'
 
 export type OptimalAffixKey =
   | 'atkFlat'
@@ -391,7 +391,7 @@ export interface AnomalySweepPoint {
   label: string
   affixCounts: AffixCounts
   evalSnapshot: DirectSweepPoint['evalSnapshot']
-  anomalyExpected: number
+  attributeAnomalyExpected: number
   disorderExpected: number
   turbulenceExpected: number
   anomalyReleaseExpected: number
@@ -905,7 +905,7 @@ const STAT_TO_PANEL_FIELDS: Record<string, string[]> = {
 /**
  * 这条贡献的属性是否可能进入该字段。
  * 其它键与面板字段同名（critRate/critDmg/mastery/penRate/pen/resPen/reduceDefense/
- * anomalyDmgBonus/anomalyMult/anomalyCrit*…）；不同名且无显式映射时不登记采用。
+ * attributeAnomalyDmgBonus/attributeAnomalyMult/anomalyCrit*…）；不同名且无显式映射时不登记采用。
  */
 function recordUsesField(stat: string, field: string): boolean {
   const mapped = STAT_TO_PANEL_FIELDS[stat]
@@ -1461,7 +1461,7 @@ export function evaluateOptimalEventDetail(
   )
   const mainlyProducerDriven =
     usesNonMainProducer &&
-    (damageType === 'disorder' || damageType === 'turbulence' || damageType === 'anomaly')
+    (damageType === 'disorder' || damageType === 'turbulence' || damageType === 'attributeAnomaly')
 
   if (eventNeedsTrigger && evtPowerAgentId) {
     const tSlotIndex = ctx.panelContext.teamSlots.findIndex(
@@ -1595,10 +1595,10 @@ export function evaluateOptimalEventDetail(
     }
   }
 
-  if (damageType === 'anomaly' || damageType === 'anomalyRelease') {
+  if (damageType === 'attributeAnomaly' || damageType === 'anomalyRelease') {
     anomalyTriggerPanel = applyEventMultOverrides(anomalyTriggerPanel, {
-      anomalyMult: hit.multOverrides?.anomalyMult,
-      anomalyMultFactor: hit.multOverrides?.anomalyMultFactor,
+      attributeAnomalyMult: hit.multOverrides?.attributeAnomalyMult,
+      attributeAnomalyMultFactor: hit.multOverrides?.attributeAnomalyMultFactor,
       anomalyReleaseMult: hit.multOverrides?.anomalyReleaseMult,
       anomalyReleaseMultFactor: hit.multOverrides?.anomalyReleaseMultFactor,
     })
@@ -1672,7 +1672,7 @@ export function evaluateOptimalEventDetail(
 
   // 全部异常子类的类型增伤/倍率/暴击均取异常类触发者（含紊乱/乱流）
   const usesTriggerBonus =
-    damageType === 'anomaly' ||
+    damageType === 'attributeAnomaly' ||
     damageType === 'anomalyRelease' ||
     damageType === 'radiance' ||
     damageType === 'disorder' ||
@@ -2102,7 +2102,7 @@ export function evaluateAffixCountsForSweep(
     payload = {
       grandTotal:
         ctx.panelContext.skillContext?.damageKind === 'anomaly'
-          ? result.anomalyExpected
+          ? result.attributeAnomalyExpected
           : result.directDamageExpected,
       eventLines: [],
     }
@@ -2745,7 +2745,7 @@ function evaluateAffixCountsUncached(
     breakdown,
     grandTotal:
       ctx.panelContext.skillContext?.damageKind === 'anomaly'
-        ? result.anomalyExpected
+        ? result.attributeAnomalyExpected
         : result.directDamageExpected,
     eventLines: [],
   }
@@ -3073,7 +3073,7 @@ export function sweepAnomalyDamage(
       label: `${outLabel}${outPercent}/精通${mastery}`,
       affixCounts,
       evalSnapshot: evaled,
-      anomalyExpected: evaled.grandTotal,
+      attributeAnomalyExpected: evaled.grandTotal,
       disorderExpected: evaled.result.disorderExpected,
       turbulenceExpected: evaled.result.turbulenceExpected,
       anomalyReleaseExpected: evaled.result.anomalyReleaseExpected,
@@ -3119,7 +3119,7 @@ export async function sweepAnomalyDamageAsync(
         label: `${outLabel}${outPercent}/精通${mastery}`,
         affixCounts,
         evalSnapshot: null,
-        anomalyExpected: swept.grandTotal,
+        attributeAnomalyExpected: swept.grandTotal,
         disorderExpected: swept.grandTotal,
         turbulenceExpected: swept.grandTotal,
         anomalyReleaseExpected: swept.grandTotal,
@@ -3135,7 +3135,7 @@ export async function sweepAnomalyDamageAsync(
         label: `${outLabel}${outPercent}/精通${mastery}`,
         affixCounts,
         evalSnapshot: null,
-        anomalyExpected: evaled.result.anomalyExpected,
+        attributeAnomalyExpected: evaled.result.attributeAnomalyExpected,
         disorderExpected: evaled.result.disorderExpected,
         turbulenceExpected: evaled.result.turbulenceExpected,
         anomalyReleaseExpected: evaled.result.anomalyReleaseExpected,
@@ -3156,7 +3156,7 @@ export async function sweepAnomalyDamageAsync(
 function damageMetric(
   result: DamageCalcResult,
   kind: OptimalDamageKind,
-  anomalyMetric: OptimalAnomalyMetric = 'anomaly',
+  anomalyMetric: OptimalAnomalyMetric = 'attributeAnomaly',
   grandTotal?: number,
 ) {
   if (typeof grandTotal === 'number' && Number.isFinite(grandTotal)) return grandTotal
@@ -3165,7 +3165,7 @@ function damageMetric(
   if (anomalyMetric === 'turbulence') return result.turbulenceExpected
   if (anomalyMetric === 'anomalyRelease') return result.anomalyReleaseExpected
   if (anomalyMetric === 'radiance') return result.radianceExpected
-  return result.anomalyExpected
+  return result.attributeAnomalyExpected
 }
 
 function resolveEvalMetricDamage(
@@ -3246,7 +3246,7 @@ export function computeDiffAnalysis(
   ctx: OptimalEvalContext,
   baseCounts: AffixCounts,
   kind: OptimalDamageKind,
-  anomalyMetric: OptimalAnomalyMetric = 'anomaly',
+  anomalyMetric: OptimalAnomalyMetric = 'attributeAnomaly',
   selectedEventIds?: string[] | null,
 ): { addOne: AffixDiffRow[]; replace: AffixReplaceRow[] } {
   const candidates = kind === 'direct' ? directCandidateKeys(ctx.isMb, ctx.isFengYu) : anomalyCandidateKeys(ctx.isMb, ctx.isFengYu)
@@ -3432,7 +3432,7 @@ export function computeBenefitCurves(
   ctx: OptimalEvalContext,
   baseCounts: AffixCounts,
   kind: OptimalDamageKind,
-  anomalyMetric: OptimalAnomalyMetric = 'anomaly',
+  anomalyMetric: OptimalAnomalyMetric = 'attributeAnomaly',
   maxAdded = BENEFIT_CURVE_MAX_ADDED,
   selectedEventIds?: string[] | null,
 ): { series: BenefitCurveSeries[]; nextStep: AffixDiffRow[] } {

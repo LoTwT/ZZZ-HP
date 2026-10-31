@@ -67,7 +67,7 @@ const CLASS2_ZONES: BuffStatZone[] = [
     tier: 2,
     allowedTypes: [...ANOMALY_DAMAGE_TYPES],
     statsByType: {
-      anomaly: 'anomalyDmgBonus',
+      attributeAnomaly: 'attributeAnomalyDmgBonus',
       turbulence: 'turbulenceDmgBonus',
       disorder: 'disorderDmgBonus',
       radiance: 'radianceDmgBonus',
@@ -75,12 +75,12 @@ const CLASS2_ZONES: BuffStatZone[] = [
     },
   },
   {
-    id: 'zone:anomalyCritRate',
+    id: 'zone:attributeAnomalyCritRate',
     label: '异常类暴击率',
     tier: 2,
     allowedTypes: [...ANOMALY_DAMAGE_TYPES],
     statsByType: {
-      anomaly: 'anomalyCritRate',
+      attributeAnomaly: 'attributeAnomalyCritRate',
       turbulence: 'turbulenceCritRate',
       disorder: 'disorderCritRate',
       radiance: 'radianceCritRate',
@@ -88,12 +88,12 @@ const CLASS2_ZONES: BuffStatZone[] = [
     },
   },
   {
-    id: 'zone:anomalyCritDmg',
+    id: 'zone:attributeAnomalyCritDmg',
     label: '异常类爆伤',
     tier: 2,
     allowedTypes: [...ANOMALY_DAMAGE_TYPES],
     statsByType: {
-      anomaly: 'anomalyCritDmg',
+      attributeAnomaly: 'attributeAnomalyCritDmg',
       turbulence: 'turbulenceCritDmg',
       disorder: 'disorderCritDmg',
       radiance: 'radianceCritDmg',

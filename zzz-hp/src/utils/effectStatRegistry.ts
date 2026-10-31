@@ -18,7 +18,7 @@ export interface EffectStatRegistration {
 
 const MULT_FACTOR_STATS = new Set<BuffStatKey>([
   'directDmgMultFactor',
-  'anomalyMultFactor',
+  'attributeAnomalyMultFactor',
   'anomalyReleaseMultFactor',
   'disorderBaseMultFactor',
   'turbulenceBaseMultFactor',

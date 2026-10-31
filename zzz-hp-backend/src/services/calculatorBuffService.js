@@ -1,4 +1,5 @@
 import pool from '../config/db.js'
+import { migrateAttributeAnomalyNamingDeep } from '../utils/attributeAnomalyMigration.js'
 import {
   BUFF_STAT_KEYS,
   BUFF_MULT_FACTOR_KEYS,
@@ -22,7 +23,7 @@ const WENGINE_TABLE = '`W-Engine`'
 const BUFF_SCOPE_VALUES = new Set([
   'general',
   'skill',
-  'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',
@@ -34,7 +35,7 @@ const BUFF_SCOPE_VALUES = new Set([
 const BUFF_SCOPE_ORDER = [
   'general',
   'skill',
-  'anomaly',
+  'attributeAnomaly',
   'disorder',
   'turbulence',
   'anomalyRelease',
@@ -170,7 +171,9 @@ function normalizeConvert(value) {
   }
 }
 
-export function normalizeEffectList(value) {
+export function normalizeEffectList(rawValue) {
+  // 旧个人/旧备份效果（属性异常字段旧名、旧子类类型值）在白名单校验前转换（Spec §4.4.3，幂等）。
+  const value = Array.isArray(rawValue) ? migrateAttributeAnomalyNamingDeep(rawValue) : rawValue
   if (!Array.isArray(value)) return []
   return value
     .filter((item) => item && typeof item === 'object')
@@ -254,8 +257,6 @@ export function normalizeEffectList(value) {
         })(),
 
         convert: normalizeConvert(item.convert),
-        appliesToAnomaly:
-          item.appliesToAnomaly == null ? undefined : Boolean(item.appliesToAnomaly),
         enabledDefault: item.enabledDefault === false ? false : true,
         note: typeof item.note === 'string' ? item.note : '',
       }

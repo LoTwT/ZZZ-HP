@@ -21,9 +21,9 @@ function one(value) {
   return list[0]
 }
 
-test('旧 scope=anomaly → conditions.damageTypes，不再输出 scope', () => {
-  const effect = one({ id: 'a', stat: 'dmgBonus', scope: ['anomaly'], value: 10 })
-  assert.deepEqual(effect.conditions, { damageTypes: ['anomaly'] })
+test('旧 scope=attributeAnomaly → conditions.damageTypes，不再输出 scope', () => {
+  const effect = one({ id: 'a', stat: 'dmgBonus', scope: ['attributeAnomaly'], value: 10 })
+  assert.deepEqual(effect.conditions, { damageTypes: ['attributeAnomaly'] })
   assert.equal('scope' in effect, false)
 })
 
@@ -48,7 +48,7 @@ test('scope=skill 只保留 skillTargets，不产伤害类型条件', () => {
 test('scope=mutation → 5 个异常类全选（固定顺序）', () => {
   const effect = one({ id: 'a', stat: 'mutationCoeff', scope: ['mutation'] })
   assert.deepEqual(effect.conditions.damageTypes, [
-    'anomaly',
+    'attributeAnomaly',
     'turbulence',
     'disorder',
     'radiance',
@@ -60,16 +60,16 @@ test('多 scope 并集 / 去重 / 非法值剔除 / 固定顺序', () => {
   const effect = one({
     id: 'a',
     stat: 'dmgBonus',
-    scope: ['radiance', 'anomaly', 'anomaly', 'bogus'],
+    scope: ['radiance', 'attributeAnomaly', 'attributeAnomaly', 'bogus'],
   })
-  assert.deepEqual(effect.conditions.damageTypes, ['anomaly', 'radiance'])
+  assert.deepEqual(effect.conditions.damageTypes, ['attributeAnomaly', 'radiance'])
 })
 
 test('新 conditions 优先于旧 scope', () => {
   const effect = one({
     id: 'a',
     stat: 'atk',
-    scope: ['anomaly'],
+    scope: ['attributeAnomaly'],
     conditions: { damageTypes: ['pierce', 'normal', 'pierce'] },
   })
   assert.deepEqual(effect.conditions.damageTypes, ['normal', 'pierce'])
@@ -77,17 +77,17 @@ test('新 conditions 优先于旧 scope', () => {
 
 test('异常子类 stat 不写冗余 conditions（15 个字段）', () => {
   const stats = [
-    'anomalyDmgBonus',
+    'attributeAnomalyDmgBonus',
     'turbulenceDmgBonus',
     'disorderDmgBonus',
     'radianceDmgBonus',
     'anomalyReleaseDmgBonus',
-    'anomalyCritRate',
+    'attributeAnomalyCritRate',
     'turbulenceCritRate',
     'disorderCritRate',
     'radianceCritRate',
     'anomalyReleaseCritRate',
-    'anomalyCritDmg',
+    'attributeAnomalyCritDmg',
     'turbulenceCritDmg',
     'disorderCritDmg',
     'radianceCritDmg',
@@ -98,8 +98,8 @@ test('异常子类 stat 不写冗余 conditions（15 个字段）', () => {
       id: stat,
       stat,
       value: 1,
-      conditions: { damageTypes: ['anomaly'] },
-      scope: ['anomaly'],
+      conditions: { damageTypes: ['attributeAnomaly'] },
+      scope: ['attributeAnomaly'],
     })
     assert.equal(effect.conditions, undefined, `${stat} 不应写 conditions`)
   }
@@ -118,7 +118,7 @@ test('normalizeSelfTeamBuffs：块内 groupId/conditions 保留，effects 展开
         id: 'blk-1',
         name: '块',
         effects: [
-          { id: 'a', stat: 'anomalyDmgBonus', value: 12, groupId: 'grp-1' },
+          { id: 'a', stat: 'attributeAnomalyDmgBonus', value: 12, groupId: 'grp-1' },
           { id: 'b', stat: 'disorderDmgBonus', value: 12, groupId: 'grp-1' },
           { id: 'c', stat: 'atk', value: 30, conditions: { damageTypes: ['pierce'] } },
           { id: 'd', stat: 'dmgBonus', value: 10 },
@@ -131,18 +131,18 @@ test('normalizeSelfTeamBuffs：块内 groupId/conditions 保留，effects 展开
   assert.equal(pack.effects[1].groupId, 'grp-1')
   assert.deepEqual(pack.effects[2].conditions, { damageTypes: ['pierce'] })
   // 扁平增量表只收「通用」效果：带伤害类型条件的 atk 不进；异常子类 stat 无条件是通用，进。
-  assert.equal(pack.selfMods.anomalyDmgBonus, 12)
+  assert.equal(pack.selfMods.attributeAnomalyDmgBonus, 12)
   assert.equal(pack.selfMods.disorderDmgBonus, 12)
   assert.equal(pack.selfMods.dmgBonus, 10)
   assert.equal(pack.selfMods.atk, 0)
 })
 
-test('旧数据：scope=anomaly 的 dmgBonus 不再进扁平增量表', () => {
+test('旧数据：scope=attributeAnomaly 的 dmgBonus 不再进扁平增量表', () => {
   const pack = normalizeSelfTeamBuffs({
-    effects: [{ id: 'a', stat: 'dmgBonus', value: 10, scope: ['anomaly'] }],
+    effects: [{ id: 'a', stat: 'dmgBonus', value: 10, scope: ['attributeAnomaly'] }],
   })
   assert.equal(pack.selfMods.dmgBonus, 0)
-  assert.deepEqual(pack.effects[0].conditions, { damageTypes: ['anomaly'] })
+  assert.deepEqual(pack.effects[0].conditions, { damageTypes: ['attributeAnomaly'] })
 })
 
 test('叠层 / 转模字段归一化不受条件改造影响', () => {

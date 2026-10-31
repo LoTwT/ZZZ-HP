@@ -34,10 +34,10 @@ export type ValueTipsKey =
   | 'masteryZone'
   | 'levelZone'
   | 'anomalyBaseExpected'
-  | 'anomalyDmgBonusZone'
-  | 'anomalyMultZone'
-  | 'anomalyCritZone'
-  | 'anomalyReleaseCombinedDmgBonusZone'
+  | 'attributeAnomalyDmgBonusZone'
+  | 'attributeAnomalyMultZone'
+  | 'attributeAnomalyCritZone'
+  | 'anomalyReleaseDmgBonusZone'
   | 'anomalyReleaseMultZone'
   // 「异常综合暴击区」已删除 → 异放用自己的暴击区（用户 2026-10-16）
   | 'anomalyReleaseCritZone'
@@ -53,15 +53,15 @@ export type ValueTipsKey =
   | 'turbulenceCompMult'
   | 'turbulenceDmgBonusZone'
   | 'turbulenceZone'
-  | 'turbulenceCombinedDmgBonusZone'
+  | 'turbulenceDmgBonusZone'
   // 乱流只吃自己的暴击字段（用户 2026-10-16）；此前这里错用了异常暴击区
   | 'turbulenceCritZone'
   | 'turbulenceExpected'
-  | 'anomalyExpected'
+  | 'attributeAnomalyExpected'
   | 'anomalyReleaseExpected'
   | 'radianceExpected'
   | 'radianceMutation'
-  | 'radianceCombinedDmgBonusZone'
+  | 'radianceDmgBonusZone'
   | 'radianceMultZone'
   // 耀变只吃自己的暴击字段（耀变暴击率/爆伤）
   | 'radianceCritZone'
@@ -139,7 +139,7 @@ export function buildEventValueTips(calculation: SkillFlowCalculationDetail): Re
   const baseUsages = usages.filter(u => (u.field === 'atk' || u.field === 'hp' || u.field === 'def') &&
     (u.resultKey === 'baseDamage' || u.resultKey === 'anomalyBaseExpected'))
   const base = project(usages.filter(u => u.inputKey !== 'remielSelfRadianceCalc' && u.inputKey !== 'mutationZone'))
-  const bonus = project(usages.filter(u => /^(anomaly|anomalyRelease|disorder|turbulence|radiance)(DmgBonus|CritRate|CritDmg|Mult|MultFactor)$/.test(String(u.field))))
+  const bonus = project(usages.filter(u => /^(attributeAnomaly|anomalyRelease|disorder|turbulence|radiance)(DmgBonus|CritRate|CritDmg|Mult|MultFactor)$/.test(String(u.field))))
   const multUsages = usages.filter(u => /^(disorder|turbulence)(BaseMult|CompMult|BaseMultFactor)$/.test(String(u.field)) || u.field === 'anomalyDuration')
   const mult = project(multUsages)
   const defenseUsages = usages.filter(u => u.field === 'ignoreDefense' || u.field === 'reduceDefense')
@@ -234,9 +234,9 @@ const anomalyExpectedFormulaParts = (() => {
   const p = props.calcParts
   return [
     formatNumber(anomalyBaseWithMutation),
-    formatFormulaNumber(p.anomalyDmgBonusZone),
-    formatFormulaNumber(p.anomalyMultZone),
-    formatFormulaNumber(p.anomalyCritZone),
+    formatFormulaNumber(p.attributeAnomalyDmgBonusZone),
+    formatFormulaNumber(p.attributeAnomalyMultZone),
+    formatFormulaNumber(p.attributeAnomalyCritZone),
   ]
 })()
 
@@ -798,48 +798,45 @@ const disorderFormulaParts = (() => {
         ],
       },
     ],
-    anomalyDmgBonusZone: withTotal(
+    attributeAnomalyDmgBonusZone: withTotal(
       buildStatSourceGroups({
-        keys: ['anomalyDmgBonus'],
+        keys: ['attributeAnomalyDmgBonus'],
         externalPanel: bonusExternal,
         sources: bonusSources,
-        finalValues: { anomalyDmgBonus: bonusPanel.anomalyDmgBonus },
+        finalValues: { attributeAnomalyDmgBonus: bonusPanel.attributeAnomalyDmgBonus },
       }),
-      `异常增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
+      `属性异常增伤区 1 + ${formatFormulaNumber(bonusPanel.attributeAnomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.attributeAnomalyDmgBonusZone)}`,
     ),
-    anomalyMultZone: withTotal(
+    attributeAnomalyMultZone: withTotal(
       buildStatSourceGroups({
-        keys: ['anomalyMult', 'anomalyMultFactor'],
+        keys: ['attributeAnomalyMult', 'attributeAnomalyMultFactor'],
         externalPanel: bonusExternal,
         sources: bonusSources,
         finalValues: {
-          anomalyMult: bonusPanel.anomalyMult,
-          anomalyMultFactor: bonusPanel.anomalyMultFactor,
+          attributeAnomalyMult: bonusPanel.attributeAnomalyMult,
+          attributeAnomalyMultFactor: bonusPanel.attributeAnomalyMultFactor,
         },
       }),
-      `异常倍率区 max(0, ${formatFormulaNumber(bonusPanel.anomalyMult, 2)}%) × 修正 ${formatFormulaNumber(bonusPanel.anomalyMultFactor ?? 100, 2)}% = ${formatFormulaNumber(p.anomalyMultZone)}`,
+      `属性异常倍率区 max(0, ${formatFormulaNumber(bonusPanel.attributeAnomalyMult, 2)}%) × 修正 ${formatFormulaNumber(bonusPanel.attributeAnomalyMultFactor ?? 100, 2)}% = ${formatFormulaNumber(p.attributeAnomalyMultZone)}`,
       [
-        `加算 ${formatFormulaNumber(bonusPanel.anomalyMult, 2)}% → ${formatFormulaNumber(Math.max(0, bonusPanel.anomalyMult / 100))}`,
-        `倍率修正 ${formatFormulaNumber(bonusPanel.anomalyMultFactor ?? 100, 2)}% → ×${formatFormulaNumber((bonusPanel.anomalyMultFactor ?? 100) / 100)}`,
-        `= ${formatFormulaNumber(p.anomalyMultZone)}`,
+        `加算 ${formatFormulaNumber(bonusPanel.attributeAnomalyMult, 2)}% → ${formatFormulaNumber(Math.max(0, bonusPanel.attributeAnomalyMult / 100))}`,
+        `倍率修正 ${formatFormulaNumber(bonusPanel.attributeAnomalyMultFactor ?? 100, 2)}% → ×${formatFormulaNumber((bonusPanel.attributeAnomalyMultFactor ?? 100) / 100)}`,
+        `= ${formatFormulaNumber(p.attributeAnomalyMultZone)}`,
       ],
     ),
-    anomalyReleaseCombinedDmgBonusZone: [
+    anomalyReleaseDmgBonusZone: [
       {
         label: '乘区组成',
         items: [
-          `异放增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(1 + bonusPanel.anomalyReleaseDmgBonus / 100)}`,
-          `异常增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-          `异放综合增伤区 1 + (${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%) = ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}`,
+          `异放增伤区 1 + ${formatFormulaNumber(bonusPanel.anomalyReleaseDmgBonus, 2)}% = ${formatFormulaNumber(p.anomalyReleaseDmgBonusZone)}`,
         ],
       },
       ...buildStatSourceGroups({
-        keys: ['anomalyReleaseDmgBonus', 'anomalyDmgBonus'],
+        keys: ['anomalyReleaseDmgBonus'],
         externalPanel: bonusExternal,
         sources: bonusSources,
         finalValues: {
           anomalyReleaseDmgBonus: bonusPanel.anomalyReleaseDmgBonus,
-          anomalyDmgBonus: bonusPanel.anomalyDmgBonus,
         },
       }),
     ],
@@ -877,20 +874,20 @@ const disorderFormulaParts = (() => {
         `实际期望：1 + ${formatFormulaNumber(p.anomalyReleaseCritRateRatio ?? 0)} × ${formatFormulaNumber(p.anomalyReleaseCritDmgRatio ?? 0)} = ${formatFormulaNumber(p.anomalyReleaseCritZone)}`,
       ].join('；'),
     ),
-    anomalyCritZone: withTotal(
+    attributeAnomalyCritZone: withTotal(
       buildStatSourceGroups({
-        keys: ['anomalyCritRate', 'anomalyCritDmg'],
+        keys: ['attributeAnomalyCritRate', 'attributeAnomalyCritDmg'],
         externalPanel: bonusExternal,
         sources: bonusSources,
         finalValues: {
-          anomalyCritRate: bonusPanel.anomalyCritRate,
-          anomalyCritDmg: bonusPanel.anomalyCritDmg,
+          attributeAnomalyCritRate: bonusPanel.attributeAnomalyCritRate,
+          attributeAnomalyCritDmg: bonusPanel.attributeAnomalyCritDmg,
         },
       }),
       [
-        `暴击率=0：异常暴击区 = 1`,
-        `暴击率=1：异常暴击区 = 1 + ${formatFormulaNumber(p.anomalyCritDmgRatio)} = ${formatFormulaNumber(p.anomalyFullCritZone)}`,
-        `实际期望：1 + ${formatFormulaNumber(p.anomalyCritRateRatio)} × ${formatFormulaNumber(p.anomalyCritDmgRatio)} = ${formatFormulaNumber(p.anomalyCritZone)}`,
+        `暴击率=0：属性异常暴击区 = 1`,
+        `暴击率=1：属性异常暴击区 = 1 + ${formatFormulaNumber(p.attributeAnomalyCritDmgRatio)} = ${formatFormulaNumber(p.attributeAnomalyFullCritZone)}`,
+        `实际期望：1 + ${formatFormulaNumber(p.attributeAnomalyCritRateRatio)} × ${formatFormulaNumber(p.attributeAnomalyCritDmgRatio)} = ${formatFormulaNumber(p.attributeAnomalyCritZone)}`,
       ].join('；'),
     ),
     anomalyBaseExpected: p.remielSelfRadianceActive
@@ -917,7 +914,7 @@ const disorderFormulaParts = (() => {
         ]
       : [
           {
-            label: p.mutationZone > 1 ? '乘区组成（含异化系数；不含异常增伤/倍率/暴击）' : '乘区组成（不含异常增伤/倍率/暴击）',
+            label: p.mutationZone > 1 ? '乘区组成（含异化系数；不含子类增伤/倍率/暴击）' : '乘区组成（不含子类增伤/倍率/暴击）',
             items: [
               `通用乘区 ${anomalyFormulaParts[0]}`,
               `精通区 ${anomalyFormulaParts[1]}`,
@@ -962,15 +959,15 @@ const disorderFormulaParts = (() => {
     remielSelfStandardLevelZone: p.remielSelfRadianceActive
       ? buildRemielStandardLevelZoneGroups(p.levelZoneAgentLevel, p.remielSelfStandardLevelZone)
       : [],
-    anomalyExpected: [
+    attributeAnomalyExpected: [
       {
-        label: '乘区组成（含异常增伤/倍率/暴击）',
+        label: '乘区组成（含属性异常增伤/倍率/暴击）',
         items: [
           `异常基础期望 ${anomalyExpectedFormulaParts[0]}`,
-          `异常增伤区 ${anomalyExpectedFormulaParts[1]}`,
-          `异常倍率区 ${anomalyExpectedFormulaParts[2]}`,
-          `异常暴击区（暴击率=0）1 → ${formatNumber(p.anomalyExpectedNoCrit)}`,
-          `异常暴击区（暴击率=1）${formatFormulaNumber(p.anomalyFullCritZone)} → ${formatNumber(p.anomalyExpectedFullCrit)}`,
+          `属性异常增伤区 ${anomalyExpectedFormulaParts[1]}`,
+          `属性异常倍率区 ${anomalyExpectedFormulaParts[2]}`,
+          `属性异常暴击区（暴击率=0）1 → ${formatNumber(p.attributeAnomalyExpectedNoCrit)}`,
+          `属性异常暴击区（暴击率=1）${formatFormulaNumber(p.attributeAnomalyFullCritZone)} → ${formatNumber(p.attributeAnomalyExpectedFullCrit)}`,
         ],
       },
     ],
@@ -1141,23 +1138,6 @@ const disorderFormulaParts = (() => {
         ],
       },
     ],
-    turbulenceCombinedDmgBonusZone: withTotal(
-      buildStatSourceGroups({
-        keys: ['turbulenceDmgBonus', 'anomalyDmgBonus'],
-        externalPanel: bonusExternal,
-        sources: bonusSources,
-        finalValues: {
-          turbulenceDmgBonus: bonusPanel.turbulenceDmgBonus,
-          anomalyDmgBonus: bonusPanel.anomalyDmgBonus,
-        },
-      }),
-      `乱流增伤区+异常增伤区 1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-      [
-        `乱流增伤 ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}%`,
-        `异常增伤 ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}%`,
-        `1 + ${formatFormulaNumber(bonusPanel.turbulenceDmgBonus, 2)}% + ${formatFormulaNumber(bonusPanel.anomalyDmgBonus, 2)}% = ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
-      ],
-    ),
     // 乱流只吃自己的暴击字段（用户 2026-10-16）。此前这里错用异常暴击区 → 配了乱流暴击也显示 1
     turbulenceCritZone: withTotal(
       buildStatSourceGroups({
@@ -1181,7 +1161,7 @@ const disorderFormulaParts = (() => {
         items: [
           `异常基础期望 ${formatNumber(anomalyBaseWithMutation)}`,
           `乱流倍率区 ${formatFormulaNumber(p.turbulenceZone)}`,
-          `乱流增伤区+异常增伤区 ${formatFormulaNumber(p.turbulenceCombinedDmgBonusZone)}`,
+          `乱流增伤区 ${formatFormulaNumber(p.turbulenceDmgBonusZone)}`,
           `乱流暴击区（暴击率=0）1 → ${formatNumber(p.turbulenceExpectedNoCrit)}`,
           `乱流暴击区（暴击率=1）${formatFormulaNumber(p.turbulenceFullCritZone)} → ${formatNumber(p.turbulenceExpectedFullCrit)}`,
         ],
@@ -1192,7 +1172,7 @@ const disorderFormulaParts = (() => {
         label: '乘区组成',
         items: [
           `异常基础期望 ${formatNumber(anomalyBaseWithMutation)}`,
-          `异放综合增伤区 ${formatFormulaNumber(p.anomalyReleaseCombinedDmgBonusZone)}（异放增伤+异常增伤）`,
+          `异放增伤区 ${formatFormulaNumber(p.anomalyReleaseDmgBonusZone)}`,
           `异放倍率区 ${formatFormulaNumber(p.anomalyReleaseMultZone)}`,
           // 异放只吃自己的暴击字段（用户 2026-10-16；「异常综合暴击区」已删）
           `异放暴击区 = 1 + (${formatFormulaNumber(p.anomalyReleaseCritRateRatio ?? 0)} × ${formatFormulaNumber(p.anomalyReleaseCritDmgRatio ?? 0)})`,
@@ -1212,14 +1192,14 @@ const disorderFormulaParts = (() => {
                 `抗性区 ${formatFormulaNumber(p.remielSelfResistanceMultiplier ?? 1)}`,
                 `易伤区 ${formatFormulaNumber(p.anomalyVulnerableMultiplier)}`,
                 `失衡易伤区 ${formatFormulaNumber(p.staggerMultiplier)}`,
-                `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+                `耀变增伤区 ${formatFormulaNumber(p.radianceDmgBonusZone)}`,
                 `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
                 `特殊倍率乘区 ${formatFormulaNumber(p.specialMultZone)}`,
                 `特殊乘区 ${formatFormulaNumber(p.specialMultiplier)}`,
               ]
             : [
                 `异常基础期望 ${formatNumber(anomalyBaseWithMutation)}`,
-                `耀变综合增伤区 ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}（耀变增伤+异常增伤）`,
+                `耀变增伤区 ${formatFormulaNumber(p.radianceDmgBonusZone)}`,
                 `耀变倍率区 ${formatFormulaNumber(p.radianceMultZone)}`,
               ]),
           // 耀变触发者无论是蕾米还是其他人都允许暴击（游戏规则）；两条链路同乘一个暴击区
@@ -1237,16 +1217,13 @@ const disorderFormulaParts = (() => {
         ],
       },
     ],
-    radianceCombinedDmgBonusZone: (() => {
+    radianceDmgBonusZone: (() => {
       const radianceBonus = bonusPanel.radianceDmgBonus
-      const anomalyBonus = bonusPanel.anomalyDmgBonus
       return [
         {
           label: '乘区组成',
           items: [
-            `耀变增伤区 1 + ${formatFormulaNumber(radianceBonus, 2)}% = ${formatFormulaNumber(1 + radianceBonus / 100)}`,
-            `异常增伤区 1 + ${formatFormulaNumber(anomalyBonus, 2)}% = ${formatFormulaNumber(p.anomalyDmgBonusZone)}`,
-            `耀变综合增伤区 1 + (${formatFormulaNumber(radianceBonus, 2)}% + ${formatFormulaNumber(anomalyBonus, 2)}%) = ${formatFormulaNumber(p.radianceCombinedDmgBonusZone)}`,
+            `耀变增伤区 1 + ${formatFormulaNumber(radianceBonus, 2)}% = ${formatFormulaNumber(p.radianceDmgBonusZone)}`,
           ],
         },
         ...buildStatSourceGroups({
@@ -1254,12 +1231,6 @@ const disorderFormulaParts = (() => {
           externalPanel: bonusExternal,
           sources: bonusSources,
           finalValues: { radianceDmgBonus: radianceBonus },
-        }),
-        ...buildStatSourceGroups({
-          keys: ['anomalyDmgBonus'],
-          externalPanel: bonusExternal,
-          sources: bonusSources,
-          finalValues: { anomalyDmgBonus: anomalyBonus },
         }),
       ]
     })(),
@@ -1388,13 +1359,13 @@ const zoneTipKeys: Record<string, ValueTipsKey> = {
   暴击区:'critMultiplier',锐爆区:'critMultiplier',贯穿增伤区:'pierceDmgMultiplier',
   技能倍率区:'directDmgMultZone',直伤倍率区:'directDmgMultZone',决算倍率区:'settlementDmgMultZone',
   精通区:'masteryZone',等级区:'levelZone',异化系数:'mutationZone',异化系数区:'mutationZone',
-  异常增伤区:'anomalyDmgBonusZone',异常倍率区:'anomalyMultZone',异常暴击区:'anomalyCritZone',
+  属性异常增伤区:'attributeAnomalyDmgBonusZone',属性异常倍率区:'attributeAnomalyMultZone',属性异常暴击区:'attributeAnomalyCritZone',
   紊乱基础倍率:'disorderBaseMult',异常持续时间:'anomalyDuration',紊乱补偿倍率:'disorderCompMult',
   紊乱倍率修正:'disorderZone',紊乱倍率区:'disorderZone',紊乱增伤区:'disorderDmgBonusZone',紊乱暴击区:'disorderCritZone',
   乱流基础倍率:'turbulenceBaseMult',乱流补偿倍率:'turbulenceCompMult',乱流倍率修正:'turbulenceZone',
-  乱流倍率区:'turbulenceZone',乱流综合增伤区:'turbulenceCombinedDmgBonusZone',乱流暴击区:'turbulenceCritZone',
-  异放综合增伤区:'anomalyReleaseCombinedDmgBonusZone',异放倍率区:'anomalyReleaseMultZone',异放暴击区:'anomalyReleaseCritZone',
-  耀变综合增伤区:'radianceCombinedDmgBonusZone',耀变倍率区:'radianceMultZone',耀变暴击区:'radianceCritZone',
+  乱流倍率区:'turbulenceZone',乱流增伤区:'turbulenceDmgBonusZone',乱流暴击区:'turbulenceCritZone',
+  异放增伤区:'anomalyReleaseDmgBonusZone',异放倍率区:'anomalyReleaseMultZone',异放暴击区:'anomalyReleaseCritZone',
+  耀变增伤区:'radianceDmgBonusZone',耀变倍率区:'radianceMultZone',耀变暴击区:'radianceCritZone',
   局内攻击力:'remielSelfInCombatAtk',局内精通区:'remielSelfInCombatMasteryZone',特殊等级区:'remielSelfSpecialLevelZone',
 }
 
@@ -1406,7 +1377,7 @@ export function buildEventZoneDisplay(calculation: SkillFlowCalculationDetail): 
     const finalResult=['期望伤害','暴击伤害','不暴击伤害'].includes(row.label)
     let key=zoneTipKeys[row.label]
     if(finalResult) key=d.kind==='direct'||d.kind==='sharpen'?'directDamageExpected'
-      :d.anomalySubKind==='anomaly'?'anomalyExpected':d.anomalySubKind==='anomalyRelease'?'anomalyReleaseExpected'
+      :d.anomalySubKind==='attributeAnomaly'?'attributeAnomalyExpected':d.anomalySubKind==='anomalyRelease'?'anomalyReleaseExpected'
         :d.anomalySubKind==='disorder'?'disorderExpected':d.anomalySubKind==='turbulence'?'turbulenceExpected':'radianceExpected'
     if(d.result.remielSelfRadianceActive){
       if(row.label==='防御区')key='remielSelfDefenseMultiplier'

@@ -26,7 +26,7 @@ import {
 export const DAMAGE_EVENT_KIND_OPTIONS: { id: DamageEventKind; label: string }[] = [
   { id: 'direct', label: '直伤' },
   { id: 'sharpen', label: '锐化' },
-  { id: 'anomaly', label: '异常' },
+  { id: 'attributeAnomaly', label: '属性异常' },
   { id: 'disorder', label: '紊乱' },
   { id: 'anomalyRelease', label: '异放' },
   { id: 'turbulence', label: '乱流' },
@@ -43,10 +43,10 @@ export function mapEventKindToCalc(
   kind: DamageEventKind,
 ): { damageKind: DamageCalcKind; anomalySubKind: AnomalyDamageSubKind } {
   if (kind === 'direct' || kind === 'sharpen') {
-    return { damageKind: 'direct', anomalySubKind: 'anomaly' }
+    return { damageKind: 'direct', anomalySubKind: 'attributeAnomaly' }
   }
-  if (kind === 'anomaly') {
-    return { damageKind: 'anomaly', anomalySubKind: 'anomaly' }
+  if (kind === 'attributeAnomaly') {
+    return { damageKind: 'anomaly', anomalySubKind: 'attributeAnomaly' }
   }
   if (kind === 'disorder') {
     return { damageKind: 'anomaly', anomalySubKind: 'disorder' }
@@ -78,7 +78,7 @@ export function pickEventCritMultiplier(
   }
   if (critMode === 'noCrit') return 1
   const zones = {
-    anomaly: [result.anomalyCritZone, result.anomalyFullCritZone],
+    attributeAnomaly: [result.attributeAnomalyCritZone, result.attributeAnomalyFullCritZone],
     anomalyRelease: [result.anomalyReleaseCritZone, result.anomalyReleaseFullCritZone],
     disorder: [result.disorderCritZone, result.disorderFullCritZone],
     turbulence: [result.turbulenceCritZone, result.turbulenceFullCritZone],
@@ -110,10 +110,10 @@ export function pickEventDamage(
     if (critMode === 'fullCrit') return perCrit * (1 + result.critDmgRatio)
     return result.directDamageExpected
   }
-  if (kind === 'anomaly') {
-    if (critMode === 'noCrit') return result.anomalyExpectedNoCrit
-    if (critMode === 'fullCrit') return result.anomalyExpectedFullCrit
-    return result.anomalyExpected
+  if (kind === 'attributeAnomaly') {
+    if (critMode === 'noCrit') return result.attributeAnomalyExpectedNoCrit
+    if (critMode === 'fullCrit') return result.attributeAnomalyExpectedFullCrit
+    return result.attributeAnomalyExpected
   }
   if (kind === 'disorder') {
     if (critMode === 'noCrit') return result.disorderExpectedNoCrit
@@ -395,8 +395,8 @@ export function applyOwnerPanelMultOverrides(
   if (overrides.directDmgMultFactor != null) {
     next.directDmgMultFactor = overrides.directDmgMultFactor
   }
-  if (overrides.anomalyMult != null) next.anomalyMult = overrides.anomalyMult
-  if (overrides.anomalyMultFactor != null) next.anomalyMultFactor = overrides.anomalyMultFactor
+  if (overrides.attributeAnomalyMult != null) next.attributeAnomalyMult = overrides.attributeAnomalyMult
+  if (overrides.attributeAnomalyMultFactor != null) next.attributeAnomalyMultFactor = overrides.attributeAnomalyMultFactor
   if (overrides.anomalyReleaseMult != null) {
     next.anomalyReleaseMult = overrides.anomalyReleaseMult
   }

@@ -36,7 +36,6 @@ export interface EffectConditions {
   scope?: BuffScope[]
   skillTargets?: BuffSkillTarget[]
   elementFilter?: 'all' | string[]
-  appliesToAnomaly?: boolean
   applyProfession?: string | null
   teamProfession?: string | null
   teamProfessionValues?: Array<number | null> | null

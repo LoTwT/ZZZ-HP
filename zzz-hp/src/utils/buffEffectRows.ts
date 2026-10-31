@@ -67,7 +67,6 @@ const ISSUE_LABELS: Record<string, string> = {
   stackable: '叠层',
   convert: '转模',
   enabledDefault: '默认启用',
-  appliesToAnomaly: '异常结算',
   damageTypes: '伤害类型',
 }
 
@@ -140,7 +139,7 @@ function targetSignature(effect: BuffEffect): string {
 
 /**
  * 同族比较签名：
- * - 类2 忽略 stat / scope / 冗余 appliesToAnomaly（类型由字段表达）；
+ * - 类2 忽略 stat / scope（类型由字段表达）；
  * - 其它情况把 conditions 也纳入。
  */
 function familyConditionSignature(effect: BuffEffect, zone: BuffStatZone): string {
@@ -148,7 +147,6 @@ function familyConditionSignature(effect: BuffEffect, zone: BuffStatZone): strin
   return stable({
     value: valueSignature(effect),
     target: targetSignature(effect),
-    appliesToAnomaly: isFamily ? null : (effect.appliesToAnomaly ?? null),
     damageTypes: isFamily ? null : normalizeDamageTypes(damageTypesOf(effect)),
   })
 }
@@ -191,9 +189,6 @@ export function rowIssues(row: EffectRow): EffectRowIssue[] {
     if (stable(effect.convert ?? null) !== stable(base.convert ?? null)) keys.add('convert')
     if ((effect.enabledDefault !== false) !== (base.enabledDefault !== false)) {
       keys.add('enabledDefault')
-    }
-    if (!isFamily && (effect.appliesToAnomaly ?? null) !== (base.appliesToAnomaly ?? null)) {
-      keys.add('appliesToAnomaly')
     }
     if (
       !isFamily &&
@@ -549,7 +544,6 @@ export function alignRow(row: EffectRow): BuffEffect[] {
     next.convert = base.convert ? { ...base.convert } : undefined
     next.enabledDefault = base.enabledDefault
     if (!row.zone?.statsByType) {
-      next.appliesToAnomaly = base.appliesToAnomaly
       if (base.conditions?.damageTypes) {
         next.conditions = { damageTypes: [...base.conditions.damageTypes] }
       } else {
@@ -569,7 +563,7 @@ export interface GroupValidation {
  * 保存前整组校验（原子写入前闸门）：
  * - 同一 groupId 只能出现在一个块；
  * - 组内同族；
- * - 组内值/目标/条件一致（类2 的冗余 appliesToAnomaly 除外）。
+ * - 组内值/目标/条件一致。
  */
 export function validateEffectGroups(blocks: readonly BuffEffectBlock[]): GroupValidation {
   const errors: string[] = []

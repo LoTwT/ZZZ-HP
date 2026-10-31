@@ -230,12 +230,12 @@ function buildEventCase(modules, mode) {
   })
   const fixture = harness.eventFixture({
     mode,
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     effects: [effect],
     agents: [pipelineHarness.testAgent('owner', { profession: '强攻' }), pipelineHarness.testAgent('power', { profession: '支援' })],
   })
   const hit = fixture.hits[0]
-  hit.multOverrides = { ...hit.multOverrides, anomalyMult: 100 }
+  hit.multOverrides = { ...hit.multOverrides, attributeAnomalyMult: 100 }
   return { mode, context: fixture.context, hit, fixture }
 }
 

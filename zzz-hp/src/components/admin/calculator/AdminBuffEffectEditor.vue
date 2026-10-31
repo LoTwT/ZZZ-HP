@@ -51,9 +51,7 @@ const props = defineProps<{
   /** 仅允许能量回复效率（百分比）等受限场景用；现已统一百分比语义 */
   energyRegenFlatOnly?: boolean
   /**
-   * 勾选「异常计算时也生效」时回调（用于邦布/音擎精炼跨精同步）。
    */
-  onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
   /** 工具条：当前编辑对象名称（代理人 / 音擎 / 邦布…） */
   ownerLabel?: string
   /** 工具条：当前编辑对象 id（下拉里高亮） */
@@ -752,7 +750,6 @@ defineExpose({
             :lock-apply-target="lockApplyTarget"
             :merge-mode="mergeMode"
             :selected="selectedRowKeys.includes(activeRow.row.key)"
-            :on-applies-to-anomaly-change="onAppliesToAnomalyChange"
             @change-zone="(zoneId, types) => onChangeZone(activeRow!.block, activeRow!.row, zoneId, types)"
             @toggle-type="(type, checked) => onToggleType(activeRow!.block, activeRow!.row, type, checked)"
             @split="onSplit(activeRow!.block, activeRow!.row)"

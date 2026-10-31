@@ -28,7 +28,7 @@ function toPublicAnomalySkill(def: (typeof PUBLIC_ANOMALY_SKILLS)[number]): Skil
     name: def.name,
     agentId: '',
     source: 'preset',
-    damageType: 'anomaly',
+    damageType: 'attributeAnomaly',
     skillTypes: [],
     buffAnchorId: null,
     baseMult: def.baseMult,

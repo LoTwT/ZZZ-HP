@@ -164,7 +164,6 @@ export function applyAllocatedAffixEffects(
             inst.conditions.scope ?? (inst.conditions.skillTargets?.length ? 'skill' : 'general'),
           ),
           skillTargets: inst.conditions.skillTargets ?? undefined,
-          appliesToAnomaly: inst.conditions.appliesToAnomaly,
           enabledDefault: true,
         }),
       ],

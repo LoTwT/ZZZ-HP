@@ -90,7 +90,7 @@ check(
 check(
   '异常不缩放',
   resolveEffectiveBaseMult(
-    { ...nanokaSkill, damageType: 'anomaly', baseMult: 50 },
+    { ...nanokaSkill, damageType: 'attributeAnomaly', baseMult: 50 },
     levels,
   ).baseMult,
   50,

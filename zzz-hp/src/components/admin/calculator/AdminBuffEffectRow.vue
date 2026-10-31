@@ -49,7 +49,6 @@ const props = defineProps<{
   lockApplyTarget?: 'self' | 'team' | null
   mergeMode?: boolean
   selected?: boolean
-  onAppliesToAnomalyChange?: (effect: BuffEffect, value: boolean) => void
   /**
    * `catalog`（缺省）= 增益库编辑器；`extra` = 额外 Buff 卡片（一卡一行、目标按槽位）。
    * extra 模式下隐藏块级操作（合并/拆开/对齐/默认启用/新建小类/行内删除），
@@ -163,17 +162,6 @@ const defaultStacks = computed({
 const enabledDefault = computed({
   get: () => first.value?.enabledDefault !== false,
   set: (next: boolean) => patchField('enabledDefault', next),
-})
-const appliesToAnomaly = computed({
-  get: () => first.value?.appliesToAnomaly === true,
-  set: (next: boolean) => {
-    if (props.onAppliesToAnomalyChange) {
-      for (const effect of props.row.effects) {
-        props.onAppliesToAnomalyChange(effect, next)
-      }
-    }
-    patchField('appliesToAnomaly', next ? true : undefined)
-  },
 })
 
 const teamProfessionTier = computed<Array<number | null>>(() => {
@@ -439,7 +427,7 @@ function onSplit() {
  * 只改展示与展开层级，不动数据：
  * - 默认折叠成一行摘要，摘要只列「非默认值」（目标自身始终显示，不加徽章/不置顶）；
  * - 展开后：条件折叠面板（作用情况 / 伤害类型 / 目标 / 职业限制 / 属性限定 / 限定招式）
- *   + 高级折叠（异常计算时也生效 / 默认启用 / 队内职业人数 / 备注）+ 右侧固定数值列；
+ *   + 高级折叠（默认启用 / 队内职业人数 / 备注）+ 右侧固定数值列；
  * - 默认值不占位，靠「＋ 条件」下拉加回控件；
  * - 展开 / 折叠 / 显隐都不持久化（组件重建即回到折叠）。
  * ---------------------------------------------------------------------- */
@@ -560,9 +548,6 @@ const showDamageTypes = computed(
 const showTeamProfession = computed(
   () => Boolean(first.value?.teamProfession) || revealed.value.teamProfession,
 )
-const showAnomaly = computed(
-  () => first.value?.appliesToAnomaly === true || revealed.value.anomaly,
-)
 const showEnabledDefault = computed(
   () => first.value?.enabledDefault === false || revealed.value.enabledDefault,
 )
@@ -601,7 +586,6 @@ const summaryText = computed(() => {
   if (applySituation.value !== 'global') parts.push(situationText.value)
   if (applyProfession.value) parts.push(`职业·${applyProfession.value}`)
   if (teamGateText.value) parts.push(teamGateText.value)
-  if (first.value?.appliesToAnomaly) parts.push('异常也生效')
   if (first.value?.enabledDefault === false) parts.push('默认关闭')
   return parts.join(' · ')
 })
@@ -642,7 +626,6 @@ const condMenuItems = computed<CondMenuItem[]>(() => {
     { key: 'element', label: '属性限定', shown: showElement.value },
     { key: 'skill', label: '限定招式', shown: showSkill.value },
     { key: 'teamProfession', label: '队内职业人数', shown: showTeamProfession.value },
-    { key: 'anomaly', label: '异常计算时也生效', shown: showAnomaly.value },
     { key: 'enabledDefault', label: '默认启用', shown: showEnabledDefault.value },
   ]
   return items.filter((item) => item.only !== false)
@@ -665,7 +648,6 @@ function resetCondition(key: RevealKey) {
   else if (key === 'skill') setSkillLimited(false)
   else if (key === 'damageType') clearDamageTypes()
   else if (key === 'teamProfession') setTeamProfession('')
-  else if (key === 'anomaly') appliesToAnomaly.value = false
   else if (key === 'enabledDefault') enabledDefault.value = true
   revealed.value = { ...revealed.value, [key]: false }
 }
@@ -975,19 +957,6 @@ onBeforeUnmount(() => {
         <div class="adv-line">
           <span class="line-label">高级</span>
 
-          <span v-if="showAnomaly" class="inline-check">
-            <input v-model="appliesToAnomaly" type="checkbox" />
-            <span>异常计算时也生效</span>
-            <button
-              type="button"
-              class="reset-x"
-              title="恢复默认（不生效）"
-              @click="resetCondition('anomaly')"
-            >
-              ✕
-            </button>
-          </span>
-
           <span v-if="!isExtraMode && showEnabledDefault" class="inline-check">
             <input v-model="enabledDefault" type="checkbox" />
             <span>默认启用</span>
@@ -1037,7 +1006,7 @@ onBeforeUnmount(() => {
           <span v-if="first.note" class="note-inline">{{ first.note }}</span>
 
           <span
-            v-if="!showAnomaly && !showEnabledDefault && !showTeamProfession && !first.note"
+            v-if="!showEnabledDefault && !showTeamProfession && !first.note"
             class="muted"
           >
             都是默认值（不占位）：用「＋ 条件」加回

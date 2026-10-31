@@ -229,7 +229,7 @@ export const WENGINE_RARITY = { 2: 'B', 3: 'A', 4: 'S' }
 export const ELEMENT_CONSTANTS = {
   火: {
     directDmgMult: 100,
-    anomalyMult: 50,
+    attributeAnomalyMult: 50,
     disorderBaseMult: 450,
     anomalyDuration: 10,
     disorderCompMult: 50,
@@ -239,7 +239,7 @@ export const ELEMENT_CONSTANTS = {
   },
   电: {
     directDmgMult: 100,
-    anomalyMult: 125,
+    attributeAnomalyMult: 125,
     disorderBaseMult: 450,
     anomalyDuration: 10,
     disorderCompMult: 125,
@@ -249,7 +249,7 @@ export const ELEMENT_CONSTANTS = {
   },
   以太: {
     directDmgMult: 100,
-    anomalyMult: 62.5,
+    attributeAnomalyMult: 62.5,
     disorderBaseMult: 450,
     anomalyDuration: 10,
     disorderCompMult: 62.5,
@@ -259,7 +259,7 @@ export const ELEMENT_CONSTANTS = {
   },
   冰: {
     directDmgMult: 100,
-    anomalyMult: 500,
+    attributeAnomalyMult: 500,
     disorderBaseMult: 450,
     anomalyDuration: 10,
     disorderCompMult: 7.5,
@@ -269,7 +269,7 @@ export const ELEMENT_CONSTANTS = {
   },
   物理: {
     directDmgMult: 100,
-    anomalyMult: 713,
+    attributeAnomalyMult: 713,
     disorderBaseMult: 450,
     anomalyDuration: 10,
     disorderCompMult: 7.5,
@@ -279,7 +279,7 @@ export const ELEMENT_CONSTANTS = {
   },
   风: {
     directDmgMult: 100,
-    anomalyMult: 1250,
+    attributeAnomalyMult: 1250,
     disorderBaseMult: 0,
     anomalyDuration: 30,
     disorderCompMult: 0,
@@ -289,7 +289,7 @@ export const ELEMENT_CONSTANTS = {
   },
   流明: {
     directDmgMult: 100,
-    anomalyMult: 0,
+    attributeAnomalyMult: 0,
     disorderBaseMult: 0,
     anomalyDuration: 10,
     disorderCompMult: 0,
@@ -305,9 +305,9 @@ export const ZERO_TAIL = {
   radianceMult: 0,
   radianceDmgBonus: 0,
   radianceResPen: 0,
-  anomalyCritRate: 0,
-  anomalyCritDmg: 0,
-  anomalyDmgBonus: 0,
+  attributeAnomalyCritRate: 0,
+  attributeAnomalyCritDmg: 0,
+  attributeAnomalyDmgBonus: 0,
   disorderDmgBonus: 0,
   turbulenceDmgBonus: 0,
   dmgBonus: 0,
