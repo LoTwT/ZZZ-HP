@@ -119,6 +119,8 @@ const props = defineProps<{
   skillTalentLevelsByAgent?: Record<string, SkillTalentLevels | Partial<SkillTalentLevels>>
   /** 当前加载的方案名；未归档为空 */
   schemeName?: string
+  /** 每槽位的配置摘要（影画/音擎/驱动盘），伤害记录保存时一并存入 */
+  slotMeta?: import('@/utils/skillFlowDamageRecords').SkillFlowDamageRecordSlotMeta[]
   /** 招式流程「用哪份面板」三选项，见 `utils/skillFlowPanelSource.ts` */
   panelSourceMode?: 'config' | 'allocation' | 'sweep'
   /** 各来源能否选（数据算过且未过期）与禁用原因 */
@@ -3596,6 +3598,7 @@ const showcaseTitle = computed(() => {
             :active-slot-index="activeSlotIndex"
             :resolve-calculation-detail="resolveCalculationDetail"
             :scheme-name="schemeName"
+            :slot-meta="slotMeta"
           />
         </div>
     </div>

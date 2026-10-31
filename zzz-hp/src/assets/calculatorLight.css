@@ -3543,6 +3543,71 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-top-color: #d5dae3 !important;
   background: #f7f4ee !important;
 }
+/* 伤害记录板块：记录 0、视图切换与面板块头 */
+[data-theme='light'] .sf-rec-block-head h4 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sf-rec-row.is-current {
+  border-color: #d5dae3 !important;
+  background: #f7f9fc !important;
+}
+[data-theme='light'] .sf-rec-row.is-selected {
+  border-color: #d5dae3 !important;
+  background: #fffaf0 !important;
+  box-shadow: inset 3px 0 0 #c9a55c !important;
+}
+[data-theme='light'] .sf-rec-row.is-ref {
+  border-color: #5b8def !important;
+}
+[data-theme='light'] .sf-rec-ref-badge {
+  background: #5b8def !important;
+  color: #ffffff !important;
+}
+[data-theme='light'] .sf-rec-view-switch {
+  border-color: #d5dae3 !important;
+  background: #f2f4f8 !important;
+}
+[data-theme='light'] .sf-rec-view-switch button {
+  color: #5a6575 !important;
+}
+[data-theme='light'] .sf-rec-view-switch button.is-active {
+  border-color: rgba(201, 165, 92, 0.6) !important;
+  background: #fff8eb !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-rec-agent-chip {
+  border-color: #d5dae3 !important;
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-rec-agent-chip.is-active {
+  border-color: #c9a55c !important;
+  background: #fff8eb !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-analysis-notice.is-error {
+  color: #b42318 !important;
+  border-color: #e4b4b4 !important;
+  background: #fdf2f2 !important;
+}
+[data-theme='light'] .sf-rec-locked {
+  color: #8b93a0 !important;
+}
+[data-theme='light'] .sf-rec-empty {
+  border-color: #d5dae3 !important;
+  color: #667085 !important;
+}
+[data-theme='light'] .sf-rec-current-badge {
+  border-color: rgba(138, 106, 31, 0.45) !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-rec-current-badge.is-frozen {
+  border-color: #d5dae3 !important;
+  color: #667085 !important;
+}
+[data-theme='light'] .mini-btn.is-active {
+  border-color: #c9a55c !important;
+  color: #8a6a1f !important;
+}
 [data-theme='light'] .sf-stats-head h3,
 [data-theme='light'] .sf-pie-block h4,
 [data-theme='light'] .sf-stats-lift-head h4 {
@@ -3570,12 +3635,151 @@ body:has(.calculator-page.theme-light) .preset-preview li,
   border-color: #d5dae3 !important;
   background: #fff !important;
 }
-[data-theme='light'] .sf-rec-table,
 [data-theme='light'] .sf-pie-legend li {
   color: #1c212a !important;
 }
-[data-theme='light'] .sf-rec-who {
-  color: #5c6570 !important;
+/* 伤害记录：横向柱状图 */
+[data-theme='light'] .sf-rec-row {
+  border-color: #e4e8ef !important;
+  background: #ffffff !important;
+  color: #3a4250 !important;
+}
+[data-theme='light'] .sf-rec-legend,
+[data-theme='light'] .sf-rec-ref,
+[data-theme='light'] .sf-rec-num,
+[data-theme='light'] .sf-rec-time,
+[data-theme='light'] .sf-rec-delta {
+  color: #5a6575 !important;
+  font-weight: 700 !important;
+}
+[data-theme='light'] .sf-rec-ref-select {
+  border-color: #cfd6e0 !important;
+  background: #fff !important;
+  color: #2b3038 !important;
+}
+[data-theme='light'] .sf-rec-meta-block {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+/* 顶栏同款小卡配色（浅色）：音擎金、驱动盘蓝 */
+[data-theme='light'] .sf-rec-meta-block.is-wengine {
+  border-color: #cfa459 !important;
+  background: #fdf4e2 !important;
+}
+[data-theme='light'] .sf-rec-meta-block.is-wengine .sf-rec-meta-tag {
+  background: #f3e1b8 !important;
+  color: #5a3f0c !important;
+}
+[data-theme='light'] .sf-rec-meta-block.is-wengine .sf-rec-meta-text {
+  color: #5a3f0c !important;
+}
+[data-theme='light'] .sf-rec-meta-block.is-disc {
+  border-color: #a9c7e4 !important;
+  background: #eef6fd !important;
+}
+[data-theme='light'] .sf-rec-meta-block.is-disc .sf-rec-meta-tag {
+  background: #d7e9f8 !important;
+  color: #274f70 !important;
+}
+[data-theme='light'] .sf-rec-meta-block.is-disc .sf-rec-meta-text {
+  color: #1c3a52 !important;
+}
+[data-theme='light'] .sf-rec-total-scope {
+  border-color: rgba(138, 106, 31, 0.45) !important;
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-rec-meta-tag {
+  background: #eef1f5 !important;
+  color: #475467 !important;
+}
+[data-theme='light'] .sf-rec-meta-text {
+  color: #2b3038 !important;
+}
+[data-theme='light'] .sf-rec-tip-name,
+[data-theme='light'] .sf-rec-tip-rank,
+[data-theme='light'] .sf-rec-rank-tag {
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sf-rec-rank-tag {
+  border-color: rgba(138, 106, 31, 0.45) !important;
+}
+[data-theme='light'] .sf-rec-tip-record {
+  color: #5a6575 !important;
+}
+[data-theme='light'] .sf-rec-drag {
+  color: #8b93a0 !important;
+}
+[data-theme='light'] .sf-rec-bar {
+  background: #eef1f5 !important;
+}
+[data-theme='light'] .sf-rec-delta.is-up {
+  color: #28734e !important;
+}
+[data-theme='light'] .sf-rec-delta.is-down {
+  color: #a43d44 !important;
+}
+[data-theme='light'] .sf-rec-rename-input {
+  border-color: #cfd6e0 !important;
+  background: #fff !important;
+  color: #2b3038 !important;
+}
+/* 伤害记录「完整流程伤害」弹窗 */
+[data-theme='light'] .sfr-detail-overlay {
+  background: rgba(15, 23, 42, 0.28) !important;
+}
+[data-theme='light'] .sfr-detail-panel {
+  border-color: #d5dae3 !important;
+  background: #ffffff !important;
+  color: #2b3038 !important;
+}
+[data-theme='light'] .sfr-detail-head,
+[data-theme='light'] .sfr-detail-foot {
+  border-color: #d5dae3 !important;
+  background: #f5f7fa !important;
+}
+[data-theme='light'] .sfr-detail-title-row h3 {
+  color: #1c212a !important;
+}
+[data-theme='light'] .sfr-detail-sub,
+[data-theme='light'] .sfr-detail-hint,
+[data-theme='light'] .sfr-slot-share,
+[data-theme='light'] .sfr-slot-count,
+[data-theme='light'] .sfr-slot-empty,
+[data-theme='light'] .sfr-entry-index,
+[data-theme='light'] .sfr-line-type,
+[data-theme='light'] .sfr-line-row--head {
+  color: #667085 !important;
+}
+[data-theme='light'] .sfr-slot {
+  border-color: #d5dae3 !important;
+  background: #f9fafc !important;
+}
+[data-theme='light'] .sfr-slot-head {
+  border-bottom-color: #e6eaf1 !important;
+}
+[data-theme='light'] .sfr-entry {
+  border-top-color: #e6eaf1 !important;
+}
+[data-theme='light'] .sfr-slot-name {
+  color: #8a6a1f !important;
+}
+[data-theme='light'] .sfr-slot-total,
+[data-theme='light'] .sfr-entry-total,
+[data-theme='light'] .sfr-line-name,
+[data-theme='light'] .sfr-line-total {
+  color: #2b3038 !important;
+}
+[data-theme='light'] .sfr-entry-badge,
+[data-theme='light'] .sfr-entry-count {
+  border-color: #d5dae3 !important;
+  color: #667085 !important;
+}
+[data-theme='light'] .sfr-line-row:nth-child(even) {
+  background: #f2f5f9 !important;
+}
+[data-theme='light'] .sfr-detail-head .close-btn {
+  border-color: #d5dae3 !important;
+  color: #667085 !important;
 }
 [data-theme='light'] .skill-flow-modal .col-head {
   border-bottom-color: #d5dae3 !important;

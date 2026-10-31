@@ -6,6 +6,7 @@ export const DAMAGE_CALC_SECTIONS = [
   { id: 'damage-enemy', label: '敌方与环境' },
   { id: 'damage-panel', label: '词条配比分析' },
   { id: 'skill-flow', label: '招式流程' },
+  { id: 'flow-records', label: '伤害统计' },
 ] as const
 
 /**

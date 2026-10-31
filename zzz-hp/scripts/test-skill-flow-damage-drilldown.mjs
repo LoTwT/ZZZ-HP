@@ -79,6 +79,20 @@ try {
     assert.ok(mounted.one('[aria-label="伤害类型与失衡交叉分析"]'))
     assert.equal(mounted.one('[aria-label="当前招式筛选"]'), null)
   })
+  // 大类分组 id 改名（anomaly → anomalyClass）后，点「大类」图例仍要能筛出异常类
+  await mounted.clickText('[aria-label="伤害类型层级"] button', '大类')
+  await mounted.clickLabel('筛选伤害类型：异常类')
+  check('切到大类后点异常类图例，筛选用 anomaly 语义值而非分组 id', () => {
+    const bar = mounted.one('[aria-label="当前招式筛选"]')
+    assert.ok(bar, '应出现筛选条')
+    assert.ok(bar.textContent.includes('异常类'), bar.textContent)
+    assert.ok(mounted.one('.sf-analysis-table'), '应有筛选结果')
+  })
+  await mounted.clickLabel('筛选伤害类型：异常类')
+  await mounted.clickText('[aria-label="伤害类型层级"] button', '细分')
+  check('再次点大类图例取消筛选，切回细分无残留', () =>
+    assert.equal(mounted.one('[aria-label="当前招式筛选"]'), null),
+  )
   await mounted.clickLabel('筛选伤害类型：乱流')
   check('点击图例筛出乱流，并保留完整图表和分母', () => {
     assert.equal(mounted.all('.sf-analysis-table tbody > tr').length, 1)
@@ -86,6 +100,20 @@ try {
     assert.ok(mounted.one('.sf-analysis-table').textContent.includes('35.00%'))
     assert.ok(mounted.one('.sf-stats-pies').textContent.includes('200'))
     assert.equal(mounted.state.activeSlotIndex, 1)
+  })
+  check('选中的伤害类型对应柱体保持上浮，饼图也保持选中态', () => {
+    const rows = mounted.all('.sf-analysis-bar-row')
+    assert.equal(
+      rows[0].querySelectorAll('.sf-analysis-bar > button[aria-pressed="true"]').length,
+      1,
+      '乱流只在角色甲这一行有一段',
+    )
+    assert.equal(
+      rows[1].querySelectorAll('.sf-analysis-bar > button[aria-pressed="true"]').length,
+      0,
+      '角色乙没有乱流，不应上浮',
+    )
+    assert.equal(mounted.all('.sf-pie.is-selected').length, 1)
   })
   await mounted.clickLabel('筛选失衡状态：失衡期')
   check('状态与类型交集筛选', () => {
